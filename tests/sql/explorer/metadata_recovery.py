@@ -14,7 +14,7 @@ from analytics_toolkit.sql_explorer.journal_workers import JournalMetadataProvid
 from analytics_toolkit.sql_explorer.metadata_ledger import MetadataLedger
 from analytics_toolkit.sql_explorer.metadata_store import MetadataStore
 
-from tests.sql.explorer.completion import FakeProvider, _wait_for
+from tests.sql._support.completion import FakeProvider, _wait_for
 
 
 def test_future_metadata_format_falls_back_without_replacing_saved_names(tmp_path):

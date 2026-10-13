@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._support.concurrency import observe_call, wait_event
 from tests.sql._support.transfer_runtime import (
     Any,
     BoundedConnectionCloseError,
@@ -18,7 +19,6 @@ from tests.sql._support.transfer_runtime import (
     pytest,
     queue,
     threading,
-    time,
 )
 
 
@@ -137,6 +137,7 @@ def test_lazy_runtime_preserves_first_error_and_suppresses_callback_errors() -> 
 def test_queue_put_helpers_retry_full_queue_then_honor_cancellation(
     helper: Any,
     message: str,
+    monkeypatch,
 ) -> None:
     runtime = LazyKeyedRuntime([], read_workers=1, write_workers=1)
     destination: queue.Queue[Any] = queue.Queue(maxsize=1)
@@ -147,10 +148,13 @@ def test_queue_put_helpers_retry_full_queue_then_honor_cancellation(
         else "next"
     )
 
+    retried = observe_call(monkeypatch, destination, "put", after_error=queue.Full)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(helper, destination, item, runtime)
-        time.sleep(0.15)
-        runtime.cancellation.set()
+        try:
+            wait_event(retried)
+        finally:
+            runtime.cancellation.set()
         with pytest.raises(RuntimeError, match=message):
             future.result(timeout=2)
 

@@ -82,7 +82,7 @@ jobs:
       - name: Report captured startup diagnostics
         if: failure()
         run: |
-          for log in .integration-artifacts/*/*/startup.log; do
+          for log in .integration-artifacts/*/*/build.log .integration-artifacts/*/*/startup.log; do
             if [ -f "$log" ]; then
               printf '\n%s\n' "$log"
               tail -n 80 "$log"
@@ -124,7 +124,7 @@ jobs:
       - name: Report captured startup diagnostics
         if: failure()
         run: |
-          for log in .integration-artifacts/*/*/startup.log; do
+          for log in .integration-artifacts/*/*/build.log .integration-artifacts/*/*/startup.log; do
             if [ -f "$log" ]; then
               printf '\n%s\n' "$log"
               tail -n 80 "$log"
@@ -171,7 +171,7 @@ jobs:
       - name: Report captured startup diagnostics
         if: failure()
         run: |
-          for log in .integration-artifacts/*/*/startup.log; do
+          for log in .integration-artifacts/*/*/build.log .integration-artifacts/*/*/startup.log; do
             if [ -f "$log" ]; then
               printf '\n%s\n' "$log"
               tail -n 80 "$log"
@@ -230,7 +230,7 @@ jobs:
       - name: Report captured startup diagnostics
         if: failure()
         run: |
-          for log in .integration-artifacts/*/*/startup.log; do
+          for log in .integration-artifacts/*/*/build.log .integration-artifacts/*/*/startup.log; do
             if [ -f "$log" ]; then
               printf '\n%s\n' "$log"
               tail -n 80 "$log"
@@ -278,7 +278,7 @@ jobs:
       - name: Report captured startup diagnostics
         if: failure()
         run: |
-          for log in .integration-artifacts/*/*/startup.log; do
+          for log in .integration-artifacts/*/*/build.log .integration-artifacts/*/*/startup.log; do
             if [ -f "$log" ]; then
               printf '\n%s\n' "$log"
               tail -n 80 "$log"

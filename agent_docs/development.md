@@ -88,6 +88,19 @@ non-collected support in the nearest `_support` package. Keep global fixtures in
 derive repository paths through `tests._support.paths.REPO_ROOT` rather than
 counting parents from an individual test file.
 
+For behavior tests, enter through the public facade and fake external or domain
+operation boundaries. Keep patch locations in domain `_support` helpers so
+internal moves need one support update. Focused algorithm tests and exported
+underscore compatibility tests may retain private imports. In refactor-only
+work, explain changed behavior expectations by naming the contract that changed.
+Use Events/Barriers for real-worker ordering and fake clocks for elapsed-time
+logic; keep waits bounded and release workers in `finally`. Architecture checks
+should inspect Python syntax/imports rather than source spelling. Preserve exact
+SQL safety, statistics, formatting and security contracts. The patterns and
+reviewed real-timer exceptions are documented in `tests/_support/README.md` and
+`tests/_support/stability.md`; repository tests prevent new scheduling sleeps
+and direct source-spelling inspection.
+
 Do not wait for, poll, or extend a turn for advisory integration completion
 before finishing a normal commit. During the push watch, poll required checks
 only; report an advisory integration status or URL only if returned incidentally

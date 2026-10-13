@@ -80,6 +80,10 @@ def test_approval_notice_requires_current_diff_assessment(tmp_path: Path, monkey
 
 
 def test_repair_discovery_initializes_prepare_context(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        controller.trusted_module("repair_evidence"), "inventory", lambda gh, runs: []
+    )
     state = {
         "runs": {"1": {"sha": "old", "status": "completed", "needs": ["HTTP"], "merged": True}}
     }

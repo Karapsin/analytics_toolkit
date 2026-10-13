@@ -96,8 +96,9 @@ The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 Operation/retry and connection-identity reports, orchestration timelines, and
 type-normalization mismatch reports are also always present. Stress runs add
 memory samples, connection-pressure results, lock timelines, and concurrent
-writer results. For startup failures, inspect `startup.log` first. GitHub jobs
-print its last 80 lines on failure so captured Compose errors are visible even
+writer results. For image-build failures, inspect `build.log`; for startup
+failures, inspect `startup.log`. GitHub jobs print the last 80 lines of each
+existing log on failure so captured Compose errors are visible even
 when the managed check response contains only an exit status. An early HTTP failure no longer
 prevents native startup diagnostics from being collected. An exit status and a
 missing native artifact alone do not identify the startup cause; use the captured
@@ -115,12 +116,24 @@ starting services. Fast diagnostics checks identify the five service jobs
 (`core-http`, `core-native`, `auth`, `fault`, and `stress`) by their job IDs,
 independently of policy preparation and job order. Missing service jobs fail
 explicitly; additional metadata jobs do not require service diagnostics.
-Every service job must print captured startup logs on failure and always upload
+Every service job must report both captured build and startup logs on failure,
+check that each file exists before printing its bounded tail, and always upload
 each diagnostic artifact with missing files treated as an error.
 The startup-diagnostics workflow guard checks all integration execution jobs and
 requires the core HTTP/native, auth, fault, and stress suites. Separate policy
 jobs may be added without changing the suite count; missing startup reports in
-execution jobs still fail fast CI.
+execution jobs still fail fast CI. Removing either log pattern independently
+fails the service-free regression checks for every named service job and for
+additional integration execution jobs.
+
+Trusted repairs bind downloaded diagnostics to the exact run attempt and artifact
+inventory, redact secrets, and verify the evidence fingerprint before preparing
+files. Missing or expired artifacts remain explicit in the manifest. A validated
+`blocked` or `no_change` outcome creates no repair PR and preserves the unresolved
+incident; unchanged retries are suppressed until the dev base, failure set, or
+artifact inventory changes. Transient inventory errors defer repair discovery
+without dropping pending feature PR work. Repair outcomes must agree with whether
+a patch was produced.
 Batch diagnostics tests synchronize fake connection failures before asserting
 that both running queries failed. A separate sequential case verifies that an
 unstarted query remains cancelled with zero attempts and that the original
