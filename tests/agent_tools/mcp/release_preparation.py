@@ -272,6 +272,8 @@ def test_interrupted_signed_commit_recovers_without_incrementing_again(
         "version": version,
         "files": files,
         "fragments": fragments,
+        "task_id": "release",
+        "task_digest": "digest",
     }
     head = ["source"]
     commits = []
@@ -300,6 +302,12 @@ def test_interrupted_signed_commit_recovers_without_incrementing_again(
     )
     monkeypatch.setattr(preparation.sessions, "load", lambda root: {"phase": "feature"})
     monkeypatch.setattr(preparation.sessions, "push", lambda root: {"pr": 12})
+    monkeypatch.setattr(
+        preparation,
+        "_published_preparation",
+        lambda *args: {"number": 12, "url": "https://example/pr/12"},
+    )
+    monkeypatch.setattr(preparation, "_recover_preparation_handoff", lambda *args: None)
     monkeypatch.setattr(
         preparation.task_context,
         "commit_trailers",

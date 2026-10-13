@@ -339,6 +339,13 @@ before a replacement dispatch. API/index failures block retry. The release-state
 lock excludes concurrent dispatchers. A late original dispatch can still produce
 a duplicate run. Saved runs and published files require retained matching artifacts.
 
+If publication stops after PR creation, recovery discovers the existing preparation
+PR across open and merged states before attempting another push. It verifies the
+release task, branch and base, then resumes durable Pi handoff using the original
+signed publication SHA. Corrections made by the Pi are never overwritten by the
+stale author head. Conflicting receipts, ambiguous PRs, closed unmerged PRs and
+GitHub discovery failures block recovery; only confirmed absence permits publication.
+
 A corrected preparation PR that merges with successful exact-head fast-checks
 and agent-review keeps the same version, PR and final reviewed notes. Recovery
 archives the old state and clears validation receipts and publication bindings.

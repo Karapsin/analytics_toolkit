@@ -236,6 +236,130 @@ def _new(
     return state
 
 
+def _publication_identifiers(state: dict[str, Any], session: dict[str, Any]) -> list[int]:
+    """Reject conflicting journals before querying or completing a handoff."""
+    identifiers = [value for value in (state.get("pr"), session.get("pr")) if value is not None]
+    for receipt in session.get("handoffs", []):
+        if receipt.get("branch") == state["branch"] or receipt.get("task_id") == state["task_id"]:
+            if any(
+                receipt.get(key) != expected
+                for key, expected in (
+                    ("branch", state["branch"]),
+                    ("task_id", state["task_id"]),
+                    ("task_digest", state["task_digest"]),
+                    ("sha", state["candidate_sha"]),
+                    ("owner", "pi"),
+                )
+            ):
+                message = "Release preparation handoff conflicts with its candidate."
+                raise RuntimeError(message)
+            identifiers.append(receipt["pr"])
+    if any(type(value) is not int or value <= 0 for value in identifiers):
+        message = "Invalid release preparation PR identifier."
+        raise RuntimeError(message)
+    if len(set(identifiers)) > 1:
+        message = "Conflicting release preparation PR identifiers."
+        raise RuntimeError(message)
+    return identifiers
+
+
+def _published_preparation(
+    root: Path, state: dict[str, Any], session: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Discover publication before retrying any write to the author branch."""
+    identifiers = _publication_identifiers(state, session)
+    if identifiers:
+        number = identifiers[0]
+    else:
+        matches = json.loads(
+            sessions.run(
+                root,
+                "gh",
+                "pr",
+                "list",
+                "--head",
+                state["branch"],
+                "--base",
+                "dev",
+                "--state",
+                "all",
+                "--limit",
+                "2",
+                "--json",
+                "number",
+            )
+        )
+        if not isinstance(matches, list):
+            message = "Malformed release preparation discovery response."
+            raise RuntimeError(message)
+        if not matches:
+            return None
+        if len(matches) != 1:
+            message = "Ambiguous release preparation PR publication."
+            raise RuntimeError(message)
+        number = matches[0]["number"]
+        if type(number) is not int or number <= 0:
+            message = "Invalid discovered release preparation PR identifier."
+            raise RuntimeError(message)
+    pr = _pr(root, {**state, "pr": number})
+    if pr["number"] != number:
+        message = "Discovered release preparation PR identifier does not match."
+        raise RuntimeError(message)
+    _context(state, pr)
+    if pr["state"] != "OPEN" and not pr.get("mergedAt"):
+        message = "Release preparation PR was closed without merging."
+        raise RuntimeError(message)
+    return pr
+
+
+def _recover_preparation_handoff(
+    work: Path, state: dict[str, Any], session: dict[str, Any], pr: dict[str, Any]
+) -> None:
+    if session.get("phase") == "feature":
+        publication = session.get("publication_sha") or state["candidate_sha"]
+        if publication != state["candidate_sha"] or session.get("branch") != state["branch"]:
+            message = "Release preparation session conflicts with its publication."
+            raise RuntimeError(message)
+        session.update(pr=pr["number"], publication_sha=publication)
+        sessions.save(work, session)
+    elif session.get("phase") in {"handed_off", "planning"}:
+        _verify_preparation_handoff(state, session["handoffs"][-1], pr["number"])
+    # handoff verifies the original signed publication and corrected-head ancestry.
+    # It also resumes durable ownership receipts after task archiving/dev refresh.
+    _verify_preparation_handoff(state, sessions.handoff(work), pr["number"])
+
+
+def _verify_preparation_handoff(state: dict[str, Any], receipt: dict[str, Any], number: int) -> None:
+    if any(
+        receipt.get(key) != expected
+        for key, expected in (
+            ("pr", number),
+            ("branch", state["branch"]),
+            ("task_id", state["task_id"]),
+            ("task_digest", state["task_digest"]),
+            ("sha", state["candidate_sha"]),
+            ("owner", "pi"),
+        )
+    ):
+        message = "Recovered handoff does not match the release preparation."
+        raise RuntimeError(message)
+
+
+def _handoff_preparation(root: Path, work: Path, state: dict[str, Any]) -> dict[str, Any]:
+    session = sessions.load(work)
+    pr = _published_preparation(root, state, session)
+    if pr is None:
+        # Only confirmed absence permits the existing signed publication workflow.
+        sessions.push(work)
+        session = sessions.load(work)
+        pr = _published_preparation(root, state, session)
+        if pr is None:
+            message = "Release preparation publication was not found after push."
+            raise RuntimeError(message)
+    _recover_preparation_handoff(work, state, session, pr)
+    return pr
+
+
 def _publish_preparation(root: Path, state: dict[str, Any]) -> None:
     work = Path(state["workspace"])
     if not state["candidate_sha"]:
@@ -273,13 +397,7 @@ def _publish_preparation(root: Path, state: dict[str, Any]) -> None:
         state["candidate_sha"] = head
         state["candidate_tree"] = _tree(work, head)
         save(root, state)
-    # Existing publication mechanisms verify signatures and task attachments and
-    # recover interrupted PR creation. Once handed off, only read the existing PR.
-    session = sessions.load(work)
-    if session.get("phase") == "feature":
-        sessions.push(work)
-    pr = _pr(root, state)
-    _context(state, pr)
+    pr = _handoff_preparation(root, work, state)
     state.update(pr=pr["number"], pr_url=pr["url"])
     save(root, state)
 
