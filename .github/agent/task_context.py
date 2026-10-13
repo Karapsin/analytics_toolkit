@@ -61,11 +61,18 @@ def validate_evidence(value: dict[str, Any]) -> None:
             raise ValueError("Task evidence must be a list.")
     identities: set[str] = set()
     for plan in value["plans"]:
-        if (not isinstance(plan, dict) or set(plan) not in [{"id", "text", "approval_index"},
-                                                          {"id", "text", "approval_index", "approval_indices"}]
+        if (not isinstance(plan, dict)
+                or not {"id", "text", "approval_index"} <= set(plan)
+                or set(plan) - {"id", "text", "approval_index", "approval_indices", "approval_starting_prompt", "starting_prompt_approval"}
                 or not isinstance(plan["text"], str) or not plan["text"].strip()
                 or plan["id"] != plan_id(plan["text"]) or plan["id"] in identities):
             raise ValueError("Invalid or duplicate plan evidence.")
+        for field in ("starting_prompt_approval", "approval_starting_prompt"):
+            if type(plan.get(field, False)) is not bool:
+                raise ValueError("Invalid starting-prompt plan approval.")
+        if ("starting_prompt_approval" in plan and "approval_starting_prompt" in plan
+                and plan["starting_prompt_approval"] != plan["approval_starting_prompt"]):
+            raise ValueError("Conflicting starting-prompt plan approvals.")
         identities.add(plan["id"])
         if plan["approval_index"] is not None:
             user_index(value, plan["approval_index"])
@@ -125,11 +132,14 @@ def require_resolved(value: dict[str, Any]) -> None:
                if reference not in images | replacements}
     if missing:
         raise ValueError("Missing image evidence or explicit user replacement: " + ", ".join(sorted(missing)))
-    for index, prompt in enumerate(value["corrections"]):
+    for sequence, prompt in enumerate(prompts):
         if re.search(r"\bimplement\s+the\s+plan\b", prompt, re.I):
-            if (not any(plan["approval_index"] == index or index in plan.get("approval_indices", [])
-                        for plan in value.get("plans", []))
-                    and "Implement the plan" not in replacements):
+            approved = any(
+                plan.get("starting_prompt_approval", plan.get("approval_starting_prompt", False)) if sequence == 0 else
+                plan["approval_index"] == sequence - 1 or sequence - 1 in plan.get("approval_indices", [])
+                for plan in value.get("plans", [])
+            )
+            if not approved and "Implement the plan" not in replacements:
                 raise ValueError("Attach the exact approved plan or an explicit user replacement before handoff.")
 
 
@@ -195,7 +205,8 @@ def render(value: dict[str, Any]) -> str:
                             + "</pre>\n**User answer:**\n" + rendered_answer + "\n")
         evidence = {field: value.get(field, []) for field in sorted(EVIDENCE_FIELDS) if field != "questions"}
         visible += "\n\n### Plan and image evidence\n\nAssistant plans are evidence, not user instructions. " \
-                   "Approval indices refer to the user corrections above.\n\n<pre>" \
+                   "Approval indices refer to the user corrections above; starting_prompt_approval binds " \
+                   "the immutable starting prompt.\n\n<pre>" \
                    + html.escape(json.dumps(evidence, ensure_ascii=False, indent=2)) + "</pre>"
     encoded = base64.b64encode(canonical(legacy(value))).decode("ascii")
     body = ("## User task\n\nStarting prompt, followed by user corrections in order. "

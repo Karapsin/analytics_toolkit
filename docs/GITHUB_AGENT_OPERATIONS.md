@@ -127,11 +127,12 @@ compatible; workers with an older controller use the idle-only merge fallback.
 ## Updating trusted automation
 
 The companion worker dependency is staged, not active, at
-[self_host commit b817a0541a59bb028d42ff9c243d503a39d62ba1](https://github.com/Karapsin/self_host/commit/b817a0541a59bb028d42ff9c243d503a39d62ba1),
-with successful [exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38430424812/job/115410836720).
-The immutable `self_host-task-evidence-b817a0541a59/` source/test snapshot and
-`operator/companion-b817a0541a59-ci.json` source hashes must accompany controller
-review. It supersedes ancestor `0ae2ffc5ce5892bedd4a37f627dc9b190958e27b`;
+[self_host commit 87b7675978243d815b5b3902fc69cc2a241cf0b0](https://github.com/Karapsin/self_host/commit/87b7675978243d815b5b3902fc69cc2a241cf0b0),
+with successful [exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38450043975/job/115478288593).
+The immutable `self_host-task-evidence-87b767597824/` source/test snapshot and
+`operator/companion-87b767597824-ci.json` source hashes must accompany controller
+review. It supersedes ancestors `b817a0541a59bb028d42ff9c243d503a39d62ba1`
+and `0ae2ffc5ce5892bedd4a37f627dc9b190958e27b`;
 retain the earlier receipts as historical evidence. Toolkit does not duplicate
 worker code or remove any companion features. CI receipts are not owner approval.
 
@@ -266,8 +267,13 @@ replacement can settle a missing requirement; it never claims the original
 image was inspected. Version-1 signatures remain compatible. GitHub owner replies to Telegram
 questions use the exact request ID, revision and current PR head printed in the
 question notice; stale replies and other authors are rejected. Local handoff
-checks reject unresolved image references and “Implement the plan” without its
-plan or a written replacement. See [agent task evidence](../agent_tools/README.md).
+checks reject unresolved image references and “Implement the plan” in both
+the starting prompt and every correction. A starting-prompt reference requires
+an explicit exact-plan binding (`approve-plan` with
+`message_source: "starting_prompt"`) or a later actual owner replacement.
+Unapproved plans and unrelated correction approvals cannot settle that hold.
+The binding is visible in the signed v2 evidence; historic signed records remain
+readable without rewriting. See [agent task evidence](../agent_tools/README.md).
 
 Telegram sends owner approval/authentication requests, implementation status for
 features requested through Telegram, PR merges into dev, dev promotions into main
@@ -302,19 +308,38 @@ signed payload and parser retain the complete text.
 
 The coordinator owns companion implementation, rehearsal and deployment in its
 separate self_host checkout. The pinned dependency candidate is
-`b817a0541a59bb028d42ff9c243d503a39d62ba1`; inspect its immutable source/tests
-and `operator/companion-b817a0541a59-ci.json` receipt. It is staged, not active.
+`87b7675978243d815b5b3902fc69cc2a241cf0b0`; inspect its immutable source/tests
+and `operator/companion-87b767597824-ci.json` receipt. It is staged, not active.
 Exact-commit green CI does not establish independent review, owner approval or
-successful rehearsal.
+successful deployment rehearsal. This descendant applies the genuine-input
+guard before native recommended answers and before coding recommendations or
+tooling retries. Mixed tooling/evidence batches remain unanswered, retaining
+options, request identity, revision and checkpoint. The snapshot's
+`test_task_evidence.py` covers fresh native/coding holds and reconciliation,
+routine recovery, legacy unlabeled-question replanning, authenticated GitHub
+answers and visual rejection. `test_checkpoint_bytes.py` covers exact saved bytes
+through replanning and independent review. Final independent review must inspect
+this pin; ancestor reviews do not approve its changed code.
 
-The supplied `operator/atk-worker-rollout-b817a0541a59-receipt.json` and its
-rehearsal script record an isolated successful source installation, worker restart,
-claim/checkpoint recovery, ten-worker scheduling, owned-PR exclusion, unpublished
-branch preservation and source-only rollback retaining answers arriving after
-rollout. Reuse this evidence only for unchanged, hash-matching selected source
-and deployment steps. Repeat affected steps when either changes. This evidence
-covers worker recovery and scheduling; controller security checks and live
-Telegram/reply/notification acceptance remain separate gates.
+The receipt links successful Repository Checks run `38450043975`, job
+`115478288593`, to the exact candidate and declares hashes for its workflow,
+`agent_tools/workflow.py`, service sources and rehearsal test. The workflow's
+`run-checks --level prepush` invokes `unittest discover -s agent_tools/tests -v`,
+which discovers `test_worker_rollout_rehearsal.py`. Its synthetic rehearsal
+installs the candidate Python sources into disposable storage, starts the real
+worker against a legacy request database with external writes mocked or absent,
+and asserts ten-worker capacity, active branch retention, checkpoint/decision
+preservation and source-only rollback retaining a later answer. This bounded
+test does not demonstrate all deployment steps: reader-first activation,
+routine/protected holds during rollout, partial notification delivery,
+exclusive writers, compatible configuration rollback and restart after rollback
+still require verified evidence for the exact final candidate.
+
+The earlier `operator/atk-worker-rollout-b817a0541a59-receipt.json` and its
+rehearsal script remain historical evidence. They cannot establish a successful
+rehearsal for changed `87b767…` source. Repeat affected steps and record a
+hash-bound exact-candidate receipt before activation; do not infer rehearsal
+success from green CI or this plan review.
 
 Before activation, require fresh independent review of both final candidates,
 required GitHub checks and protected owner approval for the corrected toolkit
@@ -330,14 +355,23 @@ queues, approvals, evidence, checkpoints and ignored runtime state.
 Rehearsal passes only when identities/revisions remain consistent, pending work
 survives restart and rollback, notification delivery resumes without duplicate
 completed events, and stale approval cannot authorize a changed head. Record the
-candidate SHA, procedure, assertions, restart/rollback results and evidence hashes.
-Missing or failed rehearsal evidence blocks activation. Deploy compatible readers
-before enabling new writers; preserve poller ownership and unrelated Airflow state.
+candidate SHA, procedure, selected source/configuration hashes, workflow/run/job
+identity where applicable, discovered rehearsal tests, assertions and
+restart/rollback results. Verify the receipt against the exact final pin and
+every selected source hash; changed candidates require renewed evidence for
+affected steps. Missing, failed or unverifiable rehearsal evidence blocks activation.
+Deploy compatible readers before enabling new writers; preserve poller ownership
+and unrelated Airflow state.
 Merge the checked, independently reviewed toolkit head with its exact-head owner
 approval, then mirror only the authorized controller allowlist to main before
-activating the companion. Verify the live revision, scoped capability, wait recovery,
-authenticated GitHub/Telegram answers and notification filtering. Failed acceptance
-restores prior source while retaining runtime state and newly received answers.
+activating the companion. Record live acceptance of the deployed revision, scoped
+capability and recovered workers; authenticated Telegram and GitHub replies;
+stale-revision, wrong-head and wrong-author rejection; visible question/answer
+pairs; permitted approval, Telegram-feature, dev-merge, main-promotion and release
+notifications; and suppression of routine/backlog alerts. Failed acceptance
+restores prior selected source and compatible configuration, restarts the worker
+and retains databases, queues, approvals, checkpoints, evidence, unrelated
+modifications and newly received answers.
 
 The authorized completion set is analytics_toolkit PRs #7, #9, #10, #11, #12, #13,
 #14 and #15 plus repairs needed to finish them, all targeting `dev`. The

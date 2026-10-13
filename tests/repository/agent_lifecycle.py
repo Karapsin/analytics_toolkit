@@ -206,12 +206,12 @@ def merge_environment(monkeypatch: Any) -> tuple[Any, Any, Any]:
     controls.paused.return_value = False
     cleanup = Mock()
     original_module = controller.trusted_module
-    monkeypatch.setattr(
-        controller,
-        "trusted_module",
-        lambda name: {"review_control": controls, "branch_cleanup": cleanup}.get(name)
-        or original_module(name),
-    )
+    modules = {"review_control": controls, "branch_cleanup": cleanup}
+
+    def module(name: str) -> Any:
+        return modules.get(name) or original_module(name)
+
+    monkeypatch.setattr(controller, "trusted_module", module)
     monkeypatch.setattr(controller, "authorization_error", Mock(return_value=None))
     monkeypatch.setattr(controller, "task_metadata", Mock(return_value={}))
     monkeypatch.setattr(controller, "monitor", Mock(return_value=(99, {})))

@@ -92,6 +92,20 @@ Use `task-context --action plan --evidence-file FILE` with `{"text": "exact plan
 Use `approve-plan` with `plan_id`, the exact `user_prompt`, and optionally an
 existing `correction_index`. MCP exposes the same actions through its `evidence`
 argument. Approval binds an existing plan, never an agent summary.
+If the immutable starting prompt itself approves the plan, use `approve-plan`
+with `message_source: "starting_prompt"`, the existing `plan_id`, and `user_prompt`
+exactly matching that starting prompt. Do not include `correction_index`.
+The optional boolean `starting_prompt_approval` records this binding without
+appending a duplicate correction; absent bindings default to false and old
+records retain their original digests. Readers also retain the earlier optional
+`approval_starting_prompt` spelling without rewriting it; conflicting bindings
+are rejected. Deploy these readers before enabling the new writer field.
+A correction approval does not resolve
+a starting-prompt plan reference, and this binding does not resolve later
+corrections. Publication checks both the starting prompt and every correction.
+An explicit later owner replacement using `replace-missing` can resolve the
+missing plan instead. Parsing and signature verification of legacy signed PR
+records remain unchanged.
 
 Record each exact assistant question and its full offered options using the
 `question` action and `{"text": "exact question and options"}`. Bind the actual

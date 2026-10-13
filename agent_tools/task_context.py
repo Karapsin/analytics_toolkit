@@ -115,10 +115,16 @@ def evidence(root: Path, action: str, payload: dict[str, Any]) -> dict[str, Any]
     value.setdefault("questions", [])
     proto = protocol()
     extras: dict[str, str] = {}
+    if "message_source" in payload and (
+        action != "approve-plan" or payload["message_source"] != "starting_prompt"
+    ):
+        fail("Only plan approvals may bind message_source='starting_prompt'.")
     if action == "plan":
         extras["plan_id"] = record_plan(value, payload, proto)
     elif action == "question":
         extras["question_id"] = record_question(value, payload, proto)
+    elif action == "approve-plan" and payload.get("message_source") == "starting_prompt":
+        bind_starting_prompt(value, payload)
     elif action in {"approve-plan", "answer-question", "image", "replace-missing"}:
         index = approval_index(value, payload, proto)
         if action in {"approve-plan", "answer-question"}:
@@ -181,6 +187,21 @@ def bind_answer(value: dict[str, Any], payload: dict[str, Any], index: int, acti
             return
         fail("Existing evidence answers are immutable; record a new question or plan.")
     records[0][target] = index
+
+
+def bind_starting_prompt(value: dict[str, Any], payload: dict[str, Any]) -> None:
+    if "correction_index" in payload:
+        fail("Starting-prompt approval cannot include correction_index.")
+    if set(payload) != {"plan_id", "user_prompt", "message_source"}:
+        fail("Supply the exact plan ID and starting-prompt approval message.")
+    if payload["user_prompt"] != value["starting_prompt"]:
+        fail("Evidence approval does not match the immutable starting prompt.")
+    records = [plan for plan in value["plans"] if plan["id"] == payload["plan_id"]]
+    if len(records) != 1:
+        fail("Approval requires an existing exact evidence ID.")
+    records[0]["starting_prompt_approval"] = True
+    if "approval_starting_prompt" in records[0]:
+        records[0]["approval_starting_prompt"] = True
 
 
 def approval_index(value: dict[str, Any], payload: dict[str, Any], proto: Any) -> int:

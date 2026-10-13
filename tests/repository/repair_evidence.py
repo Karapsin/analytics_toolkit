@@ -140,7 +140,36 @@ def test_no_patch_outcome_is_not_published_or_repeated(
     for _ in range(2):
         assert controller.publish(gh, task, tmp_path, tmp_path) == {"status": "blocked"}
     assert gh.comment.call_count == 1
-    assert len(controller.trusted_module("review_control").pending()) == 1
+    controls = controller.trusted_module("review_control")
+    assert controls.pending() == []
+    with controls.connect() as db:
+        notifications = db.execute("SELECT key,kind,payload,sent FROM notifications").fetchall()
+    assert len(notifications) == 1
+    notification = notifications[0]
+    assert notification["key"] == "repair-blocked:" + evidence.identity(task)
+    assert notification["kind"] == "repair-blocked"
+    assert notification["sent"] == -1
+    assert "startup.log" in json.loads(notification["payload"])["reason"]
+    assert "need diagnostics" in gh.comment.call_args.args[1]
+    db = evidence.connection()
+    try:
+        outcomes = db.execute("SELECT identity,value FROM outcomes").fetchall()
+    finally:
+        db.close()
+    assert outcomes == [
+        (
+            evidence.identity(task),
+            json.dumps(
+                {
+                    "outcome": "blocked",
+                    "reason": "need diagnostics",
+                    "required_evidence": ["startup.log"],
+                }
+            ),
+        )
+    ]
+    assert evidence.blocked(task)
+    assert not evidence.blocked({**task, "evidence_key": "new-evidence"})
     gh.api.assert_not_called()
 
 
