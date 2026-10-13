@@ -10,7 +10,7 @@ from analytics_toolkit.sql_explorer.widgets import FindReplaceBar, ResultTable
 from textual.color import Color
 from textual.containers import Vertical
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 def test_workspace_panes_have_one_row_gaps_and_scrollbars_are_on_the_right() -> None:

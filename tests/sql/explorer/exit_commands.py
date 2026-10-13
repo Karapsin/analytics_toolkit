@@ -8,7 +8,7 @@ from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.file_commands import NewSqlFileScreen
 from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     from pathlib import Path

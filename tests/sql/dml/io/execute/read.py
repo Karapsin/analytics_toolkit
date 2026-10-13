@@ -5,79 +5,11 @@ import importlib
 import pandas as pd
 import pytest
 
+from tests.sql._support.execute_read import FakeClickHouseClient, FakeDbapiConnection
+from tests.sql._support.scripted import ConnectionSequence, ScriptedConnection, SqlResponse
+
 execute_read_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_read")
 sql_module = importlib.import_module("analytics_toolkit.sql")
-
-
-class FakeClickHouseClient:
-    def __init__(self, result: pd.DataFrame | None = None) -> None:
-        self.commands: list[str] = []
-        self.read_queries: list[str] = []
-        self.close_calls = 0
-        self.result = result if result is not None else pd.DataFrame({"value": [1]})
-
-    def command(self, sql: str) -> None:
-        self.commands.append(sql)
-
-    def query(self, sql: str, *, column_oriented: bool) -> object:
-        assert column_oriented is True
-        self.read_queries.append(sql)
-        return type(
-            "QueryResult",
-            (),
-            {
-                "column_names": tuple(str(column) for column in self.result.columns),
-                "result_columns": tuple(
-                    self.result.iloc[:, index].tolist() for index in range(len(self.result.columns))
-                ),
-                "row_count": len(self.result),
-            },
-        )()
-
-    def close(self) -> None:
-        self.close_calls += 1
-
-
-class FakeCursor:
-    def __init__(self, connection: FakeDbapiConnection) -> None:
-        self.connection = connection
-        self.description: list[tuple[str, ...]] | None = None
-        self.close_calls = 0
-
-    def execute(self, sql: str) -> None:
-        self.connection.executed.append(sql)
-        if sql.lower().startswith("select"):
-            self.description = [("id",), ("label",)]
-        else:
-            self.description = None
-
-    def fetchall(self) -> list[tuple[int, str]]:
-        return [(1, "ok")]
-
-    def close(self) -> None:
-        self.close_calls += 1
-
-
-class FakeDbapiConnection:
-    def __init__(self, name: str = "conn") -> None:
-        self.name = name
-        self.executed: list[str] = []
-        self.commit_calls = 0
-        self.rollback_calls = 0
-        self.close_calls = 0
-        self.cursor_obj = FakeCursor(self)
-
-    def cursor(self) -> FakeCursor:
-        return self.cursor_obj
-
-    def commit(self) -> None:
-        self.commit_calls += 1
-
-    def rollback(self) -> None:
-        self.rollback_calls += 1
-
-    def close(self) -> None:
-        self.close_calls += 1
 
 
 def test_execute_read_is_exported() -> None:
@@ -119,7 +51,16 @@ def test_execute_read_gp_executes_setup_statement_set_and_reads_last(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    connection = FakeDbapiConnection()
+    connection = ScriptedConnection(
+        [
+            SqlResponse(
+                "CREATE TEMP TABLE tmp AS SELECT 1 AS id, 'ok' AS label; "
+                "INSERT INTO tmp SELECT 2, 'still ok'"
+            ),
+            SqlResponse("SELECT id, label FROM tmp", rows=((1, "ok"),), columns=("id", "label")),
+        ],
+        dialect="postgres",
+    )
     monkeypatch.setattr(
         execute_read_module,
         "get_sql_connection",
@@ -152,11 +93,13 @@ def test_execute_read_gp_executes_setup_statement_set_and_reads_last(
     )
     assert connection.commit_calls == 1
     assert connection.close_calls == 1
-    assert connection.cursor_obj.close_calls == 1
+    assert len(connection.cursors) == 1
+    assert connection.cursors[0].close_calls == 1
     output = capsys.readouterr().out
     assert output.count("[execute_read] [gp/gp] [setup] Finished SQL query in ") == 1
     assert output.count("[execute_read] [gp/gp] [read] Finished SQL query in ") == 1
     assert "[execute_read] [gp/gp] [execute_read]" not in output
+    connection.assert_complete()
 
 
 def test_execute_read_trino_logs_setup_and_read_phases(
@@ -186,7 +129,14 @@ def test_execute_read_trino_logs_setup_and_read_phases(
 def test_execute_read_gp_break_query_executes_setup_statements_separately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    connection = FakeDbapiConnection()
+    connection = ScriptedConnection(
+        [
+            SqlResponse("CREATE TEMP TABLE tmp AS SELECT 1"),
+            SqlResponse("INSERT INTO tmp SELECT 2"),
+            SqlResponse("SELECT * FROM tmp", rows=((1, "ok"),), columns=("id", "label")),
+        ],
+        dialect="postgres",
+    )
     monkeypatch.setattr(
         execute_read_module,
         "get_sql_connection",
@@ -207,6 +157,7 @@ def test_execute_read_gp_break_query_executes_setup_statements_separately(
         "SELECT * FROM tmp",
     ]
     assert connection.commit_calls == 2
+    connection.assert_complete()
 
 
 def test_execute_read_logs_elapsed_for_setup_and_final_query_by_default(
@@ -240,14 +191,14 @@ def test_execute_read_retries_with_fresh_connection(
 ) -> None:
     first_connection = FakeClickHouseClient()
     second_connection = FakeClickHouseClient(pd.DataFrame({"value": [2]}))
-    connections = [first_connection, second_connection]
+    connections = ConnectionSequence([first_connection, second_connection])
     attempts: list[FakeClickHouseClient] = []
     print_flags: list[bool] = []
 
     monkeypatch.setattr(
         execute_read_module,
         "get_sql_connection",
-        lambda connection_key: connections.pop(0),
+        connections,
     )
 
     def fake_execute_read_ch(
@@ -277,6 +228,8 @@ def test_execute_read_retries_with_fresh_connection(
     )
 
     pd.testing.assert_frame_equal(result, pd.DataFrame({"value": [2]}))
+    connections.assert_complete()
+    assert connections.calls == ["ch", "ch"]
     assert attempts == [first_connection, second_connection]
     assert print_flags == [False, False]
     assert first_connection.close_calls == 1

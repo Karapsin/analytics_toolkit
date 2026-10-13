@@ -5,7 +5,7 @@ import asyncio
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.tabs import TabSelectButton, WorkspaceTab
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 def test_new_tab_database_switch_reflows_visible_title() -> None:

@@ -10,7 +10,7 @@ from analytics_toolkit.sql_explorer.app import ResultTable, SqlEditor, SqlExplor
 from analytics_toolkit.sql_explorer.clipboard import TerminalClipboard, osc52_sequence
 from textual.document._document import Selection
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     import pytest

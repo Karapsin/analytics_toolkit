@@ -17,7 +17,7 @@ from analytics_toolkit.sql_explorer.widgets import (
 from textual.color import Color
 from textual.widgets import Button, Input
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 
 @pytest.mark.parametrize(

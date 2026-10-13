@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import json
 import re
 
+from tests._support.files import read_json
 from tests._support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
 
 def test_every_github_workflow_is_classified_for_dev() -> None:
-    manifest = json.loads((ROOT / ".github/required-workflows.json").read_text(encoding="utf-8"))
+    manifest = read_json(ROOT / ".github/required-workflows.json")
     assert manifest["schema_version"] == 2
     branch = manifest["branches"]["dev"]
     classified = {entry["path"] for entry in branch["workflows"]}
@@ -30,7 +30,7 @@ def test_every_github_workflow_is_classified_for_dev() -> None:
 
 
 def test_dev_workflows_classify_tests_as_required_and_integration_as_advisory() -> None:
-    manifest = json.loads((ROOT / ".github/required-workflows.json").read_text(encoding="utf-8"))
+    manifest = read_json(ROOT / ".github/required-workflows.json")
     required = {entry["name"]: entry for entry in manifest["branches"]["dev"]["workflows"]}
 
     assert set(required) == {"tests"}
@@ -49,7 +49,7 @@ def test_dev_workflows_classify_tests_as_required_and_integration_as_advisory() 
 
 
 def test_required_job_names_still_exist_in_workflow_yaml() -> None:
-    manifest = json.loads((ROOT / ".github/required-workflows.json").read_text(encoding="utf-8"))
+    manifest = read_json(ROOT / ".github/required-workflows.json")
     for workflow_entry in manifest["branches"]["dev"]["workflows"]:
         workflow = (ROOT / workflow_entry["path"]).read_text(encoding="utf-8")
         for job in workflow_entry["required_jobs"]:

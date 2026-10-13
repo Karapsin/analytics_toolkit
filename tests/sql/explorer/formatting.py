@@ -9,7 +9,7 @@ from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.formatting import format_editor, format_script
 from textual.document._document import Selection
 
-from tests.sql.explorer.app import FakeSession
+from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     from pathlib import Path
