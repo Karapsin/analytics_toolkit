@@ -141,10 +141,9 @@ def occurrence_format_issues(visualization: Any, formats: Any) -> list[str]:
             continue
         for value in section.get("items", ()):
             guid = value.get("guid")
-            if (
-                guid is not None
-                and normalized_measure_format(value.get("formatting")) != formats.get(guid, {})
-            ):
+            if guid is not None and normalized_measure_format(
+                value.get("formatting")
+            ) != formats.get(guid, {}):
                 issues.append("unrepresented occurrence formatting " + str(guid))
     return issues
 
