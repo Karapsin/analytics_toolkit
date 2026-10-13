@@ -87,7 +87,11 @@ def test_serialized_changelog_fold_preserves_versions_and_wrapped_notes(
         + historical_section
     )
     assert not list((tmp_path / "agent_tools/changelog").glob("*.md"))
+    folded_changelog = changelog.read_bytes()
     assert not controller.fold(tmp_path)
+    assert changelog.read_bytes() == folded_changelog
+    assert [path.read_bytes() for path in metadata_paths] == original_metadata
+    assert folded_changelog.count(b"- New feature\n") == 1
 
 
 def test_provisioning_has_no_api_model_execution() -> None:

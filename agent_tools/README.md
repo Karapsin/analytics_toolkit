@@ -202,6 +202,10 @@ Private implementation workers add regressions and edit sources without running
 programs, local pre-commit checks, tests, installs, or formatters. The trusted
 coordinator verifies task identity, pinned base/head, provenance, protected paths,
 and patch applicability before publishing an App-signed correction to the PR.
+For ordinary feature corrections, preserve versions and Unreleased notes. If the
+task-owned fragment is already folded, keep its note once and its signed history;
+do not recreate the consumed fragment. Before validation, verify that coordinator
+metadata children also preserve these invariants instead of applying an entry-count bump.
 Corrections retain current-dev repair discovery, bounded evidence handling, and
 unchanged no-patch retry suppression with their fast mocked regressions.
 GitHub then validates the exact corrected head through the focused regressions,

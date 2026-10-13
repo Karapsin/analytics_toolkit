@@ -494,10 +494,8 @@ def test_concurrent_retry_is_excluded_and_lock_is_released(
     tmp_path: Path,
 ) -> None:
     state, calls, _clock = dispatch
-    with (
-        candidate.release_preparation.release_lock(tmp_path),
-        pytest.raises(RuntimeError, match="Another release action"),
-    ):
+    lock = candidate.release_preparation.release_lock(tmp_path)
+    with lock, pytest.raises(RuntimeError, match="Another release action"):
         candidate.prepare_stage(tmp_path, "testpypi")
     assert not any("workflow" in call for call in calls)
     with pytest.raises(RuntimeError, match="workflow requested"):
