@@ -84,9 +84,7 @@ def test_public_planning_recovers_interrupted_source_only_draft(
         forbidden.assert_not_called()
 
 
-def test_scoped_plan_keeps_pending_dataset_dependency_on_published_branch(
-    bi_project, monkeypatch
-):
+def test_scoped_plan_keeps_pending_dataset_dependency_on_published_branch(bi_project, monkeypatch):
     _registry, store, connection = setup(bi_project)
     draft = replace(dataset(), saved_id="pending")
     store.checkpoint("dataset:sales", draft, scope="dataset", mutation=True)

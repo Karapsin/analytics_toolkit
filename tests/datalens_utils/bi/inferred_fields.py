@@ -131,9 +131,11 @@ def test_component_errors_preserve_ids_and_stop_before_publication(bi_project, m
     created = bad if stage == "create" else clean
     monkeypatch.setattr(DatasetCreate, "build", lambda selected: created)
     execute = Mock(return_value=bad)
-    monkeypatch.setattr(
-        DatasetUpdate, "execute", lambda builder: execute(builder)
-    )  # noqa: PLW0108 - Bind the mocked method.
+
+    def execute_bound(builder):
+        return execute(builder)
+
+    monkeypatch.setattr(DatasetUpdate, "execute", execute_bound)
     if stage == "update":
         resource.definition["fields"]["category"]["title"] = "Renamed"
     with DataLensClientYC(auth=NoAuthProvider()) as public:
@@ -148,7 +150,9 @@ def test_component_errors_preserve_ids_and_stop_before_publication(bi_project, m
             reconcile_dataset(client, store, resource, {"ch": connection})
         assert failure.value.diagnostics["component_errors"] == errors
         assert store.state["resources"][resource.key]["id"] == "sales"
-        assert store.path.exists()
+        durable = json.loads(store.path.read_text(encoding="utf-8"))["resources"][resource.key]
+        assert durable["id"] == failure.value.diagnostics["id"] == "sales"
+        assert failure.value.diagnostics["resource"] == resource.key
         if stage != "update":
             execute.assert_not_called()
         else:
@@ -413,9 +417,7 @@ def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR09
 @pytest.mark.parametrize(
     "case", ["owned", "partial", "ambiguous", "ordinary", "wrong_id", "retained"]
 )
-def test_preflight_inference_preserves_ownership_and_rejects_ambiguity(
-    bi_project, monkeypatch, case
-):
+def test_preflight_inference_preserves_ownership_and_rejects_ambiguity(bi_project, monkeypatch, case):
     registry, store, connection = setup(bi_project)
     resource = registry.resources["dataset:sales"]
     resource.definition["fields"]["category"]["guid"] = "requested"

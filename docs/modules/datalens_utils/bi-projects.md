@@ -41,8 +41,9 @@ conversion requires explicit `upgrade_recipe=True` or `--upgrade-recipe`.
 
 Import follows public resource metadata and retrieves available SQL/JS assets.
 Adopt mode preserves IDs and requires compatible locations. Explicit
-`mode="copy"` discovers dependencies across folders and creates new owned resources,
-reusing connections. It preserves fields, defaults, ordering and placement parameters.
+`mode="copy"` discovers dependencies across folders and writes local recipes for new
+owned resources, reusing read-only connections. Reconciliation creates those resources
+later. Copy import preserves fields, defaults, ordering and placement parameters.
 See the [copy walkthrough](copy-tab.md) and [recipe contract](recipe-contract.md). Duplicate
 persistent resources share one definition; direct placements and chart-group
 members keep separate identities. `group/member` wiring addresses one variant.

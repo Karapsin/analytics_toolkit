@@ -14,7 +14,6 @@ from .dashboard_generation.datasets.create import _configure_fields
 from .dataset_identity import check_components, resolved_definition
 from .errors import DataLensCapabilityError, DataLensUtilsError
 
-
 # Preserve the existing helper exports while sharing their implementation.
 avatar_for = _semantics.avatar_for
 cache_matches = _semantics.cache_matches

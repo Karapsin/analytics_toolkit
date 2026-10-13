@@ -155,7 +155,10 @@ def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
             measure_format = normalized_measure_format(formatting)
             field_name = name(value) if strict_fidelity or measure_format else ""
             if strict_fidelity:
-                if field_name in observed_formats and observed_formats[field_name] != measure_format:
+                if (
+                    field_name in observed_formats
+                    and observed_formats[field_name] != measure_format
+                ):
                     message = "Conflicting per-slot field formats cannot be faithfully imported."
                     raise DataLensUtilsError(message)
                 observed_formats[field_name] = measure_format

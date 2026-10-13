@@ -28,7 +28,7 @@ def dataset_field_issues(  # noqa: PLR0913 - Exact source and field identities w
     handles: dict[str, Any],
 ) -> list[str]:
     issues = []
-    for key, source in (sources.items() if client is not None else ()):
+    for key, source in sources.items() if client is not None else ():
         spec = definition["sources"][key]
         _, params = source_spec(client, spec, connections[spec["connection"]], key)
         expected_type = next(

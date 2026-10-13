@@ -16,7 +16,6 @@ from .resources.bi_store import entry_description, safe_metadata
 from .session import current_session
 from .validation.charts import check_chart
 
-
 # Compatibility exports used by existing callers.
 dataset_field_issues = _dataset_checks.dataset_field_issues
 dataset_rls_issues = _dataset_checks.dataset_rls_issues
