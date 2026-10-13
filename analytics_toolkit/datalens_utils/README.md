@@ -218,7 +218,11 @@ See the [advanced BI workflow](../../docs/modules/datalens_utils/bi-projects.md)
 and its portable example for full recipe details.
 
 Dataset creation adopts source-qualified inferred fields before adding missing
-fields. Actual GUIDs are checkpointed. Backend component errors raise
+fields. Actual GUIDs are checkpointed. After an interrupted source-only create,
+read-only preflight resolves provisional field GUIDs against the retained dataset
+on a temporary checkpoint; reconciliation saves the recovered identities and
+publishes only after complete draft verification. Preflight leaves recipe files,
+runtime checkpoints and remote resources unchanged. Backend component errors raise
 `DataLensComponentError` after checkpointing any created ID and stop dependent
 writes and publication. Its diagnostics are exposed in JSON CLI failure reports.
 Local validation does not validate backend inference. `verify()` compares a

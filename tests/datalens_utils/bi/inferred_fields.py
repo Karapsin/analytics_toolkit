@@ -1,17 +1,26 @@
 """Backend inference and persisted component errors must not cause duplicate creates."""
 
+import copy
+import json
+from contextlib import nullcontext
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from analytics_toolkit.datalens_utils import DataLensComponentError
-from analytics_toolkit.datalens_utils.bi_datasets import cache_matches, reconcile_dataset
+from analytics_toolkit.datalens_utils import DataLensComponentError, bi_engine
+from analytics_toolkit.datalens_utils.bi_datasets import (
+    cache_matches,
+    reconcile_dataset,
+    verify_dataset_draft,
+)
 from analytics_toolkit.datalens_utils.bi_preflight import operation_blockers
 from analytics_toolkit.datalens_utils.bi_pull import extract_dataset
 from analytics_toolkit.datalens_utils.bi_verification import dataset_issues_v2
 from analytics_toolkit.datalens_utils.dataset_identity import resolved_definition, resolved_guid
 from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
+from analytics_toolkit.datalens_utils.recipe import ResourceRegistry, load_registry
+from analytics_toolkit.datalens_utils.resources.bi_store import BIResourceStore
 from datalens_sdk import (
     CacheInvalidationSource,
     DataLensClientYC,
@@ -20,7 +29,7 @@ from datalens_sdk import (
     NoAuthProvider,
 )
 
-from tests.datalens_utils._support.bi import dataset
+from tests.datalens_utils._support.bi import dataset, write
 from tests.datalens_utils.bi.dataset_lifecycle import setup
 
 
@@ -266,3 +275,193 @@ def test_distinct_title_clones_share_a_column_without_sharing_identity(
         store.remember(resource.key, result)
         reconcile_dataset(client, store, resource, {"ch": connection})
         assert len(added) == 1
+
+
+def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR0915 - One interrupted lifecycle with durable recovery assertions.
+    bi_project, monkeypatch
+):
+    registry, store, connection = setup(bi_project, creating=True)
+    resource = registry.resources["dataset:sales"]
+    resource.definition["fields"]["category"]["description"] = "Recovered"
+    write(
+        bi_project.paths.project_root,
+        "configs/DL objects/datasets.json",
+        {"sales": resource.definition},
+    )
+    registry = load_registry()
+    resource = registry.resources[resource.key]
+    store = BIResourceStore(registry)
+    folder = SimpleNamespace(key="Offline/Variants/", list_entries=list)
+    store.set_location(folder)
+    current = replace(
+        dataset(),
+        saved_id="draft",
+        published_id=None,
+        result_schema=(
+            {**dataset().result_schema[0], "guid": "inferred-category"},
+            dataset().result_schema[1],
+        ),
+    )
+    builds, writes, events = [], [], []
+    monkeypatch.setattr(
+        DatasetCreate, "build", lambda builder: builds.append(builder.to_spec()) or current
+    )
+
+    def execute(builder):
+        nonlocal current
+        spec = builder.to_spec()
+        writes.append(spec)
+        assert not any(action["action"] == "add_field" for action in spec.actions)
+        if spec.mode == "publish":
+            assert events[-1] == "verified"
+            assert current.fields.by_guid("inferred-category").description == "Recovered"
+            current = replace(current, published_id=current.saved_id)
+        else:
+            rows = [dict(row) for row in current.result_schema]
+            for action in spec.actions:
+                if action["action"] == "update_field":
+                    for row in rows:
+                        if row["guid"] == action["field"]["guid"]:
+                            row.update(action["field"])
+            current = replace(current, result_schema=tuple(rows), saved_id="configured")
+        return current
+
+    monkeypatch.setattr(DatasetUpdate, "execute", execute)
+    with DataLensClientYC(auth=NoAuthProvider()) as public:
+        install_inference(public, monkeypatch, current)
+        getter = Mock(side_effect=RuntimeError("interrupted source-only fetch"))
+        client = SimpleNamespace(
+            create=public.create,
+            capabilities=public.capabilities,
+            navigation=SimpleNamespace(
+                get_entries=lambda **kwargs: [SimpleNamespace(id=current.id, scope="dataset")]
+            ),
+            get=SimpleNamespace(dataset=getter, connection=lambda **kwargs: connection),
+        )
+        with pytest.raises(RuntimeError, match="interrupted source-only fetch"):
+            reconcile_dataset(client, store, resource, {"ch": connection})
+        owned = store.state["resources"][resource.key]
+        assert owned["id"] == current.id
+        assert owned["recipe_field_guids"] == {"category": "category"}
+        assert "field_guids" not in owned
+
+        resumed = BIResourceStore(registry)
+        getter.side_effect = lambda **kwargs: current
+        checkpoint_before = resumed.path.read_bytes()
+        state_before = copy.deepcopy(resumed.state)
+        definition_before = copy.deepcopy(resource.definition)
+        recipe_before = {
+            path: path.read_bytes()
+            for path in bi_project.paths.project_root.rglob("*")
+            if path.is_file()
+        }
+        remote_before = current
+        assert not operation_blockers(
+            client,
+            resumed,
+            registry,
+            {resource.key},
+            {resource.key: current, "connection:ch": connection},
+        )
+        assert resumed.path.read_bytes() == checkpoint_before
+        assert resumed.state == state_before
+        assert resource.definition == definition_before
+        assert current == remote_before
+        assert not writes
+        assert len(builds) == 1
+
+        # Compile the complete fixture locally, but isolate dataset lifecycle writes.
+        lifecycle = ResourceRegistry(
+            {key: registry.resources[key] for key in ("connection:ch", resource.key)}
+        )
+        validate_registry = bi_engine.validate_registry
+        monkeypatch.setattr(bi_engine, "load_registry", lambda: lifecycle)
+        monkeypatch.setattr(
+            bi_engine, "validate_registry", lambda selected: validate_registry(registry)
+        )
+        monkeypatch.setattr(bi_engine, "resolve_location", lambda *args: folder)
+
+        def verified(*args):
+            verify_dataset_draft(*args)
+            events.append("verified")
+
+        monkeypatch.setattr(
+            "analytics_toolkit.datalens_utils.bi_datasets.verify_dataset_draft", verified
+        )
+        bi_project.client_factory = lambda state: nullcontext(client)
+        result = bi_project.reconcile()
+        assert result["resource_ids"][resource.key] == remote_before.id
+        durable = json.loads(resumed.path.read_text(encoding="utf-8"))["resources"][resource.key]
+        assert durable["field_guids"] == {"category": "inferred-category"}
+        assert "pending_write" not in durable
+        assert current.saved_id == current.published_id == "configured"
+        assert len(current.fields) == len(remote_before.fields)
+        assert [spec.mode for spec in writes] == ["save", "publish"]
+        bi_project.reconcile()
+        assert len(builds) == 1
+        assert [spec.mode for spec in writes] == ["save", "publish"]
+        assert {path: path.read_bytes() for path in recipe_before} == recipe_before
+
+
+@pytest.mark.parametrize(
+    "case", ["owned", "partial", "ambiguous", "ordinary", "wrong_id", "retained"]
+)
+def test_preflight_inference_preserves_ownership_and_rejects_ambiguity(bi_project, monkeypatch, case):
+    registry, store, connection = setup(bi_project)
+    resource = registry.resources["dataset:sales"]
+    resource.definition["fields"]["category"]["guid"] = "requested"
+    current = dataset()
+    checkpoint = store.state["resources"][resource.key]
+    if case != "ordinary":
+        checkpoint["recipe_field_guids"] = {"category": "requested"}
+    if case == "wrong_id":
+        checkpoint["id"] = "another-dataset"
+    if case == "retained":
+        checkpoint["field_guids"] = {"category": "retained-other"}
+    if case == "ambiguous":
+        current = replace(
+            current,
+            result_schema=(*current.result_schema, {**current.result_schema[0], "guid": "duplicate"}),
+        )
+    if case == "partial":
+        resource.definition["fields"]["region"] = {
+            "source": "source",
+            "column": "region",
+            "guid": "requested-region",
+            "cast": "string",
+        }
+        checkpoint["recipe_field_guids"]["region"] = "requested-region"
+        checkpoint["field_guids"] = {"category": "category"}
+        current = replace(
+            current,
+            result_schema=(
+                *current.result_schema,
+                {
+                    **current.result_schema[0],
+                    "guid": "inferred-region",
+                    "title": "region",
+                    "source": "region",
+                },
+            ),
+        )
+    store.save_checkpoint()
+    before = store.path.read_bytes(), copy.deepcopy(store.state), copy.deepcopy(resource.definition)
+    execute = Mock(side_effect=AssertionError("preflight cannot write"))
+    monkeypatch.setattr(DatasetUpdate, "execute", execute)
+    with DataLensClientYC(auth=NoAuthProvider()) as client:
+        blockers = operation_blockers(
+            client,
+            store,
+            registry,
+            {resource.key},
+            {resource.key: current, "connection:ch": connection},
+        )
+    if case in {"owned", "partial"}:
+        assert not blockers
+    else:
+        assert len(blockers) == 1
+        assert blockers[0]["status"] == "blocked"
+        reason = "inferred source-qualified" if case == "ambiguous" else "identity differs"
+        assert reason in blockers[0]["reason"]
+    assert (store.path.read_bytes(), store.state, resource.definition) == before
+    execute.assert_not_called()

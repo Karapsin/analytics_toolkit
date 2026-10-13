@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 from types import SimpleNamespace
 from typing import Any
 
-from .bi_datasets import configure_dataset, source_identities
+from .bi_datasets import configure_dataset, remember_inferred_fields, source_identities
 from .capabilities import get_capabilities
 from .dashboard_generation.charts.create import chart_adapter
 from .dataset_identity import resolved_definition
@@ -49,10 +50,14 @@ def operation_blockers(
                 else:
                     adapter.validate_change(entity, resource.definition)
             elif resource.kind == "dataset" and entity is not None:
-                old = store.state["resources"].get(store.internal_key(key), {})
+                old = copy.deepcopy(store.state["resources"].get(store.internal_key(key), {}))
                 definition = resolved_definition(resource.definition, old)
                 sources = source_identities(entity, definition, old)
                 validate_source_topology(entity, sources)
+                if "recipe_field_guids" in old and old.get("id") == entity.id:
+                    # Resolve provisional identities only on this read-only checkpoint copy.
+                    remember_inferred_fields(entity, definition, sources, old)
+                    definition = resolved_definition(resource.definition, old)
                 if all(
                     source["connection"] in connections
                     for source in resource.definition["sources"].values()
