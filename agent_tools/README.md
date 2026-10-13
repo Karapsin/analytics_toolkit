@@ -283,3 +283,10 @@ controller proposes signed updates and dispatches read-only newest-minor probes
 through `python-support.yml`. Each proposal retains independent review and fast CI.
 Deploy the approved controller, probe workflow, dispatch bridge, task-context
 protocol and trusted policy helpers together; do not activate a partial deployment.
+
+## User documentation wiki exporter
+
+`wiki_sync.py` exports validated user documentation to the separate GitHub wiki.
+It uses only the Python standard library; source Markdown remains authoritative.
+See [wiki synchronization setup and retries](../docs/WIKI_SYNC.md) for release
+activation, credentials, validation, and ownership of generated pages.

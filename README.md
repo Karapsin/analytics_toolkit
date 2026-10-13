@@ -282,6 +282,8 @@ hour_window = dttm.datetime_bounds("2026-01-01 12:13:15", period="hour")
 
 ## Documentation
 
+- [GitHub Wiki](https://github.com/Karapsin/analytics_toolkit/wiki)
+
 - [Documentation Overview](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/README.md)
 - [Quick Start](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/QUICK_START.md)
 - [Airflow SQL Manual](https://github.com/Karapsin/analytics_toolkit/blob/main/docs/AIRFLOW_SQL_MANUAL.md)

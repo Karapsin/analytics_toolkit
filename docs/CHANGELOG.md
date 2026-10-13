@@ -8,6 +8,8 @@ Generated from package version bumps and recent commit history.
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
+- Add release-activated GitHub wiki synchronization from main user documentation.
+- Use explicit UTF-8 reads in GitHub wiki synchronization regressions to satisfy the strict lint gate.
 - Stabilize suite-wide test boundaries and held-worker cap detection with paired real/bypassed limiter regressions, restore Parquet adapter forwarding contracts, fix evidenced lint/format findings with original-exception and interrupt cleanup regressions, and preserve startup-diagnostics guards and changelog entries.
 - Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
 - Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
