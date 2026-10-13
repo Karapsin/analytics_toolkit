@@ -11,6 +11,7 @@ Generated from package version bumps and recent commit history.
 - Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
 - Recover reviewed releases after deleted preparation branches or newer dev changes, preserve publication safeguards, and restore current-dev offline helpers and regressions.
+- Recover interrupted TestPyPI pushes from journaled commits and verified legacy refs before reviewed release replacement, with fast restart and conflict regressions.
 
 ## 1.3.12.4 - 2026-10-12
 
