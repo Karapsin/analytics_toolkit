@@ -193,11 +193,22 @@ waves continue after release and retain original result/count/order assertions.
 | Correction case | Regression intent |
 | --- | --- |
 | Repository held-probe cases | Detect excess workers with the consumer harness alone; fail insufficient parallelism; clean up after worker or controller errors; handle partial final waves. |
-| Repository public SQL limiter bypass (threaded, nested, async) | Ignore the soft limiter intentionally and require the same consumer harness to reject excess concurrency, without a second worker barrier or scheduling delay. |
+| Repository public SQL limiter controls (threaded, nested, async) | Run identical workloads with the real limiter and with an intentional bypass; preserve leaf result order when limiting succeeds and require excess-concurrency rejection when bypassed, without a second worker barrier or scheduling delay. |
 | Repository public executor capacity bypass (AB metrics, SQL execute) | Oversize the real pool and bypass the AB semaphore; require rejection of the extra operation worker. Retain a positive oversized-AB-pool case proving real semaphore contention enforces the cap. |
 | Parquet stage wrapper defaults/explicit options | Select Trino once, forward positional and optional arguments to one adapter call, and return its unchanged SQL. |
+| Parquet external-location wrapper | Select Trino once, forward the exact target table once, and use the adapter's returned table base in the location. |
+| Parquet row-inference wrapper | Select Trino once, forward the original batch once, and return the adapter's mapping by identity. |
+| Primitive error observation | Signal only the configured exception type; preserve matching/unrelated exception identity, arguments and result-only behavior; restore the primitive after failure. |
+| SQL scheduling patch restoration | Restore owning-loop async and threaded scheduling patches after success and propagated worker failure, retaining partial final waves and exception identity. |
+| Startup-diagnostics guard | Preserve current-dev guards and docs: accept separate policy jobs, require every core/auth/fault/stress suite, and reject missing diagnostics in additional execution jobs. |
 | Parquet architecture ownership | Retain structural forbidden-code rules and restore delegation checks for all three generic wrappers. |
 
 GitHub must run these focused offline cases and migrated consumers before the
 existing full Python/dependency/SDK and quality matrix. Earlier CI success for
 the original migration does not validate this correction.
+
+The hash-bound quality-gate logs for PR #14 head
+`de8ea57c341f2907cd8235316764087293cb2c5c` identified new BLE001,
+I001 and FORMAT findings. The repair narrows primitive error handling, normalizes
+repository regression imports and formats the Parquet wrapper test; lint baselines
+and coverage ratchets remain unchanged. All execution is deferred to GitHub.

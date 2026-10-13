@@ -30,8 +30,11 @@ or UI modules.
 - `concurrency.wait_event` and `wait_event_async` bound worker-state waits;
   the async form leaves the UI/event loop responsive. `observe_call` observes
   a real primitive, optionally after an error or a matching result (such as a
-  semaphore returning `False`). Release blocked
-  workers in `finally` before executor/context teardown.
+  semaphore returning `False`). Error observation catches only the configured
+  exception type, signals matching errors, and re-raises the original object;
+  unrelated errors propagate without signaling. Result-only observation catches
+  no exceptions. Release blocked workers in `finally` before executor/context
+  teardown.
 - `concurrency.release_on_completion` releases a slow fake after another real
   Future completes, so input-order tests force a different completion order.
 - `source.CodeRules` and `forbidden_code` express architecture rules through

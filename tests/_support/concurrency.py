@@ -262,15 +262,15 @@ def observe_call(
     """Observe a real blocking primitive, optionally after a failed attempt."""
     entered = Event()
     original = getattr(target, name)
+    error_types = () if after_error is None else (after_error,)
 
     def observed(*args: Any, **kwargs: Any) -> Any:
         if after_error is None and after_result is _ANY_RESULT:
             entered.set()
         try:
             result = original(*args, **kwargs)
-        except Exception as error:
-            if after_error is not None and isinstance(error, after_error):
-                entered.set()
+        except error_types:
+            entered.set()
             raise
         if after_result is not _ANY_RESULT and result == after_result:
             entered.set()

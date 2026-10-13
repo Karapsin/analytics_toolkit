@@ -339,13 +339,21 @@ def test_parquet_dependency_import_error_is_actionable(
 def test_parquet_location_row_group_and_target_name_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        parquet_stage_module,
-        "get_backend_adapter",
-        lambda _backend: SimpleNamespace(
-            parquet_stage_target_table_base=lambda table: table.replace(".", "_")
-        ),
-    )
+    selected: list[str] = []
+    targets: list[str] = []
+
+    class RecordingAdapter:
+        def parquet_stage_target_table_base(self, table: str) -> str:
+            targets.append(table)
+            return "adapter_table_base"
+
+    adapter = RecordingAdapter()
+
+    def select(backend: str) -> RecordingAdapter:
+        selected.append(backend)
+        return adapter
+
+    monkeypatch.setattr(parquet_stage_module, "get_backend_adapter", select)
     options = SimpleNamespace(
         s3_transfer_staging_location="s3://bucket/base/",
         transfer_staging_username=None,
@@ -356,8 +364,11 @@ def test_parquet_location_row_group_and_target_name_helpers(
             options,
             stage_suffix="fixed",
         )
-        == "s3://bucket/base/schema_target/__analytics_toolkit_unknown__stage__fixed/"
+        == "s3://bucket/base/adapter_table_base/__analytics_toolkit_unknown__stage__fixed/"
     )
+    assert selected == ["trino"]
+    assert targets == [options.destination_table]
+    assert targets[0] is options.destination_table
     assert parquet_stage_module.parquet_row_group_size(SimpleNamespace(batch_size=0)) == 1
     assert parquet_stage_module.parquet_row_group_size(SimpleNamespace(batch_size=60_000)) == 50_000
     with pytest.raises(ValueError, match="staging_location"):
@@ -565,9 +576,7 @@ def test_build_create_parquet_stage_table_sql_delegates_to_selected_adapter(
 
     monkeypatch.setattr(parquet_stage_module, "get_backend_adapter", select)
     optional = (
-        {"query_label": query_label, "ddl_properties": ddl_properties}
-        if explicit_options
-        else {}
+        {"query_label": query_label, "ddl_properties": ddl_properties} if explicit_options else {}
     )
     result = parquet_stage_module.build_create_parquet_stage_table_sql(
         "hive.scratch.stage", column_types, "s3://bucket/stage/", **optional

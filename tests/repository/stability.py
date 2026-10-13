@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import importlib
 from concurrent.futures import ThreadPoolExecutor
 from threading import BrokenBarrierError
 
 import pytest
 
-import tests._support.source as source_helpers
-from analytics_toolkit import sql
+from tests._support import source as source_helpers
 from tests._support.concurrency import (
     ConcurrencyProbe,
     SchedulingObservation,
@@ -43,6 +43,8 @@ from tests.sql._support.tasks import (
     observe_task_cap,
     patch_task_operations,
 )
+
+sql = importlib.import_module("analytics_toolkit.sql")
 
 
 def test_concurrency_probe_handles_partial_last_wave_and_worker_errors() -> None:
@@ -177,6 +179,37 @@ def test_observed_call_preserves_arguments_results_and_errors(monkeypatch) -> No
     wait_event(returned)
 
 
+@pytest.mark.parametrize(
+    ("after_error", "error_type", "signals"),
+    [(LookupError, LookupError, True), (LookupError, ValueError, False), (None, ValueError, False)],
+    ids=["matching-error", "unrelated-error", "result-only-error"],
+)
+def test_observed_call_preserves_exception_identity_and_restores_primitive(
+    monkeypatch, after_error, error_type, signals
+) -> None:
+    error = error_type("primitive failed")
+    value = object()
+    calls = []
+
+    class Primitive:
+        def operation(self, argument, *, option):
+            calls.append((argument, option))
+            raise error
+
+    primitive = Primitive()
+    original = primitive.operation
+    with monkeypatch.context() as patch:
+        entered = observe_call(
+            patch, primitive, "operation", after_error=after_error, after_result=False
+        )
+        with pytest.raises(error_type, match="primitive failed") as caught:
+            primitive.operation(value, option=value)
+        assert caught.value is error
+        assert entered.is_set() is signals
+        assert calls == [(value, value)]
+    assert primitive.operation == original
+
+
 @pytest.mark.parametrize("expression", ["backend == 'ch'", '(backend\n == "ch")'])
 def test_structural_checks_ignore_layout_but_detect_actual_code(expression: str) -> None:
     tree = ast.parse(f"if {expression}:\n    adapter.execute_sql(connection, query)\n")
@@ -295,7 +328,10 @@ def test_offline_tests_use_signals_instead_of_scheduling_delays() -> None:
     [("parallel", False), ("parallel", True), ("async", False)],
     ids=["thread-semaphore", "nested-leaves", "async-semaphore-and-executor"],
 )
-def test_public_sql_cap_harness_rejects_ignored_soft_limiter(monkeypatch, mode, nested) -> None:
+@pytest.mark.parametrize("bypass", [False, True], ids=["real-limiter", "ignored-limiter"])
+def test_public_sql_cap_harness_rejects_ignored_soft_limiter(
+    monkeypatch, mode, nested, bypass
+) -> None:
     probe = ConcurrencyProbe(2, held=True)
 
     def read(**kwargs):
@@ -318,18 +354,28 @@ def test_public_sql_cap_harness_rejects_ignored_soft_limiter(monkeypatch, mode, 
     operation = sql.async_sql if mode == "async" else sql.parallel_sql
     with monkeypatch.context() as patch:
         patch_task_operations(patch, mode=mode, read=read)
-        bypass_task_soft_cap(patch, mode=mode)
+        if bypass:
+            bypass_task_soft_cap(patch, mode=mode)
         observation = observe_task_cap(patch, probe, mode=mode, calls=6, nested=nested)
-        with pytest.raises(AssertionError, match="observed 6"):
-            observation.run(
-                lambda: operation(
-                    outer_tasks,
-                    concurrency=1 if nested else 6,
-                    soft_concurrency_cap=2,
-                    hard_concurrency_cap=6,
-                    progress=False,
-                )
+
+        def consume():
+            return operation(
+                outer_tasks,
+                concurrency=1 if nested else 6,
+                soft_concurrency_cap=2,
+                hard_concurrency_cap=6,
+                progress=False,
             )
+
+        if bypass:
+            with pytest.raises(AssertionError, match="observed 6"):
+                observation.run(consume)
+        else:
+            result = observation.run(consume)
+            leaves = result["pipeline"] if nested else result
+            assert list(leaves) == [f"read_{index}" for index in range(6)]
+            assert list(leaves.values()) == [f"select {index}" for index in range(6)]
+            probe.assert_complete(calls=6)
     assert probe.release.is_set()
     assert probe.active == 0
     assert probe.calls == 6
@@ -343,56 +389,109 @@ def test_public_sql_cap_harness_rejects_ignored_soft_limiter(monkeypatch, mode, 
 def test_public_executor_cap_harness_observes_excess_capacity(monkeypatch, domain, bypass) -> None:
     probe = ConcurrencyProbe(2, held=True)
 
-    class OversizedExecutor(ThreadPoolExecutor):
-        def __init__(self, *args, **kwargs) -> None:
-            super().__init__(*args, **{**kwargs, "max_workers": 3})
+    module = (
+        parallel_module
+        if domain == "metric"
+        else importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
+    )
+    original_executor = module.ThreadPoolExecutor
+    original_semaphore = getattr(module, "Semaphore", None)
+    with monkeypatch.context() as patch:
+        class OversizedExecutor(ThreadPoolExecutor):
+            def __init__(self, *args, **kwargs) -> None:
+                super().__init__(*args, **{**kwargs, "max_workers": 3})
 
-    if domain == "metric":
+        if domain == "metric":
 
-        def metric(**kwargs):
-            with probe.worker():
-                return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
+            def metric(**kwargs):
+                with probe.worker():
+                    return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
 
-        patch_metric_runner(monkeypatch, metric)
+            patch_metric_runner(patch, metric)
+            if bypass:
+                bypass_metric_semaphores(patch)
+            patch.setattr(parallel_module, "ThreadPoolExecutor", OversizedExecutor)
+            observation = observe_metric_cap(patch, probe, calls=3)
+            tasks = {
+                f"task_{index}": {"df": pd.DataFrame(), "metric_name": f"metric_{index}"}
+                for index in range(3)
+            }
+
+            def operation():
+                return ab_utils_module.compute_test_metrics(
+                    tasks, concurrency=3, soft_concurrency_cap=2, progress=False
+                )
+        else:
+
+            def execute(options):
+                with probe.worker():
+                    return options.source_sql
+
+            patch.setattr(module, "_execute_sql_options", execute)
+            patch.setattr(module, "ThreadPoolExecutor", OversizedExecutor)
+            observation = observe_execute_cap(patch, probe, calls=3)
+
+            def operation():
+                return module.execute_sql(
+                    "gp",
+                    ["select 1", "select 2", "select 3"],
+                    concurrency=3,
+                    soft_concurrency_cap=2,
+                )
+
         if bypass:
-            bypass_metric_semaphores(monkeypatch)
-        monkeypatch.setattr(parallel_module, "ThreadPoolExecutor", OversizedExecutor)
-        observation = observe_metric_cap(monkeypatch, probe, calls=3)
-        tasks = {
-            f"task_{index}": {"df": pd.DataFrame(), "metric_name": f"metric_{index}"}
-            for index in range(3)
-        }
+            with pytest.raises(AssertionError, match="observed 3"):
+                observation.run(operation)
+        else:
+            result = observation.run(operation)
+            assert list(result) == ["task_0", "task_1", "task_2"]
+            probe.assert_complete(calls=3)
+        assert probe.release.is_set()
+        assert probe.active == 0
+        assert probe.calls == 3
+    assert module.ThreadPoolExecutor is original_executor
+    assert getattr(module, "Semaphore", None) is original_semaphore
+
+
+@pytest.mark.parametrize("mode", ["async", "parallel"])
+@pytest.mark.parametrize("fail", [False, True], ids=["success", "worker-error"])
+def test_task_cap_observation_restores_scheduling_patches(monkeypatch, mode, fail) -> None:
+    module = importlib.import_module(f"analytics_toolkit.sql.orchestration.{mode}_sql")
+    semaphore_module = asyncio if mode == "async" else module
+    original_executor = module.ThreadPoolExecutor
+    original_semaphore = semaphore_module.Semaphore
+    original_read = module.read_sql
+    probe = ConcurrencyProbe(2, held=True)
+    error = LookupError("worker failed")
+
+    def read(**kwargs):
+        with probe.worker():
+            if fail and kwargs["query"] == "select 2":
+                raise error
+            return kwargs["query"]
+
+    tasks = [
+        {"name": f"read_{index}", "type": "read", "db_key": "gp", "query": f"select {index}"}
+        for index in range(3)
+    ]
+    with monkeypatch.context() as patch:
+        patch_task_operations(patch, mode=mode, read=read)
+        observation = observe_task_cap(patch, probe, mode=mode, calls=3)
 
         def operation():
-            return ab_utils_module.compute_test_metrics(
+            return getattr(sql, f"{mode}_sql")(
                 tasks, concurrency=3, soft_concurrency_cap=2, progress=False
             )
-    else:
-        module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
 
-        def execute(options):
-            with probe.worker():
-                return options.source_sql
-
-        monkeypatch.setattr(module, "_execute_sql_options", execute)
-        monkeypatch.setattr(module, "ThreadPoolExecutor", OversizedExecutor)
-        observation = observe_execute_cap(monkeypatch, probe, calls=3)
-
-        def operation():
-            return module.execute_sql(
-                "gp",
-                ["select 1", "select 2", "select 3"],
-                concurrency=3,
-                soft_concurrency_cap=2,
-            )
-
-    if bypass:
-        with pytest.raises(AssertionError, match="observed 3"):
-            observation.run(operation)
-    else:
-        result = observation.run(operation)
-        assert list(result) == ["task_0", "task_1", "task_2"]
-        probe.assert_complete(calls=3)
+        if fail:
+            with pytest.raises(LookupError, match="worker failed") as caught:
+                observation.run(operation)
+            assert caught.value is error
+        else:
+            result = observation.run(operation)
+            assert list(result) == ["read_0", "read_1", "read_2"]
+        assert module.ThreadPoolExecutor is original_executor
+        assert semaphore_module.Semaphore is original_semaphore
+    assert module.read_sql is original_read
     assert probe.release.is_set()
-    assert probe.active == 0
-    assert probe.calls == 3
+    probe.assert_complete(calls=3)
