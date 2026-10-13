@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._support.concurrency import observe_call, wait_event
 from tests.sql._support.transfer_runtime import (
     Any,
     BoundedConnectionCloseError,
@@ -14,11 +15,10 @@ from tests.sql._support.transfer_runtime import (
     pytest,
     queue,
     threading,
-    time,
 )
 
 
-def test_connection_pool_concurrent_operations_never_exceed_capacity() -> None:
+def test_connection_pool_concurrent_operations_never_exceed_capacity(monkeypatch) -> None:
     release = threading.Event()
     saturated = threading.Event()
     state_lock = threading.Lock()
@@ -49,13 +49,16 @@ def test_connection_pool_concurrent_operations_never_exceed_capacity() -> None:
         role="concurrent pool",
         open_connection=open_connection,
     )
+    waiting = observe_call(monkeypatch, manager._available, "get", after_error=queue.Empty)
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(manager.run, "write", operation) for _ in range(4)]
-        assert saturated.wait(2)
-        time.sleep(0.15)
-        assert len(opened) == 2
-        assert high_water == 2
-        release.set()
+        try:
+            wait_event(saturated)
+            wait_event(waiting)
+            assert len(opened) == 2
+            assert high_water == 2
+        finally:
+            release.set()
         connection_ids = [future.result(timeout=2) for future in futures]
 
     assert set(connection_ids) == {id(connection) for connection in opened}
@@ -168,7 +171,7 @@ def test_interrupt_retains_unclosed_connection_until_resume_can_prove_close() ->
     assert connection.close_calls == 3
 
 
-def test_queue_helpers_complete_successfully_and_get_honors_cancellation() -> None:
+def test_queue_helpers_complete_successfully_and_get_honors_cancellation(monkeypatch) -> None:
     runtime = LazyKeyedRuntime([], read_workers=1, write_workers=1)
     batch_queue: queue.Queue[Any] = queue.Queue(maxsize=1)
     batch = _queued_batch(_task(0))
@@ -180,10 +183,13 @@ def test_queue_helpers_complete_successfully_and_get_honors_cancellation() -> No
     lazy_keyed_runtime.put_with_cancellation(generic_queue, "value", runtime)
     assert lazy_keyed_runtime.get_with_cancellation(generic_queue, runtime) == "value"
 
+    retried = observe_call(monkeypatch, generic_queue, "get", after_error=queue.Empty)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(lazy_keyed_runtime.get_with_cancellation, generic_queue, runtime)
-        time.sleep(0.15)
-        runtime.cancellation.set()
+        try:
+            wait_event(retried)
+        finally:
+            runtime.cancellation.set()
         with pytest.raises(RuntimeError, match="queue wait was cancelled"):
             future.result(timeout=2)
 
@@ -237,7 +243,7 @@ def test_replacement_open_race_never_accepts_connection_after_interrupt(
     assert opened[1].close_calls == (2 if rejected_close_fails else 1)
 
 
-def test_waiting_connection_lease_honors_cancellation() -> None:
+def test_waiting_connection_lease_honors_cancellation(monkeypatch) -> None:
     manager = BoundedConnectionManager(
         "source",
         1,
@@ -250,10 +256,13 @@ def test_waiting_connection_lease_honors_cancellation() -> None:
         with manager.lease(cancellation=cancellation):
             pytest.fail("cancelled waiter acquired a connection")
 
+    retried = observe_call(monkeypatch, manager._available, "get", after_error=queue.Empty)
     with manager.lease(), ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(wait_for_lease)
-        time.sleep(0.15)
-        cancellation.set()
+        try:
+            wait_event(retried)
+        finally:
+            cancellation.set()
         with pytest.raises(RuntimeError, match="lease cancelled"):
             future.result(timeout=2)
     manager.close()

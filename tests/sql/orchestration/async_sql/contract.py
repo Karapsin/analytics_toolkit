@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._support.concurrency import ConcurrencyProbe
 from tests.sql._support.async_sql import (
     Any,
     async_module,
@@ -8,9 +9,8 @@ from tests.sql._support.async_sql import (
     pd,
     pytest,
     sql_module,
-    threading,
-    time,
 )
+from tests.sql._support.tasks import patch_task_operations
 
 
 @pytest.mark.parametrize("start_comment", [None, "   "])
@@ -21,9 +21,9 @@ def test_async_sql_blank_and_none_start_comment_are_noops(
     def fake_read_sql(**kwargs: Any) -> str:
         return kwargs["query"]
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         [
             {
                 "type": "read",
@@ -151,11 +151,11 @@ def test_async_sql_dispatches_supported_task_types_and_preserves_order(
         )
         return transfer_result
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
-    monkeypatch.setattr(async_module, "execute_read", fake_execute_read)
-    monkeypatch.setattr(async_module, "load_df", fake_load_df)
-    monkeypatch.setattr(async_module, "transfer_table", fake_transfer_table)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", execute=fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="async", execute_read=fake_execute_read)
+    patch_task_operations(monkeypatch, mode="async", load_df=fake_load_df)
+    patch_task_operations(monkeypatch, mode="async", transfer=fake_transfer_table)
 
     tasks = named_tasks(
         {
@@ -197,7 +197,7 @@ def test_async_sql_dispatches_supported_task_types_and_preserves_order(
         }
     )
 
-    result = async_module.async_sql(tasks, concurrency=3)
+    result = sql_module.async_sql(tasks, concurrency=3)
 
     assert list(result) == [
         "read_users",
@@ -263,10 +263,10 @@ def test_async_sql_fail_fast_false_returns_exceptions(
     def fake_execute_sql(**kwargs: Any) -> None:
         return None
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", execute=fake_execute_sql)
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         named_tasks(
             {
                 "ok": {
@@ -300,7 +300,7 @@ def test_async_sql_fail_fast_false_returns_pipeline_exception() -> None:
     def broken_step(context: Any) -> None:
         raise error
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         [
             {
                 "name": "pipeline",
@@ -322,7 +322,7 @@ def test_async_sql_fail_fast_raises_first_exception(
     def fake_read_sql(**kwargs: Any) -> str:
         raise error
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
 
     tasks = named_tasks(
         {
@@ -340,7 +340,7 @@ def test_async_sql_fail_fast_raises_first_exception(
     )
 
     with pytest.raises(RuntimeError) as exc_info:
-        async_module.async_sql(tasks, concurrency=1, fail_fast=True)
+        sql_module.async_sql(tasks, concurrency=1, fail_fast=True)
 
     assert exc_info.value is error
 
@@ -355,10 +355,10 @@ def test_async_sql_pipeline_can_run_nested_sync_async_sql(
     def fake_read_sql(**kwargs: Any) -> str:
         return kwargs["query"]
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
 
     def nested_batch(context: Any) -> dict[str, Any]:
-        return async_module.async_sql(
+        return sql_module.async_sql(
             named_tasks(
                 {
                     "a": {
@@ -376,7 +376,7 @@ def test_async_sql_pipeline_can_run_nested_sync_async_sql(
             concurrency=2,
         )
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         [
             {
                 "name": "pipeline",
@@ -415,7 +415,7 @@ def test_async_sql_pipeline_runs_steps_sequentially_and_returns_last_result() ->
         )
         return f"{context.last_result}:second"
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         [
             {
                 "name": "pipeline",
@@ -444,7 +444,7 @@ def test_async_sql_pipeline_stops_on_first_step_exception() -> None:
         calls.append("skipped")
 
     with pytest.raises(RuntimeError) as exc_info:
-        async_module.async_sql(
+        sql_module.async_sql(
             [
                 {
                     "name": "pipeline",
@@ -464,10 +464,10 @@ def test_async_sql_runs_from_inside_existing_event_loop(
     def fake_execute_sql(**kwargs: Any) -> None:
         return None
 
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="async", execute=fake_execute_sql)
 
     async def call_sync_api() -> dict[str, Any]:
-        return async_module.async_sql(
+        return sql_module.async_sql(
             [
                 {
                     "type": "execute",
@@ -484,21 +484,13 @@ def test_async_sql_runs_from_inside_existing_event_loop(
 def test_async_sql_soft_cap_limits_top_level_worker_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    lock = threading.Lock()
-    active_workers = 0
-    max_active_workers = 0
+    probe = ConcurrencyProbe(2)
 
     def fake_read_sql(**kwargs: Any) -> str:
-        nonlocal active_workers, max_active_workers
-        with lock:
-            active_workers += 1
-            max_active_workers = max(max_active_workers, active_workers)
-        time.sleep(0.1)
-        with lock:
-            active_workers -= 1
-        return kwargs["query"]
+        with probe.worker():
+            return kwargs["query"]
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
 
     tasks = named_tasks(
         {
@@ -511,10 +503,10 @@ def test_async_sql_soft_cap_limits_top_level_worker_execution(
         }
     )
 
-    result = async_module.async_sql(tasks, concurrency=6, soft_concurrency_cap=2)
+    result = sql_module.async_sql(tasks, concurrency=6, soft_concurrency_cap=2)
 
     assert list(result) == [f"read_{index}" for index in range(6)]
-    assert max_active_workers == 2
+    probe.assert_complete(calls=6)
 
 
 def test_async_sql_start_comment_does_not_change_load_df_or_pipeline(
@@ -529,10 +521,10 @@ def test_async_sql_start_comment_does_not_change_load_df_or_pipeline(
     def pipeline_step(context: Any) -> str:
         return context.task_name
 
-    monkeypatch.setattr(async_module, "load_df", fake_load_df)
+    patch_task_operations(monkeypatch, mode="async", load_df=fake_load_df)
 
     df = pd.DataFrame({"id": [1]})
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         named_tasks(
             {
                 "load_batch": {

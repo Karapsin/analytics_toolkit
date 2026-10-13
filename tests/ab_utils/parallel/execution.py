@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from tests._support.concurrency import ConcurrencyProbe, release_on_completion, wait_event
 from tests.ab_utils._support.parallel import (
     Any,
     ab_utils_module,
     inspect,
     parallel_module,
+    patch_metric_runner,
     pd,
     pytest,
     threading,
-    time,
 )
 
 
@@ -123,11 +124,7 @@ def test_parallel_compute_metrics_fail_fast_false_returns_exception_strings(
             raise error
         return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
 
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     result = ab_utils_module.compute_test_metrics(
         {
@@ -155,11 +152,7 @@ def test_parallel_compute_metrics_fail_fast_raises_original_exception(
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
         raise error
 
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     with pytest.raises(RuntimeError) as exc_info:
         ab_utils_module.compute_test_metrics(
@@ -197,11 +190,7 @@ def test_parallel_compute_metrics_inserts_labels_as_leading_columns(
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
         return raw_result
 
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     result = ab_utils_module.compute_test_metrics(
         {
@@ -228,25 +217,13 @@ def test_parallel_compute_metrics_inserts_labels_as_leading_columns(
 def test_parallel_compute_metrics_limits_concurrency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    lock = threading.Lock()
-    active_tasks = 0
-    max_active_tasks = 0
+    probe = ConcurrencyProbe(2)
 
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
-        nonlocal active_tasks, max_active_tasks
-        with lock:
-            active_tasks += 1
-            max_active_tasks = max(max_active_tasks, active_tasks)
-        time.sleep(0.05)
-        with lock:
-            active_tasks -= 1
-        return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
+        with probe.worker():
+            return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
 
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     tasks = {
         f"task_{index}": {"df": pd.DataFrame(), "metric_name": f"metric_{index}"}
@@ -260,31 +237,19 @@ def test_parallel_compute_metrics_limits_concurrency(
     )
 
     assert list(result) == [f"task_{index}" for index in range(6)]
-    assert max_active_tasks == 2
+    probe.assert_complete(calls=6)
 
 
 def test_parallel_compute_metrics_lower_soft_cap_avoids_hard_cap_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    lock = threading.Lock()
-    active_tasks = 0
-    max_active_tasks = 0
+    probe = ConcurrencyProbe(5)
 
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
-        nonlocal active_tasks, max_active_tasks
-        with lock:
-            active_tasks += 1
-            max_active_tasks = max(max_active_tasks, active_tasks)
-        time.sleep(0.05)
-        with lock:
-            active_tasks -= 1
-        return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
+        with probe.worker():
+            return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
 
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     tasks = {
         f"task_{index}": {"df": pd.DataFrame(), "metric_name": f"metric_{index}"}
@@ -300,7 +265,7 @@ def test_parallel_compute_metrics_lower_soft_cap_avoids_hard_cap_error(
     )
 
     assert list(result) == [f"task_{index}" for index in range(11)]
-    assert max_active_tasks == 5
+    probe.assert_complete(calls=11)
 
 
 def test_parallel_compute_metrics_maps_pre_exp_df_and_honors_task_kwargs(
@@ -313,11 +278,7 @@ def test_parallel_compute_metrics_maps_pre_exp_df_and_honors_task_kwargs(
         calls.append(kwargs)
         return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
 
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     ab_utils_module.compute_test_metrics(
         {
@@ -364,20 +325,20 @@ def test_parallel_compute_metrics_progress_defaults_to_false(
 def test_parallel_compute_metrics_runs_tasks_and_preserves_input_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    release = threading.Event()
+
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
-        time.sleep(kwargs["delay"])
+        if kwargs["metric"] == "first":
+            wait_event(release)
         return pd.DataFrame({"metric_name": [kwargs["metric"]]})
 
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    release_on_completion(monkeypatch, parallel_module, release)
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     result = ab_utils_module.compute_test_metrics(
         {
-            "slow": {"df": pd.DataFrame(), "metric": "first", "delay": 0.05},
-            "fast": {"df": pd.DataFrame(), "metric": "second", "delay": 0.0},
+            "slow": {"df": pd.DataFrame(), "metric": "first"},
+            "fast": {"df": pd.DataFrame(), "metric": "second"},
         },
         concurrency=2,
         progress=False,
@@ -397,25 +358,13 @@ def test_parallel_compute_metrics_runs_tasks_and_preserves_input_order(
 def test_parallel_compute_metrics_soft_cap_limits_worker_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    lock = threading.Lock()
-    active_tasks = 0
-    max_active_tasks = 0
+    probe = ConcurrencyProbe(2)
 
     def fake_compute_test_metrics(**kwargs: Any) -> pd.DataFrame:
-        nonlocal active_tasks, max_active_tasks
-        with lock:
-            active_tasks += 1
-            max_active_tasks = max(max_active_tasks, active_tasks)
-        time.sleep(0.05)
-        with lock:
-            active_tasks -= 1
-        return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
+        with probe.worker():
+            return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
 
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     tasks = {
         f"task_{index}": {"df": pd.DataFrame(), "metric_name": f"metric_{index}"}
@@ -430,7 +379,7 @@ def test_parallel_compute_metrics_soft_cap_limits_worker_execution(
     )
 
     assert list(result) == [f"task_{index}" for index in range(6)]
-    assert max_active_tasks == 2
+    probe.assert_complete(calls=6)
 
 
 def test_parallel_compute_metrics_updates_progress_bar(
@@ -455,11 +404,7 @@ def test_parallel_compute_metrics_updates_progress_bar(
         return pd.DataFrame({"metric_name": [kwargs["metric_name"]]})
 
     monkeypatch.setattr(parallel_module, "tqdm", FakeTqdm)
-    monkeypatch.setattr(
-        parallel_module,
-        "_compute_test_metrics_dataframe",
-        fake_compute_test_metrics,
-    )
+    patch_metric_runner(monkeypatch, fake_compute_test_metrics)
 
     ab_utils_module.compute_test_metrics(
         {

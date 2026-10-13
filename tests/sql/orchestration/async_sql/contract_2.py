@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from analytics_toolkit import sql as sql_module
+
+from tests._support.source import branches_on, function_tree
 from tests.sql._support.async_sql import (
     Any,
     async_module,
     asyncio,
-    inspect,
     named_tasks,
     pd,
     pytest,
     time_print,
 )
+from tests.sql._support.tasks import patch_task_operations
 
 
 def test_async_sql_start_comment_prefixes_sql_fields(
@@ -26,20 +29,12 @@ def test_async_sql_start_comment_prefixes_sql_fields(
 
         return fake_operation
 
-    monkeypatch.setattr(async_module, "read_sql", record("read", "query"))
-    monkeypatch.setattr(async_module, "execute_sql", record("execute", None))
-    monkeypatch.setattr(
-        async_module,
-        "execute_read",
-        record("execute_read", "query"),
-    )
-    monkeypatch.setattr(
-        async_module,
-        "transfer_table",
-        record("transfer", "from_sql"),
-    )
+    patch_task_operations(monkeypatch, mode="async", read=record("read", "query"))
+    patch_task_operations(monkeypatch, mode="async", execute=record("execute", None))
+    patch_task_operations(monkeypatch, mode="async", execute_read=record("execute_read", "query"))
+    patch_task_operations(monkeypatch, mode="async", transfer=record("transfer", "from_sql"))
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         named_tasks(
             {
                 "read_users": {
@@ -102,8 +97,7 @@ def test_async_sql_sync_task_dispatch_uses_callable_registry() -> None:
         "load_df",
         "transfer",
     } == async_module._PROGRESS_TASK_TYPES
-    source = inspect.getsource(async_module._run_sync_task)
-    assert "if task_type == " not in source
+    assert not branches_on(function_tree(async_module._run_sync_task), "task_type")
 
 
 def test_async_sql_task_context_task_id_is_included_in_task_output(
@@ -121,9 +115,9 @@ def test_async_sql_task_context_task_id_is_included_in_task_output(
         time_print("task output from read_sql")
         return expected_rows
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         [
             {
                 "name": "copy_table",
@@ -146,9 +140,9 @@ def test_async_sql_task_start_comment_overrides_default(
     def fake_read_sql(**kwargs: Any) -> str:
         return kwargs["query"]
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         named_tasks(
             {
                 "default": {
@@ -198,9 +192,9 @@ def test_async_sql_uses_generated_names_for_unnamed_task_sequence(
         calls.append(kwargs)
         return kwargs["query"]
 
-    monkeypatch.setattr(async_module, "execute_sql", fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="async", execute=fake_execute_sql)
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         [
             {
                 "type": "execute",

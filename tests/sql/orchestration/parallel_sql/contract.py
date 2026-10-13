@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._support.concurrency import ConcurrencyProbe
 from tests.sql._support.parallel_sql import (
     Any,
     named_tasks,
@@ -7,10 +8,9 @@ from tests.sql._support.parallel_sql import (
     pd,
     pytest,
     sql_module,
-    threading,
-    time,
     time_print,
 )
+from tests.sql._support.tasks import patch_task_operations
 
 
 def test_parallel_shutdown_falls_back_for_legacy_executor() -> None:
@@ -146,13 +146,13 @@ def test_parallel_sql_dispatches_supported_task_types_and_preserves_order(
         )
         return transfer_result
 
-    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
-    monkeypatch.setattr(parallel_module, "execute_sql", fake_execute_sql)
-    monkeypatch.setattr(parallel_module, "execute_read", fake_execute_read)
-    monkeypatch.setattr(parallel_module, "load_df", fake_load_df)
-    monkeypatch.setattr(parallel_module, "transfer_table", fake_transfer_table)
+    patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
+    patch_task_operations(monkeypatch, mode="parallel", execute=fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="parallel", execute_read=fake_execute_read)
+    patch_task_operations(monkeypatch, mode="parallel", load_df=fake_load_df)
+    patch_task_operations(monkeypatch, mode="parallel", transfer=fake_transfer_table)
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         named_tasks(
             {
                 "read_users": {
@@ -255,10 +255,10 @@ def test_parallel_sql_fail_fast_false_returns_exceptions(
     def fake_execute_sql(**kwargs: Any) -> None:
         return None
 
-    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
-    monkeypatch.setattr(parallel_module, "execute_sql", fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
+    patch_task_operations(monkeypatch, mode="parallel", execute=fake_execute_sql)
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         named_tasks(
             {
                 "ok": {
@@ -295,10 +295,10 @@ def test_parallel_sql_fail_fast_raises_first_exception(
     def fake_read_sql(**kwargs: Any) -> str:
         raise error
 
-    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
 
     with pytest.raises(RuntimeError) as exc_info:
-        parallel_module.parallel_sql(
+        sql_module.parallel_sql(
             named_tasks(
                 {
                     "broken": {
@@ -328,22 +328,14 @@ def test_parallel_sql_is_exported() -> None:
 def test_parallel_sql_nested_pipeline_respects_soft_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    lock = threading.Lock()
-    active_workers = 0
-    max_active_workers = 0
+    probe = ConcurrencyProbe(2)
 
     def fake_read_sql(**kwargs: Any) -> str:
-        nonlocal active_workers, max_active_workers
-        with lock:
-            active_workers += 1
-            max_active_workers = max(max_active_workers, active_workers)
-        time.sleep(0.1)
-        with lock:
-            active_workers -= 1
-        return kwargs["query"]
+        with probe.worker():
+            return kwargs["query"]
 
     def nested_batch(context: Any) -> dict[str, Any]:
-        return parallel_module.parallel_sql(
+        return sql_module.parallel_sql(
             named_tasks(
                 {
                     f"read_{index}": {
@@ -358,9 +350,9 @@ def test_parallel_sql_nested_pipeline_respects_soft_cap(
             progress=False,
         )
 
-    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         [
             {
                 "name": "pipeline",
@@ -374,7 +366,7 @@ def test_parallel_sql_nested_pipeline_respects_soft_cap(
     )
 
     assert list(result["pipeline"]) == [f"read_{index}" for index in range(6)]
-    assert max_active_workers == 2
+    probe.assert_complete(calls=6)
 
 
 def test_parallel_sql_pipeline_runs_steps_sequentially_and_returns_last_result() -> None:
@@ -402,7 +394,7 @@ def test_parallel_sql_pipeline_runs_steps_sequentially_and_returns_last_result()
         )
         return f"{context.last_result}:second"
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         [
             {
                 "name": "pipeline",
@@ -423,23 +415,15 @@ def test_parallel_sql_pipeline_runs_steps_sequentially_and_returns_last_result()
 def test_parallel_sql_soft_cap_limits_actual_worker_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    lock = threading.Lock()
-    active_workers = 0
-    max_active_workers = 0
+    probe = ConcurrencyProbe(2)
 
     def fake_read_sql(**kwargs: Any) -> str:
-        nonlocal active_workers, max_active_workers
-        with lock:
-            active_workers += 1
-            max_active_workers = max(max_active_workers, active_workers)
-        time.sleep(0.1)
-        with lock:
-            active_workers -= 1
-        return kwargs["query"]
+        with probe.worker():
+            return kwargs["query"]
 
-    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         named_tasks(
             {
                 f"read_{index}": {
@@ -455,25 +439,17 @@ def test_parallel_sql_soft_cap_limits_actual_worker_execution(
     )
 
     assert list(result) == [f"read_{index}" for index in range(6)]
-    assert max_active_workers == 2
+    probe.assert_complete(calls=6)
 
 
 def test_parallel_sql_soft_cap_limits_pipeline_step_execution() -> None:
-    lock = threading.Lock()
-    active_steps = 0
-    max_active_steps = 0
+    probe = ConcurrencyProbe(2)
 
     def pipeline_step(context: Any) -> str:
-        nonlocal active_steps, max_active_steps
-        with lock:
-            active_steps += 1
-            max_active_steps = max(max_active_steps, active_steps)
-        time.sleep(0.1)
-        with lock:
-            active_steps -= 1
-        return context.task_name
+        with probe.worker():
+            return context.task_name
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         named_tasks(
             {
                 f"pipeline_{index}": {
@@ -489,7 +465,7 @@ def test_parallel_sql_soft_cap_limits_pipeline_step_execution() -> None:
     )
 
     assert list(result) == [f"pipeline_{index}" for index in range(6)]
-    assert max_active_steps == 2
+    probe.assert_complete(calls=6)
 
 
 def test_parallel_sql_start_comment_prefixes_sql_fields(
@@ -507,12 +483,12 @@ def test_parallel_sql_start_comment_prefixes_sql_fields(
     def fake_transfer_table(**kwargs: Any) -> str:
         return kwargs["from_sql"]
 
-    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
-    monkeypatch.setattr(parallel_module, "execute_sql", fake_execute_sql)
-    monkeypatch.setattr(parallel_module, "execute_read", fake_execute_read)
-    monkeypatch.setattr(parallel_module, "transfer_table", fake_transfer_table)
+    patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
+    patch_task_operations(monkeypatch, mode="parallel", execute=fake_execute_sql)
+    patch_task_operations(monkeypatch, mode="parallel", execute_read=fake_execute_read)
+    patch_task_operations(monkeypatch, mode="parallel", transfer=fake_transfer_table)
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         named_tasks(
             {
                 "read_users": {
@@ -569,9 +545,9 @@ def test_parallel_sql_task_context_task_id_is_included_in_task_output(
         time_print("task output from read_sql")
         return expected_rows
 
-    monkeypatch.setattr(parallel_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="parallel", read=fake_read_sql)
 
-    result = parallel_module.parallel_sql(
+    result = sql_module.parallel_sql(
         [
             {
                 "name": "copy_table",

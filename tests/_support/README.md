@@ -13,6 +13,21 @@ or UI modules.
   not the implementation under test.
 - `clock.FakeClock(value=0)` supports calling, `monotonic()`, `set(value)` and
   `sleep(seconds)`. Advance it explicitly instead of sleeping in timeout tests.
+- `concurrency.ConcurrencyProbe(expected)` rendezvous the first real worker
+  wave and records every call; use `with probe.worker()` and then
+  `probe.assert_complete(calls=...)`. It detects insufficient parallelism,
+  excess concurrency and unfinished workers, including partial final waves.
+- `concurrency.wait_event` and `wait_event_async` bound worker-state waits;
+  the async form leaves the UI/event loop responsive. `observe_call` observes
+  a real primitive, optionally after an error or a matching result (such as a
+  semaphore returning `False`). Release blocked
+  workers in `finally` before executor/context teardown.
+- `concurrency.release_on_completion` releases a slow fake after another real
+  Future completes, so input-order tests force a different completion order.
+- `source.CodeRules` and `forbidden_code` express architecture rules through
+  identifiers, imports, expressions, call arguments and SQL literals. They
+  ignore comments/docstrings and Python layout; these are ownership checks,
+  not substitutes for behavioral coverage.
 - SQL `ScriptedConnection` consumes ordered `SqlResponse` records with expected
   SQL, parameters, rows, columns and optional errors. `ConnectionSequence`
   supplies a finite sequence for retries. Call `assert_complete()` to detect
@@ -32,6 +47,15 @@ or UI modules.
   and spacing expectations in the test.
 - Explorer's reusable sessions live in `tests.sql._support.explorer`; import
   them directly rather than importing a collected test module.
+- Explorer metadata providers/coordinator stubs and bounded predicate polling
+  live in `tests.sql._support.completion`.
+- Explorer's area fixture supplies empty offline metadata for unattended UI
+  discovery. Other SQL reads need an explicit fake; tests may override the
+  metadata fake to exercise results and errors.
+- SQL `tasks.patch_task_operations(monkeypatch, mode="async"|"parallel", ...)`
+  installs named `read`, `execute`, `execute_read`, `load_df`, or `transfer`
+  fakes. AB `parallel.patch_metric_runner` installs a dataframe task runner.
+  Public orchestration behavior tests should use these seams and the facade.
 - DataLens retains its SDK-local `MemoryDataLens`, typed resource factories and
   recipe fixtures. Shared JSON setup does not import its optional SDK.
 
@@ -57,3 +81,19 @@ fakes retain their behavior; the stricter scripted driver is opt-in. Common
 helpers have no new dependencies. Comparison/helper regression tests explicitly
 exercise wrong SQL, parameters, call order, missing operations, state isolation
 and resource cleanup. No production API changes are needed.
+
+## Stable expectations
+
+See [the stability audit and case map](stability.md) for the migration and
+intentional exceptions. Assert observable results, errors and resource
+ownership; keep operation order strict when it protects transactions, retries
+or safety. Tests of exported internals and focused algorithms remain valid.
+For a refactor-only change, identify the contract behind any changed behavior
+expectation. Move patch-location maintenance into domain support.
+
+Use Events/Barriers for worker ordering and a fake clock for elapsed-time
+logic. The repository guard rejects new scheduling sleeps and direct
+source-spelling inspection, while retaining documented real UI timer checks.
+Keep independent numerical references and SQL/format/security contracts strict.
+Dependency upgrades should exercise the same contract tests in the existing
+minimum/latest and SDK environments, with no automatic tolerance widening.

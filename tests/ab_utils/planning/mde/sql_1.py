@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._support.concurrency import WAIT_SECONDS, ConcurrencyProbe
 from tests.ab_utils._support.metrics import (
     Any,
     SimpleNamespace,
@@ -12,7 +13,6 @@ from tests.ab_utils._support.metrics import (
     planning_module,
     pytest,
     threading,
-    time,
     warnings,
 )
 
@@ -448,8 +448,7 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
     events: list[str] = []
     active_loads = 0
     max_active_loads = 0
-    active_compute_tasks = 0
-    max_active_compute_tasks = 0
+    compute_probe = ConcurrencyProbe(2)
     lock = threading.Lock()
     load_barrier = threading.Barrier(2)
     parallel_kwargs: dict[str, object] = {}
@@ -498,7 +497,7 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
                 active_loads += 1
                 max_active_loads = max(max_active_loads, active_loads)
             try:
-                load_barrier.wait(timeout=1)
+                load_barrier.wait(timeout=WAIT_SECONDS)
                 if "CAST(\"dt\" AS DATE) < DATE '2024-01-02'" in query:
                     frame = pd.DataFrame({"user_id": [1, 2, 3], "orders": [1.0, 3.0, 5.0]})
                 elif "CAST(\"dt\" AS DATE) < DATE '2024-01-03'" in query:
@@ -516,21 +515,11 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
             return dict(executor.map(run_task, task_list))
 
     def recording_compute_task(*args: object, **kwargs: object) -> object:
-        nonlocal active_compute_tasks, max_active_compute_tasks
         with lock:
             assert "parallel_sql" in events
-            active_compute_tasks += 1
-            max_active_compute_tasks = max(
-                max_active_compute_tasks,
-                active_compute_tasks,
-            )
             compute_calls.append((int(kwargs["days"]), int(kwargs["split"]["group_size"])))
-        try:
-            time.sleep(0.02)
+        with compute_probe.worker():
             return real_compute_task(*args, **kwargs)
-        finally:
-            with lock:
-                active_compute_tasks -= 1
 
     monkeypatch.setattr(
         "analytics_toolkit.ab_utils.planning.sql_facade.table_info",
@@ -569,7 +558,7 @@ def test_compute_mde_from_sql_parallelizes_day_size_after_validation(
     }
     assert max_active_loads == 2
     assert events.count("aggregate") == 2
-    assert max_active_compute_tasks == 2
+    compute_probe.assert_complete(calls=4)
     assert sorted(compute_calls) == [(1, 10), (1, 20), (2, 10), (2, 20)]
     cuped_warnings = [
         warning for warning in caught if "Could not compute CUPED MDE" in str(warning.message)

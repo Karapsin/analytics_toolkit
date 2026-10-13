@@ -4,7 +4,7 @@ import importlib
 import inspect
 import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytest
@@ -14,6 +14,15 @@ ab_utils_module = importlib.import_module("analytics_toolkit.ab_utils")
 metrics_module = importlib.import_module("analytics_toolkit.ab_utils.metrics")
 
 parallel_module = importlib.import_module("analytics_toolkit.ab_utils.parallel")
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+def patch_metric_runner(monkeypatch: pytest.MonkeyPatch, runner: Callable[..., Any]) -> None:
+    """One patch location for behavior tests of dataframe task orchestration."""
+    monkeypatch.setattr(parallel_module, "_compute_test_metrics_dataframe", runner)
+
 
 async_sql_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_sql")
 
@@ -48,6 +57,7 @@ __all__ = [
     "inspect",
     "metrics_module",
     "parallel_module",
+    "patch_metric_runner",
     "pd",
     "pytest",
     "threading",

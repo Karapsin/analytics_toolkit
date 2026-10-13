@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._support.concurrency import wait_event
 from tests.sql._support.partitions import (
     Any,
     Event,
@@ -9,7 +10,6 @@ from tests.sql._support.partitions import (
     _stub_leaf_partition_discovery,
     gp_maintenance_module,
     pytest,
-    sleep,
     table_ops_module,
 )
 
@@ -25,9 +25,18 @@ def test_gp_analyze_partitioned_table_stops_scheduling_after_concurrent_failure(
             "analytics.orders_1_prt_c",
         ],
     )
-    started = Event()
+    failure_observed = Event()
     lock = Lock()
     opened = 0
+    original_wait = gp_maintenance_module.wait
+
+    def wait_for_failure(*args: Any, **kwargs: Any) -> Any:
+        done, pending = original_wait(*args, **kwargs)
+        if any(future.exception() is not None for future in done):
+            failure_observed.set()
+        return done, pending
+
+    monkeypatch.setattr(gp_maintenance_module, "wait", wait_for_failure)
 
     class FailingConnection(FakeDbapiConnection):
         def cursor(self) -> Any:
@@ -35,7 +44,6 @@ def test_gp_analyze_partitioned_table_stops_scheduling_after_concurrent_failure(
             original_execute = cursor.execute
 
             def execute(query: str, *args: Any, **kwargs: Any) -> Any:
-                started.set()
                 raise RuntimeError("analyze failed")  # noqa: EM101, TRY003
 
             cursor.execute = execute
@@ -48,8 +56,7 @@ def test_gp_analyze_partitioned_table_stops_scheduling_after_concurrent_failure(
             original_execute = cursor.execute
 
             def execute(query: str, *args: Any, **kwargs: Any) -> Any:
-                assert started.wait(timeout=1)
-                sleep(0.02)
+                wait_event(failure_observed)
                 return original_execute(query, *args, **kwargs)
 
             cursor.execute = execute
