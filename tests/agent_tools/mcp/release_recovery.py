@@ -56,12 +56,16 @@ def publication(monkeypatch: pytest.MonkeyPatch):
     }
     calls = []
     monkeypatch.setattr(
-        candidate.release_preparation, "state_path", lambda root: root / "atk-release.json"
+        candidate.release_preparation,
+        "state_path",
+        lambda root: root / "atk-release.json",
     )
     monkeypatch.setattr(candidate, "guard", lambda *args, **kwargs: state)
     monkeypatch.setattr(candidate.release_preparation, "save", lambda *args: None)
     monkeypatch.setattr(
-        candidate.release_preparation.task_context, "directory", lambda root: root / "no-task"
+        candidate.release_preparation.task_context,
+        "directory",
+        lambda root: root / "no-task",
     )
     monkeypatch.setattr(candidate, "_test_branch", lambda *args: "test-head")
     monkeypatch.setattr(candidate, "_production_ref", lambda *args: "v1.2.3.4")
@@ -177,7 +181,9 @@ def test_completed_test_stage_survives_successful_branch_cleanup(
         },
     )
     monkeypatch.setattr(
-        candidate, "_test_branch", lambda *args: pytest.fail("recreated deleted branch")
+        candidate,
+        "_test_branch",
+        lambda *args: pytest.fail("recreated deleted branch"),
     )
     assert candidate.prepare_stage(tmp_path, "testpypi") == 42
 
@@ -488,8 +494,9 @@ def test_concurrent_retry_is_excluded_and_lock_is_released(
     tmp_path: Path,
 ) -> None:
     state, calls, _clock = dispatch
-    with candidate.release_preparation.release_lock(tmp_path), pytest.raises(
-        RuntimeError, match="Another release action"
+    with (
+        candidate.release_preparation.release_lock(tmp_path),
+        pytest.raises(RuntimeError, match="Another release action"),
     ):
         candidate.prepare_stage(tmp_path, "testpypi")
     assert not any("workflow" in call for call in calls)
@@ -507,7 +514,9 @@ def test_old_publication_must_be_reconciled_before_head_replacement(
     state = {"version": "1.2.3.4", "candidate_sha": "old", "testpypi_sha": "test-head"}
     calls = []
     monkeypatch.setattr(
-        candidate, "index_files", lambda *args: {"file": "hash"} if conflict == "published" else {}
+        candidate,
+        "index_files",
+        lambda *args: {"file": "hash"} if conflict == "published" else {},
     )
 
     def run(root, *args):
@@ -521,9 +530,7 @@ def test_old_publication_must_be_reconciled_before_head_replacement(
         if args[:2] == ("git", "show"):
             metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
             return (
-                candidate.replace_project_name_text(
-                    metadata, candidate.PROJECTS["testpypi"]
-                ).strip()
+                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
                 if args[2].startswith("test-head:")
                 else metadata
             )
@@ -535,11 +542,13 @@ def test_old_publication_must_be_reconciled_before_head_replacement(
     monkeypatch.setattr(
         candidate,
         "_runs",
-        lambda *args: [
-            {"databaseId": 42, "status": "in_progress"},
-        ]
-        if conflict == "active"
-        else [],
+        lambda *args: (
+            [
+                {"databaseId": 42, "status": "in_progress"},
+            ]
+            if conflict == "active"
+            else []
+        ),
     )
     monkeypatch.setattr(candidate.release_preparation, "save", lambda *args: None)
     if conflict == "uncertain":
@@ -547,7 +556,8 @@ def test_old_publication_must_be_reconciled_before_head_replacement(
     if conflict == "missing":
         state["testpypi_run"] = 42
     with pytest.raises(
-        RuntimeError, match=r"new reviewed version|reconciled|active|uncertain|unavailable"
+        RuntimeError,
+        match=r"new reviewed version|reconciled|active|uncertain|unavailable",
     ):
         candidate.reconcile_replacement(tmp_path, state)
     assert not any("push" in call for call in calls)
@@ -606,11 +616,13 @@ def test_completed_unpublished_old_attempt_removes_only_leased_temporary_ref(
     monkeypatch.setattr(
         candidate,
         "_runs",
-        lambda root, ref, sha, stage: [
-            {"databaseId": 42, "status": "completed"},
-        ]
-        if stage == "testpypi"
-        else [],
+        lambda root, ref, sha, stage: (
+            [
+                {"databaseId": 42, "status": "completed"},
+            ]
+            if stage == "testpypi"
+            else []
+        ),
     )
 
     def run(root, *args):
@@ -622,9 +634,7 @@ def test_completed_unpublished_old_attempt_removes_only_leased_temporary_ref(
         if args[:2] == ("git", "show"):
             metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
             return (
-                candidate.replace_project_name_text(
-                    metadata, candidate.PROJECTS["testpypi"]
-                ).strip()
+                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
                 if args[2].startswith("test-head:")
                 else metadata
             )
@@ -634,7 +644,9 @@ def test_completed_unpublished_old_attempt_removes_only_leased_temporary_ref(
 
     monkeypatch.setattr(candidate.sessions, "run", run)
     monkeypatch.setattr(
-        candidate.release_preparation, "state_path", lambda root: root / "state.json"
+        candidate.release_preparation,
+        "state_path",
+        lambda root: root / "state.json",
     )
     monkeypatch.setattr(candidate, "_jobs", lambda *args: {"publish to TestPyPI": "failure"})
     candidate.reconcile_replacement(tmp_path, state)
@@ -662,9 +674,7 @@ def test_successful_old_upload_waits_for_index_reconciliation(
         if args[:2] == ("git", "show"):
             metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
             return (
-                candidate.replace_project_name_text(
-                    metadata, candidate.PROJECTS["testpypi"]
-                ).strip()
+                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
                 if args[2].startswith("test-head:")
                 else metadata
             )
@@ -675,7 +685,9 @@ def test_successful_old_upload_waits_for_index_reconciliation(
     monkeypatch.setattr(candidate.sessions, "run", run)
     monkeypatch.setattr(candidate.release_preparation, "save", lambda *args: None)
     monkeypatch.setattr(
-        candidate, "_runs", lambda *args: [{"databaseId": 42, "status": "completed"}]
+        candidate,
+        "_runs",
+        lambda *args: [{"databaseId": 42, "status": "completed"}],
     )
     monkeypatch.setattr(candidate, "_jobs", lambda *args: {"publish to TestPyPI": "success"})
     with pytest.raises(RuntimeError, match="upload succeeded"):

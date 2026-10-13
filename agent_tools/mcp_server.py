@@ -1095,7 +1095,8 @@ def _apply_release_metadata(
             "README version",
         )
         updated_changelog = _release_unreleased_changelog_text(
-            changelog_text, planned["changelog_entry"]
+            changelog_text,
+            planned["changelog_entry"],
         )
     except ValueError as exc:
         return _tool_output(
@@ -1869,7 +1870,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
 
 def _release_preparation_module() -> Any:
     return importlib.import_module(
-        f"{__package__}.release_preparation" if __package__ else "release_preparation"
+        f"{__package__}.release_preparation" if __package__ else "release_preparation",
     )
 
 
@@ -1923,7 +1924,7 @@ def release_workflow(  # noqa: C901 - reviewed release orchestration.
                     else [{"phase": "preparation", "message": preparation["message"]}]
                 ),
                 next_actions=[
-                    f"Re-enter release_workflow(action='{action}') to resume this candidate."
+                    f"Re-enter release_workflow(action='{action}') to resume this candidate.",
                 ],
             )
         promoted = _merge_dev_for_release(root_path, input_summary)
@@ -2502,7 +2503,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     release_parser.add_argument("--summary")
     release_parser.set_defaults(
         handler=lambda args: release_workflow(
-            action=args.action, root=args.root, summary=args.summary
+            action=args.action,
+            root=args.root,
+            summary=args.summary,
         )
     )
 

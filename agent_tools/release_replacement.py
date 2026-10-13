@@ -1,8 +1,8 @@
+# ruff: noqa: SLF001 - shares private release orchestration contracts.
+
 """Reconciled replacement generations for an explicitly requested release."""
 
 from __future__ import annotations
-
-# ruff: noqa: SLF001 - shares private release orchestration contracts.
 
 import json
 import re

@@ -1,11 +1,11 @@
+# ruff: noqa: SLF001 - release preparation shares repository-private metadata contracts.
+
 """Reviewed release candidates and private, resumable release orchestration.
 
 Only explicit release actions call prepare. Status and upload guards call verify.
 """
 
 from __future__ import annotations
-
-# ruff: noqa: SLF001 - release preparation shares repository-private metadata contracts.
 
 import importlib
 import json

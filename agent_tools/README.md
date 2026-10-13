@@ -202,11 +202,16 @@ Private implementation workers add regressions and edit sources without running
 programs, local pre-commit checks, tests, installs, or formatters. The trusted
 coordinator verifies task identity, pinned base/head, provenance, protected paths,
 and patch applicability before publishing an App-signed correction to the PR.
+Corrections retain current-dev repair discovery, bounded evidence handling, and
+unchanged no-patch retry suppression with their fast mocked regressions.
 GitHub then validates the exact corrected head through the focused regressions,
 Python matrix, SDK conformance, lint, type, coverage, and artifact gates. Successful
 `fast-checks`, fresh independent review, and authenticated exact-head owner policy
 approval for protected paths are required before merge; earlier-head results and
-approvals cannot substitute.
+approvals cannot substitute. This release feature changes protected publishing
+workflow guards and controller changelog folding, so the coordinator must present
+PR #7 and its final SHA for `/agent approve-policy <sha>` through the authenticated
+owner flow after validation and review; agents cannot grant that approval.
 
 `prepare-start` persists a private startup-context receipt below `.rag_index/`.
 `workflow-status` reuses it to return compact branch, dirty-state, diff, check

@@ -70,7 +70,9 @@ def test_version_bump_does_not_partially_write_when_release_changelog_fails(
     monkeypatch.setattr(mcp_server, "_release_unreleased_changelog_text", fail_changelog)
 
     result = mcp_server.version_bump(
-        "Consolidated agent MCP workflow", change_type="release", root=str(root)
+        "Consolidated agent MCP workflow",
+        change_type="release",
+        root=str(root),
     )
 
     assert result["ok"] is False
@@ -190,11 +192,14 @@ def test_version_bump_keeps_ordinary_versions_with_any_entry_count(
     )
 
     original_changelog = changelog_path.read_text(encoding="utf-8")
+    metadata_paths = [root / "pyproject.toml", root / "README.md"]
+    original_metadata = [path.read_bytes() for path in metadata_paths]
     dry_run = mcp_server.version_bump("Tenth change", root=str(root), dry_run=True)
     assert changelog_path.read_text(encoding="utf-8") == original_changelog
     applied = mcp_server.version_bump("Tenth change", root=str(root))
     assert {key: applied["result"][key] for key in dry_run["result"]} == dry_run["result"]
 
+    assert [path.read_bytes() for path in metadata_paths] == original_metadata
     assert dry_run["result"]["decision"] == "unreleased"
     assert dry_run["result"]["planned_version"] is None
     assert 'version = "1.3.9.13"' in (root / "pyproject.toml").read_text(encoding="utf-8")
@@ -223,7 +228,11 @@ def test_version_bump_skips_documentation_only_changes(tmp_path: Path) -> None:
 def test_version_bump_updates_unreleased_below_threshold(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
 
-    dry_run = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root), dry_run=True)
+    dry_run = mcp_server.version_bump(
+        "Consolidated agent MCP workflow",
+        root=str(root),
+        dry_run=True,
+    )
     applied = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
 
     assert dry_run["result"]["decision"] == "unreleased"

@@ -20,7 +20,8 @@ def _replacement_metadata(files, args):
     path = args[2].split(":", 1)[1]
     if args[2] == "test-head:pyproject.toml":
         return candidate.replace_project_name_text(
-            files[path], candidate.PROJECTS["testpypi"]
+            files[path],
+            candidate.PROJECTS["testpypi"],
         ).strip()
     return files[path].strip()
 
@@ -99,8 +100,7 @@ def replacing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             "mergedAt": "today" if merged else None,
             "headRefOid": value["candidate_sha"],
             "statusCheckRollup": [
-                {"name": name, "conclusion": "SUCCESS"}
-                for name in ("fast-checks", "agent-review")
+                {"name": name, "conclusion": "SUCCESS"} for name in ("fast-checks", "agent-review")
             ],
         }
 
@@ -244,7 +244,11 @@ def test_new_dev_prepares_one_reviewed_generation_and_invalidates_receipts(
 
     def new(root, summary, *, predecessor):
         return _new_replacement_generation(
-            root, summary, predecessor=predecessor, old=old, preparations=preparations
+            root,
+            summary,
+            predecessor=predecessor,
+            old=old,
+            preparations=preparations,
         )
 
     publications = []
@@ -481,9 +485,7 @@ def test_new_workspace_uses_journaled_source_and_release_task(
 
 def test_empty_unreleased_section_is_accepted(replacing) -> None:
     root, state, _current, _calls = replacing
-    state["files"]["docs/CHANGELOG.md"] = (
-        "## Unreleased\n\n" + state["files"]["docs/CHANGELOG.md"]
-    )
+    state["files"]["docs/CHANGELOG.md"] = "## Unreleased\n\n" + state["files"]["docs/CHANGELOG.md"]
     expected = {path: content.strip() + "\n" for path, content in state["files"].items()}
     assert preparation._reviewed_metadata(root, state, "old") == expected
 

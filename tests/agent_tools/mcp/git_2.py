@@ -20,11 +20,13 @@ def test_commit_requires_only_changelog_at_any_entry_count(
     root = _write_minimal_repo_files(tmp_path / "project")
     _write_unreleased_changelog(root, [f"Change {index}" for index in range(count)])
     monkeypatch.setattr(
-        mcp_server, "_changed_repo_paths",
+        mcp_server,
+        "_changed_repo_paths",
         lambda root: {"agent_tools/mcp_server.py", "docs/CHANGELOG.md"},
     )
     requirement = mcp_server._version_bump_requirement(
-        root, ["agent_tools/mcp_server.py", "docs/CHANGELOG.md"],
+        root,
+        ["agent_tools/mcp_server.py", "docs/CHANGELOG.md"],
     )
     assert requirement["required_paths"] == ["docs/CHANGELOG.md"]
     assert requirement["missing"] == []
@@ -190,7 +192,7 @@ def test_push_readiness_blocks_when_origin_dev_is_not_ancestor(
                         "Local HEAD does not contain origin/dev; "
                         "pull, rebase, or merge before continuing."
                     ),
-                }
+                },
             ],
         },
     )
