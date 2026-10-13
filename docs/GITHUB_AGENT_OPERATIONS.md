@@ -47,6 +47,15 @@ authorized PR processing. This recovery applies only to the metadata fetch; othe
 errors, including authentication failures, malformed metadata and monitor state,
 still fail reconciliation.
 
+The same strict upstream error classification applies inside repair evidence
+inventory, including run metadata and artifact pagination. Only that inventory
+call is deferred: already discovered review, correction, conflict and metadata
+tasks are returned, and monitor progress is saved. Unresolved needs and retry
+deadlines remain intact for the next reconciliation. A transport failure creates
+no evidence fingerprint, no blocked/no-change outcome and no notification.
+Authentication, malformed evidence and provenance failures still fail closed;
+errors outside the inventory call are not covered by this recovery.
+
 ## Enrolled machines and policy changes
 
 Automatic PR handling accepts only the repository owner's PRs with an enrolled
@@ -105,12 +114,68 @@ branches; dirty worktrees, backups and private task/audit records are retained.
 
 ## Updating trusted automation
 
-The companion worker recovery implementation is staged at
-[self_host commit 51acbc647dbc](https://github.com/Karapsin/self_host/commit/51acbc647dbcef6612b4c3ee806d6bd1abfcce0d),
-with successful [exact-commit checks](https://github.com/Karapsin/self_host/actions/runs/38383323326).
-Its immutable source/test snapshot must accompany controller review. Activate the
-worker and controller together after exact-head owner approval and draining active
-jobs; preserve the existing VPN wrapper, credentials and Airflow schedules.
+The companion worker dependency is staged, not active, at
+[self_host commit 0ae2ffc5ce5892bedd4a37f627dc9b190958e27b](https://github.com/Karapsin/self_host/commit/0ae2ffc5ce5892bedd4a37f627dc9b190958e27b),
+with successful [exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38411193449/job/115343656791).
+The immutable `self_host-task-evidence-0ae2ffc5ce58/` source/test snapshot and
+its manifest hashes must accompany controller review. It supersedes ancestor
+`51acbc647dbcef6612b4c3ee806d6bd1abfcce0d`; toolkit does not duplicate worker code
+or remove any companion features.
+
+The dependency hashes the full logical key for non-request job directories.
+Execution and both status paths share `job_runtime.directory`, avoiding the
+255-byte filesystem basename limit without changing logical job identities or
+SQLite records. Request directories keep their existing layout. Setup runs
+inside cleanup, and failure-report writes cannot skip claim completion or writer
+release attempts. The pinned
+`test_task_evidence.py::test_full_length_job_identity_and_setup_failure_release_claim`
+covers production-length keys and setup failure. Keep legacy directories and
+private checkpoints; drain active work before changing directory conventions.
+
+PR #13 publishes the toolkit correction through its controller-owned flow,
+preserving its signed provenance, task attachment and coding checkpoint.
+Require final-head GitHub validation, fresh independent `agent-review` against
+the current dev base and task digest, and authenticated owner exact-head
+`/agent approve-policy <sha>` approval before protected controller activation.
+Changelog folding or rebasing changes the head and requires renewed checks,
+review and approval. Models cannot post that approval. Older toolkit successes
+do not validate this correction. A changed companion commit requires new immutable
+evidence, exact-commit checks and independent review.
+
+Full companion activation belongs to the separately authorized PR #15 coordination
+task and requires its fresh independent review and protected-controller approval.
+PR #13 must not activate an unreviewed companion bundle. The coordinator performs
+activation only after these gates permit it, records rollback revisions and
+preserves databases, checkpoints, credentials, the VPN wrapper and schedules.
+
+### Recovery acceptance for the documented worker
+
+Inventory every active and queued analytics_toolkit review and correction on
+`kardinal@ssh.karapsin.com:2228`, including PR #13 and all other current PRs.
+Before activation, record service/socket status, deployed revisions, open PR heads,
+queued/running jobs, request stages and revisions, retry deadlines and writer
+ownership. Use trusted operational tooling to repair evidence-access failures;
+do not ask the owner to supply repository files or CI logs.
+
+After publication, run focused regressions and mandatory static/type, coverage,
+artifact and Python compatibility checks on GitHub. Run the isolated rehearsal
+there too, using disposable state and mocked GitHub/Codex interactions with no
+production credentials or services. Cover transient inventory failures,
+production-length identities, execution/status path agreement, distinct logical
+keys, removal/creation/progress-write failures, failure-report write failure,
+claim and writer release, timeout/process-group cleanup, restart recovery and
+checkpoint retention. Reuse the pinned runtime, checkpoint, native-planning and
+alert regressions. The Pi executes no tests, builds, programs or scenes; trusted
+operations and live metadata verification remain permitted.
+
+After reviewed activation, correlate every inventoried item with its current PR
+head and request revision. Observe each eligible review/correction advance or
+complete, or record an explicit authenticated owner, provenance or allowance hold.
+Verify stale claims recover and PR writer ownership stays exclusive. Fifteen
+minutes of inactivity is diagnostic; retain the thirty-minute model deadline.
+Record acceptance for the entire inventory. Missing metadata, queued checks,
+failed gates or unexplained non-progress block operational completion. Integration
+success remains advisory; MinIO stack repair is a separate follow-up.
 
 Only the controller, prompts, schemas, fixed dispatch bridge, capture workflow,
 and workflow classification manifest are copied to `main` for automation.

@@ -8,7 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
-- Recover inactive Pi jobs, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and build pinned MinIO releases from source
+- Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
 
 ## 1.3.12.4 - 2026-10-12
 

@@ -19,14 +19,6 @@ All service versions are pinned in `integration/docker-compose.yml`. Data uses
 temporary filesystems or anonymous Compose state and is removed after every
 run.
 
-MinIO server and client images are built from the existing releases' immutable
-upstream source commits using `integration/minio/Dockerfile`; the retired upstream
-registry images are not pulled. Both client services reuse one built image. The
-runner captures compilation output in `build.log` before starting the stack,
-then records `startup.log` and Compose diagnostics. GitHub uploads these files
-on failure so repair agents receive the underlying error. Source licenses and
-release metadata remain in the built images.
-
 ## Running Locally
 
 Docker Engine with the Compose plugin must be available. Run the stack only
@@ -116,6 +108,10 @@ and stopping later profiles after the failed profile. Cleanup cases group the
 HTTP status, failing transport, and expected status into one parametrized tuple
 to retain every failure combination within the strict lint argument limit.
 These tests run in the normal non-integration suite without external programs.
+The startup-diagnostics workflow guard checks all integration execution jobs and
+requires the core HTTP/native, auth, fault, and stress suites. Separate policy
+jobs may be added without changing the suite count; missing startup reports in
+execution jobs still fail fast CI.
 Batch diagnostics tests synchronize fake connection failures before asserting
 that both running queries failed. A separate sequential case verifies that an
 unstarted query remains cancelled with zero attempts and that the original

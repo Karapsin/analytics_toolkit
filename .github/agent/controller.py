@@ -401,7 +401,15 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     task["failure_key"] = evidence.fingerprint([
         {"run": run, "needs": sorted(state["runs"][str(run)].get("needs", []))}
         for run in sorted(failures)])
-    task["evidence_key"] = evidence.fingerprint(evidence.inventory(gh, failures))
+    try:
+        inventory = evidence.inventory(gh, failures)
+    except RuntimeError as exc:
+        if not (str(exc).startswith("gh api failed:")
+                and re.search(r"\(HTTP 5[0-9]{2}\)", str(exc))):
+            raise
+        # Defer only repair discovery; preserve PR tasks and monitor retry state.
+        return []
+    task["evidence_key"] = evidence.fingerprint(inventory)
     return [] if evidence.blocked(task) else [task]
 
 
