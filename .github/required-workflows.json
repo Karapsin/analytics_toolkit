@@ -61,6 +61,17 @@
             "workflow_dispatch"
           ],
           "reason": "Advisory immutable PR candidates are queued before merge and after conflicts or repair fixes; manual release validation remains available."
+        },
+        {
+          "name": "wiki-sync",
+          "path": ".github/workflows/wiki-sync.yml",
+          "classification": "main_only_publish",
+          "events": [
+            "push",
+            "release",
+            "workflow_dispatch"
+          ],
+          "reason": "User documentation wiki publishing runs only from main or published releases; it is not a dev push check."
         }
       ]
     }
