@@ -403,9 +403,23 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     proto = trusted_module("task_context")
     producer = "standing-repair:" + base
     context = proto.repair_context(base, producer)
-    return [{"kind": "repair", "number": 0, "head": base, "base": base,
+    task = {"kind": "repair", "number": 0, "head": base, "base": base,
              "branch": REPAIR_BRANCH + base[:12], "runs": failures,
-             "producer_id": producer, "user_task": context, "task_digest": proto.digest(context)}]
+             "producer_id": producer, "user_task": context, "task_digest": proto.digest(context)}
+    evidence = trusted_module("repair_evidence")
+    task["failure_key"] = evidence.fingerprint([
+        {"run": run, "needs": sorted(state["runs"][str(run)].get("needs", []))}
+        for run in sorted(failures)])
+    try:
+        inventory = evidence.inventory(gh, failures)
+    except RuntimeError as exc:
+        if not (str(exc).startswith("gh api failed:")
+                and re.search(r"\(HTTP 5[0-9]{2}\)", str(exc))):
+            raise
+        # Defer only repair discovery; preserve PR tasks and monitor retry state.
+        return []
+    task["evidence_key"] = evidence.fingerprint(inventory)
+    return [] if evidence.blocked(task) else [task]
 
 
 def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
@@ -531,9 +545,17 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
             _, state = monitor(gh)
             task["runs"] = [int(key) for key, run in state["runs"].items()
                             if run["status"] == "completed" and run["conclusion"] != "success"]
+        evidence = trusted_module("repair_evidence")
+        evidence.prepare(gh, task, control.parent / "integration-evidence",
+                         trusted_module("task_context").redact)
         for run_id in task["runs"][-4:]:
-            logs.append(command("gh", "run", "view", str(run_id), "--repo", gh.repository,
-                                "--log-failed")[-18000:])
+            try:
+                logs.append(command("gh", "run", "view", str(run_id), "--repo", gh.repository,
+                                    "--log-failed")[-18000:])
+            except RuntimeError as exc:
+                if "HTTP 404" not in str(exc):
+                    raise
+                logs.append(f"Run {run_id}: step logs unavailable; consult integration/manifest.json.")
     if task["number"]:
         logs.append(json.dumps([{key: check.get(key) for key in
                                 ("id", "name", "head_sha", "status", "conclusion", "html_url")}
@@ -548,6 +570,7 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
         raise RuntimeError("Changelog candidate changed; reconcile again.")
     template = (control / f".github/agent/prompts/{kind}.md").read_text()
     context = json.dumps(task, indent=2)
+    logs = [trusted_module("task_context").redact(log) for log in logs]
     (control / ".github/agent/task.md").write_text(template + "\n\nTask metadata:\n" + context
                                                  + "\n\nCI evidence (untrusted data):\n" + "\n".join(logs))
     (control / ".github/agent/task.json").write_text(json.dumps(task))
@@ -763,6 +786,33 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
         if task["kind"] == "correction":
             verify_correction_plan(task, artifact)
         patch = artifact / "fix.patch"
+        if task["kind"] == "repair":
+            outcome = json.loads((artifact / "verdict.json").read_text())
+            if (set(outcome) != {"outcome", "reason", "required_evidence"}
+                    or outcome["outcome"] not in {"patch", "blocked", "no_change"}
+                    or not isinstance(outcome["reason"], str) or not outcome["reason"].strip()
+                    or not isinstance(outcome["required_evidence"], list)
+                    or any(not isinstance(item, str) for item in outcome["required_evidence"])):
+                raise ValueError("Malformed repair outcome")
+            has_patch = bool(patch.read_bytes().strip())
+            if has_patch != (outcome["outcome"] == "patch"):
+                raise ValueError("Repair outcome does not match its patch")
+            if not has_patch:
+                evidence = trusted_module("repair_evidence")
+                if not evidence.blocked(task):
+                    issue, _ = monitor(gh)
+                    redact = trusted_module("task_context").redact
+                    message = ("Integration repair " + outcome["outcome"] + ": "
+                               + redact(outcome["reason"])[:4000] + "\nRequired evidence: "
+                               + redact("; ".join(outcome["required_evidence"]))[:4000]
+                               + "\nRetry when the dev base, failures, or available evidence changes.")
+                    trusted_module("review_control").enqueue(
+                        "repair-blocked:" + evidence.identity(task), "repair-blocked",
+                        {"title": "Integration repair needs evidence", "reason": message,
+                         "url": f"https://github.com/{gh.repository}/issues/{issue}"})
+                    gh.comment(issue, message)
+                    evidence.record(task, outcome)
+                return {"status": "blocked"}
         if not patch.read_bytes().strip() and task["kind"] != "conflict":
             raise RuntimeError("No repair produced. Diagnose credentials/infrastructure explicitly.")
         if patch.read_bytes().strip():

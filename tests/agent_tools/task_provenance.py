@@ -108,9 +108,13 @@ def test_reconciled_changelog_retains_feature_and_merged_dev_history() -> None:
         "- Fix the SQL integration startup-diagnostics guard to allow separate policy "
         "jobs while preserving required suite and diagnostic checks, with "
         "service-free regression coverage.",
+        "- Recover inactive Pi reviews and corrections, supply bounded integration "
+        "diagnostics, suppress unchanged no-patch repair retries, and isolate transient "
+        "evidence inventory failures.",
+        "- Keep Pi recovery discovery regressions within strict lint gates while "
+        "preserving transient-failure and retry coverage.",
     ):
         assert changelog.count(bullet) == 1
     assert not any(
-        line.startswith(("<<<<<<<", "=======", ">>>>>>>"))
-        for line in changelog.splitlines()
+        line.startswith(("<<<<<<<", "=======", ">>>>>>>")) for line in changelog.splitlines()
     )

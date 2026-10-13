@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "outcome": {"type": "string", "enum": ["patch", "blocked", "no_change"]},
+    "reason": {"type": "string"},
+    "required_evidence": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["outcome", "reason", "required_evidence"],
+  "additionalProperties": false
+}

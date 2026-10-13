@@ -78,6 +78,10 @@ def test_approval_notice_requires_current_diff_assessment(tmp_path: Path, monkey
 
 
 def test_repair_discovery_initializes_prepare_context(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        controller.trusted_module("repair_evidence"), "inventory", lambda gh, runs: []
+    )
     state = {
         "runs": {"1": {"sha": "old", "status": "completed", "needs": ["HTTP"], "merged": True}}
     }
@@ -149,7 +153,9 @@ def test_cleanup_uses_merged_head_receipt_for_squash_and_leased_delete(
             "merged_at": "2026-10-12",
             "head": {"ref": name, "sha": head, "repo": {"full_name": gh.repository}},
         }
-        for number, name in enumerate(("codex/merged", "codex/active", "codex/reused", "codex/open"), 1)
+        for number, name in enumerate(
+            ("codex/merged", "codex/active", "codex/reused", "codex/open"), 1
+        )
     ]
     branches[4]["commit"]["sha"] = "b" * 40
     gh.pages.side_effect = lambda path: branches if path.startswith("branches") else merged
@@ -250,22 +256,8 @@ def test_legacy_merge_still_inspects_every_pr(
     cleanup.cleanup.assert_called_once_with(gh, tmp_path, force=True, active_branches=None)
 
 
-@pytest.mark.parametrize(
-    "gate",
-    [
-        "provenance",
-        "missing-policy",
-        "stale-policy",
-        "veto",
-        "task-digest",
-        "stale-review",
-        "failed-ci",
-        "missing-ci",
-        "fragment",
-        "base-race",
-    ],
-)
-def test_selected_merge_retains_all_gates(
+@pytest.mark.parametrize("gate", ["provenance", "missing-policy", "stale-policy", "veto"])
+def test_selected_merge_retains_authorization_gates(
     gate: str,
     tmp_path: Path,
     monkeypatch: Any,
@@ -276,31 +268,55 @@ def test_selected_merge_retains_all_gates(
         monkeypatch.setattr(controller, "trusted", lambda *args: False)
     elif gate in {"missing-policy", "stale-policy"}:
         controller.authorization_error.return_value = gate
-    elif gate == "veto":
+    else:
         controls.paused.return_value = True
-    elif gate == "task-digest":
-        controller.task_metadata.side_effect = ValueError("Changed signed task digest")
-    elif gate == "stale-review":
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=set())
+    gh.api.assert_not_called()
+    controller.dispatch.assert_not_called()
+    cleanup.cleanup.assert_not_called()
+
+
+def test_selected_merge_rejects_changed_task_digest(
+    tmp_path: Path, merge_environment: tuple[Any, Any, Any]
+) -> None:
+    gh, _, cleanup = merge_environment
+    controller.task_metadata.side_effect = ValueError("Changed signed task digest")
+    with pytest.raises(ValueError, match="signed task digest"):
+        controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=set())
+    gh.api.assert_not_called()
+    controller.dispatch.assert_not_called()
+    cleanup.cleanup.assert_not_called()
+
+
+@pytest.mark.parametrize("gate", ["stale-review", "failed-ci", "missing-ci"])
+def test_selected_merge_retains_review_and_ci_gates(
+    gate: str, tmp_path: Path, merge_environment: tuple[Any, Any, Any]
+) -> None:
+    gh, _, cleanup = merge_environment
+    if gate == "stale-review":
         gh.checks.return_value[0]["external_id"] = "old-base"
     elif gate == "failed-ci":
         gh.checks.return_value[1]["conclusion"] = "failure"
-    elif gate == "missing-ci":
+    else:
         gh.checks.return_value = gh.checks.return_value[:1]
-    elif gate == "fragment":
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=set())
+    gh.api.assert_not_called()
+    controller.dispatch.assert_not_called()
+    cleanup.cleanup.assert_not_called()
+
+
+@pytest.mark.parametrize("gate", ["fragment", "base-race"])
+def test_selected_merge_retains_publication_gates(
+    gate: str, tmp_path: Path, merge_environment: tuple[Any, Any, Any]
+) -> None:
+    gh, _, cleanup = merge_environment
+    if gate == "fragment":
         gh.pages.return_value = [
             {"filename": "agent_tools/changelog/pending.md", "status": "added"}
         ]
-    elif gate == "base-race":
-        gh.base.side_effect = ["base", "changed-base"]
-    if gate == "task-digest":
-        with pytest.raises(ValueError, match="signed task digest"):
-            controller.merge_selected(
-                gh, 17, tmp_path, pr_numbers={11}, active_branches=set()
-            )
     else:
-        controller.merge_selected(
-            gh, 17, tmp_path, pr_numbers={11}, active_branches=set()
-        )
+        gh.base.side_effect = ["base", "changed-base"]
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=set())
     gh.api.assert_not_called()
     controller.dispatch.assert_not_called()
     cleanup.cleanup.assert_not_called()

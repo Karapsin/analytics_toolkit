@@ -25,12 +25,36 @@ It records pending and failed integration runs and the corresponding repair PRs.
 A completed green replacement must cover each affected job group before the
 incident is resolved.
 
+Status includes each active job's phase, start time, last event time and model
+deadline. Fifteen minutes without an event is reported as inactive, not proof of
+a hang. Model execution keeps its thirty-minute timeout; timeout cleanup ends
+only that job's process group, preserves diagnostics and coding checkpoints,
+releases writer ownership and queues a fresh attempt.
+
+Integration repairs receive hash-bound diagnostic artifacts for the exact run
+and attempt through `read_evidence_file`, starting at `integration/manifest.json`.
+Missing or expired diagnostics are listed explicitly. A repair can return a patch,
+a blocked diagnosis or no change. No-patch outcomes retain unresolved incidents
+and produce a deduplicated notification rather than repeating the same model job
+every five minutes. A changed dev base, affected failure groups, run attempt or
+artifact inventory permits another attempt. Transient artifact retrieval failures
+retain normal timed retries.
+
 If refreshing a tracked run’s metadata fails with an upstream `gh api failed:`
 HTTP 500–599 error, the controller retains its existing pending status and unresolved
 needs, retries that immutable run ID on later reconciliation, and continues normal
 authorized PR processing. This recovery applies only to the metadata fetch; other
 errors, including authentication failures, malformed metadata and monitor state,
 still fail reconciliation.
+
+The same strict upstream error classification applies inside repair evidence
+inventory, including run metadata and artifact pagination. Only that inventory
+call is deferred: already discovered review, correction, conflict and metadata
+tasks are returned, and monitor progress is saved. Unresolved needs and retry
+deadlines remain intact for the next reconciliation. A transport failure creates
+no evidence fingerprint, no blocked/no-change outcome and no notification.
+Authentication, malformed evidence and provenance failures still fail closed;
+errors outside the inventory call are not covered by this recovery.
 
 ## Enrolled machines and policy changes
 
@@ -101,6 +125,81 @@ its complete open-PR inventory. The original three-argument `merge` remains
 compatible; workers with an older controller use the idle-only merge fallback.
 
 ## Updating trusted automation
+
+The companion worker dependency is staged, not active, at
+[self_host commit b817a0541a59bb028d42ff9c243d503a39d62ba1](https://github.com/Karapsin/self_host/commit/b817a0541a59bb028d42ff9c243d503a39d62ba1),
+with successful [exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38430424812/job/115410836720).
+The immutable `self_host-task-evidence-b817a0541a59/` source/test snapshot and
+`operator/companion-b817a0541a59-ci.json` source hashes must accompany controller
+review. It supersedes ancestor `0ae2ffc5ce5892bedd4a37f627dc9b190958e27b`;
+retain the earlier receipts as historical evidence. Toolkit does not duplicate
+worker code or remove any companion features. CI receipts are not owner approval.
+
+The dependency hashes the full logical key for non-request job directories.
+Execution and both status paths share `job_runtime.directory`, avoiding the
+255-byte filesystem basename limit without changing logical job identities or
+SQLite records. Request directories keep their existing layout. Setup runs
+inside cleanup, and failure-report writes cannot skip claim completion or writer
+release attempts. The pinned
+`test_task_evidence.py::test_full_length_job_identity_and_setup_failure_release_claim`
+covers production-length keys and setup failure. Keep legacy directories and
+private checkpoints; drain active work before changing directory conventions.
+
+PR #13 publishes the toolkit correction through its controller-owned flow,
+preserving its signed provenance, task attachment and coding checkpoint.
+Require final-head GitHub validation, fresh independent `agent-review` against
+the current dev base and task digest, and authenticated owner exact-head
+`/agent approve-policy <sha>` approval before protected controller activation.
+Changelog folding or rebasing changes the head and requires renewed checks,
+review and approval. Models cannot post that approval. Older toolkit successes
+do not validate this correction. A changed companion commit requires new immutable
+evidence, exact-commit checks and independent review.
+
+Full companion activation belongs to the separately authorized PR #15 coordination
+task and requires its fresh independent review and protected-controller approval.
+PR #13 must not activate an unreviewed companion bundle. The coordinator performs
+activation only after these gates permit it, records rollback revisions and
+preserves databases, checkpoints, credentials, the VPN wrapper and schedules.
+
+### Recovery acceptance for the documented worker
+
+Inventory every active and queued analytics_toolkit review and correction on
+`kardinal@ssh.karapsin.com:2228`, including PR #13 and all other current PRs.
+Before activation, record service/socket status, deployed revisions, open PR heads,
+queued/running jobs, request stages and revisions, retry deadlines and writer
+ownership. Use trusted operational tooling to repair evidence-access failures;
+do not ask the owner to supply repository files or CI logs.
+
+After publication, run focused regressions and mandatory static/type, coverage,
+artifact and Python compatibility checks on GitHub. Run the isolated rehearsal
+there too, using disposable state and mocked GitHub/Codex interactions with no
+production credentials or services. Cover transient inventory failures,
+production-length identities, execution/status path agreement, distinct logical
+keys, removal/creation/progress-write failures, failure-report write failure,
+claim and writer release, timeout/process-group cleanup, restart recovery and
+checkpoint retention. Reuse the pinned runtime, checkpoint, native-planning and
+alert regressions. The Pi executes no tests, builds, programs or scenes; trusted
+operations and live metadata verification remain permitted.
+
+When a quality job fails, the coordinator captures its complete redacted log and
+an index bound to the PR head, run and job IDs. Correct the reported task-related
+findings without increasing lint or format debt baselines, then require successful
+`fast-checks` on the final published head. Preserve regression assertions and retry
+behavior when simplifying test fixtures. The scoped-merge regressions separately
+cover authorization and signed task context, current-base review and fast CI,
+fragment folding and publication races. Reconciliation retains dev's structured
+`patch`/`blocked`/`no_change` repair outcomes and retry fingerprints; empty repair
+output is not a publishable patch. Preserve dev's repair regressions and changelog
+history alongside the task's previously folded feature entry.
+
+After reviewed activation, correlate every inventoried item with its current PR
+head and request revision. Observe each eligible review/correction advance or
+complete, or record an explicit authenticated owner, provenance or allowance hold.
+Verify stale claims recover and PR writer ownership stays exclusive. Fifteen
+minutes of inactivity is diagnostic; retain the thirty-minute model deadline.
+Record acceptance for the entire inventory. Missing metadata, queued checks,
+failed gates or unexplained non-progress block operational completion. Integration
+success remains advisory; MinIO stack repair is a separate follow-up.
 
 Only the controller, prompts, schemas, fixed dispatch bridge, capture workflow,
 and workflow classification manifest are copied to `main` for automation.
