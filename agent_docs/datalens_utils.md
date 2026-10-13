@@ -2,7 +2,7 @@
 
 Read analytics_toolkit/datalens_utils/README.md for the facade and recipe contract.
 Import analytics_toolkit.datalens_utils explicitly; it has no atk alias.
-Base imports support Python 3.8 without the optional SDK. Operations require
+Base imports support the configured core Python window without the optional SDK. Operations require
 Python 3.10+ and SDK 3.1.0 or 3.2.0; new datalens/all installs use 3.2.0.
 
 Keep deployment and recipe paths explicit, runtime state outside the recipe,

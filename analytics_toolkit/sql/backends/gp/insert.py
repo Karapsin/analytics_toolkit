@@ -33,7 +33,11 @@ def normalize_insert_batch(adapter: Any, batch: pd.DataFrame) -> pd.DataFrame:
         series = normalized[column_name]
         normalized_series = series.astype(object).where(series.notna(), None)
         if any(isinstance(value, UUID) for value in normalized_series):
-            normalized_series = normalized_series.map(_normalize_uuid_scalar)
+            normalized_series = pd.Series(
+                (_normalize_uuid_scalar(value) for value in normalized_series),
+                index=normalized_series.index,
+                dtype=object,
+            )
         normalized[column_name] = normalized_series
     return normalized
 

@@ -53,14 +53,15 @@ def test_precommit_checks_stop_before_later_stages_when_static_gate_fails(
     assert result["result"]["failure_signature"]
 
 
-def test_precommit_emits_stages_and_seeds_python38_compatible_pip() -> None:
+def test_precommit_emits_stages_and_uses_policy_matrix() -> None:
     script = (mcp_server.REPO_ROOT / "release_routines" / "pre_commit_checks.sh").read_text(
         encoding="utf-8"
     )
 
     assert "::agent-check-stage::%s::start::running" in script
     assert "::agent-check-stage::%s::end::failed" in script
-    assert "export VIRTUALENV_PIP=25.0.1" in script
+    assert "VIRTUALENV_PIP" not in script
+    assert "python_support local-matrix" in script
     assert 'export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${repo_root}/.tox/pip-cache}"' in script
     assert 'mode="${1:---all}"' in script
     assert "run_stage tox-static tox -e lint,type" in script

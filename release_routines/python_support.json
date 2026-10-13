@@ -1,0 +1,23 @@
+{
+  "normal_window": 7,
+  "minimum": "3.9",
+  "maximum": "3.15",
+  "extras": {
+    "airflow": {
+      "minimum": "3.9",
+      "maximum": "3.14"
+    },
+    "clickhouse-native": {
+      "minimum": "3.9",
+      "maximum": "3.14"
+    },
+    "tui": {
+      "minimum": "3.9",
+      "maximum": "3.14"
+    },
+    "datalens": {
+      "minimum": "3.10",
+      "maximum": "3.14"
+    }
+  }
+}

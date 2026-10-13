@@ -8,7 +8,7 @@ from collections import defaultdict
 from .project_metadata import load_project
 
 PROJECT_PATH = pathlib.Path("pyproject.toml")
-CONSTRAINTS_PATH = pathlib.Path("constraints/py38-min.txt")
+CONSTRAINTS_PATH = pathlib.Path("constraints/python-min.txt")
 _NAME_PATTERN = re.compile(r"^([A-Za-z0-9_.-]+)")
 _EXACT_CONSTRAINT_PATTERN = re.compile(r"^([A-Za-z0-9_.-]+)\s*==\s*([^\s;#]+)(?:\s*(?:;|#).*)?$")
 _NUMERIC_VERSION_PATTERN = re.compile(r"^\d+(?:\.\d+)*$")

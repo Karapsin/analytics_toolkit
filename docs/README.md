@@ -7,6 +7,8 @@
 - [Modules documentation](modules/README.md)
 - [Changelog](CHANGELOG.md)
 
+- [Python and optional-extra support](PYTHON_SUPPORT.md)
+
 ## Agent workflows
 
 - [Isolated Codex feature sessions](FEATURE_SESSIONS.md)

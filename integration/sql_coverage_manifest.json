@@ -10276,6 +10276,13 @@
       "backends": [
         "trino"
       ]
+    },
+    "auth.airflow.variables": {
+      "profile": "auth",
+      "node_id": "tests/sql/integration/auth/auth.py::test_real_airflow_variables_and_certificate_resolution",
+      "backends": [
+        "ch"
+      ]
     }
   },
   "unsupported_authentication": {

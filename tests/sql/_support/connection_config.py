@@ -86,6 +86,8 @@ def install_fake_airflow(
     monkeypatch: pytest.MonkeyPatch,
     connections: dict[str, FakeAirflowConnection],
     variables: dict[str, str] | None = None,
+    *,
+    major: int = 2,
 ) -> None:
     airflow_variables = variables or {}
 
@@ -106,6 +108,7 @@ def install_fake_airflow(
                 raise KeyError(name) from exc
 
     airflow_module = types.ModuleType("airflow")
+    airflow_module.__version__ = f"{major}.0.0"
     hooks_module = types.ModuleType("airflow.hooks")
     base_module = types.ModuleType("airflow.hooks.base")
     models_module = types.ModuleType("airflow.models")
@@ -122,6 +125,13 @@ def install_fake_airflow(
     monkeypatch.setitem(sys.modules, "airflow.hooks.base", base_module)
     monkeypatch.setitem(sys.modules, "airflow.models", models_module)
     monkeypatch.setitem(sys.modules, "airflow.models.variable", variable_module)
+    if major == 3:
+        sdk_module = types.ModuleType("airflow.sdk")
+        sdk_module.Connection = types.SimpleNamespace(get=FakeBaseHook.get_connection)
+        sdk_module.Variable = FakeVariable
+        monkeypatch.setitem(sys.modules, "airflow.sdk", sdk_module)
+    else:
+        monkeypatch.setitem(sys.modules, "airflow.sdk", None)
 
 
 def _write_cert(relative_path: str, contents: str = "CERT\n") -> Path:

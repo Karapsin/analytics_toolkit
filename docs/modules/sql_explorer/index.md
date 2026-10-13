@@ -157,7 +157,7 @@ The editor displays line numbers, keeps its vertical scrollbar on the right,
 shows the active one-based line and column in its lower-right corner without
 covering the first editor rows, applies SQL syntax
 highlighting, and keeps long SQL lines unwrapped. The `tui` extra installs the Textual 0.73 legacy parser
-stack on Python 3.8–3.12 and Textual 0.89 with `tree-sitter-sql` on Python
+stack on Python 3.9–3.12 and Textual 0.89 with `tree-sitter-sql` on Python
 3.13–3.14, so highlighting is available on every supported Python version. If
 a parser installation is damaged or cannot load, the editor still opens
 without highlighting and remains editable.

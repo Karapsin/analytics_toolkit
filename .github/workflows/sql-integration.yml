@@ -111,10 +111,14 @@ jobs:
           if-no-files-found: error
 
   auth:
-    name: authentication SQL integration (HTTP + native)
+    name: authentication SQL integration (HTTP + native, Airflow ${{ matrix.airflow }})
     if: inputs.profile == 'all' || inputs.profile == 'auth'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        airflow: [2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -129,7 +133,11 @@ jobs:
       - name: Install package and pinned Airflow
         run: |
           python -m pip install --upgrade -e '.[clickhouse-native]' pytest
-          python -m pip install -r integration/requirements-auth.txt
+          if [ '${{ matrix.airflow }}' = '3' ]; then
+            python -m pip install -r integration/requirements-auth-airflow3.txt
+          else
+            python -m pip install -r integration/requirements-auth.txt
+          fi
           python -m pip install --upgrade 'httpx>=0.27.1,<1' 'requests>=2.32.4' 'typing-extensions>=4.15'
           python -m pip check
           playwright install --with-deps chromium
@@ -148,14 +156,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: sql-integration-auth-http
+          name: sql-integration-auth-http-airflow${{ matrix.airflow }}
           path: .integration-artifacts/auth/http
           if-no-files-found: error
       - name: Upload native authentication diagnostics
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: sql-integration-auth-native
+          name: sql-integration-auth-native-airflow${{ matrix.airflow }}
           path: .integration-artifacts/auth/native
           if-no-files-found: error
 

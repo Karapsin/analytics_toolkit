@@ -34,6 +34,14 @@ def validated(event, slug):
     elif task['operation'] == 'rerun':
         if not isinstance(task['value'], int) or task['value'] < 1:
             raise ValueError('Invalid run ID')
+    elif task['operation'] == 'python-support':
+        value = task['value']
+        if (not isinstance(value, dict) or set(value) != {'candidate', 'python'}
+                or not isinstance(value['candidate'], str)
+                or not re.fullmatch('[0-9a-f]{40}', value['candidate'])
+                or not isinstance(value['python'], str)
+                or not re.fullmatch(r'3\.[0-9]+', value['python'])):
+            raise ValueError('Python support probes require a SHA and minor version')
     else:
         raise ValueError('Unsupported operation')
     return task
@@ -51,6 +59,13 @@ def main():
     elif task['operation'] == 'visual':
         path = 'actions/workflows/agent-visual.yml/dispatches'
         data = {'ref': 'main', 'inputs': {'candidate': task['value']}}
+    elif task['operation'] == 'python-support':
+        value = task['value']
+        base = json.loads(subprocess.check_output(['gh', 'api', prefix + 'git/ref/heads/dev']))
+        if base['object']['sha'] != value['candidate']:
+            raise ValueError('Python support base changed before dispatch')
+        path = 'actions/workflows/python-support.yml/dispatches'
+        data = {'ref': 'main', 'inputs': value}
     else:
         path = 'actions/workflows/sql-integration.yml/dispatches'
         inputs = {'profile': 'all'}
