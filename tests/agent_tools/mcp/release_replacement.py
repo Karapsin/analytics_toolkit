@@ -5,15 +5,39 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
+from release_routines.lib import release_candidate as candidate
 
 from agent_tools import release_preparation as preparation
 from agent_tools import release_replacement as replacement
-from release_routines.lib import release_candidate as candidate
 from tests._support.clock import FakeClock
 from tests.agent_tools._support.mcp import _write_minimal_repo_files, mcp_server
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _replacement_metadata(files, args):
+    path = args[2].split(":", 1)[1]
+    if args[2] == "test-head:pyproject.toml":
+        return candidate.replace_project_name_text(
+            files[path], candidate.PROJECTS["testpypi"]
+        ).strip()
+    return files[path].strip()
+
+
+def _replacement_source_git(transcript, *args):
+    transcript.calls.append(args)
+    if args[:3] == ("git", "ls-remote", "--heads") and transcript.state.get("testpypi_sha"):
+        return "test-head refs/heads/testpypi-" + transcript.state["version"]
+    if args == ("git", "rev-parse", "origin/dev"):
+        return "new-dev"
+    if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
+        return "test-head old"
+    if args[:2] == ("git", "diff"):
+        return "pyproject.toml"
+    if args[:2] == ("git", "show"):
+        return _replacement_metadata(transcript.files, args)
+    return ""
 
 
 @pytest.fixture
@@ -54,24 +78,10 @@ def replacing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(candidate, "index_files", lambda *args: {})
     monkeypatch.setattr(candidate, "_runs", lambda *args: [])
 
+    transcript = SimpleNamespace(state=state, calls=calls, files=files)
+
     def run(root, *args):
-        calls.append(args)
-        if args[:3] == ("git", "ls-remote", "--heads") and state.get("testpypi_sha"):
-            return "test-head refs/heads/testpypi-" + state["version"]
-        if args == ("git", "rev-parse", "origin/dev"):
-            return "new-dev"
-        if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
-            return "test-head old"
-        if args[:2] == ("git", "diff"):
-            return "pyproject.toml"
-        if args[:2] == ("git", "show"):
-            path = args[2].split(":", 1)[1]
-            if args[2] == "test-head:pyproject.toml":
-                return candidate.replace_project_name_text(
-                    files[path], candidate.PROJECTS["testpypi"],
-                ).strip()
-            return files[path].strip()
-        return ""
+        return _replacement_source_git(transcript, *args)
 
     monkeypatch.setattr(preparation.sessions, "run", run)
     monkeypatch.setattr(
@@ -98,6 +108,102 @@ def replacing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     return root, state, current, calls
 
 
+def _replacement_test_git(transcript, root, *args):
+    if args[:3] == ("git", "ls-remote", "--heads"):
+        return (
+            "test-head refs/heads/testpypi-" + transcript.old["version"]
+            if transcript.remote
+            else ""
+        )
+    refs = {
+        ("git", "rev-parse", "FETCH_HEAD"): "old",
+        ("git", "rev-parse", "FETCH_HEAD^{tree}"): "old-tree",
+        ("git", "rev-parse", "HEAD"): "test-head",
+        ("git", "rev-parse", candidate._test_local_ref(transcript.old)): "test-head",
+    }
+    if args in refs:
+        return refs[args]
+    if args[:2] == ("git", "push"):
+        if args[-1].startswith(":"):
+            transcript.remote.clear()
+        else:
+            transcript.push_snapshots.append(json.loads(preparation.state_path(root).read_text()))
+            transcript.remote.append("test-head")
+            raise KeyboardInterrupt
+    return transcript.original(root, *args)
+
+
+def _new_replacement_generation(root, summary, *, predecessor, old, preparations):
+    intent = predecessor["replacement_intent"]
+    preparations.append(intent.copy())
+    notes = replacement.notes(root, predecessor, intent["version"])
+    version, files, fragments = preparation._metadata_files(
+        root,
+        summary,
+        version=intent["version"],
+        changelog=notes,
+    )
+    value = {
+        "task_id": old["task_id"],
+        "task_digest": old["task_digest"],
+        "workspace": str(root),
+        "source_sha": intent["source_sha"],
+        "generation": intent["generation"],
+        "predecessor_sha": predecessor["candidate_sha"],
+        "version": version,
+        "files": files,
+        "fragments": fragments,
+        "stages": {},
+        "pr": None,
+        "branch": "new-branch",
+        "candidate_sha": "new" if intent["generation"] == 1 else "newer",
+        "candidate_tree": "new-tree",
+    }
+    preparation.save(root, value)
+    return value
+
+
+def _assert_replacement_receipts(current, preparations, publications, receipts):
+    assert len(preparations) == 1
+    assert publications == ["new-branch"]
+    assert not any(path.exists() for path in receipts)
+    assert current[0]["stages"] == {}
+    assert current[0]["generation"] == 1
+
+
+def _assert_next_replacement(monkeypatch, root, current, preparations):
+    # Another dev movement after this generation is merged starts one more PR.
+    monkeypatch.setattr(
+        preparation,
+        "_tree",
+        lambda root, ref: "third-tree" if ref == "origin/dev" else "new-tree",
+    )
+    assert preparation.prepare(root)["status"] == "pending"
+    assert preparations[-1]["generation"] == 2
+    assert len(preparations) == 2
+    assert current[0]["predecessor_sha"] == "new"
+    assert current[0]["stages"] == {}
+
+
+def _start_replacement_ref(transcript, monkeypatch, branch_state):
+    if branch_state == "legacy":
+        transcript.remote.append("test-head")
+        preparation.save(transcript.root, transcript.old)
+    elif branch_state == "interrupted-push":
+        monkeypatch.setattr(candidate.sessions, "load", lambda root: {"signing_key": "key"})
+        monkeypatch.setattr(candidate.sessions, "save", lambda *args: None)
+        monkeypatch.setattr(candidate.sessions, "commit_options", lambda root: [])
+        with pytest.raises(KeyboardInterrupt):
+            candidate._test_branch(transcript.root, transcript.old)
+        assert len(transcript.push_snapshots) == 1
+        assert transcript.push_snapshots[0]["testpypi_push_pending"]
+        assert transcript.push_snapshots[0]["testpypi_sha"] == "test-head"
+        # Process restart discards the mutated in-memory state.
+        transcript.old = json.loads(preparation.state_path(transcript.root).read_text())
+        transcript.current[0] = transcript.old
+    return transcript.old
+
+
 @pytest.mark.parametrize("branch_state", ["none", "legacy", "interrupted-push"])
 def test_new_dev_prepares_one_reviewed_generation_and_invalidates_receipts(
     replacing,
@@ -109,42 +215,20 @@ def test_new_dev_prepares_one_reviewed_generation_and_invalidates_receipts(
     remote = []
     push_snapshots = []
 
+    transcript = SimpleNamespace(
+        old=old,
+        remote=remote,
+        push_snapshots=push_snapshots,
+        original=original,
+        root=root,
+        current=current,
+    )
+
     def run(root, *args):
-        if args[:3] == ("git", "ls-remote", "--heads"):
-            return "test-head refs/heads/testpypi-" + old["version"] if remote else ""
-        if args == ("git", "rev-parse", "FETCH_HEAD"):
-            return "old"
-        if args == ("git", "rev-parse", "FETCH_HEAD^{tree}"):
-            return "old-tree"
-        if args == ("git", "rev-parse", "HEAD"):
-            return "test-head"
-        if args == ("git", "rev-parse", candidate._test_local_ref(old)):
-            return "test-head"
-        if args[:2] == ("git", "push"):
-            if args[-1].startswith(":"):
-                remote.clear()
-            else:
-                push_snapshots.append(json.loads(preparation.state_path(root).read_text()))
-                remote.append("test-head")
-                raise KeyboardInterrupt
-        return original(root, *args)
+        return _replacement_test_git(transcript, root, *args)
 
     monkeypatch.setattr(candidate.sessions, "run", run)
-    if branch_state == "legacy":
-        remote.append("test-head")
-        preparation.save(root, old)
-    elif branch_state == "interrupted-push":
-        monkeypatch.setattr(candidate.sessions, "load", lambda root: {"signing_key": "key"})
-        monkeypatch.setattr(candidate.sessions, "save", lambda *args: None)
-        monkeypatch.setattr(candidate.sessions, "commit_options", lambda root: [])
-        with pytest.raises(KeyboardInterrupt):
-            candidate._test_branch(root, old)
-        assert len(push_snapshots) == 1
-        assert push_snapshots[0]["testpypi_push_pending"]
-        assert push_snapshots[0]["testpypi_sha"] == "test-head"
-        # Process restart discards the mutated in-memory state.
-        old = json.loads(preparation.state_path(root).read_text())
-        current[0] = old
+    old = _start_replacement_ref(transcript, monkeypatch, branch_state)
     receipts = [
         root / path
         for path in (
@@ -159,33 +243,9 @@ def test_new_dev_prepares_one_reviewed_generation_and_invalidates_receipts(
     preparations = []
 
     def new(root, summary, *, predecessor):
-        intent = predecessor["replacement_intent"]
-        preparations.append(intent.copy())
-        notes = replacement.notes(root, predecessor, intent["version"])
-        version, files, fragments = preparation._metadata_files(
-            root,
-            summary,
-            version=intent["version"],
-            changelog=notes,
+        return _new_replacement_generation(
+            root, summary, predecessor=predecessor, old=old, preparations=preparations
         )
-        value = {
-            "task_id": old["task_id"],
-            "task_digest": old["task_digest"],
-            "workspace": str(root),
-            "source_sha": intent["source_sha"],
-            "generation": intent["generation"],
-            "predecessor_sha": predecessor["candidate_sha"],
-            "version": version,
-            "files": files,
-            "fragments": fragments,
-            "stages": {},
-            "pr": None,
-            "branch": "new-branch",
-            "candidate_sha": "new" if intent["generation"] == 1 else "newer",
-            "candidate_tree": "new-tree",
-        }
-        preparation.save(root, value)
-        return value
 
     publications = []
 
@@ -200,11 +260,7 @@ def test_new_dev_prepares_one_reviewed_generation_and_invalidates_receipts(
     assert first["pr"] == 13
     assert first["version"] == old["version"]
     assert preparation.prepare(root) == first
-    assert len(preparations) == 1
-    assert publications == ["new-branch"]
-    assert not any(path.exists() for path in receipts)
-    assert current[0]["stages"] == {}
-    assert current[0]["generation"] == 1
+    _assert_replacement_receipts(current, preparations, publications, receipts)
     archived = json.loads((root / "atk-release.json.old").read_text())
     assert archived["candidate_sha"] == "old"
     if branch_state != "none":
@@ -219,17 +275,7 @@ def test_new_dev_prepares_one_reviewed_generation_and_invalidates_receipts(
     current[0]["merged"] = True
     assert preparation.prepare(root)["status"] == "prepared"
     assert preparation.verify(root, promotion=True)["stages"] == {"reviewed": "new"}
-    # Another dev movement after this generation is merged starts one more PR.
-    monkeypatch.setattr(
-        preparation,
-        "_tree",
-        lambda root, ref: "third-tree" if ref == "origin/dev" else "new-tree",
-    )
-    assert preparation.prepare(root)["status"] == "pending"
-    assert preparations[-1]["generation"] == 2
-    assert len(preparations) == 2
-    assert current[0]["predecessor_sha"] == "new"
-    assert current[0]["stages"] == {}
+    _assert_next_replacement(monkeypatch, root, current, preparations)
 
 
 def test_interrupted_replacement_intent_reuses_generation(
@@ -251,6 +297,18 @@ def test_interrupted_replacement_intent_reuses_generation(
     assert current[0]["replacement_pending"]
     assert attempts[0]["generation"] == 1
     assert attempts[0]["version"] == state["version"]
+
+
+def _reservation_git(transcript, root, *args):
+    if args[:3] == ("git", "ls-remote", "--heads") and transcript.reservation == "testpypi":
+        return "test-head refs/heads/testpypi-" + transcript.old
+    if args[:3] == ("git", "ls-remote", "--tags") and transcript.reservation == "remote-tag":
+        return "old refs/tags/v" + transcript.old if "v" + transcript.old in args else ""
+    if args[:3] == ("git", "tag", "--list") and transcript.reservation == "local-tag":
+        return "v" + transcript.old if args[-1] == "v" + transcript.old else ""
+    if args[:2] == ("gh", "api"):
+        return "[]"
+    return transcript.original(root, *args)
 
 
 @pytest.mark.parametrize("published_hash", ["hash", "conflicting-hash"])
@@ -275,16 +333,10 @@ def test_reserved_candidate_uses_next_unreserved_version(
 
     original = candidate.sessions.run
 
+    transcript = SimpleNamespace(reservation=reservation, old=old, original=original)
+
     def run(root, *args):
-        if args[:3] == ("git", "ls-remote", "--heads") and reservation == "testpypi":
-            return "test-head refs/heads/testpypi-" + old
-        if args[:3] == ("git", "ls-remote", "--tags") and reservation == "remote-tag":
-            return "old refs/tags/v" + old if "v" + old in args else ""
-        if args[:3] == ("git", "tag", "--list") and reservation == "local-tag":
-            return "v" + old if args[-1] == "v" + old else ""
-        if args[:2] == ("gh", "api"):
-            return "[]"
-        return original(root, *args)
+        return _reservation_git(transcript, root, *args)
 
     monkeypatch.setattr(candidate, "index_files", index)
     monkeypatch.setattr(candidate.sessions, "run", run)
@@ -354,7 +406,7 @@ def test_reconciliation_failure_preserves_candidate_and_receipts(
         monkeypatch.setattr(candidate, "index_files", unavailable)
     else:
         monkeypatch.setattr(candidate, "index_files", lambda *args: {"file": "hash"})
-    with pytest.raises(RuntimeError, match="active|uncertain|unavailable|lookup failed|evidence"):
+    with pytest.raises(RuntimeError, match=r"active|uncertain|unavailable|lookup failed|evidence"):
         replacement.replace(root, state, None)
     assert current[0]["candidate_sha"] == "old"
     assert "replacement_intent" not in state
@@ -504,19 +556,22 @@ def test_interruption_after_replacement_journal_resumes_one_workspace(
     def interrupted(root, summary, *, predecessor):
         intent = predecessor["replacement_intent"]
         created.append(intent.copy())
-        preparation.save(root, {
-            **old,
-            "generation": intent["generation"],
-            "source_sha": intent["source_sha"],
-            "predecessor_sha": predecessor["candidate_sha"],
-            "branch": "replacement-branch",
-            "candidate_sha": None,
-            "candidate_tree": None,
-            "pr": None,
-            "stages": {},
-            "reset_receipts": True,
-            "replacement_pending": False,
-        })
+        preparation.save(
+            root,
+            {
+                **old,
+                "generation": intent["generation"],
+                "source_sha": intent["source_sha"],
+                "predecessor_sha": predecessor["candidate_sha"],
+                "branch": "replacement-branch",
+                "candidate_sha": None,
+                "candidate_tree": None,
+                "pr": None,
+                "stages": {},
+                "reset_receipts": True,
+                "replacement_pending": False,
+            },
+        )
         raise KeyboardInterrupt
 
     monkeypatch.setattr(preparation, "_new", interrupted)

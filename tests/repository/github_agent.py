@@ -56,7 +56,10 @@ def test_foreign_fork_is_not_a_trusted_model_job() -> None:
 
 
 @pytest.mark.parametrize("count", [8, 9, 10, 20])
-def test_serialized_changelog_fold_preserves_versions_and_wrapped_notes(tmp_path: Path, count: int) -> None:
+def test_serialized_changelog_fold_preserves_versions_and_wrapped_notes(
+    tmp_path: Path,
+    count: int,
+) -> None:
     (tmp_path / "agent_tools/changelog").mkdir(parents=True)
     (tmp_path / "docs").mkdir()
     (tmp_path / "pyproject.toml").write_text('version = "1.3.19.19"\n')

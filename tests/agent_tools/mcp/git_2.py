@@ -13,7 +13,9 @@ from tests.agent_tools._support.mcp import (
 
 @pytest.mark.parametrize("count", [9, 10, 20])
 def test_commit_requires_only_changelog_at_any_entry_count(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, count: int,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    count: int,
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
     _write_unreleased_changelog(root, [f"Change {index}" for index in range(count)])
@@ -184,7 +186,10 @@ def test_push_readiness_blocks_when_origin_dev_is_not_ancestor(
             "blockers": [
                 {
                     "phase": "remote_dev",
-                    "message": "Local HEAD does not contain origin/dev; pull, rebase, or merge before continuing.",
+                    "message": (
+                        "Local HEAD does not contain origin/dev; "
+                        "pull, rebase, or merge before continuing."
+                    ),
                 }
             ],
         },

@@ -69,7 +69,9 @@ def test_version_bump_does_not_partially_write_when_release_changelog_fails(
 
     monkeypatch.setattr(mcp_server, "_release_unreleased_changelog_text", fail_changelog)
 
-    result = mcp_server.version_bump("Consolidated agent MCP workflow", change_type="release", root=str(root))
+    result = mcp_server.version_bump(
+        "Consolidated agent MCP workflow", change_type="release", root=str(root)
+    )
 
     assert result["ok"] is False
     assert (root / "pyproject.toml").read_text(encoding="utf-8") == original_pyproject
@@ -84,7 +86,9 @@ def test_version_bump_fails_when_readme_version_marker_is_missing_during_release
     (root / "README.md").write_text("# analytics_toolkit\n", encoding="utf-8")
 
     result = mcp_server.version_bump(
-        "Consolidated agent MCP workflow", change_type="release", root=str(root),
+        "Consolidated agent MCP workflow",
+        change_type="release",
+        root=str(root),
     )
 
     assert result["ok"] is False
@@ -103,9 +107,7 @@ def test_version_bump_force_release_requires_unreleased_entries(tmp_path: Path) 
     )
 
     assert result["ok"] is False
-    assert result["blockers"][0]["message"] == (
-        "no unreleased entries; supply a release summary"
-    )
+    assert result["blockers"][0]["message"] == "no unreleased entries; supply a release summary"
 
 
 def test_version_bump_force_releases_below_threshold(tmp_path: Path) -> None:
@@ -167,7 +169,10 @@ def test_version_bump_rejects_invalid_force_release_options(
 
 
 @pytest.mark.parametrize("count", [8, 9, 10, 20])
-def test_version_bump_keeps_ordinary_versions_with_any_entry_count(tmp_path: Path, count: int) -> None:
+def test_version_bump_keeps_ordinary_versions_with_any_entry_count(
+    tmp_path: Path,
+    count: int,
+) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
     _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, count + 1)])
     changelog_path = root / "docs" / "CHANGELOG.md"
@@ -184,8 +189,11 @@ def test_version_bump_keeps_ordinary_versions_with_any_entry_count(tmp_path: Pat
         == count
     )
 
+    original_changelog = changelog_path.read_text(encoding="utf-8")
     dry_run = mcp_server.version_bump("Tenth change", root=str(root), dry_run=True)
+    assert changelog_path.read_text(encoding="utf-8") == original_changelog
     applied = mcp_server.version_bump("Tenth change", root=str(root))
+    assert {key: applied["result"][key] for key in dry_run["result"]} == dry_run["result"]
 
     assert dry_run["result"]["decision"] == "unreleased"
     assert dry_run["result"]["planned_version"] is None
@@ -215,9 +223,7 @@ def test_version_bump_skips_documentation_only_changes(tmp_path: Path) -> None:
 def test_version_bump_updates_unreleased_below_threshold(tmp_path: Path) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
 
-    dry_run = mcp_server.version_bump(
-        "Consolidated agent MCP workflow", root=str(root), dry_run=True
-    )
+    dry_run = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root), dry_run=True)
     applied = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
 
     assert dry_run["result"]["decision"] == "unreleased"

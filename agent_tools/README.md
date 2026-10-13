@@ -198,8 +198,15 @@ Low-level release-oriented `version-bump` options remain available for metadata
 preparation, including `--change-type release --force-release`. A summary can
 supply notes for an otherwise empty release. Metadata-only preparation PRs use
 the rolled release notes without adding a feature fragment that reopens Unreleased.
-Private implementation workers add regressions but execute no programs or tests;
-GitHub validates the published patch.
+Private implementation workers add regressions and edit sources without running
+programs, local pre-commit checks, tests, installs, or formatters. The trusted
+coordinator verifies task identity, pinned base/head, provenance, protected paths,
+and patch applicability before publishing an App-signed correction to the PR.
+GitHub then validates the exact corrected head through the focused regressions,
+Python matrix, SDK conformance, lint, type, coverage, and artifact gates. Successful
+`fast-checks`, fresh independent review, and authenticated exact-head owner policy
+approval for protected paths are required before merge; earlier-head results and
+approvals cannot substitute.
 
 `prepare-start` persists a private startup-context receipt below `.rag_index/`.
 `workflow-status` reuses it to return compact branch, dirty-state, diff, check

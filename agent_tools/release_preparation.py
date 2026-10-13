@@ -2,6 +2,7 @@
 
 Only explicit release actions call prepare. Status and upload guards call verify.
 """
+
 from __future__ import annotations
 
 # ruff: noqa: SLF001 - release preparation shares repository-private metadata contracts.
@@ -10,12 +11,14 @@ import importlib
 import json
 import re
 import shutil
-from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent_tools import sessions, task_context
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 STATE = "atk-release.json"
 METADATA = ("pyproject.toml", "README.md", "docs/CHANGELOG.md")
@@ -68,7 +71,12 @@ def _pr(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     target = str(state.get("pr") or state["branch"])
     pr: dict[str, Any] = json.loads(
         sessions.run(
-            root, "gh", "pr", "view", target, "--json",
+            root,
+            "gh",
+            "pr",
+            "view",
+            target,
+            "--json",
             "number,url,state,mergedAt,headRefOid,headRefName,baseRefName,body,statusCheckRollup",
         )
     )
@@ -109,7 +117,11 @@ def _reviewed(root: Path, state: dict[str, Any]) -> dict[str, Any]:
 
 
 def _metadata_files(
-    work: Path, summary: str | None, *, version: str | None = None, changelog: str | None = None,
+    work: Path,
+    summary: str | None,
+    *,
+    version: str | None = None,
+    changelog: str | None = None,
 ) -> tuple[str, dict[str, str], list[str]]:
     mcp = mcp_runtime()
     if changelog is None:
@@ -131,22 +143,30 @@ def _metadata_files(
     version = version or mcp._increment_version(mcp._package_version(work))
     files = {
         "pyproject.toml": mcp._replace_required(
-            mcp.VERSION_RE, (work / "pyproject.toml").read_text(),
-            f'version = "{version}"', "project version",
+            mcp.VERSION_RE,
+            (work / "pyproject.toml").read_text(),
+            f'version = "{version}"',
+            "project version",
         ),
         "README.md": mcp._replace_required(
-            mcp.README_VERSION_RE, (work / "README.md").read_text(),
-            f"**Version:** `{version}`", "README version",
+            mcp.README_VERSION_RE,
+            (work / "README.md").read_text(),
+            f"**Version:** `{version}`",
+            "README version",
         ),
         mcp.CHANGELOG_PATH: mcp._release_unreleased_changelog_text(
-            changelog, mcp._format_changelog_entry(version, notes),
+            changelog,
+            mcp._format_changelog_entry(version, notes),
         ),
     }
     return version, files, [str(path.relative_to(work)) for path in fragments]
 
 
 def _new(
-    root: Path, summary: str | None, *, predecessor: dict[str, Any] | None = None,
+    root: Path,
+    summary: str | None,
+    *,
+    predecessor: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = task_context.read(root)  # Require the actual explicit release request.
     proto = task_context.protocol()
@@ -169,7 +189,10 @@ def _new(
         generation = intent["generation"]
         changelog = release_replacement.notes(work, predecessor, intent["version"])
         version, files, fragments = _metadata_files(
-            work, summary, version=intent["version"], changelog=changelog,
+            work,
+            summary,
+            version=intent["version"],
+            changelog=changelog,
         )
     else:
         version, files, fragments = _metadata_files(work, summary)
@@ -178,18 +201,30 @@ def _new(
         branch += f"-g{generation}"
     receipt = sessions.load(work)
     receipt.update(
-        phase="feature", branch=branch, base=source, signing_key=key,
-        release_preparation=True, feature_id=context["task_id"],
+        phase="feature",
+        branch=branch,
+        base=source,
+        signing_key=key,
+        release_preparation=True,
+        feature_id=context["task_id"],
     )
     sessions.save(work, receipt)
     task_dir = task_context.directory(work)
     shutil.copyfile(task_context.directory(root) / "active.json", task_dir / "active.json")
     (task_dir / "active.json").chmod(0o600)
     state = {
-        "task_id": context["task_id"], "task_digest": proto.digest(proto.public_context(context)),
-        "source_sha": source, "version": version, "branch": branch,
-        "workspace": str(work), "files": files, "fragments": fragments,
-        "candidate_sha": None, "pr": None, "stages": {}, "generation": generation,
+        "task_id": context["task_id"],
+        "task_digest": proto.digest(proto.public_context(context)),
+        "source_sha": source,
+        "version": version,
+        "branch": branch,
+        "workspace": str(work),
+        "files": files,
+        "fragments": fragments,
+        "candidate_sha": None,
+        "pr": None,
+        "stages": {},
+        "generation": generation,
     }
     if predecessor:
         state.update(
@@ -227,7 +262,11 @@ def _publish_preparation(root: Path, state: dict[str, Any]) -> None:
                     (work / path).unlink()
             sessions.run(work, "git", "add", "--", *METADATA, *state["fragments"])
             sessions.run(
-                work, "git", *sessions.commit_options(work), "commit", "-m",
+                work,
+                "git",
+                *sessions.commit_options(work),
+                "commit",
+                "-m",
                 "Prepare PyPI release " + state["version"] + task_context.commit_trailers(work),
             )
             head = sessions.run(work, "git", "rev-parse", "HEAD")
@@ -264,7 +303,9 @@ def _reviewed_metadata(root: Path, state: dict[str, Any], sha: str) -> dict[str,
     if len(notes) != 1 or not any(line.startswith("- ") for line in notes[0].splitlines()):
         message = "Corrected preparation must retain versioned release notes."
         raise RuntimeError(message)
-    fragments = sessions.run(root, "git", "ls-tree", "-r", "--name-only", sha, "agent_tools/changelog")
+    fragments = sessions.run(
+        root, "git", "ls-tree", "-r", "--name-only", sha, "agent_tools/changelog"
+    )
     if any(path.endswith(".md") for path in fragments.splitlines()):
         message = "Corrected release preparation left unconsumed changelog fragments."
         raise RuntimeError(message)
@@ -273,7 +314,11 @@ def _reviewed_metadata(root: Path, state: dict[str, Any], sha: str) -> dict[str,
 
 def _clear_receipts(root: Path) -> None:
     mcp = mcp_runtime()
-    for receipt in (mcp.CHECK_STATE_FILE, mcp.PRECOMMIT_STAGE_STATE_FILE, mcp.RELEASE_CHECK_STATE_FILE):
+    for receipt in (
+        mcp.CHECK_STATE_FILE,
+        mcp.PRECOMMIT_STAGE_STATE_FILE,
+        mcp.RELEASE_CHECK_STATE_FILE,
+    ):
         path = root / receipt
         if path.exists():
             path.unlink()
@@ -301,8 +346,10 @@ def prepare(root: Path, *, summary: str | None = None) -> dict[str, Any]:
         return _prepare(root, summary=summary)
 
 
-def _prepare(  # noqa: C901, PLR0912, PLR0915 - journaled release generations.
-    root: Path, *, summary: str | None = None,
+def _prepare(  # noqa: C901, PLR0912 - journaled release generations.
+    root: Path,
+    *,
+    summary: str | None = None,
 ) -> dict[str, Any]:
     sessions.clean(root)
     sessions.run(root, "git", "fetch", "origin", "dev", "main")
@@ -338,8 +385,11 @@ def _prepare(  # noqa: C901, PLR0912, PLR0915 - journaled release generations.
             message = "Release preparation PR was closed without merging."
             raise RuntimeError(message)
         return {
-            "status": "pending", "pr": pr["number"], "url": pr["url"],
-            "version": state["version"], "candidate_sha": state["candidate_sha"],
+            "status": "pending",
+            "pr": pr["number"],
+            "url": pr["url"],
+            "version": state["version"],
+            "candidate_sha": state["candidate_sha"],
         }
     final_sha = pr["headRefOid"]
     final_state = {**state, "candidate_sha": final_sha}
@@ -383,9 +433,9 @@ def verify(root: Path, *, promotion: bool = False) -> dict[str, Any]:
         if sessions.run(root, "git", "branch", "--show-current") != "main":
             message = "Release uploads require production main."
             raise RuntimeError(message)
-        if _tree(root, "HEAD") != tree or sessions.run(root, "git", "rev-parse", "HEAD") != sessions.run(
-            root, "git", "rev-parse", "origin/main"
-        ):
+        if _tree(root, "HEAD") != tree or sessions.run(
+            root, "git", "rev-parse", "HEAD"
+        ) != sessions.run(root, "git", "rev-parse", "origin/main"):
             message = "Production main must be synchronized with the prepared candidate."
             raise RuntimeError(message)
         mcp = mcp_runtime()

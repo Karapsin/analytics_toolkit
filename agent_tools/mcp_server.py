@@ -1013,7 +1013,132 @@ def _version_bump_validation_error(
     return None
 
 
-def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata and session fragments.
+def _update_unreleased_changelog(
+    root_path: Path,
+    changelog_text: str,
+    planned: dict[str, Any],
+    input_summary: dict[str, Any],
+    *,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Apply an ordinary changelog entry without changing release metadata."""
+    changelog = root_path / CHANGELOG_PATH
+    bullet = planned["changelog_entry"]
+    try:
+        updated_changelog = _upsert_unreleased_changelog_bullet(changelog_text, bullet)
+    except ValueError as exc:
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            ok=False,
+            summary="Unreleased changelog update failed.",
+            result=planned,
+            blockers=[{"phase": "metadata", "message": str(exc)}],
+            next_actions=["Fix the changelog, then rerun version_bump(...)."],
+        )
+    if dry_run:
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            summary="Unreleased changelog update planned; versions change only for releases.",
+            result=planned,
+        )
+    _write_text(changelog, updated_changelog)
+    metadata = metadata_status(root=str(root_path))
+    if not metadata["ok"]:
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            ok=False,
+            summary="Metadata is not aligned after unreleased changelog update.",
+            result={**planned, "metadata_status": metadata},
+            blockers=metadata["blockers"],
+            next_actions=["Fix metadata alignment, then rerun workflow_status(...)."],
+        )
+    return _tool_output(
+        "version_bump",
+        input_summary,
+        summary=(
+            "Added unreleased changelog bullet "
+            f"({planned['unreleased_count']} entries); "
+            "version not bumped."
+        ),
+        result={**planned, "metadata_status": metadata},
+        next_actions=["Run workflow_status(...) and run_checks(...) before committing."],
+    )
+
+
+def _apply_release_metadata(
+    root_path: Path,
+    changelog_text: str,
+    planned: dict[str, Any],
+    input_summary: dict[str, Any],
+    *,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Validate all release markers before writing metadata in its existing order."""
+    version = planned["planned_version"]
+    pyproject = root_path / "pyproject.toml"
+    readme = root_path / "README.md"
+    changelog = root_path / CHANGELOG_PATH
+    try:
+        pyproject_text = _replace_required(
+            VERSION_RE,
+            _read_text(pyproject),
+            f'version = "{version}"',
+            "project version",
+        )
+        readme_text = _replace_required(
+            README_VERSION_RE,
+            _read_text(readme),
+            f"**Version:** `{version}`",
+            "README version",
+        )
+        updated_changelog = _release_unreleased_changelog_text(
+            changelog_text, planned["changelog_entry"]
+        )
+    except ValueError as exc:
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            ok=False,
+            summary="Version bump metadata update failed.",
+            result=planned,
+            blockers=[{"phase": "metadata", "message": str(exc)}],
+            next_actions=["Fix the metadata marker, then rerun version_bump(...)."],
+        )
+
+    if dry_run:
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            summary="Release metadata preparation planned.",
+            result=planned,
+        )
+    _write_text(pyproject, pyproject_text)
+    _write_text(readme, readme_text)
+    _write_text(changelog, updated_changelog)
+    metadata = metadata_status(root=str(root_path))
+    if not metadata["ok"]:
+        return _tool_output(
+            "version_bump",
+            input_summary,
+            ok=False,
+            summary="Version bump metadata is not aligned after update.",
+            result={**planned, "metadata_status": metadata},
+            blockers=metadata["blockers"],
+            next_actions=["Fix metadata alignment, then rerun workflow_status(...)."],
+        )
+    return _tool_output(
+        "version_bump",
+        input_summary,
+        summary=f"Bumped version to {version}.",
+        result={**planned, "metadata_status": metadata},
+        next_actions=["Run workflow_status(...) and run_checks(...) before committing."],
+    )
+
+
+def version_bump(  # noqa: PLR0911 - public validation and fragment responses.
     summary: str | None = None,
     change_type: str = "implementation",
     dry_run: bool = False,  # noqa: FBT001, FBT002 - named MCP/CLI option.
@@ -1093,7 +1218,9 @@ def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata 
             next_version_value = _increment_version(current_version)
         except ValueError as exc:
             return _tool_output(
-                "version_bump", input_summary, ok=False,
+                "version_bump",
+                input_summary,
+                ok=False,
                 summary="Release version is invalid.",
                 blockers=[{"phase": "metadata", "message": str(exc)}],
             )
@@ -1118,100 +1245,20 @@ def version_bump(  # noqa: C901, PLR0911, PLR0912 - coordinates atomic metadata 
             "unreleased_count": planned_unreleased_count,
         }
     if not should_bump:
-        try:
-            updated_changelog = _upsert_unreleased_changelog_bullet(changelog_text, bullet)
-        except ValueError as exc:
-            return _tool_output(
-                "version_bump",
-                input_summary,
-                ok=False,
-                summary="Unreleased changelog update failed.",
-                result=planned,
-                blockers=[{"phase": "metadata", "message": str(exc)}],
-                next_actions=["Fix the changelog, then rerun version_bump(...)."],
-            )
-        if dry_run:
-            return _tool_output(
-                "version_bump", input_summary,
-                summary="Unreleased changelog update planned; versions change only for releases.",
-                result=planned,
-            )
-        _write_text(changelog, updated_changelog)
-        metadata = metadata_status(root=str(root_path))
-        if not metadata["ok"]:
-            return _tool_output(
-                "version_bump",
-                input_summary,
-                ok=False,
-                summary="Metadata is not aligned after unreleased changelog update.",
-                result={**planned, "metadata_status": metadata},
-                blockers=metadata["blockers"],
-                next_actions=["Fix metadata alignment, then rerun workflow_status(...)."],
-            )
-        return _tool_output(
-            "version_bump",
+        return _update_unreleased_changelog(
+            root_path,
+            changelog_text,
+            planned,
             input_summary,
-            summary=(
-                "Added unreleased changelog bullet "
-                f"({planned_unreleased_count} entries); "
-                "version not bumped."
-            ),
-            result={**planned, "metadata_status": metadata},
-            next_actions=["Run workflow_status(...) and run_checks(...) before committing."],
+            dry_run=dry_run,
         )
 
-    pyproject = root_path / "pyproject.toml"
-    readme = root_path / "README.md"
-    try:
-        pyproject_text = _replace_required(
-            VERSION_RE,
-            _read_text(pyproject),
-            f'version = "{next_version_value}"',
-            "project version",
-        )
-        readme_text = _replace_required(
-            README_VERSION_RE,
-            _read_text(readme),
-            f"**Version:** `{next_version_value}`",
-            "README version",
-        )
-        updated_changelog = _release_unreleased_changelog_text(changelog_text, entry)
-    except ValueError as exc:
-        return _tool_output(
-            "version_bump",
-            input_summary,
-            ok=False,
-            summary="Version bump metadata update failed.",
-            result=planned,
-            blockers=[{"phase": "metadata", "message": str(exc)}],
-            next_actions=["Fix the metadata marker, then rerun version_bump(...)."],
-        )
-
-    if dry_run:
-        return _tool_output(
-            "version_bump", input_summary, summary="Release metadata preparation planned.",
-            result=planned,
-        )
-    _write_text(pyproject, pyproject_text)
-    _write_text(readme, readme_text)
-    _write_text(changelog, updated_changelog)
-    metadata = metadata_status(root=str(root_path))
-    if not metadata["ok"]:
-        return _tool_output(
-            "version_bump",
-            input_summary,
-            ok=False,
-            summary="Version bump metadata is not aligned after update.",
-            result={**planned, "metadata_status": metadata},
-            blockers=metadata["blockers"],
-            next_actions=["Fix metadata alignment, then rerun workflow_status(...)."],
-        )
-    return _tool_output(
-        "version_bump",
+    return _apply_release_metadata(
+        root_path,
+        changelog_text,
+        planned,
         input_summary,
-        summary=f"Bumped version to {next_version_value}.",
-        result={**planned, "metadata_status": metadata},
-        next_actions=["Run workflow_status(...) and run_checks(...) before committing."],
+        dry_run=dry_run,
     )
 
 
@@ -1696,7 +1743,8 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
                 }
             ],
             next_actions=[
-                "Run version_bump(...), include the required changelog paths, then retry the commit."
+                "Run version_bump(...), include the required changelog paths, "
+                "then retry the commit."
             ],
         )
     verification = _verify_precommit_success(root_path)
@@ -1832,7 +1880,7 @@ def _prepare_release(root: Path, summary: str | None) -> dict[str, Any]:
         return {"status": "blocked", "message": str(exc)}
 
 
-def release_workflow(  # noqa: C901, PLR0912, PLR0915 - reviewed release orchestration.
+def release_workflow(  # noqa: C901 - reviewed release orchestration.
     action: str = "status",
     root: str = ".",
     *,
@@ -1865,13 +1913,18 @@ def release_workflow(  # noqa: C901, PLR0912, PLR0915 - reviewed release orchest
                 ok=pending,
                 summary=(
                     "Release preparation PR is pending."
-                    if pending else "Release preparation blocked."
+                    if pending
+                    else "Release preparation blocked."
                 ),
                 result=preparation,
                 blockers=(
-                    [] if pending else [{"phase": "preparation", "message": preparation["message"]}]
+                    []
+                    if pending
+                    else [{"phase": "preparation", "message": preparation["message"]}]
                 ),
-                next_actions=[f"Re-enter release_workflow(action='{action}') to resume this candidate."],
+                next_actions=[
+                    f"Re-enter release_workflow(action='{action}') to resume this candidate."
+                ],
             )
         promoted = _merge_dev_for_release(root_path, input_summary)
         if not promoted["ok"] or action == "merge-dev":
@@ -2448,7 +2501,9 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     release_parser.add_argument("--root", default=".")
     release_parser.add_argument("--summary")
     release_parser.set_defaults(
-        handler=lambda args: release_workflow(action=args.action, root=args.root, summary=args.summary)
+        handler=lambda args: release_workflow(
+            action=args.action, root=args.root, summary=args.summary
+        )
     )
 
     return parser
@@ -5137,7 +5192,10 @@ def _merge_dev_for_release(root: Path, input_summary: dict[str, Any]) -> dict[st
         release_candidate = _release_preparation_module().verify(root, promotion=True)
     except (RuntimeError, ValueError, OSError) as exc:
         return _tool_output(
-            "release_workflow", input_summary, ok=False, summary="Release promotion blocked.",
+            "release_workflow",
+            input_summary,
+            ok=False,
+            summary="Release promotion blocked.",
             blockers=[{"phase": "preparation", "message": str(exc)}],
         )
     health = repo_health(root=str(root))

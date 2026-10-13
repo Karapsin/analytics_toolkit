@@ -1,18 +1,93 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
-
 from release_routines.lib import release_candidate as candidate
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
+def _restart_save(transcript, original_save, root, value):
+    original_save(root, value)
+    if (
+        transcript.problem == "before-push"
+        and value.get("testpypi_push_pending")
+        and not transcript.interrupted
+    ):
+        transcript.interrupted.append(True)
+        raise KeyboardInterrupt
+
+
+def _restart_push(transcript):
+    saved = json.loads((transcript.root / "state.json").read_text())
+    assert saved["testpypi_sha"] == "test-head"
+    assert saved["testpypi_push_pending"]
+    assert any(call[:2] == ("git", "update-ref") for call in transcript.calls)
+    transcript.remote.append("test-head")
+    if transcript.problem == "after-push" and not transcript.interrupted:
+        transcript.interrupted.append(True)
+        raise KeyboardInterrupt
+
+
+def _restart_fetch(transcript, args):
+    if args[:2] == ("git", "clone"):
+        # The default branch contains a squash commit, not the original head.
+        assert not transcript.fetched
+    if args == ("git", "fetch", "origin", "refs/pull/12/head"):
+        if transcript.problem == "fetch":
+            message = "fetch failed"
+            raise RuntimeError(message)
+        transcript.fetched.append("original-pr-head")
+    if args == ("git", "rev-parse", "FETCH_HEAD"):
+        assert transcript.fetched
+        return "wrong-head" if transcript.problem == "sha" else transcript.fetched[0]
+    if args == ("git", "rev-parse", "FETCH_HEAD^{tree}"):
+        assert transcript.fetched
+        return "wrong-tree" if transcript.problem == "tree" else "reviewed-tree"
+    if args[:2] == ("git", "switch"):
+        assert transcript.fetched == ["original-pr-head"]
+        assert args[-1] == transcript.fetched[0]
+
+    return None
+
+
+def _restart_read(transcript, args):
+    if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
+        return "test-head original-pr-head"
+    if args[:2] == ("git", "show"):
+        return (
+            candidate.replace_project_name_text(
+                transcript.metadata, candidate.PROJECTS["testpypi"]
+            ).strip()
+            if args[2].startswith("test-head:")
+            else transcript.metadata
+        )
+    if args[:2] == ("git", "diff"):
+        return "pyproject.toml"
+    if args in {
+        ("git", "rev-parse", candidate._test_local_ref(transcript.state)),
+        ("git", "rev-parse", "HEAD"),
+    }:
+        return "test-head"
+    return ""
+
+
+def _restart_git(transcript, *args):
+    transcript.calls.append(args)
+    if args[:3] == ("git", "ls-remote", "--heads"):
+        return "test-head refs/heads/testpypi-1.2.3.4" if transcript.remote else ""
+    if args[:2] == ("git", "push"):
+        _restart_push(transcript)
+    fetched = _restart_fetch(transcript, args)
+    return fetched if fetched is not None else _restart_read(transcript, args)
+
+
 @pytest.mark.parametrize("problem", ["none", "fetch", "sha", "tree", "before-push", "after-push"])
-def test_squash_merged_deleted_branch_is_fetched_before_test_branch(  # noqa: PLR0915 - restart simulation.
+def test_squash_merged_deleted_branch_is_fetched_before_test_branch(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     problem: str,
@@ -29,61 +104,29 @@ def test_squash_merged_deleted_branch_is_fetched_before_test_branch(  # noqa: PL
     remote = []
     interrupted = []
     metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
-    monkeypatch.setattr(candidate.release_preparation, "state_path", lambda root: tmp_path / "state.json")
+    monkeypatch.setattr(
+        candidate.release_preparation, "state_path", lambda root: tmp_path / "state.json"
+    )
+    transcript = SimpleNamespace(
+        root=tmp_path,
+        state=state,
+        problem=problem,
+        calls=calls,
+        fetched=fetched,
+        remote=remote,
+        interrupted=interrupted,
+        metadata=metadata,
+    )
+
     original_save = candidate.release_preparation.save
 
     def save(root, value):
-        original_save(root, value)
-        if problem == "before-push" and value.get("testpypi_push_pending") and not interrupted:
-            interrupted.append(True)
-            raise KeyboardInterrupt
+        _restart_save(transcript, original_save, root, value)
 
     monkeypatch.setattr(candidate.release_preparation, "save", save)
 
-    def run(root, *args):  # noqa: C901, PLR0912 - bounded fake Git transcript.
-        calls.append(args)
-        if args[:3] == ("git", "ls-remote", "--heads"):
-            return "test-head refs/heads/testpypi-1.2.3.4" if remote else ""
-        if args[:2] == ("git", "push"):
-            saved = json.loads((tmp_path / "state.json").read_text())
-            assert saved["testpypi_sha"] == "test-head"
-            assert saved["testpypi_push_pending"]
-            assert any(call[:2] == ("git", "update-ref") for call in calls)
-            remote.append("test-head")
-            if problem == "after-push" and not interrupted:
-                interrupted.append(True)
-                raise KeyboardInterrupt
-        if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
-            return "test-head original-pr-head"
-        if args[:2] == ("git", "show"):
-            return (
-                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
-                if args[2].startswith("test-head:") else metadata
-            )
-        if args[:2] == ("git", "diff"):
-            return "pyproject.toml"
-        if args == ("git", "rev-parse", candidate._test_local_ref(state)):
-            return "test-head"
-        if args[:2] == ("git", "clone"):
-            # The default branch contains a squash commit, not the original head.
-            assert not fetched
-        if args == ("git", "fetch", "origin", "refs/pull/12/head"):
-            if problem == "fetch":
-                message = "fetch failed"
-                raise RuntimeError(message)
-            fetched.append("original-pr-head")
-        if args == ("git", "rev-parse", "FETCH_HEAD"):
-            assert fetched
-            return "wrong-head" if problem == "sha" else fetched[0]
-        if args == ("git", "rev-parse", "FETCH_HEAD^{tree}"):
-            assert fetched
-            return "wrong-tree" if problem == "tree" else "reviewed-tree"
-        if args[:2] == ("git", "switch"):
-            assert fetched == ["original-pr-head"]
-            assert args[-1] == fetched[0]
-        if args == ("git", "rev-parse", "HEAD"):
-            return "test-head"
-        return ""
+    def run(root, *args):
+        return _restart_git(transcript, *args)
 
     monkeypatch.setattr(candidate.sessions, "run", run)
     monkeypatch.setattr(candidate.sessions, "load", lambda root: {"signing_key": "key"})
@@ -93,19 +136,22 @@ def test_squash_merged_deleted_branch_is_fetched_before_test_branch(  # noqa: PL
         with pytest.raises(KeyboardInterrupt):
             candidate._test_branch(tmp_path, state)
         state = json.loads((tmp_path / "state.json").read_text())
+        transcript.state = state
         assert state["testpypi_push_pending"]
         assert candidate._test_branch(tmp_path, state) == "test-head"
-        assert candidate._test_branch(tmp_path, candidate.release_preparation.load(tmp_path)) == "test-head"
+        restarted = candidate.release_preparation.load(tmp_path)
+        assert candidate._test_branch(tmp_path, restarted) == "test-head"
         assert len(remote) == 1
         assert sum("commit" in call for call in calls) == 1
         assert "testpypi_push_pending" not in candidate.release_preparation.load(tmp_path)
     elif problem == "none":
         assert candidate._test_branch(tmp_path, state) == "test-head"
-        assert calls.index(("git", "fetch", "origin", "refs/pull/12/head")) < next(
-            index for index, call in enumerate(calls) if call[:2] == ("git", "switch")
-        )
+        switched = next(index for index, call in enumerate(calls) if call[:2] == ("git", "switch"))
+        assert calls.index(("git", "fetch", "origin", "refs/pull/12/head")) < switched
+        assert calls.index(("git", "rev-parse", "FETCH_HEAD")) < switched
+        assert calls.index(("git", "rev-parse", "FETCH_HEAD^{tree}")) < switched
     else:
-        with pytest.raises(RuntimeError, match="fetch failed|verified candidate"):
+        with pytest.raises(RuntimeError, match=r"fetch failed|verified candidate"):
             candidate._test_branch(tmp_path, state)
         assert not any(call[:2] == ("git", "switch") or "push" in call for call in calls)
 
@@ -159,9 +205,16 @@ def test_all_matching_publication_attempts_are_reconciled(
     assert "event=workflow_dispatch" in calls[0]
 
 
+def _temporary_metadata(args, metadata, temporary, problem):
+    if args[2].startswith("candidate:"):
+        return metadata
+    return temporary.strip() + ('\ndescription = "changed"' if problem == "metadata" else "")
+
+
 @pytest.mark.parametrize("entrypoint", ["publish", "replace"])
 @pytest.mark.parametrize(
-    "problem", ["none", "parent", "merge", "metadata", "extra", "sha", "fetch"],
+    "problem",
+    ["none", "parent", "merge", "metadata", "extra", "sha", "fetch"],
 )
 def test_existing_temporary_ref_requires_complete_candidate_verification(
     monkeypatch: pytest.MonkeyPatch,
@@ -175,7 +228,9 @@ def test_existing_temporary_ref_requires_complete_candidate_verification(
     metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
     temporary = candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"])
     calls = []
-    monkeypatch.setattr(candidate.release_preparation, "state_path", lambda root: tmp_path / "state.json")
+    monkeypatch.setattr(
+        candidate.release_preparation, "state_path", lambda root: tmp_path / "state.json"
+    )
     monkeypatch.setattr(candidate, "index_files", lambda *args: {})
 
     def run(root, *args):
@@ -191,9 +246,7 @@ def test_existing_temporary_ref_requires_complete_candidate_verification(
                 "merge": "test-head candidate other",
             }.get(problem, "test-head candidate")
         if args[:2] == ("git", "show"):
-            if args[2].startswith("candidate:"):
-                return metadata
-            return temporary.strip() + ('\ndescription = "changed"' if problem == "metadata" else "")
+            return _temporary_metadata(args, metadata, temporary, problem)
         if args[:2] == ("git", "diff"):
             return "pyproject.toml\nextra.py" if problem == "extra" else "pyproject.toml"
         return ""
@@ -211,19 +264,28 @@ def test_existing_temporary_ref_requires_complete_candidate_verification(
         assert candidate.release_preparation.load(tmp_path)["testpypi_sha"] == "test-head"
         assert sum("push" in call for call in calls) == (entrypoint == "replace")
     else:
-        with pytest.raises(RuntimeError, match="candidate|metadata|changes|reconciled|unavailable"):
+        with pytest.raises(
+            RuntimeError, match=r"candidate|metadata|changes|reconciled|unavailable"
+        ):
             action(tmp_path, state)
         assert not any("push" in call or "workflow" in call for call in calls)
         assert not (tmp_path / "state.json").exists()
 
 
 @pytest.mark.parametrize("entrypoint", ["publish", "replace"])
-@pytest.mark.parametrize("problem", ["missing", "retained-mismatch", "push-conflict", "not-visible"])
+@pytest.mark.parametrize(
+    "problem", ["missing", "retained-mismatch", "push-conflict", "not-visible"]
+)
 def test_pending_push_and_established_ref_fail_closed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, problem: str, entrypoint: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    problem: str,
+    entrypoint: str,
 ) -> None:
     state = {
-        "candidate_sha": "candidate", "version": "1.2.3.4", "testpypi_sha": "test-head",
+        "candidate_sha": "candidate",
+        "version": "1.2.3.4",
+        "testpypi_sha": "test-head",
     }
     if problem != "missing":
         state["testpypi_push_pending"] = True
@@ -238,8 +300,11 @@ def test_pending_push_and_established_ref_fail_closed(
             return "test-head candidate"
         if args[:2] == ("git", "show"):
             return (
-                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
-                if args[2].startswith("test-head:") else metadata
+                candidate.replace_project_name_text(
+                    metadata, candidate.PROJECTS["testpypi"]
+                ).strip()
+                if args[2].startswith("test-head:")
+                else metadata
             )
         if args[:2] == ("git", "diff"):
             return "pyproject.toml"
@@ -253,21 +318,24 @@ def test_pending_push_and_established_ref_fail_closed(
     monkeypatch.setattr(candidate.sessions, "run", run)
     monkeypatch.setattr(candidate, "index_files", lambda *args: {})
     action = candidate._test_branch if entrypoint == "publish" else candidate.reconcile_replacement
-    with pytest.raises(RuntimeError, match="disappeared|journaled|conflict|not visible"):
+    with pytest.raises(RuntimeError, match=r"disappeared|journaled|conflict|not visible"):
         action(tmp_path, state)
     assert not any("clone" in call or "workflow" in call for call in calls)
     assert sum("push" in call for call in calls) == (problem in {"push-conflict", "not-visible"})
 
 
 def test_interruption_after_leased_deletion_reconciles_on_restart(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     state = {"candidate_sha": "candidate", "version": "1.2.3.4", "testpypi_sha": "test-head"}
     metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
     remote = ["test-head"]
     lookups = []
     deletions = []
-    monkeypatch.setattr(candidate.release_preparation, "state_path", lambda root: tmp_path / "state.json")
+    monkeypatch.setattr(
+        candidate.release_preparation, "state_path", lambda root: tmp_path / "state.json"
+    )
     monkeypatch.setattr(candidate, "index_files", lambda *args: {})
 
     def run(root, *args):
@@ -277,8 +345,11 @@ def test_interruption_after_leased_deletion_reconciles_on_restart(
             return "test-head candidate"
         if args[:2] == ("git", "show"):
             return (
-                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
-                if args[2].startswith("test-head:") else metadata
+                candidate.replace_project_name_text(
+                    metadata, candidate.PROJECTS["testpypi"]
+                ).strip()
+                if args[2].startswith("test-head:")
+                else metadata
             )
         if args[:2] == ("git", "diff"):
             return "pyproject.toml"

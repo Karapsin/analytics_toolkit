@@ -3,10 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from release_routines.lib import release_candidate as candidate
 
 from agent_tools import release_preparation as preparation
 from agent_tools import release_replacement as replacement
-from release_routines.lib import release_candidate as candidate
 from tests.agent_tools._support.mcp import (
     Path,
     _write_minimal_repo_files,
@@ -58,7 +58,9 @@ def test_release_metadata_validation_is_atomic(tmp_path: Path, bad_marker: str) 
     originals = {path: (root / path).read_text() for path in preparation.METADATA}
     with pytest.raises(ValueError, match="README version"):
         preparation._metadata_files(root, "Release metadata")
-    result = mcp_server.version_bump("Release metadata", change_type="release", dry_run=True, root=str(root))
+    result = mcp_server.version_bump(
+        "Release metadata", change_type="release", dry_run=True, root=str(root)
+    )
     assert not result["ok"]
     assert {path: (root / path).read_text() for path in originals} == originals
 
@@ -74,47 +76,97 @@ def test_summary_only_force_release_dry_run_does_not_write(tmp_path: Path) -> No
 
 @pytest.mark.parametrize("action", ["merge-dev", "publish"])
 def test_pending_pr_cannot_promote_or_publish(monkeypatch: pytest.MonkeyPatch, action: str) -> None:
-    monkeypatch.setattr(mcp_server, "_prepare_release", lambda *args: {
-        "status": "pending", "pr": 12, "url": "https://example/pr/12", "version": "1.2.3.4",
-    })
-    monkeypatch.setattr(mcp_server, "_merge_dev_for_release", lambda *args: pytest.fail("promoted pending PR"))
-    monkeypatch.setattr(mcp_server, "_run_command", lambda *args: pytest.fail("uploaded pending PR"))
+    monkeypatch.setattr(
+        mcp_server,
+        "_prepare_release",
+        lambda *args: {
+            "status": "pending",
+            "pr": 12,
+            "url": "https://example/pr/12",
+            "version": "1.2.3.4",
+        },
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_merge_dev_for_release",
+        lambda *args: pytest.fail("promoted pending PR"),
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_run_command",
+        lambda *args: pytest.fail("uploaded pending PR"),
+    )
     result = mcp_server.release_workflow(action)
     assert result["result"]["status"] == "pending"
     assert result["result"]["pr"] == 12
     assert "resume" in result["next_actions"][0]
 
 
-def test_missing_preparation_blocks_status_without_preparing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_missing_preparation_blocks_status_without_preparing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
     monkeypatch.setattr(preparation, "load", lambda root: {})
-    monkeypatch.setattr(mcp_server, "_prepare_release", lambda *args: pytest.fail("status prepared metadata"))
-    monkeypatch.setattr(mcp_server, "repo_health", lambda **kwargs: {"branch": "main", "dirty": False})
+    monkeypatch.setattr(
+        mcp_server,
+        "_prepare_release",
+        lambda *args: pytest.fail("status prepared metadata"),
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "repo_health",
+        lambda **kwargs: {"branch": "main", "dirty": False},
+    )
     for name in ("_remote_main_status", "_remote_dev_status"):
-        monkeypatch.setattr(mcp_server, name, lambda *args, **kwargs: {
-            "result": {}, "command_results": [], "blockers": [],
-        })
+        monkeypatch.setattr(
+            mcp_server,
+            name,
+            lambda *args, **kwargs: {
+                "result": {},
+                "command_results": [],
+                "blockers": [],
+            },
+        )
     monkeypatch.setattr(mcp_server, "_verify_precommit_success", lambda *args: {"ok": True})
     result = mcp_server.release_workflow("status", str(root))
     assert not result["ok"]
     assert any(blocker["phase"] == "preparation" for blocker in result["blockers"])
 
 
-def test_reentering_pending_preparation_reuses_pr_and_version(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_reentering_pending_preparation_reuses_pr_and_version(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     state = {
-        "pr": 12, "branch": "codex/release-task-source", "version": "1.2.3.4",
-        "candidate_sha": "candidate", "candidate_tree": "tree", "stages": {},
+        "pr": 12,
+        "branch": "codex/release-task-source",
+        "version": "1.2.3.4",
+        "candidate_sha": "candidate",
+        "candidate_tree": "tree",
+        "stages": {},
     }
     monkeypatch.setattr(preparation, "load", lambda root: state)
     monkeypatch.setattr(preparation.sessions, "clean", lambda root: None)
     monkeypatch.setattr(preparation.task_context, "directory", lambda root: root / "no-task")
     monkeypatch.setattr(preparation.sessions, "run", lambda *args: "")
     monkeypatch.setattr(preparation, "_context", lambda *args: None)
-    monkeypatch.setattr(preparation, "_pr", lambda *args: {
-        "number": 12, "url": "https://example/pr/12", "state": "OPEN", "mergedAt": None,
-    })
+    monkeypatch.setattr(
+        preparation,
+        "_pr",
+        lambda *args: {
+            "number": 12,
+            "url": "https://example/pr/12",
+            "state": "OPEN",
+            "mergedAt": None,
+        },
+    )
     monkeypatch.setattr(preparation, "_new", lambda *args: pytest.fail("duplicate preparation"))
-    monkeypatch.setattr(preparation, "_publish_preparation", lambda *args: pytest.fail("duplicate PR"))
+    monkeypatch.setattr(
+        preparation,
+        "_publish_preparation",
+        lambda *args: pytest.fail("duplicate PR"),
+    )
     first = preparation.prepare(tmp_path)
     second = preparation.prepare(tmp_path)
     assert first == second
@@ -132,10 +184,20 @@ def test_closed_pr_blocks_resume(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 
 
 @pytest.mark.parametrize("tree", ["changed-dev", "changed-candidate"])
-def test_changed_content_invalidates_prepared_candidate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, tree: str) -> None:
-    monkeypatch.setattr(preparation, "load", lambda root: {
-        "candidate_sha": "candidate", "candidate_tree": "tree", "pr": 12,
-    })
+def test_changed_content_invalidates_prepared_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tree: str,
+) -> None:
+    monkeypatch.setattr(
+        preparation,
+        "load",
+        lambda root: {
+            "candidate_sha": "candidate",
+            "candidate_tree": "tree",
+            "pr": 12,
+        },
+    )
     monkeypatch.setattr(preparation.sessions, "clean", lambda root: None)
     monkeypatch.setattr(preparation.sessions, "run", lambda *args: "")
     monkeypatch.setattr(preparation, "_reviewed", lambda *args: {})
@@ -145,25 +207,43 @@ def test_changed_content_invalidates_prepared_candidate(monkeypatch: pytest.Monk
 
 
 @pytest.mark.parametrize("check", ["fast-checks", "agent-review"])
-def test_merged_pr_needs_successful_exact_candidate_checks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, check: str) -> None:
+def test_merged_pr_needs_successful_exact_candidate_checks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    check: str,
+) -> None:
     state = {"candidate_sha": "candidate"}
     monkeypatch.setattr(preparation, "_context", lambda *args: None)
-    monkeypatch.setattr(preparation, "_pr", lambda *args: {
-        "mergedAt": "today", "headRefOid": "candidate",
-        "statusCheckRollup": [
-            {"name": name, "conclusion": "FAILURE" if name == check else "SUCCESS"}
-            for name in ("fast-checks", "agent-review")
-        ],
-    })
+    monkeypatch.setattr(
+        preparation,
+        "_pr",
+        lambda *args: {
+            "mergedAt": "today",
+            "headRefOid": "candidate",
+            "statusCheckRollup": [
+                {"name": name, "conclusion": "FAILURE" if name == check else "SUCCESS"}
+                for name in ("fast-checks", "agent-review")
+            ],
+        },
+    )
     with pytest.raises(RuntimeError, match=check):
         preparation._reviewed(tmp_path, state)
 
 
-def test_preparation_commit_does_not_reopen_unreleased(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_preparation_commit_does_not_reopen_unreleased(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
-    monkeypatch.setattr(mcp_server.sessions, "load", lambda root: {
-        "phase": "feature", "release_preparation": True, "id": "release-task",
-    })
+    monkeypatch.setattr(
+        mcp_server.sessions,
+        "load",
+        lambda root: {
+            "phase": "feature",
+            "release_preparation": True,
+            "id": "release-task",
+        },
+    )
     monkeypatch.setattr(mcp_server, "_changed_repo_paths", lambda root: set(preparation.METADATA))
     requirement = mcp_server._version_bump_requirement(root, list(preparation.METADATA))
     assert requirement["required_paths"] == sorted(preparation.METADATA)
@@ -172,18 +252,25 @@ def test_preparation_commit_does_not_reopen_unreleased(monkeypatch: pytest.Monke
 
 def test_summary_cli() -> None:
     parser = mcp_server._build_cli_parser()
-    args = parser.parse_args(["release-workflow", "--action", "merge-dev", "--summary", "README release"])
+    args = parser.parse_args(
+        ["release-workflow", "--action", "merge-dev", "--summary", "README release"]
+    )
     assert args.summary == "README release"
 
 
 def test_interrupted_signed_commit_recovers_without_incrementing_again(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     work = _write_minimal_repo_files(tmp_path / "workspace")
     version, files, fragments = preparation._metadata_files(work, "Candidate notes")
     state = {
-        "workspace": str(work), "source_sha": "source", "candidate_sha": None,
-        "branch": "codex/release", "version": version, "files": files,
+        "workspace": str(work),
+        "source_sha": "source",
+        "candidate_sha": None,
+        "branch": "codex/release",
+        "version": version,
+        "files": files,
         "fragments": fragments,
     }
     head = ["source"]
@@ -198,24 +285,42 @@ def test_interrupted_signed_commit_recovers_without_incrementing_again(
         if args[:2] == ("git", "commit"):
             commits.append(args)
             head[0] = "signed-candidate"
-            raise RuntimeError("interrupted after commit")
+            message = "interrupted after commit"
+            raise RuntimeError(message)
         if args[:2] == ("git", "show"):
             return files[args[2].split(":", 1)[1]].strip()
         return ""
 
     monkeypatch.setattr(preparation.sessions, "run", run)
     monkeypatch.setattr(preparation.sessions, "commit_options", lambda root: [])
-    monkeypatch.setattr(preparation.sessions, "verify_signature", lambda root, sha: signatures.append(sha))
+    monkeypatch.setattr(
+        preparation.sessions,
+        "verify_signature",
+        lambda root, sha: signatures.append(sha),
+    )
     monkeypatch.setattr(preparation.sessions, "load", lambda root: {"phase": "feature"})
     monkeypatch.setattr(preparation.sessions, "push", lambda root: {"pr": 12})
-    monkeypatch.setattr(preparation.task_context, "commit_trailers", lambda root: "\n\nUser-Task: release")
+    monkeypatch.setattr(
+        preparation.task_context,
+        "commit_trailers",
+        lambda root: "\n\nUser-Task: release",
+    )
     monkeypatch.setattr(preparation.task_context, "read", lambda root: {})
-    monkeypatch.setattr(preparation.task_context, "protocol", lambda: SimpleNamespace(
-        public_context=lambda value: value, verify_commit=lambda *args: None,
-    ))
+    monkeypatch.setattr(
+        preparation.task_context,
+        "protocol",
+        lambda: SimpleNamespace(
+            public_context=lambda value: value,
+            verify_commit=lambda *args: None,
+        ),
+    )
     monkeypatch.setattr(preparation, "save", lambda *args: None)
     monkeypatch.setattr(preparation, "_tree", lambda *args: "tree")
-    monkeypatch.setattr(preparation, "_pr", lambda *args: {"number": 12, "url": "https://example/pr/12"})
+    monkeypatch.setattr(
+        preparation,
+        "_pr",
+        lambda *args: {"number": 12, "url": "https://example/pr/12"},
+    )
     monkeypatch.setattr(preparation, "_context", lambda *args: None)
     with pytest.raises(RuntimeError, match="interrupted"):
         preparation._publish_preparation(tmp_path, state)
@@ -229,11 +334,14 @@ def test_interrupted_signed_commit_recovers_without_incrementing_again(
 
 @pytest.mark.parametrize("field", ["task_id", "task_digest", "branch", "base"])
 def test_preparation_pr_is_bound_to_release_task_and_branches(
-    monkeypatch: pytest.MonkeyPatch, field: str,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
 ) -> None:
     state = {"task_id": "release", "task_digest": "digest", "branch": "codex/release"}
     pr = {"body": "attachment", "headRefName": "codex/release", "baseRefName": "dev"}
-    proto = SimpleNamespace(parse=lambda body: {"task_id": "release"}, digest=lambda value: "digest")
+    proto = SimpleNamespace(
+        parse=lambda body: {"task_id": "release"}, digest=lambda value: "digest"
+    )
     monkeypatch.setattr(preparation.task_context, "protocol", lambda: proto)
     if field == "base":
         pr["baseRefName"] = "main"
@@ -250,13 +358,23 @@ def corrected_preparation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     root = _write_minimal_repo_files(tmp_path / "project")
     version, files, _fragments = preparation._metadata_files(root, "Preserved release notes")
     state = {
-        "pr": 12, "branch": "codex/release", "task_id": "release", "task_digest": "digest",
-        "version": version, "candidate_sha": "old", "candidate_tree": "old-tree",
-        "files": files, "stages": {"reviewed": "old"},
+        "pr": 12,
+        "branch": "codex/release",
+        "task_id": "release",
+        "task_digest": "digest",
+        "version": version,
+        "candidate_sha": "old",
+        "candidate_tree": "old-tree",
+        "files": files,
+        "stages": {"reviewed": "old"},
     }
     pr = {
-        "number": 12, "url": "https://example/pr/12", "state": "MERGED", "mergedAt": "today",
-        "headRefOid": "corrected", "statusCheckRollup": [
+        "number": 12,
+        "url": "https://example/pr/12",
+        "state": "MERGED",
+        "mergedAt": "today",
+        "headRefOid": "corrected",
+        "statusCheckRollup": [
             {"name": name, "conclusion": "SUCCESS"} for name in ("fast-checks", "agent-review")
         ],
     }
@@ -275,8 +393,16 @@ def corrected_preparation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(preparation, "_tree", lambda *args: "corrected-tree")
     monkeypatch.setattr(preparation, "_context", lambda *args: None)
     monkeypatch.setattr(preparation, "_pr", lambda *args: pr)
-    monkeypatch.setattr(preparation, "_new", lambda *args: pytest.fail("incremented corrected release"))
-    monkeypatch.setattr(preparation, "_publish_preparation", lambda *args: pytest.fail("created another PR"))
+    monkeypatch.setattr(
+        preparation,
+        "_new",
+        lambda *args: pytest.fail("incremented corrected release"),
+    )
+    monkeypatch.setattr(
+        preparation,
+        "_publish_preparation",
+        lambda *args: pytest.fail("created another PR"),
+    )
     monkeypatch.setattr(candidate, "index_files", lambda *args: {})
     monkeypatch.setattr(candidate, "_runs", lambda *args: [])
     return root, state, pr, files, calls
@@ -305,7 +431,8 @@ def test_corrected_merged_preparation_preserves_version_notes_and_pr(
 
 @pytest.mark.parametrize("check", ["fast-checks", "agent-review"])
 def test_corrected_head_needs_its_own_successful_checks(
-    corrected_preparation, check: str,
+    corrected_preparation,
+    check: str,
 ) -> None:
     root, state, pr, _files, _calls = corrected_preparation
     for item in pr["statusCheckRollup"]:
@@ -317,9 +444,13 @@ def test_corrected_head_needs_its_own_successful_checks(
     assert not (root / "atk-release.json.old").exists()
 
 
-@pytest.mark.parametrize("problem", ["version", "readme", "notes", "unreleased", "fragments", "dev", "task"])
+@pytest.mark.parametrize(
+    "problem", ["version", "readme", "notes", "unreleased", "fragments", "dev", "task"]
+)
 def test_invalid_corrected_candidate_is_not_adopted(
-    corrected_preparation, monkeypatch: pytest.MonkeyPatch, problem: str,
+    corrected_preparation,
+    monkeypatch: pytest.MonkeyPatch,
+    problem: str,
 ) -> None:
     root, state, _pr, files, _calls = corrected_preparation
     if problem in {"version", "readme"}:
@@ -328,40 +459,69 @@ def test_invalid_corrected_candidate_is_not_adopted(
     elif problem == "notes":
         files["docs/CHANGELOG.md"] = "# Changelog\n\n## Unreleased\n"
     elif problem == "unreleased":
-        files["docs/CHANGELOG.md"] = "## Unreleased\n\n- Pending change\n\n" + files["docs/CHANGELOG.md"]
+        files["docs/CHANGELOG.md"] = (
+            "## Unreleased\n\n- Pending change\n\n" + files["docs/CHANGELOG.md"]
+        )
     elif problem == "dev":
-        monkeypatch.setattr(preparation, "_tree", lambda root, sha: "unrelated" if sha == "origin/dev" else "corrected-tree")
+        monkeypatch.setattr(
+            preparation,
+            "_tree",
+            lambda root, sha: "unrelated" if sha == "origin/dev" else "corrected-tree",
+        )
 
         def request_replacement(*args):
-            raise RuntimeError("additional content replacement requested")
+            message = "additional content replacement requested"
+            raise RuntimeError(message)
 
         monkeypatch.setattr(replacement, "replace", request_replacement)
     elif problem == "task":
+
         def invalid(*args):
-            raise RuntimeError("invalid task binding")
+            message = "invalid task binding"
+            raise RuntimeError(message)
+
         monkeypatch.setattr(preparation, "_context", invalid)
     else:
         original = preparation.sessions.run
-        monkeypatch.setattr(preparation.sessions, "run", lambda root, *args: (
-            "agent_tools/changelog/pending.md" if args[:2] == ("git", "ls-tree") else original(root, *args)
-        ))
-    with pytest.raises(RuntimeError, match="version|notes|unreleased|additional content|fragments|task binding"):
+        monkeypatch.setattr(
+            preparation.sessions,
+            "run",
+            lambda root, *args: (
+                "agent_tools/changelog/pending.md"
+                if args[:2] == ("git", "ls-tree")
+                else original(root, *args)
+            ),
+        )
+    with pytest.raises(
+        RuntimeError, match=r"version|notes|unreleased|additional content|fragments|task binding"
+    ):
         preparation.prepare(root)
     assert state["candidate_sha"] == "old"
 
 
 def test_adoption_invalidates_old_validation_and_artifact_bindings(
-    corrected_preparation, monkeypatch: pytest.MonkeyPatch,
+    corrected_preparation,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root, state, _pr, _files, _calls = corrected_preparation
-    state.update(testpypi_run=42, testpypi_sha="test-head", testpypi_dispatch={"old": "record"},
-                 pypi_run=43, pypi_artifacts={"file": "hash"})
+    state.update(
+        testpypi_run=42,
+        testpypi_sha="test-head",
+        testpypi_dispatch={"old": "record"},
+        pypi_run=43,
+        pypi_artifacts={"file": "hash"},
+    )
     state["stages"].update(testpypi_verified="old", pypi_verified="old")
     # Publication reconciliation has its own fail-closed tests.
     monkeypatch.setattr(candidate, "reconcile_replacement", lambda *args: None)
-    receipts = [root / path for path in (
-        mcp_server.CHECK_STATE_FILE, mcp_server.PRECOMMIT_STAGE_STATE_FILE, mcp_server.RELEASE_CHECK_STATE_FILE,
-    )]
+    receipts = [
+        root / path
+        for path in (
+            mcp_server.CHECK_STATE_FILE,
+            mcp_server.PRECOMMIT_STAGE_STATE_FILE,
+            mcp_server.RELEASE_CHECK_STATE_FILE,
+        )
+    ]
     for path in receipts:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("old validation")
@@ -371,7 +531,10 @@ def test_adoption_invalidates_old_validation_and_artifact_bindings(
     assert state["stages"] == {"reviewed": "corrected"}
 
 
-def test_published_old_candidate_blocks_adoption(corrected_preparation, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_published_old_candidate_blocks_adoption(
+    corrected_preparation,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     root, state, _pr, _files, _calls = corrected_preparation
     monkeypatch.setattr(candidate, "index_files", lambda *args: {"package.whl": "old"})
     with pytest.raises(RuntimeError, match="new reviewed version"):

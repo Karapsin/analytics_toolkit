@@ -1,4 +1,5 @@
 """Fail-closed upload guards and recovery using the candidate's retained artifacts."""
+
 from __future__ import annotations
 
 import argparse
@@ -12,9 +13,10 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
-from agent_tools import release_preparation, sessions, task_context
 from release_routines.lib.project_metadata import load_project
 from release_routines.lib.testpypi_metadata import replace_project_name_text
+
+from agent_tools import release_preparation, sessions, task_context
 
 PROJECTS = {"testpypi": "karapsin-analytics-toolkit", "pypi": "analytics-toolkit"}
 INDEXES = {"testpypi": "https://test.pypi.org", "pypi": "https://pypi.org"}
@@ -68,8 +70,15 @@ def guard(root: Path, *, production: bool = False) -> dict[str, Any]:
 def artifact_hashes(root: Path, run_id: int) -> dict[str, str]:
     with tempfile.TemporaryDirectory(prefix="atk-release-artifacts-") as directory:
         sessions.run(
-            root, "gh", "run", "download", str(run_id), "--name", "distributions",
-            "--dir", directory,
+            root,
+            "gh",
+            "run",
+            "download",
+            str(run_id),
+            "--name",
+            "distributions",
+            "--dir",
+            directory,
         )
         return distribution_hashes(Path(directory))
 
@@ -124,7 +133,10 @@ def _test_local_ref(state: dict[str, Any]) -> str:
 
 
 def _recover_test_branch(
-    root: Path, state: dict[str, Any], *, require_remote: bool = True,
+    root: Path,
+    state: dict[str, Any],
+    *,
+    require_remote: bool = True,
 ) -> str | None:
     branch = "testpypi-" + state["version"]
     remote = sessions.run(root, "git", "ls-remote", "--heads", "origin", branch)
@@ -137,8 +149,12 @@ def _recover_test_branch(
         _verify_test_branch(root, state, head)
         # The empty lease forbids replacing even an ancestor pushed concurrently.
         sessions.run(
-            root, "git", "push", f"--force-with-lease=refs/heads/{branch}:",
-            "origin", f"{head}:refs/heads/{branch}",
+            root,
+            "git",
+            "push",
+            f"--force-with-lease=refs/heads/{branch}:",
+            "origin",
+            f"{head}:refs/heads/{branch}",
         )
         remote = sessions.run(root, "git", "ls-remote", "--heads", "origin", branch)
         if not remote:
@@ -153,9 +169,8 @@ def _recover_test_branch(
         state.pop("testpypi_push_pending", None)
         release_preparation.save(root, state)
         return head
-    removed = (
-        not require_remote
-        and state.get("testpypi_removal_pending") == state.get("testpypi_sha")
+    removed = not require_remote and (
+        state.get("testpypi_removal_pending") == state.get("testpypi_sha")
     )
     if state.get("testpypi_sha") and not removed:
         message = "Recorded TestPyPI branch disappeared; preserve candidate artifacts."
@@ -182,15 +197,23 @@ def _test_branch(root: Path, state: dict[str, Any]) -> str:
             raise RuntimeError(message)
         sessions.run(work, "git", "switch", "-c", branch, fetched)
         sessions.run(
-            work, "python", "-m", "release_routines.lib.testpypi_metadata",
-            "replace-project-name", PROJECTS["testpypi"],
+            work,
+            "python",
+            "-m",
+            "release_routines.lib.testpypi_metadata",
+            "replace-project-name",
+            PROJECTS["testpypi"],
         )
         sessions.run(work, "git", "add", "--", "pyproject.toml")
         # Use the release preparation identity, preserving enrollment and signing.
         preparation = sessions.load(Path(state["workspace"]))
         sessions.save(work, {"signing_key": preparation["signing_key"]})
         sessions.run(
-            work, "git", *sessions.commit_options(work), "commit", "-m",
+            work,
+            "git",
+            *sessions.commit_options(work),
+            "commit",
+            "-m",
             "Use TestPyPI package name for " + state["version"],
         )
         head = sessions.run(work, "git", "rev-parse", "HEAD")
@@ -213,7 +236,9 @@ def _production_ref(root: Path, state: dict[str, Any]) -> str:
     remote = sessions.run(root, "git", "ls-remote", "--tags", "origin", tag, tag + "^{}")
     if remote:
         lines = remote.splitlines()
-        tagged = next((line.split()[0] for line in lines if line.endswith("^{}")), lines[0].split()[0])
+        tagged = next(
+            (line.split()[0] for line in lines if line.endswith("^{}")), lines[0].split()[0]
+        )
         sessions.run(root, "git", "fetch", "origin", tagged)
         if tagged != sessions.run(root, "git", "rev-parse", "HEAD"):
             message = "Existing production tag belongs to different content."
@@ -223,7 +248,10 @@ def _production_ref(root: Path, state: dict[str, Any]) -> str:
         local = sessions.run(root, "git", "tag", "--list", tag)
         if local:
             if sessions.run(root, "git", "rev-list", "-n", "1", tag) != sessions.run(
-                root, "git", "rev-parse", "HEAD",
+                root,
+                "git",
+                "rev-parse",
+                "HEAD",
             ):
                 message = "Existing local tag differs from the prepared candidate."
                 raise RuntimeError(message)
@@ -295,15 +323,19 @@ def _dispatch_record(root: Path, state: dict[str, Any], ref: str, sha: str) -> d
     if not record and state.get("testpypi_requested"):
         now = time.time()
         record = {
-            "candidate_sha": state["candidate_sha"], "ref": ref, "sha": sha,
-            "attempted_at": now, "deadline": now + DISPATCH_RECONCILIATION_SECONDS,
+            "candidate_sha": state["candidate_sha"],
+            "ref": ref,
+            "sha": sha,
+            "attempted_at": now,
+            "deadline": now + DISPATCH_RECONCILIATION_SECONDS,
             "outcome": "uncertain",
         }
         state["testpypi_dispatch"] = record
         release_preparation.save(root, state)
     if record and (
         record["candidate_sha"] != state["candidate_sha"]
-        or record["ref"] != ref or record["sha"] != sha
+        or record["ref"] != ref
+        or record["sha"] != sha
     ):
         message = "Dispatch record belongs to another candidate; reconcile it before replacement."
         raise RuntimeError(message)
@@ -311,7 +343,10 @@ def _dispatch_record(root: Path, state: dict[str, Any], ref: str, sha: str) -> d
 
 
 def _dispatch_testpypi(
-    root: Path, state: dict[str, Any], ref: str, sha: str,
+    root: Path,
+    state: dict[str, Any],
+    ref: str,
+    sha: str,
 ) -> list[dict[str, Any]]:
     record = _dispatch_record(root, state, ref, sha)
     if record and record["outcome"] != "failed" and time.time() < record["deadline"]:
@@ -326,8 +361,11 @@ def _dispatch_testpypi(
         raise RuntimeError(message)
     now = time.time()
     state["testpypi_dispatch"] = {
-        "candidate_sha": state["candidate_sha"], "ref": ref, "sha": sha,
-        "attempted_at": now, "deadline": now + DISPATCH_RECONCILIATION_SECONDS,
+        "candidate_sha": state["candidate_sha"],
+        "ref": ref,
+        "sha": sha,
+        "attempted_at": now,
+        "deadline": now + DISPATCH_RECONCILIATION_SECONDS,
         "outcome": "uncertain",
     }
     state.pop("testpypi_requested", None)
@@ -337,7 +375,10 @@ def _dispatch_testpypi(
     except RuntimeError as exc:
         # Only explicit rejection proves no dispatch was accepted. Network failures,
         # timeouts and interrupted acknowledgements retain the bounded uncertainty.
-        if any(code in str(exc) for code in ("HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404", "HTTP 422")):
+        if any(
+            code in str(exc)
+            for code in ("HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404", "HTTP 422")
+        ):
             state["testpypi_dispatch"]["outcome"] = "failed"
             release_preparation.save(root, state)
         raise
@@ -464,7 +505,8 @@ def prepare_stage(root: Path, stage: str) -> int:
 
 
 def _prepare_stage(  # noqa: C901, PLR0912, PLR0915 - resumable publish stages.
-    root: Path, stage: str,
+    root: Path,
+    stage: str,
 ) -> int:
     state = guard(root, production=stage == "pypi")
     published = index_files(stage, state["version"])  # Network errors never mean available.
@@ -505,11 +547,21 @@ def _prepare_stage(  # noqa: C901, PLR0912, PLR0915 - resumable publish stages.
             )
             releases = [release for page in releases for release in page]
             if any(release["tag_name"] == ref for release in releases):
-                message = "Existing release has no matching workflow yet; retry after GitHub schedules it."
+                message = (
+                    "Existing release has no matching workflow yet; "
+                    "retry after GitHub schedules it."
+                )
                 raise RuntimeError(message)
             sessions.run(
-                root, "gh", "release", "create", ref, "--title", ref,
-                "--notes", "Release " + state["version"],
+                root,
+                "gh",
+                "release",
+                "create",
+                ref,
+                "--title",
+                ref,
+                "--notes",
+                "Release " + state["version"],
             )
         else:
             recovered = _dispatch_testpypi(root, state, ref, sha)
@@ -517,7 +569,9 @@ def _prepare_stage(  # noqa: C901, PLR0912, PLR0915 - resumable publish stages.
                 state["testpypi_run"] = int(recovered[0]["databaseId"])
                 release_preparation.save(root, state)
                 return _prepare_stage(root, stage)
-        message = "Publish workflow requested; re-enter the release action to resume this candidate."
+        message = (
+            "Publish workflow requested; re-enter the release action to resume this candidate."
+        )
         raise RuntimeError(message)
     run = next((run for run in runs if run["databaseId"] == saved), runs[0])
     run_id = int(run["databaseId"])
@@ -565,7 +619,8 @@ def _verified(root: Path, stage: str) -> None:
     state = guard(root, production=stage == "pypi")
     run_id = state.get(stage + "_run")
     if not run_id or not compare_artifacts(
-        index_files(stage, state["version"]), artifact_hashes(root, run_id),
+        index_files(stage, state["version"]),
+        artifact_hashes(root, run_id),
     ):
         message = "Cannot record verification without the candidate's published artifacts."
         raise RuntimeError(message)

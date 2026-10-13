@@ -15,7 +15,8 @@ def reviewed_preparation(monkeypatch: pytest.MonkeyPatch) -> None:
     # Existing orchestration tests isolate readiness/validation from PR I/O.
     monkeypatch.setattr(mcp_server, "_prepare_release", lambda *args: {"status": "prepared"})
     monkeypatch.setattr(
-        mcp_server, "_release_preparation_module",
+        mcp_server,
+        "_release_preparation_module",
         lambda: SimpleNamespace(verify=lambda *args, **kwargs: {"promotion_sha": "candidate"}),
     )
 
@@ -74,7 +75,10 @@ def test_release_readiness_blocks_when_main_lacks_origin_dev(
             "blockers": [
                 {
                     "phase": "remote_dev",
-                    "message": "Local HEAD does not contain origin/dev; pull, rebase, or merge before continuing.",
+                    "message": (
+                        "Local HEAD does not contain origin/dev; "
+                        "pull, rebase, or merge before continuing."
+                    ),
                 }
             ],
         },
