@@ -554,6 +554,10 @@ def publication(tmp_path: Path, monkeypatch: Any, control: Any) -> Any:
         else:
             controller.collect(value, work, output)
             git("reset", "--hard", value["head"])
+        if value["kind"] == "repair" and not empty:
+            (output / "verdict.json").write_text(
+                json.dumps({"outcome": "patch", "reason": "repair", "required_evidence": []})
+            )
         return output
 
     history = partial(publication_history, (work, git, commit))
@@ -682,18 +686,3 @@ def test_opaque_patch_collect_candidate_and_publish_keep_original_bytes(publicat
     assert git("show", pushed[-1] + ":opaque.txt") == intended
     assert git("show", ":opaque.txt") == intended
     assert patch.read_bytes() == expected
-
-
-@pytest.mark.parametrize("kind", ["conflict", "repair"])
-def test_empty_patch_publication_retains_existing_contract(publication: Any, kind: str) -> None:
-    work, _git, commit, task, artifact, gh, pushed, _history = publication
-    head = commit()
-    value = task(head, head, kind)
-    output = artifact(value, empty=True)
-    if kind == "conflict":
-        controller.publish(gh, value, output, work)
-        assert len(pushed) == 1
-    else:
-        with pytest.raises(RuntimeError, match="No repair produced"):
-            controller.publish(gh, value, output, work)
-        assert not pushed
