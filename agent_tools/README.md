@@ -279,3 +279,10 @@ independent agent reviews the final PR.
 The agent-only validation environment constrains `virtualenv>=21.1,<21.5` so
 the required Python 3.8 matrix remains runnable. Project setup resolves this
 constraint together with tox; it does not change public package dependencies.
+
+## User documentation wiki exporter
+
+`wiki_sync.py` exports validated user documentation to the separate GitHub wiki.
+It uses only the Python standard library; source Markdown remains authoritative.
+See [wiki synchronization setup and retries](../docs/WIKI_SYNC.md) for release
+activation, credentials, validation, and ownership of generated pages.
