@@ -331,6 +331,7 @@ def test_interrupted_inference_recovers_through_public_reconcile(  # noqa: PLR09
         install_inference(public, monkeypatch, current)
         getter = Mock(side_effect=RuntimeError("interrupted source-only fetch"))
         client = SimpleNamespace(
+            INSTALLATION=public.INSTALLATION,
             create=public.create,
             capabilities=public.capabilities,
             navigation=SimpleNamespace(
