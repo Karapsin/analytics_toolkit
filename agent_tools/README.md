@@ -181,7 +181,16 @@ Private `.git/atk-release.json` state binds the release task, source SHA, versio
 branch, PR, candidate SHA/tree, workflow runs, and completed stages. Retries reuse
 the candidate and retained verified artifacts; they do not blindly recreate
 TestPyPI branches or GitHub releases. Changed dev content requires another
-preparation PR and fresh validation. Status never prepares or increments.
+preparation PR and fresh validation. Before pushing a temporary TestPyPI branch,
+the intended SHA and pending push are atomically journaled, and the signed commit
+is retained under a candidate-specific private local ref. Resume retries that
+exact commit if the push never reached origin. A remote ref is adopted only after
+checking its single candidate parent, project-name-only metadata change, full
+changed-path list, and agreement with any journaled SHA. Legacy state without a
+SHA can recover through the same checks before publication reconciliation.
+An established ref that disappears blocks recovery, except after a journaled,
+fully reconciled leased deletion. Unpublished replacement retains the prepared
+version and still requires one fresh reviewed PR. Status never prepares or increments.
 Direct release scripts require the same reviewed candidate and validation receipts.
 See [release instructions](../agent_docs/release.md) for the complete sequence.
 

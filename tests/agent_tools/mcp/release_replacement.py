@@ -41,7 +41,13 @@ def replacing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     calls = []
     monkeypatch.setattr(preparation, "state_path", lambda root: root / "atk-release.json")
     monkeypatch.setattr(preparation, "load", lambda root: current[0])
-    monkeypatch.setattr(preparation, "save", lambda root, value: current.__setitem__(0, value))
+    original_save = preparation.save
+
+    def save(root, value):
+        original_save(root, value)
+        current[0] = value
+
+    monkeypatch.setattr(preparation, "save", save)
     monkeypatch.setattr(preparation.task_context, "directory", lambda root: root / "no-task")
     monkeypatch.setattr(preparation.sessions, "clean", lambda root: None)
     monkeypatch.setattr(preparation, "_context", lambda *args: None)
@@ -50,10 +56,20 @@ def replacing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
     def run(root, *args):
         calls.append(args)
+        if args[:3] == ("git", "ls-remote", "--heads") and state.get("testpypi_sha"):
+            return "test-head refs/heads/testpypi-" + state["version"]
         if args == ("git", "rev-parse", "origin/dev"):
             return "new-dev"
+        if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
+            return "test-head old"
+        if args[:2] == ("git", "diff"):
+            return "pyproject.toml"
         if args[:2] == ("git", "show"):
             path = args[2].split(":", 1)[1]
+            if args[2] == "test-head:pyproject.toml":
+                return candidate.replace_project_name_text(
+                    files[path], candidate.PROJECTS["testpypi"],
+                ).strip()
             return files[path].strip()
         return ""
 
@@ -82,11 +98,53 @@ def replacing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     return root, state, current, calls
 
 
+@pytest.mark.parametrize("branch_state", ["none", "legacy", "interrupted-push"])
 def test_new_dev_prepares_one_reviewed_generation_and_invalidates_receipts(
     replacing,
     monkeypatch: pytest.MonkeyPatch,
+    branch_state: str,
 ) -> None:
     root, old, current, _calls = replacing
+    original = candidate.sessions.run
+    remote = []
+    push_snapshots = []
+
+    def run(root, *args):
+        if args[:3] == ("git", "ls-remote", "--heads"):
+            return "test-head refs/heads/testpypi-" + old["version"] if remote else ""
+        if args == ("git", "rev-parse", "FETCH_HEAD"):
+            return "old"
+        if args == ("git", "rev-parse", "FETCH_HEAD^{tree}"):
+            return "old-tree"
+        if args == ("git", "rev-parse", "HEAD"):
+            return "test-head"
+        if args == ("git", "rev-parse", candidate._test_local_ref(old)):
+            return "test-head"
+        if args[:2] == ("git", "push"):
+            if args[-1].startswith(":"):
+                remote.clear()
+            else:
+                push_snapshots.append(json.loads(preparation.state_path(root).read_text()))
+                remote.append("test-head")
+                raise KeyboardInterrupt
+        return original(root, *args)
+
+    monkeypatch.setattr(candidate.sessions, "run", run)
+    if branch_state == "legacy":
+        remote.append("test-head")
+        preparation.save(root, old)
+    elif branch_state == "interrupted-push":
+        monkeypatch.setattr(candidate.sessions, "load", lambda root: {"signing_key": "key"})
+        monkeypatch.setattr(candidate.sessions, "save", lambda *args: None)
+        monkeypatch.setattr(candidate.sessions, "commit_options", lambda root: [])
+        with pytest.raises(KeyboardInterrupt):
+            candidate._test_branch(root, old)
+        assert len(push_snapshots) == 1
+        assert push_snapshots[0]["testpypi_push_pending"]
+        assert push_snapshots[0]["testpypi_sha"] == "test-head"
+        # Process restart discards the mutated in-memory state.
+        old = json.loads(preparation.state_path(root).read_text())
+        current[0] = old
     receipts = [
         root / path
         for path in (
@@ -149,6 +207,10 @@ def test_new_dev_prepares_one_reviewed_generation_and_invalidates_receipts(
     assert current[0]["generation"] == 1
     archived = json.loads((root / "atk-release.json.old").read_text())
     assert archived["candidate_sha"] == "old"
+    if branch_state != "none":
+        assert archived["testpypi_sha"] == "test-head"
+        assert "testpypi_push_pending" not in archived
+        assert not remote
     assert current[0]["files"]["docs/CHANGELOG.md"].count("## " + old["version"]) == 1
     assert "- Old notes." in current[0]["files"]["docs/CHANGELOG.md"]
     assert "- New dev notes" in current[0]["files"]["docs/CHANGELOG.md"]

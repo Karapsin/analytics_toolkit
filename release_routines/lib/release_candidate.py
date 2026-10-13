@@ -99,29 +99,76 @@ def compare_artifacts(published: dict[str, str], artifacts: dict[str, str]) -> b
     return bool(artifacts) and published == artifacts
 
 
-def _test_branch(root: Path, state: dict[str, Any]) -> str:
+def _verify_test_branch(root: Path, state: dict[str, Any], head: str) -> None:
+    """Accept only a single-parent commit changing the temporary project name."""
+    if state.get("testpypi_sha") and state["testpypi_sha"] != head:
+        message = "Temporary ref cannot be safely reconciled with the old candidate."
+        raise RuntimeError(message)
+    parents = sessions.run(root, "git", "rev-list", "--parents", "-n", "1", head).split()
+    if parents != [head, state["candidate_sha"]]:
+        message = "Existing TestPyPI branch belongs to a different candidate."
+        raise RuntimeError(message)
+    expected = sessions.run(root, "git", "show", state["candidate_sha"] + ":pyproject.toml")
+    actual = sessions.run(root, "git", "show", head + ":pyproject.toml")
+    if actual != replace_project_name_text(expected, PROJECTS["testpypi"]).strip():
+        message = "Existing TestPyPI branch has changed metadata."
+        raise RuntimeError(message)
+    paths = sessions.run(root, "git", "diff", "--name-only", state["candidate_sha"], head)
+    if paths != "pyproject.toml":
+        message = "TestPyPI branch contains changes beyond the temporary project name."
+        raise RuntimeError(message)
+
+
+def _test_local_ref(state: dict[str, Any]) -> str:
+    return "refs/atk-release/testpypi/" + state["candidate_sha"]
+
+
+def _recover_test_branch(
+    root: Path, state: dict[str, Any], *, require_remote: bool = True,
+) -> str | None:
     branch = "testpypi-" + state["version"]
     remote = sessions.run(root, "git", "ls-remote", "--heads", "origin", branch)
+    if not remote and state.get("testpypi_push_pending"):
+        head = state["testpypi_sha"]
+        retained = sessions.run(root, "git", "rev-parse", _test_local_ref(state))
+        if retained != head:
+            message = "Retained TestPyPI commit differs from the journaled push."
+            raise RuntimeError(message)
+        _verify_test_branch(root, state, head)
+        # The empty lease forbids replacing even an ancestor pushed concurrently.
+        sessions.run(
+            root, "git", "push", f"--force-with-lease=refs/heads/{branch}:",
+            "origin", f"{head}:refs/heads/{branch}",
+        )
+        remote = sessions.run(root, "git", "ls-remote", "--heads", "origin", branch)
+        if not remote:
+            message = "Pending TestPyPI push is not visible; retry recovery."
+            raise RuntimeError(message)
     if remote:
         head = remote.split()[0]
         sessions.run(root, "git", "fetch", "origin", head)
-        if sessions.run(root, "git", "rev-parse", head + "^") != state["candidate_sha"]:
-            message = "Existing TestPyPI branch belongs to a different candidate."
-            raise RuntimeError(message)
-        expected = sessions.run(root, "git", "show", state["candidate_sha"] + ":pyproject.toml")
-        actual = sessions.run(root, "git", "show", head + ":pyproject.toml")
-        # Only the project name may differ, never package content.
-        if actual != replace_project_name_text(expected, PROJECTS["testpypi"]).strip():
-            message = "Existing TestPyPI branch has changed metadata."
-            raise RuntimeError(message)
-        paths = sessions.run(root, "git", "diff", "--name-only", state["candidate_sha"], head)
-        if paths != "pyproject.toml":
-            message = "TestPyPI branch contains changes beyond the temporary project name."
-            raise RuntimeError(message)
+        _verify_test_branch(root, state, head)
+        # Persist legacy adoption before any workflow/publication reconciliation.
+        state["testpypi_sha"] = head
+        state.pop("testpypi_push_pending", None)
+        release_preparation.save(root, state)
         return head
-    if state.get("testpypi_sha"):
+    removed = (
+        not require_remote
+        and state.get("testpypi_removal_pending") == state.get("testpypi_sha")
+    )
+    if state.get("testpypi_sha") and not removed:
         message = "Recorded TestPyPI branch disappeared; preserve candidate artifacts."
         raise RuntimeError(message)
+    # Replacement can already have deleted a reconciled ref under its lease.
+    return None
+
+
+def _test_branch(root: Path, state: dict[str, Any]) -> str:
+    head = _recover_test_branch(root, state)
+    if head:
+        return head
+    branch = "testpypi-" + state["version"]
     with tempfile.TemporaryDirectory(prefix="atk-testpypi-") as directory:
         work = Path(directory) / "checkout"
         remote_url = sessions.run(root, "git", "remote", "get-url", "origin")
@@ -147,8 +194,17 @@ def _test_branch(root: Path, state: dict[str, Any]) -> str:
             "Use TestPyPI package name for " + state["version"],
         )
         head = sessions.run(work, "git", "rev-parse", "HEAD")
-        sessions.run(work, "git", "push", "origin", f"HEAD:refs/heads/{branch}")
-        return head
+        # Retain the exact signed commit before the temporary checkout is removed.
+        sessions.run(root, "git", "fetch", str(work), head)
+        sessions.run(root, "git", "update-ref", _test_local_ref(state), head)
+        state["testpypi_sha"] = head
+        state["testpypi_push_pending"] = True
+        release_preparation.save(root, state)
+        recovered = _recover_test_branch(root, state)
+        if not recovered:
+            message = "TestPyPI branch publication is incomplete."
+            raise RuntimeError(message)
+        return recovered
 
 
 def _production_ref(root: Path, state: dict[str, Any]) -> str:
@@ -315,9 +371,10 @@ def reconcile_replacement(  # noqa: C901, PLR0912, PLR0915 - publication reconci
     elif local_tag:
         production_sha = sessions.run(root, "git", "rev-list", "-n", "1", tag)
     ref = "testpypi-" + state["version"]
+    _recover_test_branch(root, state, require_remote=False)
     remote = sessions.run(root, "git", "ls-remote", "--heads", "origin", ref)
     sha = state.get("testpypi_sha")
-    if remote and (not sha or remote.split()[0] != sha):
+    if remote and remote.split()[0] != sha:
         message = "Temporary ref cannot be safely reconciled with the old candidate."
         raise RuntimeError(message)
     for stage, branch, head in (
@@ -387,6 +444,9 @@ def reconcile_replacement(  # noqa: C901, PLR0912, PLR0915 - publication reconci
                 raise RuntimeError(message)
     # Remove only an unpublished, reconciled name-only ref, under a lease.
     if remote and not reserved:
+        # Journal the reconciled deletion so a restart after it remains resumable.
+        state["testpypi_removal_pending"] = sha
+        release_preparation.save(root, state)
         sessions.run(
             root,
             "git",

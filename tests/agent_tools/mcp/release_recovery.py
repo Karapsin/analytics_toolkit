@@ -366,6 +366,16 @@ def test_old_publication_must_be_reconciled_before_head_replacement(
             return "old refs/tags/v1.2.3.4"
         if args[:3] == ("git", "ls-remote", "--heads"):
             return ("other" if conflict == "ref" else "test-head") + " refs/heads/testpypi-1.2.3.4"
+        if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
+            return "test-head old"
+        if args[:2] == ("git", "show"):
+            metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
+            return (
+                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
+                if args[2].startswith("test-head:") else metadata
+            )
+        if args[:2] == ("git", "diff"):
+            return "pyproject.toml"
         return ""
 
     monkeypatch.setattr(candidate.sessions, "run", run)
@@ -431,9 +441,20 @@ def test_completed_unpublished_old_attempt_removes_only_leased_temporary_ref(
         calls.append(args)
         if args[:3] == ("git", "ls-remote", "--heads"):
             return "test-head refs/heads/testpypi-1.2.3.4"
+        if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
+            return "test-head old"
+        if args[:2] == ("git", "show"):
+            metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
+            return (
+                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
+                if args[2].startswith("test-head:") else metadata
+            )
+        if args[:2] == ("git", "diff"):
+            return "pyproject.toml"
         return ""
 
     monkeypatch.setattr(candidate.sessions, "run", run)
+    monkeypatch.setattr(candidate.release_preparation, "state_path", lambda root: root / "state.json")
     monkeypatch.setattr(candidate, "_jobs", lambda *args: {"publish to TestPyPI": "failure"})
     candidate.reconcile_replacement(tmp_path, state)
     assert calls[-1] == (
@@ -447,7 +468,24 @@ def test_successful_old_upload_waits_for_index_reconciliation(
 ) -> None:
     state = {"version": "1.2.3.4", "candidate_sha": "old", "testpypi_sha": "test-head"}
     monkeypatch.setattr(candidate, "index_files", lambda *args: {})
-    monkeypatch.setattr(candidate.sessions, "run", lambda *args: "")
+
+    def run(root, *args):
+        if args[:3] == ("git", "ls-remote", "--heads"):
+            return "test-head refs/heads/testpypi-1.2.3.4"
+        if args == ("git", "rev-list", "--parents", "-n", "1", "test-head"):
+            return "test-head old"
+        if args[:2] == ("git", "show"):
+            metadata = '[project]\nname = "analytics-toolkit"\nversion = "1.2.3.4"'
+            return (
+                candidate.replace_project_name_text(metadata, candidate.PROJECTS["testpypi"]).strip()
+                if args[2].startswith("test-head:") else metadata
+            )
+        if args[:2] == ("git", "diff"):
+            return "pyproject.toml"
+        return ""
+
+    monkeypatch.setattr(candidate.sessions, "run", run)
+    monkeypatch.setattr(candidate.release_preparation, "save", lambda *args: None)
     monkeypatch.setattr(candidate, "_runs", lambda *args: [{"databaseId": 42, "status": "completed"}])
     monkeypatch.setattr(candidate, "_jobs", lambda *args: {"publish to TestPyPI": "success"})
     with pytest.raises(RuntimeError, match="upload succeeded"):
