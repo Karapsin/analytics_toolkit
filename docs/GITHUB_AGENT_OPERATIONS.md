@@ -127,11 +127,14 @@ compatible; workers with an older controller use the idle-only merge fallback.
 ## Updating trusted automation
 
 The companion worker dependency is staged, not active, at
-[self_host commit 87b7675978243d815b5b3902fc69cc2a241cf0b0](https://github.com/Karapsin/self_host/commit/87b7675978243d815b5b3902fc69cc2a241cf0b0),
-with successful [exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38450043975/job/115478288593).
-The immutable `self_host-task-evidence-87b767597824/` source/test snapshot and
-`operator/companion-87b767597824-ci.json` source hashes must accompany controller
-review. It supersedes ancestors `b817a0541a59bb028d42ff9c243d503a39d62ba1`
+[self_host commit 6930a0f553545315f80273267cab10026534fc56](https://github.com/Karapsin/self_host/commit/6930a0f553545315f80273267cab10026534fc56),
+with successful [exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38464258543/job/115526996500).
+The `operator/companion-6930a0f55354-ci.json` receipt maps changed sources/tests
+in `self_host-task-evidence-6930a0f55354/` and unchanged files in the earlier
+`self_host-task-evidence-87b767597824/` namespace to the final commit through
+source hashes and Git blob proofs. Both namespaces must accompany controller
+review. It supersedes ancestors `87b7675978243d815b5b3902fc69cc2a241cf0b0`,
+`b817a0541a59bb028d42ff9c243d503a39d62ba1`
 and `0ae2ffc5ce5892bedd4a37f627dc9b190958e27b`;
 retain the earlier receipts as historical evidence. Toolkit does not duplicate
 worker code or remove any companion features. CI receipts are not owner approval.
@@ -308,8 +311,8 @@ signed payload and parser retain the complete text.
 
 The coordinator owns companion implementation, rehearsal and deployment in its
 separate self_host checkout. The pinned dependency candidate is
-`87b7675978243d815b5b3902fc69cc2a241cf0b0`; inspect its immutable source/tests
-and `operator/companion-87b767597824-ci.json` receipt. It is staged, not active.
+`6930a0f553545315f80273267cab10026534fc56`; inspect its mapped immutable source/tests
+and `operator/companion-6930a0f55354-ci.json` receipt. It is staged, not active.
 Exact-commit green CI does not establish independent review, owner approval or
 successful deployment rehearsal. This descendant applies the genuine-input
 guard before native recommended answers and before coding recommendations or
@@ -321,8 +324,33 @@ answers and visual rejection. `test_checkpoint_bytes.py` covers exact saved byte
 through replanning and independent review. Final independent review must inspect
 this pin; ancestor reviews do not approve its changed code.
 
-The receipt links successful Repository Checks run `38450043975`, job
-`115478288593`, to the exact candidate and declares hashes for its workflow,
+The trusted controller calls `task_context.require_resolved` after the review-only
+return and before any code-publication mutation. This gate also covers existing
+feature-branch recovery: unresolved starting prompts or corrections cannot
+apply patches, sign commits, push branches or publish PR attachments. Historical
+v1 attachments remain readable and signature-verifiable; publication of an
+unresolved reference requires its exact approval binding, image evidence or
+explicit owner replacement. Blocker reporting and writer release remain intact.
+
+The collector retains its staged `git diff --cached --check` gate before patch
+serialization. A checkpoint rejected for changelog conflict markers must be
+corrected while retaining both legitimate entries, historical sections and the
+owned fragment for trusted folding. Resubmit the corrected checkpoint through
+the unchanged collector and fresh exact-head GitHub validation; the earlier
+rejected checkpoint establishes neither publication nor successful checks.
+
+The companion checks references before coding, publication and recovery writes,
+retaining genuine missing-evidence holds and saved publication artifacts.
+Authenticated Telegram approvals bind the displayed plan text, dev base,
+correlated event and chronological answer. Revision/head-bound GitHub replies
+use the same correlation rules. An unrelated reply or approval of an older
+plan/base cannot approve a later plan. `test_publication_references.py` covers
+these companion boundaries and correlated approval records; toolkit
+`tests/repository/agent_lifecycle.py` exercises the real resolver with mocked
+Git/GitHub publication operations.
+
+The receipt links successful Repository Checks run `38464258543`, job
+`115526996500`, to the exact candidate and declares hashes for its workflow,
 `agent_tools/workflow.py`, service sources and rehearsal test. The workflow's
 `run-checks --level prepush` invokes `unittest discover -s agent_tools/tests -v`,
 which discovers `test_worker_rollout_rehearsal.py`. Its synthetic rehearsal
@@ -337,7 +365,7 @@ still require verified evidence for the exact final candidate.
 
 The earlier `operator/atk-worker-rollout-b817a0541a59-receipt.json` and its
 rehearsal script remain historical evidence. They cannot establish a successful
-rehearsal for changed `87b767…` source. Repeat affected steps and record a
+rehearsal for changed `6930a0…` source. Repeat affected steps and record a
 hash-bound exact-candidate receipt before activation; do not infer rehearsal
 success from green CI or this plan review.
 

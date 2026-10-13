@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ast
+
+from tests._support.source import contains_expression, imported_modules, referenced_names
 from tests.sql._support.architecture import (
     PROJECT_ROOT,
     SQL_ROOT,
@@ -23,15 +26,18 @@ def test_create_table_clickhouse_option_policy_is_adapter_owned() -> None:
     }
     offenders: list[str] = []
     for path in branch_checked_paths:
-        text = path.read_text()
+        tree = ast.parse(path.read_text())
         for snippet in branch_snippets:
-            if snippet in text:
+            if contains_expression(tree, snippet):
                 offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
     for path in generic_callers:
-        text = path.read_text()
-        if "validate_ch_options_not_used" in text:
+        tree = ast.parse(path.read_text())
+        if "validate_ch_options_not_used" in referenced_names(tree):
             offenders.append(f"{path.relative_to(PROJECT_ROOT)}: validate_ch_options_not_used")
-        if "clickhouse.options" in text:
+        if any(
+            module.startswith("analytics_toolkit.sql.clickhouse.options")
+            for module in imported_modules(path)
+        ):
             offenders.append(f"{path.relative_to(PROJECT_ROOT)}: clickhouse.options")
 
     assert offenders == []

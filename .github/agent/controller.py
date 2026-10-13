@@ -783,6 +783,7 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                 reason = verdict["summary"] + "\n" + "\n".join(str(x) for x in verdict["findings"])
                 controls.reject(gh, pr, task, reason, verdict["change_summary"])
             return
+        trusted_module("task_context").require_resolved(task["user_task"])
         if task["kind"] == "correction":
             verify_correction_plan(task, artifact)
         patch = artifact / "fix.patch"

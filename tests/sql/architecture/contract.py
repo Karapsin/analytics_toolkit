@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+from tests._support.source import (
+    CodeRules,
+    backend_branch_count,
+    called_names,
+    contains_expression,
+    forbidden_code,
+    imported_modules,
+    referenced_names,
+)
 from tests.sql._support.architecture import (
     PROJECT_ROOT,
     SQL_ROOT,
@@ -15,66 +24,60 @@ def test_adapter_owned_sql_fragments_stay_out_of_cleaned_generic_modules() -> No
         SQL_ROOT / "dml" / "table" / "partitions.py",
         SQL_ROOT / "dml" / "transfer" / "staging.py",
     ]
-    forbidden_snippets = {
-        "system.tables",
-        "information_schema.tables",
-        "pg_catalog",
-        "DESCRIBE TABLE (",
-        "DROP PARTITION",
-        "TRUNCATE PARTITION",
-        "ADD PARTITION",
-        "DELETE FROM {table}",
-    }
-    offenders: list[str] = []
-
-    for path in cleaned_generic_paths:
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in cleaned_generic_paths
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                strings=(
+                    "system.tables",
+                    "information_schema.tables",
+                    "pg_catalog",
+                    "DESCRIBE TABLE (",
+                    "DROP PARTITION",
+                    "TRUNCATE PARTITION",
+                    "ADD PARTITION",
+                    "DELETE FROM ",
+                )
+            ),
+        )
+    ]
     assert offenders == []
 
 
 def test_backend_adapters_do_not_depend_on_generic_write_mode_or_type_maps() -> None:
-    forbidden_snippets = {
-        "dml.transfer.schema",
-        "dml.transfer import schema",
-        "dml.load import load_sql_table",
-        "dml.load.load_sql_table",
-        "load_sql_table.",
-        "from ...dml.table import write_modes",
-        "transfer_schema._map_to_gp_type",
-        "transfer_schema._map_to_trino_type",
-        "transfer_schema._map_to_ch_base_type",
-        "transfer.schema import _GP_OID_TYPES",
-    }
-    offenders: list[str] = []
-
-    for path in (SQL_ROOT / "backends").rglob("*.py"):
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in (SQL_ROOT / "backends").rglob("*.py")
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                modules=(
+                    "analytics_toolkit.sql.dml.transfer.schema",
+                    "analytics_toolkit.sql.dml.load.load_sql_table",
+                    "analytics_toolkit.sql.dml.table.write_modes",
+                ),
+                names=("load_sql_table",),
+                expressions=(
+                    "transfer_schema._map_to_gp_type",
+                    "transfer_schema._map_to_trino_type",
+                    "transfer_schema._map_to_ch_base_type",
+                ),
+            ),
+        )
+    ]
     assert offenders == []
 
 
 def test_backend_policy_sql_templates_stay_backend_owned() -> None:
-    forbidden_snippets = {
-        "TRUNCATE TABLE IF EXISTS",
-        "ALTER TABLE {table} DROP PARTITION",
-    }
-    offenders: list[str] = []
-
-    for path in SQL_ROOT.rglob("*.py"):
-        if "backends" in path.parts:
-            continue
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in (path for path in SQL_ROOT.rglob("*.py") if "backends" not in path.parts)
+        for violation in forbidden_code(
+            path, CodeRules(strings=("TRUNCATE TABLE IF EXISTS", "DROP PARTITION"))
+        )
+    ]
     assert offenders == []
 
 
@@ -136,27 +139,19 @@ def test_backend_specific_helper_bodies_stay_backend_owned() -> None:
 
 def test_dataframe_type_inference_is_adapter_owned() -> None:
     schema_path = SQL_ROOT / "ddl" / "schema.py"
-    text = schema_path.read_text()
-    forbidden_snippets = {
-        "_build_expected_ch_column_types",
-        'get_backend_adapter("ch")',
-        "def _infer_gp_type",
-        "def _infer_trino_type",
-        "def _infer_ch_type",
-        "_COLUMN_TYPE_INFERERS",
-        "isinstance(value, Decimal)",
-        "DOUBLE PRECISION",
-        "DateTime64(6)",
-        "Nullable(",
-    }
-    offenders = [
-        f"{schema_path.relative_to(PROJECT_ROOT)}: {snippet}"
-        for snippet in forbidden_snippets
-        if snippet in text
-    ]
-    assert offenders == []
-
-    tree = ast.parse(text, filename=str(schema_path))
+    assert (
+        forbidden_code(
+            schema_path,
+            CodeRules(
+                names=("_build_expected_ch_column_types", "_COLUMN_TYPE_INFERERS"),
+                prefixes=("_infer_gp_type", "_infer_trino_type", "_infer_ch_type"),
+                expressions=("get_backend_adapter('ch')", "isinstance(value, Decimal)"),
+                strings=("DOUBLE PRECISION", "DateTime64(6)", "Nullable("),
+            ),
+        )
+        == []
+    )
+    tree = ast.parse(schema_path.read_text())
     infer_wrapper = next(
         node
         for node in ast.walk(tree)
@@ -175,17 +170,13 @@ def test_generic_analyze_support_policy_is_adapter_owned() -> None:
         SQL_ROOT / "execution" / "plan_steps.py",
         SQL_ROOT / "dml" / "table" / "maintenance.py",
     ]
-    forbidden_snippets = {
-        "get_backend_capability",
-        "supports_analyze",
-    }
-    offenders: list[str] = []
-    for path in checked_paths:
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in checked_paths
+        for violation in forbidden_code(
+            path, CodeRules(names=("get_backend_capability", "supports_analyze"))
+        )
+    ]
     assert offenders == []
 
 
@@ -195,47 +186,51 @@ def test_generic_clickhouse_callers_delegate_to_adapters() -> None:
         SQL_ROOT / "execution" / "plan_steps.py",
         SQL_ROOT / "metadata" / "table_info.py",
     ]
-    forbidden_snippets = {
-        "clickhouse.lifecycle",
-        "clickhouse.wait",
-        "ddl.clickhouse",
-        "build_ch_",
-        "drop_ch_",
-        "truncate_ch_",
-        "get_ch_connection_for_host",
-        'backend == "ch"',
-        'backend != "ch"',
-        'config.backend == "ch"',
-        'options.backend == "ch"',
-    }
-    offenders: list[str] = []
-
-    for path in generic_paths:
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in generic_paths
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                modules=(
+                    "analytics_toolkit.sql.clickhouse.lifecycle",
+                    "analytics_toolkit.sql.clickhouse.wait",
+                    "analytics_toolkit.sql.ddl.clickhouse",
+                ),
+                prefixes=("build_ch_", "drop_ch_", "truncate_ch_"),
+                names=("get_ch_connection_for_host",),
+                expressions=(
+                    "backend == 'ch'",
+                    "backend != 'ch'",
+                    "config.backend == 'ch'",
+                    "options.backend == 'ch'",
+                ),
+            ),
+        )
+    ]
     assert offenders == []
 
 
 def test_generic_identifier_helpers_use_backend_adapters() -> None:
-    capability_imports = (
-        "get_backend_capability",
-        "BACKEND_CAPABILITIES",
-        ".core.capabilities",
-        ".capabilities import",
-    )
     helper_paths = {
         SQL_ROOT / "core" / "identifiers.py",
         SQL_ROOT / "ddl" / "identifiers.py",
     }
-
     for path in helper_paths:
-        text = path.read_text()
-        assert "get_backend_adapter" in text
-        for needle in capability_imports:
-            assert needle not in text
+        assert "get_backend_adapter" in called_names(ast.parse(path.read_text()))
+        assert (
+            forbidden_code(
+                path,
+                CodeRules(
+                    names=("get_backend_capability", "BACKEND_CAPABILITIES"),
+                    modules=(
+                        "analytics_toolkit.sql.core.capabilities",
+                        "analytics_toolkit.sql.capabilities",
+                    ),
+                ),
+            )
+            == []
+        )
 
 
 def test_generic_io_backend_dispatch_is_adapter_owned() -> None:
@@ -244,31 +239,36 @@ def test_generic_io_backend_dispatch_is_adapter_owned() -> None:
         SQL_ROOT / "dml" / "io" / "execute_sql.py",
         SQL_ROOT / "dml" / "io" / "execute_read.py",
     ]
-    forbidden_snippets = {
-        "_READ_BACKENDS",
-        "_EXECUTE_BACKENDS",
-        "_EXECUTE_READ_BACKENDS",
-        'get_backend_adapter("trino")',
-        'get_backend_adapter("gp")',
-        'get_backend_adapter("ch")',
-        "def _read_trino",
-        "def _read_gp",
-        "def _read_ch",
-        "def _execute_trino(",
-        "def _execute_gp(",
-        "def _execute_ch(",
-        "def _execute_read_trino",
-        "def _execute_read_gp",
-        "def _execute_read_ch",
-    }
-    offenders: list[str] = []
-
-    for path in checked_paths:
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in checked_paths
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                names=(
+                    "_READ_BACKENDS",
+                    "_EXECUTE_BACKENDS",
+                    "_EXECUTE_READ_BACKENDS",
+                    "_execute_trino",
+                    "_execute_gp",
+                    "_execute_ch",
+                ),
+                prefixes=(
+                    "_read_trino",
+                    "_read_gp",
+                    "_read_ch",
+                    "_execute_read_trino",
+                    "_execute_read_gp",
+                    "_execute_read_ch",
+                ),
+                expressions=(
+                    "get_backend_adapter('trino')",
+                    "get_backend_adapter('gp')",
+                    "get_backend_adapter('ch')",
+                ),
+            ),
+        )
+    ]
     assert offenders == []
 
 
@@ -280,29 +280,33 @@ def test_generic_load_and_transfer_do_not_import_concrete_config_policy() -> Non
         SQL_ROOT / "dml" / "transfer" / "flow" / "finalize.py",
         SQL_ROOT / "dml" / "transfer" / "flow" / "stage.py",
     ]
-    forbidden_snippets = {
-        "TrinoConfig",
-        "get_backend_capability",
-        "core.capabilities import validate_write_mode",
-        "upsert_strategy",
-        "supports_distributed_tables",
-        "supports_early_transfer_target_creation",
-        "_requires_upsert_partition_drop_template",
-        "_supports_distributed_table_targets",
-        "_uses_partition_replacement_upsert",
-    }
-    offenders: list[str] = []
-    for path in checked_paths:
-        text = path.read_text()
-        for snippet in forbidden_snippets:
-            if snippet in text:
-                offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {snippet}")
-
+    offenders = [
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in checked_paths
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                names=(
+                    "TrinoConfig",
+                    "get_backend_capability",
+                    "upsert_strategy",
+                    "supports_distributed_tables",
+                    "supports_early_transfer_target_creation",
+                    "_requires_upsert_partition_drop_template",
+                    "_supports_distributed_table_targets",
+                    "_uses_partition_replacement_upsert",
+                ),
+                modules=("analytics_toolkit.sql.core.capabilities.validate_write_mode",),
+            ),
+        )
+    ]
     assert offenders == []
 
 
 def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
     allowed_counts = {
+        # Configuration normalization intentionally owns these backend defaults.
+        "analytics_toolkit/sql/connection/ddl_defaults.py": 5,
         "analytics_toolkit/sql/ddl/api.py": 0,
         "analytics_toolkit/sql/ddl/builders.py": 0,
         "analytics_toolkit/sql/ddl/extract_ddl.py": 3,
@@ -326,32 +330,6 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
         "analytics_toolkit/sql/metadata/show_tables.py": 4,
         "analytics_toolkit/sql/metadata/table_info.py": 1,
     }
-    needles = (
-        'backend == "',
-        'backend != "',
-        'backend in {"',
-        "config.backend ==",
-        "config.backend !=",
-        "options.backend ==",
-        "options.backend !=",
-        "options.connection_backend ==",
-        "options.connection_backend !=",
-        "target_config.backend ==",
-        "target_config.backend !=",
-        "source_config.backend ==",
-        "source_config.backend !=",
-        "connection_backend ==",
-        "connection_backend !=",
-        "connection_backend in {",
-        "target_backend ==",
-        "target_backend !=",
-        "from_db_backend ==",
-        "from_db_backend !=",
-        "to_db_backend ==",
-        "to_db_backend !=",
-        "transfer_backend ==",
-        "transfer_backend !=",
-    )
     excluded_parts = {"backends"}
     offenders: list[str] = []
 
@@ -359,9 +337,7 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
         relative = str(path.relative_to(PROJECT_ROOT))
         if any(part in excluded_parts for part in path.parts):
             continue
-        count = sum(
-            1 for line in path.read_text().splitlines() if any(needle in line for needle in needles)
-        )
+        count = backend_branch_count(ast.parse(path.read_text()))
         if count > allowed_counts.get(relative, 0):
             offenders.append(
                 f"{relative}: {count} backend branches (allowed {allowed_counts.get(relative, 0)})"
@@ -371,23 +347,18 @@ def test_generic_sql_backend_branch_debt_does_not_increase() -> None:
 
 
 def test_generic_sql_modules_do_not_pin_literal_backend_sets() -> None:
-    literal_sets = {
-        '{"gp", "trino", "ch"}',
-        '{"trino", "gp", "ch"}',
-        '{"gp","trino","ch"}',
-        '{"trino","gp","ch"}',
-    }
-    excluded_parts = {"backends"}
-    offenders: list[str] = []
-
+    offenders = []
     for path in SQL_ROOT.rglob("*.py"):
-        relative = str(path.relative_to(PROJECT_ROOT))
-        if any(part in excluded_parts for part in path.parts):
+        if "backends" in path.parts:
             continue
-        text = path.read_text()
-        if any(literal_set in text for literal_set in literal_sets):
-            offenders.append(relative)
-
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Set) and all(
+                isinstance(item, ast.Constant) for item in node.elts
+            ):
+                values = {item.value for item in node.elts}
+                if values == {"gp", "trino", "ch"}:
+                    offenders.append(str(path.relative_to(PROJECT_ROOT)))
     assert offenders == []
 
 
@@ -408,91 +379,82 @@ def test_legacy_sql_compatibility_paths_are_removed() -> None:
         if path.exists()
     ] == []
 
-    forbidden_import_fragments = {
-        "backend_adapters",
-        "clickhouse.lifecycle",
-        "clickhouse.options",
-        "clickhouse.wait",
-        "ddl.clickhouse",
-        "flow.estimate",
+    forbidden_modules = {
+        "analytics_toolkit.sql.backend_adapters",
+        "analytics_toolkit.sql._backend_adapters",
+        "analytics_toolkit.sql.clickhouse.lifecycle",
+        "analytics_toolkit.sql.clickhouse.options",
+        "analytics_toolkit.sql.clickhouse.wait",
+        "analytics_toolkit.sql.ddl.clickhouse",
+        "analytics_toolkit.sql.dml.transfer.flow.estimate",
     }
     offenders = [
-        f"{path.relative_to(PROJECT_ROOT)}: {fragment}"
+        f"{path.relative_to(PROJECT_ROOT)}: {module}"
         for path in SQL_ROOT.rglob("*.py")
-        for fragment in forbidden_import_fragments
-        if fragment in path.read_text()
+        for module in imported_modules(path)
+        if any(
+            module == forbidden or module.startswith(forbidden + ".")
+            for forbidden in forbidden_modules
+        )
     ]
     assert offenders == []
-    assert (
-        "refine_ch_column_types_nullability_from_rows"
-        not in (SQL_ROOT / "dml" / "transfer" / "schema.py").read_text()
-    )
+    tree = ast.parse((SQL_ROOT / "dml" / "transfer" / "schema.py").read_text())
+    assert "refine_ch_column_types_nullability_from_rows" not in referenced_names(tree)
 
 
 def test_load_insert_backend_serialization_is_adapter_owned() -> None:
     load_path = SQL_ROOT / "dml" / "load" / "load_sql_table.py"
-    text = load_path.read_text()
-    forbidden_snippets = {
-        "psycopg2.extras",
-        "from decimal import Decimal",
-        "TrinoConfig",
-        "SqlConfigError",
-        "isinstance(value, Decimal)",
-        "normalized_target_type",
-        "to_pydatetime",
-        "applymap(_normalize_ch_scalar)",
-    }
     offenders = [
-        f"{load_path.relative_to(PROJECT_ROOT)}: {snippet}"
-        for snippet in forbidden_snippets
-        if snippet in text
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in [load_path]
+        for violation in forbidden_code(
+            path,
+            CodeRules(
+                modules=("psycopg2.extras", "decimal.Decimal"),
+                names=("TrinoConfig", "SqlConfigError", "normalized_target_type", "to_pydatetime"),
+                expressions=("isinstance(value, Decimal)",),
+                calls_with=(("applymap", "_normalize_ch_scalar"),),
+            ),
+        )
     ]
     assert offenders == []
 
 
 def test_load_sql_insert_dispatch_is_adapter_owned() -> None:
     path = SQL_ROOT / "dml" / "load" / "load_sql_table.py"
-    text = path.read_text()
-    forbidden_snippets = {
+    tree = ast.parse(path.read_text())
+    forbidden_names = {
         "DEFAULT_GP_INSERT_CHUNK_SIZE",
         "DEFAULT_TRINO_INSERT_CHUNK_SIZE",
         "_BATCH_INSERT_BACKENDS",
         "_ROW_INSERT_BACKENDS",
         "_make_batch_insert_backend",
         "_make_row_insert_backend",
-        "def _insert_trino_batch_backend",
-        "def _insert_gp_batch_backend",
-        "def _insert_ch_batch_backend",
-        "def _insert_trino_rows_backend",
-        "def _insert_gp_rows_backend",
-        "def _insert_ch_rows_backend",
+        "_insert_trino_batch_backend",
+        "_insert_gp_batch_backend",
+        "_insert_ch_batch_backend",
+        "_insert_trino_rows_backend",
+        "_insert_gp_rows_backend",
+        "_insert_ch_rows_backend",
     }
-    offenders = [
-        f"{path.relative_to(PROJECT_ROOT)}: {snippet}"
-        for snippet in forbidden_snippets
-        if snippet in text
-    ]
-    assert offenders == []
-    assert "get_backend_adapter(backend).insert_dataframe_batch" in text
-    assert "get_backend_adapter(backend).insert_rows_batch" in text
+    assert not (referenced_names(tree) & forbidden_names)
+    assert {"insert_dataframe_batch", "insert_rows_batch"} <= called_names(tree)
 
 
 def test_parquet_load_stage_uses_target_backend_adapter() -> None:
     path = SQL_ROOT / "dml" / "load" / "load_df.py"
-    text = path.read_text()
-    forbidden_snippets = {
-        'get_backend_adapter("trino")',
-        'table_exists(\n            "trino"',
-        'build_stage_table_name(\n        "trino"',
-        'build_stage_table_name(\n            "trino"',
-    }
-
+    tree = ast.parse(path.read_text())
+    assert not contains_expression(tree, "get_backend_adapter('trino')")
     offenders = [
-        f"{path.relative_to(PROJECT_ROOT)}: {snippet}"
-        for snippet in forbidden_snippets
-        if snippet in text
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"table_exists", "build_stage_table_name"}
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == "trino"
     ]
-
     assert offenders == []
 
 
@@ -523,18 +485,13 @@ def test_removed_sql_deep_module_files_stay_removed() -> None:
 
 def test_show_tables_catalog_filter_policy_is_adapter_owned() -> None:
     path = SQL_ROOT / "metadata" / "show_tables.py"
-    text = path.read_text()
-    forbidden_snippets = {
-        "get_backend_capability",
-        "supports_show_tables_catalog_filter",
-    }
-
     offenders = [
-        f"{path.relative_to(PROJECT_ROOT)}: {snippet}"
-        for snippet in forbidden_snippets
-        if snippet in text
+        f"{path.relative_to(PROJECT_ROOT)}: {violation}"
+        for path in [path]
+        for violation in forbidden_code(
+            path, CodeRules(names=("get_backend_capability", "supports_show_tables_catalog_filter"))
+        )
     ]
-
     assert offenders == []
 
 

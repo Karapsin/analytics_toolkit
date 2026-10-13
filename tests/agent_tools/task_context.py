@@ -253,7 +253,9 @@ def test_starting_prompt_plan_reference_blocks_publication_until_bound(
     with pytest.raises(ValueError, match="exact approved plan"):
         gate(root)
     task_context.evidence(
-        root, "approve-plan", {"plan_id": plan["plan_id"], "user_prompt": "Approve export fidelity."}
+        root,
+        "approve-plan",
+        {"plan_id": plan["plan_id"], "user_prompt": "Approve export fidelity."},
     )
     before = task_context.read(root)
     assert "starting_prompt_approval" not in before["plans"][0]
