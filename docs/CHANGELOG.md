@@ -13,6 +13,7 @@ Generated from package version bumps and recent commit history.
 - Allow trusted scoped dev merges during unrelated agent work while preserving merge gates and unpublished branches; reconcile changelog history and pin isolated companion rollout evidence.
 - Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
+- Split scoped-merge gate regressions to satisfy strict lint, retain recovered task and dev repair history, and align staged companion rollout evidence.
 
 ## 1.3.12.4 - 2026-10-12
 
