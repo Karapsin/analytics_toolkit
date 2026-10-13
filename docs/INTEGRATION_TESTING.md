@@ -107,6 +107,8 @@ runner tests cover both transport attempts, the first failure status, teardown,
 and stopping later profiles after the failed profile. Cleanup cases group the
 HTTP status, failing transport, and expected status into one parametrized tuple
 to retain every failure combination within the strict lint argument limit.
+All six cleanup cases invoke the mocked runner and assert the first failure status,
+both transport startup logs, and teardown and leak-check attempts for both transports.
 These tests run in the normal non-integration suite without external programs.
 The workflow's policy job selects compatible Python and Airflow matrices without
 starting services. Fast diagnostics checks identify the five service jobs

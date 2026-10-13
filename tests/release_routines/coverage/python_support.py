@@ -80,9 +80,9 @@ def test_orchestration_collects_every_run_before_combination_and_ratchets(
                                     "missing_lines": 0,
                                     "num_branches": 2,
                                     "missing_branches": missing_branches,
-                                }
-                            }
-                        }
+                                },
+                            },
+                        },
                     }
                 )
             )
@@ -116,7 +116,9 @@ def test_partial_or_incompatible_coverage_plan_cannot_reach_report(
 ) -> None:
     policy = disjoint_policy(tmp_path)
     selected = support.coverage_versions(policy)
-    monkeypatch.setattr(orchestration.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("ran"))
+    monkeypatch.setattr(
+        orchestration.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("ran")
+    )
     with pytest.raises(ValueError, match="complete policy plan"):
         orchestration.combine(tmp_path, selected[:1])
     with pytest.raises(ValueError, match="Missing required coverage data"):

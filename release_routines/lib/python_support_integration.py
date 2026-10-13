@@ -28,14 +28,14 @@ def integration_plan(policy: dict) -> dict:
     airflow_lower, airflow_upper = extra_range(policy, "airflow")
     auth = []
     for major, release, first, last, requirements in AUTH_RELEASES:
-        first = max(first, lower, airflow_lower)
-        last = min(last, upper, airflow_upper)
-        if first <= last:
+        compatible_first = max(first, lower, airflow_lower)
+        compatible_last = min(last, upper, airflow_upper)
+        if compatible_first <= compatible_last:
             auth.append(
                 {
                     "airflow": major,
                     "release": release,
-                    "python": f"3.{min(max(11, first), last)}",
+                    "python": f"3.{min(max(11, compatible_first), compatible_last)}",
                     "requirements": requirements,
                 }
             )
@@ -50,8 +50,8 @@ def auth_requirements(root: Path, row: dict[str, str]) -> str:
     # Preserve the committed local Python 3.11 constraint, adapting only the CI input.
     return re.sub(
         r"(?m)^-c https://raw.githubusercontent.com/apache/airflow/constraints-[^/]+/constraints-\S+",
-        f'-c https://raw.githubusercontent.com/apache/airflow/constraints-{row["release"]}/'
-        f'constraints-{row["python"]}.txt',
+        f"-c https://raw.githubusercontent.com/apache/airflow/constraints-{row['release']}/"
+        f"constraints-{row['python']}.txt",
         text,
     )
 
@@ -66,9 +66,7 @@ def main() -> None:
         row = (
             plan["fault"]
             if args.requirements == "fault"
-            else next(
-                row for row in plan["auth"]["include"] if row["airflow"] == args.requirements
-            )
+            else next(row for row in plan["auth"]["include"] if row["airflow"] == args.requirements)
         )
         print(auth_requirements(root, row), end="")
         return

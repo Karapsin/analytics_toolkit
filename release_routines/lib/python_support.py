@@ -51,7 +51,7 @@ def validate_policy(policy: dict) -> None:
         raise ValueError(message)
     for support in policy["extras"].values():
         if set(support) != {"minimum", "maximum"} or minor(support["minimum"]) > minor(
-            support["maximum"],
+            support["maximum"]
         ):
             message = "Invalid extra support range"
             raise ValueError(message)
@@ -106,11 +106,11 @@ def airflow_matrix(policy: dict) -> list[dict[str, str]]:
     lower, upper = extra_range(policy, "airflow")
     rows = []
     for release, first, last in AIRFLOW_RELEASES:
-        first, last = max(first, lower), min(last, upper)
-        if first <= last:
+        compatible_first, compatible_last = max(first, lower), min(last, upper)
+        if compatible_first <= compatible_last:
             rows.extend(
                 {"airflow": release, "python": f"3.{value}"}
-                for value in sorted({first, last})
+                for value in sorted({compatible_first, compatible_last})
             )
     return rows
 

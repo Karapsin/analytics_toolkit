@@ -152,9 +152,7 @@ def _assert_service_diagnostics(workflow: str) -> None:
         assert "for log in .integration-artifacts/*/*/startup.log; do" in report, name
         assert 'tail -n 80 "$log"' in report, name
         uploads = [
-            step
-            for step in job.split("      - name:")
-            if "uses: actions/upload-artifact@" in step
+            step for step in job.split("      - name:") if "uses: actions/upload-artifact@" in step
         ]
         profile, _, driver = name.partition("-")
         drivers = (driver,) if driver else ("http", "native")
@@ -298,3 +296,17 @@ def test_cleanup_failure_keeps_first_status_and_attempts_both_transports(
         "run",
         lambda *_args, **_kwargs: pytest.fail("external programs must not run"),
     )
+
+    assert (
+        sql_integration.run(
+            profile="all",
+            include_greenplum=True,
+            clickhouse_driver="both",
+        )
+        == expected
+    )
+    assert starts == teardown == leak_checks == ["http", "native"]
+    for driver in starts:
+        assert (tmp_path / "core" / driver / "startup.log").read_text(encoding="utf-8") == (
+            "stack ready\n"
+        )
