@@ -8,6 +8,7 @@ Generated from package version bumps and recent commit history.
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
+- Add rolling seven-minor Python support with continued extension until every extra and [all] pass, retire Python 3.8, generate self-validating automated update PRs and compatible CI/coverage matrices without weakening ratchets, and support Airflow 2/3 connections and variables with readiness and integration coverage.
 
 ## 1.3.12.4 - 2026-10-12
 
