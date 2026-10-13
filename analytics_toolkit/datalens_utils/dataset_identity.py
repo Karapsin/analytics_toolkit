@@ -40,6 +40,10 @@ def resolved_definition(definition: Any, checkpoint: Any) -> Any:
 
 
 def resolved_guid(dataset: Any, guid: str) -> str:
+    # Offline validation and explicit identities win over runtime relocation.
+    present = {field.guid for field in dataset.fields}
+    if guid in present:
+        return guid
     # Only declared original GUIDs map to identities owned by this dataset's checkpoint.
     path = current_session().paths.runtime_root / "resources.json"
     state = json.loads(path.read_text()) if path.exists() else {}
@@ -47,5 +51,7 @@ def resolved_guid(dataset: Any, guid: str) -> str:
         if entry.get("id") == dataset.id:
             for key, original in entry.get("recipe_field_guids", {}).items():
                 if original == guid:
-                    return cast("str", entry.get("field_guids", {}).get(key, guid))
+                    actual = entry.get("field_guids", {}).get(key)
+                    if actual and actual in present:
+                        return cast("str", actual)
     return guid

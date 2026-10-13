@@ -221,7 +221,11 @@ See the [advanced BI workflow](../../docs/modules/datalens_utils/bi-projects.md)
 and its portable example for full recipe details.
 
 Dataset creation adopts source-qualified inferred fields before adding missing
-fields. Actual GUIDs are checkpointed. After an interrupted source-only create,
+fields. Actual GUIDs are checkpointed. Version-2 pulls keep declared recipe GUIDs
+stable, including cache GUID formulas, Wizard aggregate sources and dataset-backed
+hierarchy members. Dataset-only and chart-only pulls update only selected resources
+and their baselines; runtime checkpoints retain inferred cloud identities.
+After an interrupted source-only create,
 read-only preflight resolves provisional field GUIDs against the retained dataset
 on a temporary checkpoint; reconciliation saves the recovered identities and
 publishes only after complete draft verification. Preflight leaves recipe files,

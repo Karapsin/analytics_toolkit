@@ -9,6 +9,7 @@ from typing import Any
 
 from .bi_datasets import field_handles, relation_snapshot, source_identities
 from .bi_import_resources import dataset_cache
+from .bi_pull_identity import normalize_chart, normalize_dataset
 from .bi_pull_ui import pull_dashboard
 from .dataset_identity import resolved_definition
 from .editing.pull import pull_chart
@@ -255,6 +256,10 @@ def pull_resources(  # noqa: PLR0913 - Three-way baseline, dependency snapshots 
             raise DataLensUtilsError(key + " lacks a verified three-way baseline.")
         base = copy.deepcopy(old["baseline"])
         incoming = extract_resource(client, resource, entity, old, base, datasets, charts)
+        if resource.kind == "dataset":
+            normalize_dataset(incoming["definition"], base["definition"])
+        elif resource.kind == "chart":
+            normalize_chart(incoming["definition"], registry, store, datasets)
         merged = merge(base, resource.files, incoming, key)
         baselines[key] = incoming
         propose_resource(resource, key, merged, proposed)

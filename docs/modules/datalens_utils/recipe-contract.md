@@ -49,7 +49,14 @@ A direct field requires `source` and `column`. Optional properties are `guid`,
 `none`), `hidden`, `description`, and `ui_settings` (a public SDK field-formatting JSON string). Kind defaults to `DIMENSION` for `none`,
 otherwise `MEASURE`. Imported API descriptions that are empty are omitted.
 Backend-inferred GUIDs are checkpointed; original recipe GUIDs map to those
-owned identities without adding duplicate fields. Distinct-title clones of the
+owned identities without adding duplicate fields. Version-2 pulls normalize cloud
+GUIDs back to declared recipe GUIDs before merging metadata and storing baselines.
+This includes cache `guid_formula` references, Wizard aggregate source fields and
+dataset-backed hierarchy members; chart-local GUIDs and member order stay intact.
+Scoped pulls leave unselected recipe files and checkpoint entries unchanged.
+Synthetic local validation uses recipe GUIDs, while cloud builders resolve them
+through an ID-matched checkpoint only when the inferred field exists.
+Distinct-title clones of the
 same source column retain separate identities; an inferred column is claimed only
 once. Formula/parameter visibility, descriptions and nonempty formatting that the
 recipe cannot represent block import.

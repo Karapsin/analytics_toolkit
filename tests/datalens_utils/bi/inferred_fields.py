@@ -99,6 +99,7 @@ def test_eight_inferred_fields_are_owned_updated_and_not_added_twice(bi_project,
     with DataLensClientYC(auth=NoAuthProvider()) as public:
         install_inference(public, monkeypatch, current)
         client = SimpleNamespace(
+            INSTALLATION=public.INSTALLATION,
             create=public.create,
             capabilities=public.capabilities,
             get=SimpleNamespace(dataset=lambda **kwargs: current),
@@ -142,6 +143,7 @@ def test_component_errors_preserve_ids_and_stop_before_publication(bi_project, m
         install_inference(public, monkeypatch, clean)
         getter = Mock(return_value=bad if stage == "fetch" else clean)
         client = SimpleNamespace(
+            INSTALLATION=public.INSTALLATION,
             create=public.create,
             capabilities=public.capabilities,
             get=SimpleNamespace(dataset=getter),
@@ -175,6 +177,7 @@ def test_ambiguous_inference_is_a_blocker(bi_project, monkeypatch):
     with DataLensClientYC(auth=NoAuthProvider()) as public:
         install_inference(public, monkeypatch, current)
         client = SimpleNamespace(
+            INSTALLATION=public.INSTALLATION,
             create=public.create,
             capabilities=public.capabilities,
             get=SimpleNamespace(dataset=lambda **kwargs: current),
@@ -266,6 +269,7 @@ def test_distinct_title_clones_share_a_column_without_sharing_identity(
     with DataLensClientYC(auth=NoAuthProvider()) as public:
         install_inference(public, monkeypatch, current)
         client = SimpleNamespace(
+            INSTALLATION=public.INSTALLATION,
             create=public.create,
             capabilities=public.capabilities,
             get=SimpleNamespace(dataset=lambda **kwargs: current),
