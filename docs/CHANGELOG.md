@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
 - Split scoped-merge gate regressions to satisfy strict lint, retain recovered task and dev repair history, and align staged companion rollout evidence.
+- Bind starting-prompt plan approvals without changing historical digests, retain suppressed blocked-repair diagnostics and retry fingerprints, and gate the corrected companion rollout on exact-candidate rehearsal and live acceptance.
 
 ## 1.3.12.4 - 2026-10-12
 
