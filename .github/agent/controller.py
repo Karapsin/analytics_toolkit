@@ -828,8 +828,12 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
             gh.label(number, acquire=False)
 
 
-def merge(gh: GitHub, app_id: int, work: Path) -> None:
+def merge(gh: GitHub, app_id: int, work: Path, *,
+          pr_numbers: set[int] | None = None,
+          active_branches: set[str] | None = None) -> None:
     for item in gh.pulls():
+        if pr_numbers is not None and item["number"] not in pr_numbers:
+            continue
         pr = gh.pull(item["number"])
         if not trusted(pr, gh.repository):
             continue
@@ -858,7 +862,14 @@ def merge(gh: GitHub, app_id: int, work: Path) -> None:
         # GitHub protection also enforces fast checks; expected head rejects races.
         result = gh.api(f"pulls/{pr['number']}/merge", "PUT", {"sha": head, "merge_method": "squash"})
         if result.get("merged"):
-            trusted_module("branch_cleanup").cleanup(gh, work, force=True)
+            trusted_module("branch_cleanup").cleanup(
+                gh, work, force=True, active_branches=active_branches)
+
+
+def merge_selected(gh: GitHub, app_id: int, work: Path, *,
+                   pr_numbers: set[int], active_branches: set[str]) -> None:
+    """Scope the trusted merge loop without weakening any merge gate."""
+    merge(gh, app_id, work, pr_numbers=pr_numbers, active_branches=active_branches)
 
 
 def cleanup_branches(gh: GitHub, *, active_branches: set[str] | None = None) -> dict[str, Any]:

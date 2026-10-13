@@ -90,6 +90,16 @@ main, protected/open-PR/active branches and unknown or unmerged work are preserv
 Local startup prunes remote references and removes only unused, safely merged local
 branches; dirty worktrees, backups and private task/audit records are retained.
 
+The trusted controller exposes `merge_selected(gh, app_id, work, *, pr_numbers,
+active_branches)`. The worker selects ready unowned PRs while unrelated jobs run,
+excluding every worker-owned PR. An empty selection merges nothing. Selection
+only filters the merge loop: provenance, exact-head protected approval, vetoes,
+task verification, current-dev review, fast checks, fragment folding, base rechecks,
+advisory dispatch and expected-head merge requests still apply. Cleanup receives
+queued/running unpublished correction and Telegram-feature branches and retains
+its complete open-PR inventory. The original three-argument `merge` remains
+compatible; workers with an older controller use the idle-only merge fallback.
+
 ## Updating trusted automation
 
 Only the controller, prompts, schemas, fixed dispatch bridge, capture workflow,
@@ -168,9 +178,82 @@ fast-CI chatter remains in GitHub and private worker records. Explicit `/help` a
 a private suppressed state; older unsent alerts are retired without replay.
 
 Recommended options resolve routine planning, implementation and correction
-choices automatically, including existing question holds. Choices are recorded
+choices automatically, including existing question holds. Legacy routine questions
+without labeled recommendations return to fresh planning with their exact questions
+and checkpoints retained; obsolete plan/review receipts are invalidated. Choices are recorded
 as automated decisions, never fabricated owner answers. Credential/access
 requirements, cancellations, vetoes, independent review and protected exact-head
 approvals retain their existing enforcement.
+
+[Documentation overview](README.md)
+
+## Recovered evidence and staged rollout
+
+The RPI task `33ad72f4abee49ca97e6d058e9f81a52` retains its earlier attachment at
+`agent_tools/task_evidence/33ad72f4abee49ca97e6d058e9f81a52/history/context-before-native-recovery.json`.
+Its historical digest verifies that record; it does not authorize a corrected head.
+The current signed context supersedes the paraphrase's approval binding with the
+exact native plan, including its final newline. A separately unapproved assistant
+provenance record identifies the recovered thread, plan turn/item, owner approval
+turn/message and immutable source hash. The earlier assistant text remains in the
+historical attachment. Subsequent owner replies are recorded verbatim and paired
+with the full questions and offered options. Answers longer than 1,024 characters
+link to their visible chronological correction rather than repeating it; the
+signed payload and parser retain the complete text.
+
+The coordinator owns companion implementation, rehearsal and deployment in its
+separate self_host checkout. The pinned dependency candidate is
+`b817a0541a59bb028d42ff9c243d503a39d62ba1`; inspect its immutable source/tests
+and `operator/companion-b817a0541a59-ci.json` receipt. It is staged, not active.
+Exact-commit green CI does not establish independent review, owner approval or
+successful rehearsal.
+
+The supplied `operator/atk-worker-rollout-b817a0541a59-receipt.json` and its
+rehearsal script record an isolated successful source installation, worker restart,
+claim/checkpoint recovery, ten-worker scheduling, owned-PR exclusion, unpublished
+branch preservation and source-only rollback retaining answers arriving after
+rollout. Reuse this evidence only for unchanged, hash-matching selected source
+and deployment steps. Repeat affected steps when either changes. This evidence
+covers worker recovery and scheduling; controller security checks and live
+Telegram/reply/notification acceptance remain separate gates.
+
+Before activation, require fresh independent review of both final candidates,
+required GitHub checks and protected owner approval for the corrected toolkit
+head. Follow self_host `AGENTS.md:25–26`: the coordinator must also perform an
+isolated off-Pi rehearsal with the exact candidate, copied or synthetic legacy
+state, isolated configuration and mocked external writes. Exercise reader-first
+rollout, routine and protected holds, interruption during active work and partial
+notification delivery, restart/checkpoint restoration, claim recovery and
+ten-worker scheduling. Rehearse source-only rollback by restoring previous selected
+source and compatible configuration and restarting while preserving databases,
+queues, approvals, evidence, checkpoints and ignored runtime state.
+
+Rehearsal passes only when identities/revisions remain consistent, pending work
+survives restart and rollback, notification delivery resumes without duplicate
+completed events, and stale approval cannot authorize a changed head. Record the
+candidate SHA, procedure, assertions, restart/rollback results and evidence hashes.
+Missing or failed rehearsal evidence blocks activation. Deploy compatible readers
+before enabling new writers; preserve poller ownership and unrelated Airflow state.
+Merge the checked, independently reviewed toolkit head with its exact-head owner
+approval, then mirror only the authorized controller allowlist to main before
+activating the companion. Verify the live revision, scoped capability, wait recovery,
+authenticated GitHub/Telegram answers and notification filtering. Failed acceptance
+restores prior source while retaining runtime state and newly received answers.
+
+The authorized completion set is analytics_toolkit PRs #7, #9, #10, #11, #12, #13,
+#14 and #15 plus repairs needed to finish them, all targeting `dev`. The
+coordinator inventories current heads, bases, agent phases, holds, review, exact-head
+CI and mergeability, recovers routine waits and continues monitoring until each
+target and repair has a verified GitHub merge receipt into `dev` and required
+post-merge repairs are complete. Serialize merges and revalidate every corrected
+head and changed dev base. Missing evidence/credentials, vetoes, provenance failures
+and protected approval remain genuine holds. self_host keeps its authorized
+direct-dev workflow; this task grants no authority over unrelated repositories,
+package releases or main promotions.
+
+The immutable `operator/pr-15-authored-fragment-fold.json` receipt records the
+original author fragment followed by its trusted metadata fold. Retain the folded
+CHANGELOG entry. A new correction fragment describes only this correction;
+recreating the consumed feature fragment would duplicate its entry.
 
 [Documentation overview](README.md)

@@ -108,6 +108,10 @@ and stopping later profiles after the failed profile. Cleanup cases group the
 HTTP status, failing transport, and expected status into one parametrized tuple
 to retain every failure combination within the strict lint argument limit.
 These tests run in the normal non-integration suite without external programs.
+The startup-diagnostics workflow guard checks all integration execution jobs and
+requires the core HTTP/native, auth, fault, and stress suites. Separate policy
+jobs may be added without changing the suite count; missing startup reports in
+execution jobs still fail fast CI.
 Batch diagnostics tests synchronize fake connection failures before asserting
 that both running queries failed. A separate sequential case verifies that an
 unstarted query remains cancelled with zero attempts and that the original

@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "task_id": "33ad72f4abee49ca97e6d058e9f81a52",
+  "producer_id": "local:33ad72f4abee49ca97e6d058e9f81a52",
+  "source": "user",
+  "starting_prompt": "check RPI agents, their, especially those who waiting for user approval",
+  "corrections": [
+    "Implement the plan.",
+    "also update rpi agents to ALWAYS use recommended options when they have questions about plan/feature implementation/correction",
+    "and I want to get messages only about user approvals / tg requested feature implemntation status / pr mergres with dev / released / merges with main",
+    "and once you done - monitor PRs until completion, stop only when ALL of them are merged successfully with dev",
+    "fix any issues on the way",
+    "also restart agents who are waiting user's approval so that use this new policy",
+    "also for tg questions, allow respond in github as well",
+    "check any pending PRs for agents which wait for something and reposnd them after that",
+    "ok, fix those tooling issues",
+    "also I've noticed that user answers to agent's question recorded and posted in PR, but agent's question is not visible => not enough context, fix that as well, record both questions and answers",
+    "also raise RPI agents concurrency to 10"
+  ],
+  "plans": [
+    {
+      "id": "4b8d64cd828bd113c428c812a8238f1b21169d7774b6ee801105df640a9cd30b",
+      "text": "# Preserve approved plans and image evidence for agent review\n\n## Summary\n\nResolve PR #12 using your confirmed DataLens scope, and extend task attachments so future reviewers receive the approved plan and referenced images.\n\n## PR #12\n\n- Record your explicit authorization to preserve copy-mode tab/dashboard imports, encoding and parameter fidelity, managed Editor link relocation, inferred dataset GUID recovery, and component-error diagnostics.\n- Recover the original plan and image from available session records where possible. Record missing evidence honestly; defer comparison against the original image.\n- Deliver this clarification through the authenticated owner reply workflow. Preserve Pi ownership of corrections, independent review, and required checks.\n- Retain the correction plan for interrupted dataset recovery and the task-specific changelog fragment.\n\n## Durable changes\n\n- Introduce a versioned task-context format supporting exact assistant plans, chronological user approval messages linked to those plans, and image evidence records. Preserve existing version-1 parsing and digest verification without rewriting historical records.\n- Extend `task_context` with actions to record plans and image evidence. Keep the original prompt immutable; distinguish assistant content from user authorization.\n- Store private originals locally. Publish redacted plan text and image descriptions; place sanitized images in immutable reviewer evidence with content hashes. Require owner review of images before external publication.\n- Include new evidence in the signed task digest. Supply it to planning, correction, and independent review sessions through the existing evidence interface.\n- Before handoff, flag unresolved references such as “Implement the plan” or `[Image #1]`. Require attached evidence or an explicit user replacement of the missing requirement.\n- Update local and Telegram workflows to retain plans and attachments before implementation. Deploy compatible readers before enabling new-format writers.\n- Follow independent review, fast checks, and retained exact-head owner approval for protected controller changes.\n\n## Validation\n\n- Verify version-1 compatibility and version-2 recording, redaction, rendering, parsing, and signature binding.\n- Reject altered plans, mismatched approval references, missing image files, and image hash mismatches.\n- Verify chronological corrections, restart persistence, reviewer access, and explicit missing-evidence replacements.\n- Reproduce PR #12’s original attachment gap and confirm the new workflow supplies sufficient context.\n- Run focused and mandatory precommit checks; validate Pi companion changes on GitHub.\n\n## Defaults\n\n- Your confirmed five DataLens behaviors replace the unavailable original scope evidence for #12.\n- Images include a written description and sanitized original when available.\n- Missing evidence never becomes invented context, and scope confirmation does not waive technical review or checks.",
+      "approval_index": 0
+    }
+  ],
+  "images": [],
+  "replacements": [],
+  "decisions": []
+}

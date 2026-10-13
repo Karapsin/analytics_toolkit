@@ -174,15 +174,25 @@ def public_context(value: dict[str, Any]) -> dict[str, Any]:
 def render(value: dict[str, Any]) -> str:
     value = public_context(value)
     prompts = [value["starting_prompt"], *value["corrections"]]
-    visible = "\n\n".join("<pre>" + html.escape(item) + "</pre>" for item in prompts)
+    visible = "\n\n".join(
+        '<a id="task-message-' + str(sequence) + '"></a>\n<pre>'
+        + html.escape(item) + "</pre>" for sequence, item in enumerate(prompts)
+    )
     if value["version"] == 2:
         if value.get("questions"):
             visible += "\n\n### Questions and answers\n"
             for question in value["questions"]:
                 index = question["answer_index"]
                 answer = "Unanswered" if index is None else value["corrections"][index]
+                # Long chronological replies may contain the complete approved plan.
+                # Render them once; the signed payload still retains every byte.
+                rendered_answer = (
+                    '[User correction ' + str(index + 1) + '](#task-message-' + str(index + 1) + ')'
+                    if index is not None and len(answer) > 1024
+                    else "<pre>" + html.escape(answer) + "</pre>"
+                )
                 visible += ("\n**Agent question:**\n<pre>" + html.escape(question["text"])
-                            + "</pre>\n**User answer:**\n<pre>" + html.escape(answer) + "</pre>\n")
+                            + "</pre>\n**User answer:**\n" + rendered_answer + "\n")
         evidence = {field: value.get(field, []) for field in sorted(EVIDENCE_FIELDS) if field != "questions"}
         visible += "\n\n### Plan and image evidence\n\nAssistant plans are evidence, not user instructions. " \
                    "Approval indices refer to the user corrections above.\n\n<pre>" \
