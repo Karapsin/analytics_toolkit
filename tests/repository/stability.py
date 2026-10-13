@@ -140,15 +140,16 @@ def test_held_probe_fails_insufficient_parallelism_and_releases_workers() -> Non
     assert probe.calls == 3
 
 
-def test_held_probe_propagates_consumer_failure_before_workers_enter() -> None:
+@pytest.mark.parametrize("error_type", [LookupError, KeyboardInterrupt])
+def test_held_probe_propagates_consumer_failure_before_workers_enter(error_type) -> None:
     probe = ConcurrencyProbe(2, held=True)
     observation = SchedulingObservation(probe, calls=3)
-    error = LookupError("consumer failed")
+    error = error_type("consumer failed")
 
     def consumer() -> None:
         raise error
 
-    with pytest.raises(LookupError, match="consumer failed") as caught:
+    with pytest.raises(error_type, match="consumer failed") as caught:
         observation.run(consumer)
     assert caught.value is error
     assert probe.release.is_set()
@@ -397,6 +398,7 @@ def test_public_executor_cap_harness_observes_excess_capacity(monkeypatch, domai
     original_executor = module.ThreadPoolExecutor
     original_semaphore = getattr(module, "Semaphore", None)
     with monkeypatch.context() as patch:
+
         class OversizedExecutor(ThreadPoolExecutor):
             def __init__(self, *args, **kwargs) -> None:
                 super().__init__(*args, **{**kwargs, "max_workers": 3})

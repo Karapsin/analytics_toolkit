@@ -185,7 +185,8 @@ class SchedulingObservation:
         def invoke() -> None:
             try:
                 future.set_result(operation())
-            except BaseException as error:
+            # Forward the original exception to the calling thread, including interrupts.
+            except BaseException as error:  # noqa: BLE001
                 future.set_exception(error)
             finally:
                 with self._condition:

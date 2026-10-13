@@ -25,7 +25,8 @@ or UI modules.
   Async candidates are deduplicated by their owning-loop Task; nested thread
   tests exclude outer pipeline work and count only leaf operations.
   The controller requires the expected worker count, releases in `finally`,
-  joins with a bound, propagates exceptions, and checks task count and maximum.
+  joins with a bound, forwards the original exception object to the calling
+  thread (including `KeyboardInterrupt`), and checks task count and maximum.
   A timeout is always failure. Partial final waves need no further rendezvous.
 - `concurrency.wait_event` and `wait_event_async` bound worker-state waits;
   the async form leaves the UI/event loop responsive. `observe_call` observes
