@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
+- Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
 
 ## 1.3.12.4 - 2026-10-12
 
