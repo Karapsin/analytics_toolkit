@@ -17,6 +17,8 @@ jobs:
       extras: ${{ steps.policy.outputs.extras }}
       coverage: ${{ steps.policy.outputs.coverage }}
       sdk: ${{ steps.policy.outputs.sdk }}
+      airflow: ${{ steps.policy.outputs.airflow }}
+      tools: ${{ steps.policy.outputs.tools }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -29,6 +31,10 @@ jobs:
           echo "extras=$(python -m release_routines.lib.python_support extras)" >> "$GITHUB_OUTPUT"
           echo "coverage=$(python -m release_routines.lib.python_support coverage)" >> "$GITHUB_OUTPUT"
           echo "sdk=$(python -m release_routines.lib.python_support sdk)" >> "$GITHUB_OUTPUT"
+          echo "airflow=$(python -m release_routines.lib.python_support airflow)" >> "$GITHUB_OUTPUT"
+          echo 'tools<<PYTHONS' >> "$GITHUB_OUTPUT"
+          python -m release_routines.lib.python_support tool-pythons >> "$GITHUB_OUTPUT"
+          echo 'PYTHONS' >> "$GITHUB_OUTPUT"
 
   fast-checks:
     name: fast-checks
@@ -42,7 +48,14 @@ jobs:
         run: |
           python - <<'PY'
           import json, os
-          assert all(job["result"] == "success" for job in json.loads(os.environ["RESULTS"]).values())
+          results = json.loads(os.environ["RESULTS"])
+          assert all(
+              job["result"] == "success" or (
+                  name == "airflow-compatibility" and job["result"] == "skipped"
+                  and results["matrix"]["outputs"]["airflow"] == '{"include": []}'
+              )
+              for name, job in results.items()
+          )
           PY
 
   tests:
@@ -95,15 +108,13 @@ jobs:
 
   airflow-compatibility:
     name: Airflow ${{ matrix.airflow }} on Python ${{ matrix.python }}
+    needs: matrix
+    if: >-
+      ${{ needs.matrix.outputs.airflow != '{"include": []}' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {airflow: '2.4.3', python: '3.9'}
-          - {airflow: '2.11.0', python: '3.12'}
-          - {airflow: '3.0.0', python: '3.10'}
-          - {airflow: '3.3.2', python: '3.14'}
+      matrix: ${{ fromJSON(needs.matrix.outputs.airflow) }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -111,7 +122,10 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e '.[airflow]' 'apache-airflow==${{ matrix.airflow }}' pytest
+      - name: Install the release's upstream constrained dependencies
+        run: |
+          python -m pip install 'apache-airflow==${{ matrix.airflow }}' -c 'https://raw.githubusercontent.com/apache/airflow/constraints-${{ matrix.airflow }}/constraints-${{ matrix.python }}.txt'
+          python -m pip install -e '.[airflow]' 'apache-airflow==${{ matrix.airflow }}' pytest
       - run: python -m pip check
       - run: python -m release_routines.lib.python_support_probe airflow
 
@@ -143,7 +157,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ needs.matrix.outputs.coverage }}
+          python-version: ${{ needs.matrix.outputs.tools }}
           cache: pip
       - run: python -m pip install --upgrade 'tox>=4,<5'
       - run: tox -e lint,type,coverage,artifacts

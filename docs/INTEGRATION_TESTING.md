@@ -145,11 +145,14 @@ frontends for the native wire protocol, including hostname-verification
 failures. Completion requires no toolkit tables, labelled
 queries, MinIO stage objects, project containers, networks, or volumes.
 
-The auth and fault CI jobs install `integration/requirements-auth.txt` without
-the optional agent MCP dependency set. Airflow's pinned constraints own that
-environment; keeping MCP SDK and its HTTP client requirements out prevents the
-test bootstrap from downgrading one dependency set to satisfy the other. The
-jobs still run `pip check` before starting services.
+The integration workflow derives interpreters from core support, native transport
+support, and pinned dependency compatibility. Authentication keeps both Airflow
+majors wherever their pinned releases overlap; retired cases are reported. The
+auth and fault jobs render their committed requirement file for the selected
+interpreter, including the matching versioned Airflow 2 constraint URL. The local
+Python 3.11 constraint remains unchanged. These jobs omit the optional agent MCP
+dependency set and run `pip check` before starting services. If no pinned release
+can cover required scenarios, validation requires a compatible dependency upgrade.
 
 Normal commit completion waits only for required fast CI; advisory integration
 jobs continue independently. Release readiness reruns and requires the

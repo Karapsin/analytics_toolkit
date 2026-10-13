@@ -105,7 +105,13 @@ configure_python_matrix() {
   local version
   local variable_name
   local python_path
-  for version in $(python -c 'from pathlib import Path; from release_routines.lib.python_support import load_policy, versions; print(" ".join(versions(load_policy(Path.cwd()))))'); do
+  local selected_versions
+  if [ "${1:-all}" = "coverage" ]; then
+    selected_versions="$(python -m release_routines.lib.python_support coverage-pythons)"
+  else
+    selected_versions="$(python -c 'from pathlib import Path; from release_routines.lib.python_support import load_policy, versions; print(" ".join(versions(load_policy(Path.cwd()))))')"
+  fi
+  for version in ${selected_versions}; do
     variable_name="PYTHON${version//./}"
     python_path="${!variable_name:-}"
     if [ -z "${python_path}" ]; then
@@ -130,7 +136,7 @@ configure_canonical_python() {
 
 run_coverage_gate() {
   require_command tox
-  configure_canonical_python
+  configure_python_matrix coverage
   run_stage tox-coverage tox -e coverage
 }
 

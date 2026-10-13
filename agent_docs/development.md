@@ -12,12 +12,16 @@ status calls report changes without repeating routing and command details. Use
 
 The managed pre-commit check runs four ordered stages. A fast static gate checks
 metadata, minimum constraints, documentation, compileall, Ruff, and mypy. The
-coverage stage runs on the middle supported Python minor and enforces 90% branch
+coverage stage prefers the core midpoint within the common extra range and enforces 90% branch
 coverage, plus the stricter committed statement and branch ratchets in
 `release_routines/coverage_targets.json`. Artifact smoke tests run next, followed
 by the compatibility matrix derived from `release_routines/python_support.json`
-and the oldest-minor minimum-dependency environment. The coverage minor is
-omitted from the local matrix because coverage already exercises it. Offline
+and the oldest-minor minimum-dependency environment. When extras have no common
+interpreter, coverage uses multiple compatible test selections and combines branch
+data before applying every global and module ratchet. All selected interpreters
+must be provisioned; a missing run or incompatible extra fails the gate. A local
+latest-dependency environment is omitted only when coverage runs its equivalent
+test selection. Offline
 DataLens conformance uses the oldest minor compatible with both core and the SDK,
 with SDK 3.1.0 and 3.2.0. The normal window contains seven stable minors; retain
 older minors during extra-readiness overlap. Python 3.8 is explicitly retired.

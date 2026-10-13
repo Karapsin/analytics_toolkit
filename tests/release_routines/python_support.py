@@ -15,7 +15,15 @@ if TYPE_CHECKING:
 
 
 def policy() -> dict:
-    return support.load_policy(REPO_ROOT)
+    return {
+        "normal_window": 7,
+        "minimum": "3.9",
+        "maximum": "3.15",
+        "extras": {
+            extra: {"minimum": "3.10" if extra == "datalens" else "3.9", "maximum": "3.14"}
+            for extra in support.EXTRAS
+        },
+    }
 
 
 def test_overlap_retains_floor_through_multiple_releases_then_shrinks() -> None:
@@ -94,13 +102,16 @@ def test_policy_drives_interpreters_minimum_and_sdk_environments() -> None:
 
 
 def test_generated_metadata_is_current_and_drift_is_rejected(tmp_path: Path) -> None:
-    current = policy()
+    current = support.load_policy(REPO_ROOT)
     support.sync(REPO_ROOT, current, check=True)
     for path in ("pyproject.toml", "README.md", "tox.ini"):
         (tmp_path / path).write_text((REPO_ROOT / path).read_text())
     project = tmp_path / "pyproject.toml"
     project.write_text(
-        project.read_text().replace('requires-python = ">=3.9', 'requires-python = ">=3.8')
+        project.read_text().replace(
+            f'requires-python = ">={current["minimum"]},<3.{support.minor(current["maximum"]) + 1}"',
+            'requires-python = ">=3.8"',
+        )
     )
     with pytest.raises(ValueError, match="metadata drift"):
         support.sync(tmp_path, current, check=True)
@@ -119,8 +130,92 @@ def test_installation_and_test_selection_follow_extra_ranges(tmp_path: Path) -> 
 
 def test_airflow_integration_matrix_preserves_both_majors_and_transports() -> None:
     workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text()
-    assert "airflow: [2, 3]" in workflow
-    assert "requirements-auth-airflow3.txt" in workflow
+    assert "fromJSON(needs.policy.outputs.auth)" in workflow
+    selector = (REPO_ROOT / "release_routines/lib/python_support_integration.py").read_text()
+    assert "integration/requirements-auth-airflow3.txt" in selector
     manifest = json.loads((REPO_ROOT / "integration/sql_coverage_manifest.json").read_text())
     assert manifest["scenarios"]["auth.airflow.variables"]["profile"] == "auth"
     assert "HTTP + native, Airflow" in workflow
+
+
+@pytest.mark.parametrize(
+    "ready",
+    [set(), {"tui"}, set(support.EXTRAS), {*support.EXTRAS, "all"}],
+)
+def test_generated_proposals_validate_without_live_fixture_drift(
+    tmp_path: Path, ready: set[str]
+) -> None:
+    (tmp_path / "release_routines").mkdir()
+    (tmp_path / "docs").mkdir()
+    for path in ("pyproject.toml", "README.md", "tox.ini", "docs/PYTHON_SUPPORT.md"):
+        (tmp_path / path).write_text((REPO_ROOT / path).read_text())
+    proposal = support.transition(policy(), "3.16", ready)
+    (tmp_path / support.POLICY_PATH).write_text(json.dumps(proposal))
+    support.sync(tmp_path, proposal)
+    support.sync(tmp_path, support.load_policy(tmp_path), check=True)
+    requirement = f'>={proposal["minimum"]},<3.17'
+    assert requirement in (tmp_path / "pyproject.toml").read_text()
+    assert requirement in (tmp_path / "README.md").read_text()
+    assert support.render_tox(proposal) == (tmp_path / "tox.ini").read_text()
+    expected_floor = "3.10" if ready == {*support.EXTRAS, "all"} else "3.9"
+    assert support.test_matrix(proposal)[-1]["python-version"] == expected_floor
+    assert all(
+        support.supports_extra(proposal, row["extra"], row["python-version"])
+        for row in support.extra_matrix(proposal)
+    )
+
+
+def test_live_policy_invariants_follow_the_generated_window() -> None:
+    current = support.load_policy(REPO_ROOT)
+    matrix_versions = [row["python-version"] for row in support.test_matrix(current)[:-1]]
+    assert matrix_versions == support.versions(current)
+    assert support.test_matrix(current)[-1]["env_name"] == support.env_name(current["minimum"], "min")
+    assert all(
+        support.supports_extra(current, row["extra"], row["python-version"])
+        for row in support.extra_matrix(current)
+    )
+
+
+def test_airflow_endpoints_follow_floor_and_report_retired_majors() -> None:
+    shrunk = support.transition(policy(), "3.16", {*support.EXTRAS, "all"})
+    rows = support.airflow_matrix(shrunk)
+    assert {"2", "3"} == {row["airflow"].split(".")[0] for row in rows}
+    assert all(support.minor(row["python"]) >= 10 for row in rows)
+    assert {"airflow": "2.4.3", "python": "3.10"} in rows
+    assert len({(row["airflow"], row["python"]) for row in rows}) == len(rows)
+    later = support.transition(shrunk, "3.19", {*support.EXTRAS, "all"})
+    assert support.retired_airflow_majors(later) == ["2"]
+    assert all(row["airflow"].startswith("3.") for row in support.airflow_matrix(later))
+
+
+def test_coverage_clamps_midpoint_into_common_extra_range() -> None:
+    current = support.transition(policy(), "3.23", set())
+    current["extras"]["tui"]["maximum"] = "3.11"
+    current["extras"]["datalens"]["maximum"] = "3.12"
+    assert support.coverage_python(current) == "3.11"
+    assert support.coverage_versions(current) == ["3.11"]
+
+
+def test_disjoint_coverage_selections_cover_all_suites_and_reject_missing_extras(
+    tmp_path: Path,
+) -> None:
+    current = policy()
+    current["extras"]["tui"]["maximum"] = "3.9"
+    (tmp_path / "release_routines").mkdir()
+    (tmp_path / support.POLICY_PATH).write_text(json.dumps(current))
+    selected = support.coverage_versions(current)
+    assert selected == ["3.12", "3.9"]
+    for extra in support.EXTRAS:
+        assert any(support.supports_extra(current, extra, version) for version in selected)
+    assert any(
+        "--ignore=tests/sql/explorer" not in arguments_for_tests(tmp_path, version)
+        for version in selected
+    )
+    assert any(
+        "--ignore=tests/datalens_utils" not in arguments_for_tests(tmp_path, version)
+        for version in selected
+    )
+    assert all(support.env_name(version) not in support.local_matrix(current) for version in selected)
+    current["minimum"] = "3.10"
+    with pytest.raises(ValueError, match="No supported coverage environment for extra tui"):
+        support.coverage_versions(current)

@@ -30,7 +30,12 @@ These ranges describe validated installations, not just dependency markers.
 individual extras when the combined installation does not support your Python.
 An omitted dependency does not count as a supported extra.
 
-Airflow 2 and 3 are supported through the same SQL APIs. Python 3.9 can resolve
+Airflow 2 and 3 are supported through the same SQL APIs. CI selects the lowest
+and highest compatible Python endpoints for each representative release, using
+the [versioned upstream prerequisites](https://airflow.apache.org/docs/apache-airflow/2.11.0/installation/prerequisites.html).
+Cases outside core or Airflow-extra support retire automatically; validation
+explicitly reports a major with no remaining overlap. This does not change the
+`apache-airflow>=2.4,<4` dependency bounds. Python 3.9 can resolve
 an older compatible Airflow release; newer Python versions may require Airflow
 3. Connections and Variables are looked up lazily using the installed major's
 API. Airflow 3 uses its public Task SDK during task execution. SQL facade imports
@@ -53,7 +58,11 @@ validation. The formatter’s semantic-preservation tests remain mandatory.
 After changing it, run `python -m release_routines.lib.python_support sync`.
 The offline `check` command rejects generated metadata drift. Validation derives
 its matrices from the same policy; minimum dependencies run on the oldest minor
-and coverage runs on the middle minor.
+and coverage prefers the middle core minor clamped into the common validated
+extra range. If that intersection is empty, deterministic compatible runs cover
+the core and every optional suite. Branch data from the same checkout is combined
+once before the existing global threshold and module ratchets run. Missing runs
+or an extra with no compatible interpreter fail validation.
 Type checks run on the oldest minor so installed dependency stubs match the
 language floor, even when newer NumPy releases use newer typing syntax.
 

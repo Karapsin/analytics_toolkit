@@ -26,6 +26,18 @@ maintenance = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(maintenance)
 
 
+def fixture_policy() -> dict:
+    return {
+        "normal_window": 7,
+        "minimum": "3.9",
+        "maximum": "3.15",
+        "extras": {
+            extra: {"minimum": "3.10" if extra == "datalens" else "3.9", "maximum": "3.14"}
+            for extra in policy.EXTRAS
+        },
+    }
+
+
 def test_readiness_is_bound_to_exact_base_minor_and_core_success() -> None:
     now = datetime.now(timezone.utc)
     run = {
@@ -60,7 +72,7 @@ def test_daily_discovery_preserves_policy_on_failure_and_reports_error(
 ) -> None:
     monkeypatch.setenv("AGENT_CONTROL_DIR", str(tmp_path))
     monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
-    current = policy.load_policy(REPO_ROOT)
+    current = fixture_policy()
     gh = SimpleNamespace(
         api=lambda _path: {
             "type": "file",
@@ -90,7 +102,7 @@ def test_discovery_proposes_overlap_and_never_tests_on_host(
 ) -> None:
     monkeypatch.setenv("AGENT_CONTROL_DIR", str(tmp_path))
     monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
-    current = policy.load_policy(REPO_ROOT)
+    current = fixture_policy()
     current["maximum"] = "3.14"
     monkeypatch.setattr(maintenance, "read_policy", lambda *_args: current)
     feed = json.dumps(
@@ -114,7 +126,7 @@ def test_discovery_proposes_overlap_and_never_tests_on_host(
 
 
 def test_closed_proposals_are_not_reopened_or_force_pushed() -> None:
-    current = policy.load_policy(REPO_ROOT)
+    current = fixture_policy()
     proposed = policy.transition(current, "3.15", set())
     gh = SimpleNamespace(repository="owner/repo", pages=lambda _path: [{"html_url": "closed-pr"}])
     assert (

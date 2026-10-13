@@ -27,7 +27,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  policy:
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.policy.outputs.core }}
+      auth: ${{ steps.policy.outputs.auth }}
+      fault-python: ${{ steps.policy.outputs.fault-python }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.candidate || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - id: policy
+        run: |
+          python -m release_routines.lib.python_support_integration > integration-plan.json
+          python - <<'PY'
+          import json, os
+          plan = json.load(open("integration-plan.json"))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print("core=" + plan["core"], file=output)
+              print("auth=" + json.dumps(plan["auth"]), file=output)
+              print("fault-python=" + plan["fault"]["python"], file=output)
+          PY
+
   core-http:
+    needs: policy
     name: core SQL integration (HTTP)
     if: inputs.profile == 'all' || inputs.profile == 'core'
     runs-on: ubuntu-latest
@@ -41,7 +68,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: ${{ needs.policy.outputs.core }}
           cache: pip
       - name: Install package and agent tools
         run: python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e '.[clickhouse-native]' pytest
@@ -69,6 +96,7 @@ jobs:
           path: .integration-artifacts/core/http
           if-no-files-found: error
   core-native:
+    needs: policy
     name: core SQL integration (native)
     if: inputs.profile == 'all' || inputs.profile == 'core'
     runs-on: ubuntu-latest
@@ -82,7 +110,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: ${{ needs.policy.outputs.core }}
           cache: pip
       - name: Install package and agent tools
         run: python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e '.[clickhouse-native]' pytest
@@ -111,14 +139,14 @@ jobs:
           if-no-files-found: error
 
   auth:
+    needs: policy
     name: authentication SQL integration (HTTP + native, Airflow ${{ matrix.airflow }})
     if: inputs.profile == 'all' || inputs.profile == 'auth'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        airflow: [2, 3]
+      matrix: ${{ fromJSON(needs.policy.outputs.auth) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -128,16 +156,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
           cache: pip
       - name: Install package and pinned Airflow
         run: |
           python -m pip install --upgrade -e '.[clickhouse-native]' pytest
-          if [ '${{ matrix.airflow }}' = '3' ]; then
-            python -m pip install -r integration/requirements-auth-airflow3.txt
-          else
-            python -m pip install -r integration/requirements-auth.txt
-          fi
+          python -m release_routines.lib.python_support_integration --requirements '${{ matrix.airflow }}' > integration-auth-ci.txt
+          python -m pip install -r integration-auth-ci.txt
           python -m pip install --upgrade 'httpx>=0.27.1,<1' 'requests>=2.32.4' 'typing-extensions>=4.15'
           python -m pip check
           playwright install --with-deps chromium
@@ -168,6 +193,7 @@ jobs:
           if-no-files-found: error
 
   fault:
+    needs: policy
     name: destructive fault injection (HTTP + native)
     if: inputs.profile == 'all' || inputs.profile == 'fault'
     runs-on: ubuntu-latest
@@ -185,12 +211,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: ${{ needs.policy.outputs.fault-python }}
           cache: pip
       - name: Install package and auth fault dependencies
         run: |
           python -m pip install --upgrade -e '.[clickhouse-native]' pytest
-          python -m pip install -r integration/requirements-auth.txt
+          python -m release_routines.lib.python_support_integration --requirements fault > integration-auth-ci.txt
+          python -m pip install -r integration-auth-ci.txt
           python -m pip install --upgrade 'httpx>=0.27.1,<1' 'requests>=2.32.4' 'typing-extensions>=4.15'
           python -m pip check
           playwright install --with-deps chromium
@@ -225,6 +252,7 @@ jobs:
           if-no-files-found: error
 
   stress:
+    needs: policy
     name: SQL integration stress (HTTP + native)
     if: inputs.profile == 'all' || inputs.profile == 'stress'
     runs-on: ubuntu-latest
@@ -238,7 +266,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: ${{ needs.policy.outputs.core }}
           cache: pip
       - name: Install package and agent tools
         run: python -m pip install --upgrade -r agent_tools/requirements-mcp.txt -e '.[clickhouse-native]' pytest psutil

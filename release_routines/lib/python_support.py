@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 from .check_readme_dependencies import split_requirement
@@ -14,6 +15,10 @@ POLICY_PATH = Path("release_routines/python_support.json")
 EXTRAS = ("airflow", "clickhouse-native", "tui", "datalens")
 NORMAL_WINDOW = 7
 MINIMUM_MINOR = 9
+
+# Upstream versioned installation prerequisites (Python support tables):
+# https://airflow.apache.org/docs/apache-airflow/{release}/installation/prerequisites.html
+AIRFLOW_RELEASES = (("2.4.3", 7, 10), ("2.11.0", 8, 12), ("3.0.0", 9, 12), ("3.3.2", 10, 14))
 
 
 def minor(version: str) -> int:
@@ -78,8 +83,49 @@ def supported_extras(policy: dict, version: str) -> list[str]:
 
 
 def coverage_python(policy: dict) -> str:
-    supported = versions(policy)
-    return supported[(len(supported) - 1) // 2]
+    midpoint = (minor(policy["minimum"]) + minor(policy["maximum"])) // 2
+    lower, upper = extra_range(policy, "all")
+    return f"3.{min(max(midpoint, lower), upper) if lower <= upper else midpoint}"
+
+
+def coverage_versions(policy: dict) -> list[str]:
+    """Cover the complete suite using compatible test selections."""
+    selected = [coverage_python(policy)]
+    midpoint = minor(selected[0])
+    for extra in EXTRAS:
+        lower, upper = extra_range(policy, extra)
+        if lower > upper:
+            message = f"No supported coverage environment for extra {extra}"
+            raise ValueError(message)
+        if not any(supports_extra(policy, extra, version) for version in selected):
+            selected.append(f"3.{min(max(midpoint, lower), upper)}")
+    return selected
+
+
+def airflow_matrix(policy: dict) -> list[dict[str, str]]:
+    lower, upper = extra_range(policy, "airflow")
+    rows = []
+    for release, first, last in AIRFLOW_RELEASES:
+        first, last = max(first, lower), min(last, upper)
+        if first <= last:
+            rows.extend(
+                {"airflow": release, "python": f"3.{value}"}
+                for value in sorted({first, last})
+            )
+    return rows
+
+
+def retired_airflow_majors(policy: dict) -> list[str]:
+    covered = {row["airflow"].split(".")[0] for row in airflow_matrix(policy)}
+    return sorted({"2", "3"} - covered)
+
+
+def local_matrix(policy: dict) -> list[str]:
+    # Each coverage run uses exactly the same test selection as its latest run.
+    covered = {env_name(version) for version in coverage_versions(policy)}
+    return [row["env_name"] for row in test_matrix(policy) if row["env_name"] not in covered] + [
+        env_name(sdk_python(policy), suffix) for suffix in ("sdk31", "sdk32")
+    ]
 
 
 def env_name(version: str, suffix: str = "latest") -> str:
@@ -172,6 +218,7 @@ pass_env =
     CPPFLAGS
     LDFLAGS
     PKG_CONFIG_PATH
+    PYTHON3*
 deps =
     latest: pytest
     min: -c constraints/python-min.txt
@@ -203,14 +250,9 @@ description = enforce branch coverage across all production modules
 base_python = {tool_python}
 deps =
     coverage>=7.15,<8
-    pytest
-commands_pre = python -m release_routines.lib.python_support_install latest
-commands =
-    coverage erase
-    coverage run -m pytest -q
-    coverage json -o coverage.json
-    coverage report
-    python -m release_routines.lib.check_coverage coverage.json --update-targets-managed
+    tox>=4,<5
+commands_pre =
+commands = python -m release_routines.lib.python_support_coverage
 
 [testenv:artifacts]
 description = build and smoke-test wheel and sdist artifacts outside the checkout
@@ -220,6 +262,17 @@ deps =
     twine>=6.2,<7
     check-wheel-contents>=0.6.3,<0.7
 commands = python -m release_routines.lib.artifact_smoke
+"""
+    for version in coverage_versions(policy):
+        text += f"""
+[testenv:{env_name(version, "coverage")}]
+description = collect compatible branch coverage on Python {version}
+base_python = {{env:PYTHON{version.replace('.', '')}:python{version}}}
+deps =
+    coverage>=7.15,<8
+    pytest
+commands_pre = python -m release_routines.lib.python_support_install latest
+commands = python -m release_routines.lib.python_support_coverage --collect {version}
 """
     for suffix, sdk_version in (("sdk31", "3.1.0"), ("sdk32", "3.2.0")):
         text += f"""
@@ -318,7 +371,19 @@ def sync(root: Path, policy: dict, *, check: bool = False) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "action", choices=["sync", "check", "matrix", "extras", "local-matrix", "coverage", "sdk"]
+        "action",
+        choices=[
+            "sync",
+            "check",
+            "matrix",
+            "extras",
+            "local-matrix",
+            "coverage",
+            "sdk",
+            "airflow",
+            "coverage-pythons",
+            "tool-pythons",
+        ],
     )
     parser.add_argument("--root", type=Path, default=Path.cwd())
     args = parser.parse_args()
@@ -328,11 +393,17 @@ def main() -> None:
     elif args.action in {"matrix", "extras"}:
         matrix = test_matrix(policy) if args.action == "matrix" else extra_matrix(policy)
         print(json.dumps({"include": matrix}))
+    elif args.action == "airflow":
+        for major in retired_airflow_majors(policy):
+            print(f"Airflow {major}: no remaining compatible Python overlap", file=sys.stderr)
+        print(json.dumps({"include": airflow_matrix(policy)}))
     elif args.action == "local-matrix":
-        canonical = env_name(coverage_python(policy))
-        names = [row["env_name"] for row in test_matrix(policy) if row["env_name"] != canonical]
-        names += [env_name(sdk_python(policy), suffix) for suffix in ("sdk31", "sdk32")]
-        print(",".join(names))
+        print(",".join(local_matrix(policy)))
+    elif args.action in {"coverage-pythons", "tool-pythons"}:
+        selected = coverage_versions(policy)
+        if args.action == "tool-pythons":
+            selected = sorted({*selected, policy["minimum"]}, key=minor)
+        print("\n".join(selected))
     else:
         print(coverage_python(policy) if args.action == "coverage" else sdk_python(policy))
 
