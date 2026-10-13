@@ -74,11 +74,9 @@ def encoding_arguments(
     kind = (
         "measure_name"
         if value.get("type") == "PSEUDO"
-        else (
-            "measure"
-            if value.get("type", types.get(value.get("guid"))) == "MEASURE"
-            else "dimension"
-        )
+        else "measure"
+        if value.get("type", types.get(value.get("guid"))) == "MEASURE"
+        else "dimension"
     )
     check_encoding_settings(slot, kind, settings)
     arguments: dict[str, Any] = {}
