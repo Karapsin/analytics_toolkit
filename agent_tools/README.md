@@ -299,3 +299,25 @@ independent agent reviews the final PR.
 The agent-only validation environment constrains `virtualenv>=21.1,<21.5` so
 the required Python 3.8 matrix remains runnable. Project setup resolves this
 constraint together with tox; it does not change public package dependencies.
+
+## Release candidate recovery
+
+Ordinary entries do not bump versions. An explicit release prepares one new
+four-part version through an independently reviewed PR; see
+[release instructions](../agent_docs/release.md) for the publishing sequence.
+
+Re-enter the same release action to resume its candidate/version. TestPyPI retries
+adopt matching publish.yml workflow_dispatch runs for the exact temporary ref and
+SHA. Rejected dispatches are retryable; uncertain or interrupted attempts retain
+a five-minute deadline across invocations, then recheck GitHub and index files
+before a replacement dispatch. API/index failures block retry. The release-state
+lock excludes concurrent dispatchers. A late original dispatch can still produce
+a duplicate run. Saved runs and published files require retained matching artifacts.
+
+A corrected preparation PR that merges with successful exact-head fast-checks
+and agent-review keeps the same version, PR and final reviewed notes. Recovery
+archives the old state and clears validation receipts and publication bindings.
+Current dev must match the final reviewed tree, and package/README versions and
+consumed release notes must remain consistent. Old active or uncertain publication,
+published artifacts and incompatible refs block adoption. Additional dev content
+requires a reviewed preparation before promotion.

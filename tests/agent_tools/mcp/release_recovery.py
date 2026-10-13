@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-
 import urllib.error
 from types import SimpleNamespace
 
@@ -42,6 +41,7 @@ def publication(monkeypatch: pytest.MonkeyPatch):
         "stages": {}, "pypi_run": 42, "testpypi_run": 42,
     }
     calls = []
+    monkeypatch.setattr(candidate.release_preparation, "state_path", lambda root: root / "atk-release.json")
     monkeypatch.setattr(candidate, "guard", lambda *args, **kwargs: state)
     monkeypatch.setattr(candidate.release_preparation, "save", lambda *args: None)
     monkeypatch.setattr(candidate.release_preparation.task_context, "directory", lambda root: root / "no-task")
@@ -227,3 +227,228 @@ def test_opposite_index_job_cannot_publish(
     })
     with pytest.raises(RuntimeError, match="opposite-index"):
         candidate.prepare_stage(tmp_path, "pypi")
+
+
+@pytest.fixture
+def dispatch(publication, monkeypatch: pytest.MonkeyPatch):
+    state, calls = publication
+    state.pop("testpypi_run")
+    monkeypatch.setattr(candidate, "_runs", lambda *args: [])
+    clock = [1000.0]
+    monkeypatch.setattr(candidate.time, "time", lambda: clock[0])
+    return state, calls, clock
+
+
+def test_interruption_before_dispatch_retries_same_candidate_after_deadline(
+    dispatch, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    state, calls, clock = dispatch
+
+    def save(root, value):
+        if value.get("testpypi_dispatch"):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(candidate.release_preparation, "save", save)
+    with pytest.raises(KeyboardInterrupt):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    assert not any("workflow" in call for call in calls)
+    deadline = state["testpypi_dispatch"]["deadline"]
+    monkeypatch.setattr(candidate.release_preparation, "save", lambda *args: None)
+    with pytest.raises(RuntimeError, match="uncertain"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    assert state["testpypi_dispatch"]["deadline"] == deadline
+    clock[0] = deadline
+    with pytest.raises(RuntimeError, match="workflow requested"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    assert sum("workflow" in call for call in calls) == 1
+    assert state["version"] == "1.2.3.4"
+    assert state["candidate_sha"] == "candidate"
+    assert state["testpypi_sha"] == "test-head"
+
+
+@pytest.mark.parametrize("failure", ["HTTP 422: rejected", "connection timed out"])
+def test_failed_dispatch_recovery_preserves_candidate(
+    dispatch, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str,
+) -> None:
+    state, calls, clock = dispatch
+
+    def fail(root, *args):
+        calls.append(args)
+        if "workflow" in args:
+            raise RuntimeError(failure)
+        return ""
+
+    monkeypatch.setattr(candidate.sessions, "run", fail)
+    with pytest.raises(RuntimeError, match=failure):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    record = state["testpypi_dispatch"]
+    assert record["outcome"] == ("failed" if failure.startswith("HTTP") else "uncertain")
+    monkeypatch.setattr(candidate.sessions, "run", lambda root, *args: calls.append(args) or "")
+    if record["outcome"] == "uncertain":
+        with pytest.raises(RuntimeError, match="uncertain"):
+            candidate.prepare_stage(tmp_path, "testpypi")
+        clock[0] = record["deadline"]
+    with pytest.raises(RuntimeError, match="workflow requested"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    assert sum("workflow" in call for call in calls) == 2
+    assert state["version"] == "1.2.3.4"
+
+
+def test_legacy_marker_starts_one_window_and_adopts_appearing_run(
+    dispatch, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    state, calls, clock = dispatch
+    state["testpypi_requested"] = "test-head"
+    with pytest.raises(RuntimeError, match="uncertain"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    assert state["testpypi_dispatch"]["deadline"] == clock[0] + 300
+    monkeypatch.setattr(candidate, "_runs", lambda *args: [{
+        "databaseId": 99, "status": "in_progress", "conclusion": None,
+    }])
+    with pytest.raises(RuntimeError, match="pending"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    assert state["testpypi_run"] == 99
+    assert not any("workflow" in call for call in calls)
+
+
+@pytest.mark.parametrize("failure", ["api", "index", "published"])
+def test_retry_rechecks_fail_closed_before_dispatch(
+    dispatch, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str,
+) -> None:
+    state, calls, clock = dispatch
+    state["testpypi_requested"] = "test-head"
+    with pytest.raises(RuntimeError, match="uncertain"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    clock[0] += 300
+    count = [0]
+
+    def lookup(*args):
+        count[0] += 1
+        if count[0] == 1:
+            return {}
+        if failure == "published":
+            return {"package.whl": "published"}
+        raise RuntimeError("index unavailable")
+
+    if failure == "api":
+        monkeypatch.setattr(candidate, "_runs", lambda *args: (_ for _ in ()).throw(RuntimeError("api unavailable")))
+    else:
+        monkeypatch.setattr(candidate, "index_files", lookup)
+    with pytest.raises(RuntimeError, match="unavailable|retained"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    assert not any("workflow" in call for call in calls)
+
+
+def test_concurrent_retry_is_excluded_and_lock_is_released(
+    dispatch, tmp_path: Path,
+) -> None:
+    state, calls, _clock = dispatch
+    with candidate.release_preparation.release_lock(tmp_path):
+        with pytest.raises(RuntimeError, match="Another release action"):
+            candidate.prepare_stage(tmp_path, "testpypi")
+    assert not any("workflow" in call for call in calls)
+    with pytest.raises(RuntimeError, match="workflow requested"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    assert state["testpypi_dispatch"]["outcome"] == "acknowledged"
+
+
+@pytest.mark.parametrize("conflict", ["published", "tag", "ref", "active", "uncertain", "missing"])
+def test_old_publication_must_be_reconciled_before_head_replacement(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, conflict: str,
+) -> None:
+    state = {"version": "1.2.3.4", "candidate_sha": "old", "testpypi_sha": "test-head"}
+    calls = []
+    monkeypatch.setattr(candidate, "index_files", lambda *args: {"file": "hash"} if conflict == "published" else {})
+
+    def run(root, *args):
+        calls.append(args)
+        if args[:3] == ("git", "ls-remote", "--tags") and conflict == "tag":
+            return "old refs/tags/v1.2.3.4"
+        if args[:3] == ("git", "ls-remote", "--heads"):
+            return ("other" if conflict == "ref" else "test-head") + " refs/heads/testpypi-1.2.3.4"
+        return ""
+
+    monkeypatch.setattr(candidate.sessions, "run", run)
+    monkeypatch.setattr(candidate, "_runs", lambda *args: [{
+        "databaseId": 42, "status": "in_progress",
+    }] if conflict == "active" else [])
+    monkeypatch.setattr(candidate.release_preparation, "save", lambda *args: None)
+    if conflict == "uncertain":
+        state["testpypi_requested"] = "test-head"
+    if conflict == "missing":
+        state["testpypi_run"] = 42
+    with pytest.raises(RuntimeError, match="new reviewed version|reconciled|active|uncertain|unavailable"):
+        candidate.reconcile_replacement(tmp_path, state)
+    assert not any("push" in call for call in calls)
+
+
+def test_run_appearing_at_final_recheck_is_adopted_without_dispatch(
+    dispatch, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    state, calls, _clock = dispatch
+    lookups = [[], [{
+        "databaseId": 99, "status": "in_progress", "conclusion": None,
+    }]]
+
+    def runs(*args):
+        return lookups.pop(0) if len(lookups) > 1 else lookups[0]
+
+    monkeypatch.setattr(candidate, "_runs", runs)
+    with pytest.raises(RuntimeError, match="pending"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    assert state["testpypi_run"] == 99
+    assert not any("workflow" in call for call in calls)
+
+
+def test_acknowledged_dispatch_is_not_repeated_before_deadline(
+    dispatch, tmp_path: Path,
+) -> None:
+    state, calls, _clock = dispatch
+    with pytest.raises(RuntimeError, match="workflow requested"):
+        candidate.prepare_stage(tmp_path, "testpypi")
+    deadline = state["testpypi_dispatch"]["deadline"]
+    for _attempt in range(2):
+        with pytest.raises(RuntimeError, match="uncertain"):
+            candidate.prepare_stage(tmp_path, "testpypi")
+    assert sum("workflow" in call for call in calls) == 1
+    assert state["testpypi_dispatch"]["deadline"] == deadline
+
+
+def test_completed_unpublished_old_attempt_removes_only_leased_temporary_ref(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    state = {
+        "version": "1.2.3.4", "candidate_sha": "old", "testpypi_sha": "test-head",
+        "testpypi_run": 42,
+    }
+    calls = []
+    monkeypatch.setattr(candidate, "index_files", lambda *args: {})
+    monkeypatch.setattr(candidate, "_runs", lambda root, ref, sha, stage: [{
+        "databaseId": 42, "status": "completed",
+    }] if stage == "testpypi" else [])
+
+    def run(root, *args):
+        calls.append(args)
+        if args[:3] == ("git", "ls-remote", "--heads"):
+            return "test-head refs/heads/testpypi-1.2.3.4"
+        return ""
+
+    monkeypatch.setattr(candidate.sessions, "run", run)
+    monkeypatch.setattr(candidate, "_jobs", lambda *args: {"publish to TestPyPI": "failure"})
+    candidate.reconcile_replacement(tmp_path, state)
+    assert calls[-1] == (
+        "git", "push", "--force-with-lease=refs/heads/testpypi-1.2.3.4:test-head",
+        "origin", ":testpypi-1.2.3.4",
+    )
+
+
+def test_successful_old_upload_waits_for_index_reconciliation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    state = {"version": "1.2.3.4", "candidate_sha": "old", "testpypi_sha": "test-head"}
+    monkeypatch.setattr(candidate, "index_files", lambda *args: {})
+    monkeypatch.setattr(candidate.sessions, "run", lambda *args: "")
+    monkeypatch.setattr(candidate, "_runs", lambda *args: [{"databaseId": 42, "status": "completed"}])
+    monkeypatch.setattr(candidate, "_jobs", lambda *args: {"publish to TestPyPI": "success"})
+    with pytest.raises(RuntimeError, match="upload succeeded"):
+        candidate.reconcile_replacement(tmp_path, state)

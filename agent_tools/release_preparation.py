@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +41,23 @@ def save(root: Path, state: dict[str, Any]) -> None:
     temporary.write_text(json.dumps(state, indent=2) + "\n")
     temporary.chmod(0o600)
     temporary.replace(path)
+
+
+@contextmanager
+def release_lock(root: Path) -> Iterator[None]:
+    """Serialize release-state mutations; process exit releases the OS lock."""
+    import fcntl  # noqa: PLC0415 - release orchestration runs on the Unix host.
+
+    with state_path(root).with_suffix(".lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            message = "Another release action owns this candidate; retry after it finishes."
+            raise RuntimeError(message) from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def _tree(root: Path, revision: str) -> str:
@@ -197,7 +217,59 @@ def _publish_preparation(root: Path, state: dict[str, Any]) -> None:
     save(root, state)
 
 
+def _reviewed_metadata(root: Path, state: dict[str, Any], sha: str) -> dict[str, str]:
+    mcp = mcp_runtime()
+    files = {path: sessions.run(root, "git", "show", f"{sha}:{path}") + "\n" for path in METADATA}
+    for pattern, path, label in (
+        (mcp.VERSION_RE, "pyproject.toml", "package version"),
+        (mcp.README_VERSION_RE, "README.md", "README version"),
+    ):
+        if mcp._parse_required(pattern, files[path], label) != state["version"]:
+            message = "Corrected release metadata must preserve the prepared version."
+            raise RuntimeError(message)
+    changelog = files["docs/CHANGELOG.md"]
+    if mcp._unreleased_changelog_bullets(changelog):
+        message = "Corrected release preparation left unreleased entries."
+        raise RuntimeError(message)
+    sections = re.split(r"(?m)^## ", changelog)
+    notes = [section for section in sections if section.startswith(state["version"] + " - ")]
+    if len(notes) != 1 or not any(line.startswith("- ") for line in notes[0].splitlines()):
+        message = "Corrected preparation must retain versioned release notes."
+        raise RuntimeError(message)
+    fragments = sessions.run(root, "git", "ls-tree", "-r", "--name-only", sha, "agent_tools/changelog")
+    if any(path.endswith(".md") for path in fragments.splitlines()):
+        message = "Corrected release preparation left unconsumed changelog fragments."
+        raise RuntimeError(message)
+    return files
+
+
+def _adopt_reviewed_head(root: Path, state: dict[str, Any], sha: str, tree: str) -> None:
+    files = _reviewed_metadata(root, state, sha)
+    candidate = importlib.import_module("release_routines.lib.release_candidate")
+    candidate.reconcile_replacement(root, state)
+    archived = state_path(root).with_name(STATE + "." + state["candidate_sha"])
+    if not archived.exists():
+        archived.write_text(json.dumps(state, indent=2) + "\n")
+        archived.chmod(0o600)
+    # Exact-tree checks cannot be reused for corrected content.
+    mcp = mcp_runtime()
+    for receipt in (mcp.CHECK_STATE_FILE, mcp.PRECOMMIT_STAGE_STATE_FILE, mcp.RELEASE_CHECK_STATE_FILE):
+        path = root / receipt
+        if path.exists():
+            path.unlink()
+    for key in list(state):
+        if key.startswith(("testpypi_", "pypi_")) or key == "requires_new_version":
+            state.pop(key)
+    state.update(candidate_sha=sha, candidate_tree=tree, files=files, stages={})
+    save(root, state)
+
+
 def prepare(root: Path, *, summary: str | None = None) -> dict[str, Any]:
+    with release_lock(root):
+        return _prepare(root, summary=summary)
+
+
+def _prepare(root: Path, *, summary: str | None = None) -> dict[str, Any]:
     sessions.clean(root)
     sessions.run(root, "git", "fetch", "origin", "dev", "main")
     state = load(root)
@@ -223,23 +295,19 @@ def prepare(root: Path, *, summary: str | None = None) -> dict[str, Any]:
             "status": "pending", "pr": pr["number"], "url": pr["url"],
             "version": state["version"], "candidate_sha": state["candidate_sha"],
         }
-    sessions.run(root, "git", "fetch", "origin", state["candidate_sha"])
-    if (
-        pr["headRefOid"] != state["candidate_sha"]
-        or _tree(root, "origin/dev") != state["candidate_tree"]
-    ):
-        # Changed content needs a new reviewed preparation. The old candidate and
-        # its immutable artifacts stay available in an archival receipt.
-        archived = state_path(root).with_name(STATE + "." + state["candidate_sha"])
-        archived.write_text(json.dumps(state, indent=2) + "\n")
-        archived.chmod(0o600)
-        state = _new(root, summary)
-        _publish_preparation(root, state)
-        return {
-            "status": "pending", "pr": state["pr"], "url": state["pr_url"],
-            "version": state["version"], "candidate_sha": state["candidate_sha"],
-        }
-    _reviewed(root, state)
+    final_sha = pr["headRefOid"]
+    final_state = {**state, "candidate_sha": final_sha}
+    _reviewed(root, final_state)
+    sessions.run(root, "git", "fetch", "origin", final_sha)
+    final_tree = _tree(root, final_sha)
+    if _tree(root, "origin/dev") != final_tree:
+        message = "Current dev has additional content; a reviewed release preparation is required."
+        raise RuntimeError(message)
+    if final_sha != state["candidate_sha"]:
+        _adopt_reviewed_head(root, state, final_sha, final_tree)
+    elif final_tree != state["candidate_tree"]:
+        message = "Recorded candidate tree differs from the reviewed head."
+        raise RuntimeError(message)
     state["stages"]["reviewed"] = state["candidate_sha"]
     save(root, state)
     return {

@@ -21,8 +21,16 @@ prepares one new four-part version, with carry at 19, and preserves historical n
 3. Pending results include the preparation PR URL. Re-enter the same action after
    review, exact-head GitHub checks, and merge. Retries recover the same branch,
    PR and version from private `.git/atk-release.json` state.
-4. Promotion requires current dev content to match the reviewed candidate.
-   Intervening changes require a new preparation PR and invalidate validation.
+4. Promotion requires current dev content to match the final independently reviewed
+   preparation head, with successful fast-checks and agent-review on that exact SHA.
+   Corrections merged through the same PR retain its prepared version and final
+   reviewed notes, even when Unreleased is empty and no new summary is supplied.
+   Recovery archives the previous candidate and invalidates validation receipts,
+   workflow bindings, artifacts and completed stages before adopting the corrected
+   head. Package and README versions must agree and Unreleased/fragments must be
+   consumed. Active or uncertain old publication, published files and incompatible
+   tags or refs block adoption; published conflicts require a new reviewed version.
+   Additional dev content blocks promotion until a reviewed preparation covers it.
    Main is fast-forwarded to the validated dev commit; it remains the release branch.
 5. Run required pre-commit validation for production main, then
    `release_workflow(action="status")`. Status never creates preparation PRs or
@@ -52,6 +60,16 @@ not replace the reviewed PR sequence or authorize publication.
 - Re-enter publish after pending workflows, failed jobs, or interrupted verification.
   Recovery checks the exact candidate workflow and compares published index file
   hashes with retained artifacts. Index lookup failures block uploads.
+- TestPyPI dispatch attempts persist the candidate, temporary ref/SHA, attempt
+  time, outcome and reconciliation deadline. Each retry first adopts an exact
+  matching workflow run. Explicit rejected dispatches are retryable on the same
+  candidate/version. Interrupted, timed-out and uncertain acknowledgements are
+  reconciled for five minutes across invocations; after that deadline recovery
+  rechecks GitHub and the index immediately before one replacement dispatch.
+  Legacy request markers start this window on first recovery. API/index errors
+  block retry. Concurrent release actions are excluded by the private state lock.
+  A delayed original dispatch may still create a duplicate; this bounded retry
+  policy does not guarantee exactly-once scheduling.
 - Never move an existing production tag or overwrite published artifacts. A tag
   mismatch or changed published file requires a new candidate/version. An existing
   GitHub release is resumed through its workflow rather than recreated.

@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from http import HTTPStatus
@@ -18,6 +19,7 @@ from release_routines.lib.testpypi_metadata import replace_project_name_text
 PROJECTS = {"testpypi": "karapsin-analytics-toolkit", "pypi": "analytics-toolkit"}
 INDEXES = {"testpypi": "https://test.pypi.org", "pypi": "https://pypi.org"}
 DISTRIBUTIONS_COUNT = 2
+DISPATCH_RECONCILIATION_SECONDS = 5 * 60
 
 
 def index_files(stage: str, version: str) -> dict[str, str]:
@@ -197,7 +199,121 @@ def _jobs(root: Path, run_id: int) -> dict[str, str]:
     return {job["name"]: job.get("conclusion") or "" for job in jobs}
 
 
-def prepare_stage(  # noqa: C901, PLR0912, PLR0915 - resumable publish stages.
+def _dispatch_record(root: Path, state: dict[str, Any], ref: str, sha: str) -> dict[str, Any]:
+    record: dict[str, Any] = state.get("testpypi_dispatch") or {}
+    if state.get("testpypi_requested") and state["testpypi_requested"] != sha:
+        message = "Legacy dispatch marker belongs to another candidate."
+        raise RuntimeError(message)
+    if not record and state.get("testpypi_requested"):
+        now = time.time()
+        record = {
+            "candidate_sha": state["candidate_sha"], "ref": ref, "sha": sha,
+            "attempted_at": now, "deadline": now + DISPATCH_RECONCILIATION_SECONDS,
+            "outcome": "uncertain",
+        }
+        state["testpypi_dispatch"] = record
+        release_preparation.save(root, state)
+    if record and (
+        record["candidate_sha"] != state["candidate_sha"]
+        or record["ref"] != ref or record["sha"] != sha
+    ):
+        message = "Dispatch record belongs to another candidate; reconcile it before replacement."
+        raise RuntimeError(message)
+    return record or {}
+
+
+def _dispatch_testpypi(
+    root: Path, state: dict[str, Any], ref: str, sha: str,
+) -> list[dict[str, Any]]:
+    record = _dispatch_record(root, state, ref, sha)
+    if record and record["outcome"] != "failed" and time.time() < record["deadline"]:
+        message = "Candidate dispatch is uncertain; retry reconciliation within five minutes."
+        raise RuntimeError(message)
+    # Recheck immediately before the replacement, under the candidate lock.
+    runs = _runs(root, ref, sha, "testpypi")
+    if runs:
+        return runs
+    if index_files("testpypi", state["version"]):
+        message = "Published version has no matching retained candidate artifacts."
+        raise RuntimeError(message)
+    now = time.time()
+    state["testpypi_dispatch"] = {
+        "candidate_sha": state["candidate_sha"], "ref": ref, "sha": sha,
+        "attempted_at": now, "deadline": now + DISPATCH_RECONCILIATION_SECONDS,
+        "outcome": "uncertain",
+    }
+    state.pop("testpypi_requested", None)
+    release_preparation.save(root, state)  # Interruption before dispatch is recoverable.
+    try:
+        sessions.run(root, "gh", "workflow", "run", "publish.yml", "--ref", ref)
+    except RuntimeError as exc:
+        # Only explicit rejection proves no dispatch was accepted. Network failures,
+        # timeouts and interrupted acknowledgements retain the bounded uncertainty.
+        if any(code in str(exc) for code in ("HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404", "HTTP 422")):
+            state["testpypi_dispatch"]["outcome"] = "failed"
+            release_preparation.save(root, state)
+        raise
+    state["testpypi_dispatch"]["outcome"] = "acknowledged"
+    release_preparation.save(root, state)
+    return []
+
+
+def reconcile_replacement(root: Path, state: dict[str, Any]) -> None:
+    """Block candidate replacement until old publications and refs are reconciled."""
+    for stage in PROJECTS:
+        if index_files(stage, state["version"]):
+            message = "Published artifacts bind the old candidate; prepare a new reviewed version."
+            raise RuntimeError(message)
+    if any(state.get("stages", {}).get(stage + "_verified") for stage in PROJECTS):
+        message = "Previously verified publication requires reconciliation; replacement is blocked."
+        raise RuntimeError(message)
+    tag = "v" + state["version"]
+    if sessions.run(root, "git", "ls-remote", "--tags", "origin", tag, tag + "^{}"):
+        message = "Existing production tag binds the old candidate; prepare a new reviewed version."
+        raise RuntimeError(message)
+    if sessions.run(root, "git", "tag", "--list", tag):
+        message = "Existing local production tag binds the old candidate; replacement is blocked."
+        raise RuntimeError(message)
+    ref = "testpypi-" + state["version"]
+    remote = sessions.run(root, "git", "ls-remote", "--heads", "origin", ref)
+    sha = state.get("testpypi_sha")
+    if remote and (not sha or remote.split()[0] != sha):
+        message = "Temporary ref cannot be safely reconciled with the old candidate."
+        raise RuntimeError(message)
+    for stage, branch, head in (
+        ("testpypi", ref, sha), ("pypi", tag, state["candidate_sha"]),
+    ):
+        runs = _runs(root, branch, head, stage) if head else []
+        saved = state.get(stage + "_run")
+        if saved and not any(run["databaseId"] == saved for run in runs):
+            message = "Recorded candidate workflow is unavailable; replacement is blocked."
+            raise RuntimeError(message)
+        if any(run["status"] != "completed" for run in runs):
+            message = "Old candidate publication is active; reconcile it before replacement."
+            raise RuntimeError(message)
+        for run in runs:
+            jobs = _jobs(root, int(run["databaseId"]))
+            target = "publish to PyPI" if stage == "pypi" else "publish to TestPyPI"
+            if jobs.get(target) == "success":
+                message = "Old candidate upload succeeded; reconcile published artifacts before replacement."
+                raise RuntimeError(message)
+        if stage == "testpypi" and head:
+            record = _dispatch_record(root, state, ref, head)
+            if record and not runs and record["outcome"] != "failed":
+                message = "Old candidate dispatch is uncertain; reconcile it before replacement."
+                raise RuntimeError(message)
+    # A failed old attempt may have left a name-only branch. Remove only that exact
+    # reconciled ref, with a lease so an intervening writer cannot be overwritten.
+    if remote:
+        sessions.run(root, "git", "push", f"--force-with-lease=refs/heads/{ref}:{sha}", "origin", ":" + ref)
+
+
+def prepare_stage(root: Path, stage: str) -> int:
+    with release_preparation.release_lock(root):
+        return _prepare_stage(root, stage)
+
+
+def _prepare_stage(  # noqa: C901, PLR0912, PLR0915 - resumable publish stages.
     root: Path, stage: str,
 ) -> int:
     state = guard(root, production=stage == "pypi")
@@ -246,12 +362,11 @@ def prepare_stage(  # noqa: C901, PLR0912, PLR0915 - resumable publish stages.
                 "--notes", "Release " + state["version"],
             )
         else:
-            if state.get("testpypi_requested"):
-                message = "Candidate workflow request is not yet visible; do not dispatch a duplicate."
-                raise RuntimeError(message)
-            state["testpypi_requested"] = sha
-            release_preparation.save(root, state)
-            sessions.run(root, "gh", "workflow", "run", "publish.yml", "--ref", ref)
+            recovered = _dispatch_testpypi(root, state, ref, sha)
+            if recovered:
+                state["testpypi_run"] = int(recovered[0]["databaseId"])
+                release_preparation.save(root, state)
+                return _prepare_stage(root, stage)
         message = "Publish workflow requested; re-enter the release action to resume this candidate."
         raise RuntimeError(message)
     run = next((run for run in runs if run["databaseId"] == saved), runs[0])
@@ -292,6 +407,11 @@ def prepare_stage(  # noqa: C901, PLR0912, PLR0915 - resumable publish stages.
 
 
 def verified(root: Path, stage: str) -> None:
+    with release_preparation.release_lock(root):
+        _verified(root, stage)
+
+
+def _verified(root: Path, stage: str) -> None:
     state = guard(root, production=stage == "pypi")
     run_id = state.get(stage + "_run")
     if not run_id or not compare_artifacts(

@@ -5,12 +5,20 @@ from types import SimpleNamespace
 import pytest
 
 from agent_tools import release_preparation as preparation
+from release_routines.lib import release_candidate as candidate
 from tests.agent_tools._support.mcp import (
     Path,
     _write_minimal_repo_files,
     _write_unreleased_changelog,
     mcp_server,
 )
+
+
+@pytest.fixture(autouse=True)
+def private_release_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    # These unit tests simulate release Git/task storage without a real checkout.
+    monkeypatch.setattr(preparation, "state_path", lambda root: root / "atk-release.json")
+    monkeypatch.setattr(preparation.task_context, "directory", lambda root: root / "no-task")
 
 
 @pytest.mark.parametrize("summary", [None, "", "  "])
@@ -234,3 +242,133 @@ def test_preparation_pr_is_bound_to_release_task_and_branches(
         state[field] = "other"
     with pytest.raises(RuntimeError, match="signed release task"):
         preparation._context(state, pr)
+
+
+@pytest.fixture
+def corrected_preparation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    root = _write_minimal_repo_files(tmp_path / "project")
+    version, files, _fragments = preparation._metadata_files(root, "Preserved release notes")
+    state = {
+        "pr": 12, "branch": "codex/release", "task_id": "release", "task_digest": "digest",
+        "version": version, "candidate_sha": "old", "candidate_tree": "old-tree",
+        "files": files, "stages": {"reviewed": "old"},
+    }
+    pr = {
+        "number": 12, "url": "https://example/pr/12", "state": "MERGED", "mergedAt": "today",
+        "headRefOid": "corrected", "statusCheckRollup": [
+            {"name": name, "conclusion": "SUCCESS"} for name in ("fast-checks", "agent-review")
+        ],
+    }
+    calls = []
+
+    def run(root, *args):
+        calls.append(args)
+        if args[:2] == ("git", "show"):
+            return files[args[2].split(":", 1)[1]].strip()
+        return ""
+
+    monkeypatch.setattr(preparation, "load", lambda root: state)
+    monkeypatch.setattr(preparation, "save", lambda *args: None)
+    monkeypatch.setattr(preparation.sessions, "clean", lambda root: None)
+    monkeypatch.setattr(preparation.sessions, "run", run)
+    monkeypatch.setattr(preparation, "_tree", lambda *args: "corrected-tree")
+    monkeypatch.setattr(preparation, "_context", lambda *args: None)
+    monkeypatch.setattr(preparation, "_pr", lambda *args: pr)
+    monkeypatch.setattr(preparation, "_new", lambda *args: pytest.fail("incremented corrected release"))
+    monkeypatch.setattr(preparation, "_publish_preparation", lambda *args: pytest.fail("created another PR"))
+    monkeypatch.setattr(candidate, "index_files", lambda *args: {})
+    monkeypatch.setattr(candidate, "_runs", lambda *args: [])
+    return root, state, pr, files, calls
+
+
+def test_corrected_merged_preparation_preserves_version_notes_and_pr(
+    corrected_preparation,
+) -> None:
+    root, state, _pr, files, calls = corrected_preparation
+    old_version = state["version"]
+    result = preparation.prepare(root)
+    assert result["status"] == "prepared"
+    assert state["candidate_sha"] == "corrected"
+    assert state["candidate_tree"] == "corrected-tree"
+    assert state["version"] == old_version
+    assert state["pr"] == 12
+    assert "Preserved release notes" in state["files"]["docs/CHANGELOG.md"]
+    assert not mcp_server._unreleased_changelog_bullets(state["files"]["docs/CHANGELOG.md"])
+    assert state["stages"] == {"reviewed": "corrected"}
+    assert (root / "atk-release.json.old").exists()
+    assert ("git", "fetch", "origin", "corrected") in calls
+    assert preparation.prepare(root) == result
+    assert files["docs/CHANGELOG.md"].strip() == state["files"]["docs/CHANGELOG.md"].strip()
+    assert not any("commit" in call for call in calls)
+
+
+@pytest.mark.parametrize("check", ["fast-checks", "agent-review"])
+def test_corrected_head_needs_its_own_successful_checks(
+    corrected_preparation, check: str,
+) -> None:
+    root, state, pr, _files, _calls = corrected_preparation
+    for item in pr["statusCheckRollup"]:
+        if item["name"] == check:
+            item["conclusion"] = "FAILURE"
+    with pytest.raises(RuntimeError, match=check):
+        preparation.prepare(root)
+    assert state["candidate_sha"] == "old"
+    assert not (root / "atk-release.json.old").exists()
+
+
+@pytest.mark.parametrize("problem", ["version", "readme", "notes", "unreleased", "fragments", "dev", "task"])
+def test_invalid_corrected_candidate_is_not_adopted(
+    corrected_preparation, monkeypatch: pytest.MonkeyPatch, problem: str,
+) -> None:
+    root, state, _pr, files, _calls = corrected_preparation
+    if problem in {"version", "readme"}:
+        path = "pyproject.toml" if problem == "version" else "README.md"
+        files[path] = files[path].replace(state["version"], "9.9.9.9")
+    elif problem == "notes":
+        files["docs/CHANGELOG.md"] = "# Changelog\n\n## Unreleased\n"
+    elif problem == "unreleased":
+        files["docs/CHANGELOG.md"] = files["docs/CHANGELOG.md"].replace("## Unreleased", "## Unreleased\n\n- Pending change")
+    elif problem == "dev":
+        monkeypatch.setattr(preparation, "_tree", lambda root, sha: "unrelated" if sha == "origin/dev" else "corrected-tree")
+    elif problem == "task":
+        def invalid(*args):
+            raise RuntimeError("invalid task binding")
+        monkeypatch.setattr(preparation, "_context", invalid)
+    else:
+        original = preparation.sessions.run
+        monkeypatch.setattr(preparation.sessions, "run", lambda root, *args: (
+            "agent_tools/changelog/pending.md" if args[:2] == ("git", "ls-tree") else original(root, *args)
+        ))
+    with pytest.raises(RuntimeError, match="version|notes|unreleased|additional content|fragments|task binding"):
+        preparation.prepare(root)
+    assert state["candidate_sha"] == "old"
+
+
+def test_adoption_invalidates_old_validation_and_artifact_bindings(
+    corrected_preparation, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, state, _pr, _files, _calls = corrected_preparation
+    state.update(testpypi_run=42, testpypi_sha="test-head", testpypi_dispatch={"old": "record"},
+                 pypi_run=43, pypi_artifacts={"file": "hash"})
+    state["stages"].update(testpypi_verified="old", pypi_verified="old")
+    # Publication reconciliation has its own fail-closed tests.
+    monkeypatch.setattr(candidate, "reconcile_replacement", lambda *args: None)
+    receipts = [root / path for path in (
+        mcp_server.CHECK_STATE_FILE, mcp_server.PRECOMMIT_STAGE_STATE_FILE, mcp_server.RELEASE_CHECK_STATE_FILE,
+    )]
+    for path in receipts:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("old validation")
+    preparation.prepare(root)
+    assert all(not path.exists() for path in receipts)
+    assert not any(key.startswith(("testpypi_", "pypi_")) for key in state)
+    assert state["stages"] == {"reviewed": "corrected"}
+
+
+def test_published_old_candidate_blocks_adoption(corrected_preparation, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, state, _pr, _files, _calls = corrected_preparation
+    monkeypatch.setattr(candidate, "index_files", lambda *args: {"package.whl": "old"})
+    with pytest.raises(RuntimeError, match="new reviewed version"):
+        preparation.prepare(root)
+    assert state["candidate_sha"] == "old"
+    assert not (root / "atk-release.json.old").exists()
