@@ -13,10 +13,18 @@ if TYPE_CHECKING:
 
 
 class FaultController:
-    def __init__(self, *, root: Path, project: str, artifact_dir: Path) -> None:
+    def __init__(
+        self,
+        *,
+        root: Path,
+        project: str,
+        artifact_dir: Path,
+        include_greenplum: bool = False,
+    ) -> None:
         self.root = root
         self.project = project
         self.artifact_dir = artifact_dir
+        self.include_greenplum = include_greenplum
         self.timeline: list[dict[str, Any]] = []
         self.restore_actions: list[tuple[str, str]] = []
 
@@ -98,10 +106,10 @@ class FaultController:
             str(self.root / "integration/docker-compose.yml"),
             "--file",
             str(self.root / "integration/docker-compose.auth.yml"),
-            "--profile",
-            "auth",
-            *args,
         ]
+        if self.include_greenplum:
+            command.extend(["--profile", "gp"])
+        command.extend(["--profile", "auth", *args])
         return subprocess.run(
             command,
             cwd=self.root,

@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
+
 ## 1.3.12.5 - 2026-10-14
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
@@ -18,6 +20,7 @@ Generated from package version bumps and recent commit history.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
 - Support seven rolling Python minors with continued extension, validated extra and combined [all] ranges, automated update PRs, and Airflow 3 compatibility; retain the named-service-job diagnostics regression repair and the evidenced Python-support formatting correction.
 - Build disposable integration MinIO services from the existing pinned upstream release commits to avoid denied container pulls; retain S3 setup and cleanup and add fast service-free configuration regression guards.
+- Fix SQL integration fault actions to include the enabled Greenplum Compose profile while retaining the project-service guard, and reactivate loopback connection settings before auth cleanup to invalidate cached Airflow aliases. Add service-free Python regressions for both failures.
 
 ## 1.3.12.4 - 2026-10-12
 
