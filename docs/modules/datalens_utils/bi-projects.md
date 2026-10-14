@@ -19,7 +19,12 @@ Resource keys use `connection:`, `dataset:`, `chart:`, `html_page:`, `collection
 `workbook:` and `dashboard:main`. Omitted scope selects the full project.
 Local changes propose update; remote changes propose pull; simultaneous changes
 produce conflicts. Remote drafts and successfully persisted interrupted writes
-are distinguished. Removed resources become reported orphans, never deletions.
+are distinguished. An interrupted owned dataset resumes from its retained ID and
+saved draft even when its published revision is missing or stale. Read-only
+preflight resolves inferred fields on a checkpoint copy. Reconciliation checkpoints
+actual source-qualified GUIDs, avoids duplicate datasets and inferred fields, and
+verifies the fetched managed draft before publication. Component failures retain
+IDs and expose diagnostics while stopping publication and dependent writes. Removed resources become reported orphans, never deletions.
 
 A pull keeps chart-group member routes and action flags. Changed direct
 placements become explicit widgets with the same item IDs, preserving remote

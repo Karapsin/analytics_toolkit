@@ -200,7 +200,11 @@ the default. Import discovers dependencies, extracts available SQL/JS assets,
 retains IDs and placement parameters, and reports collisions and unsupported
 features. Fidelity entries identify individual features, statuses and reasons.
 Wizard colors/shapes, including Measure Names, are reconstructed; unrepresented
-source settings block writing. A field's format must agree across every occurrence,
+source settings block writing. Settings must be callable on the selected public
+SDK builder: line charts support Measure Names color/shape mappings, while scatter
+charts do not. Unsupported operations raise `DataLensUtilsError` naming the chart
+type and setting; import reports a fidelity blocker and pull preserves local files
+and checkpoints. A field's format must agree across every occurrence,
 including placements with absent or empty formatting; differing formats block local
 writing because the recipe format applies to the whole field.
 Chart defaults become defaults on every placement;

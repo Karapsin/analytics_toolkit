@@ -27,8 +27,10 @@ def test_public_pull_replaces_complete_encoding_settings(bi_project, monkeypatch
         bi_project,
         monkeypatch,
         chart_overrides={
-            "type": "scatter",
-            "fields": {"x": ["Amount"], "y": ["Count"]},
+            "type": "line" if change == "change_kinds" else "scatter",
+            "fields": {"x": ["category"], "y": ["Amount", "Count"]}
+            if change == "change_kinds"
+            else {"x": ["Amount"], "y": ["Count"]},
             "settings": settings,
         },
     )
@@ -226,6 +228,34 @@ def test_public_pull_conflicting_title_removal_keeps_files_and_checkpoint(bi_pro
         with pytest.raises(DataLensUtilsError, match="changes conflict"):
             bi_project.pull(chart_keys=["trend"])
         assert {path: (root / path).read_bytes() for path in before} == before
+        assert checkpoint.read_bytes() == checkpoint_bytes
+        assert not api.writes
+    finally:
+        api.client.close()
+
+@pytest.mark.parametrize("setting", ["color_by_measure_name", "shape_by_measure_name"])
+def test_public_pull_rejects_unsupported_scatter_settings(bi_project, monkeypatch, setting):
+    api, entities, checkpoint = recovered_pull(
+        bi_project,
+        monkeypatch,
+        chart_overrides={"type": "scatter", "fields": {"x": ["Amount"], "y": ["Count"]}},
+    )
+    slot, map_name, mapped = (
+        ("colors", "mountedColors", "red")
+        if setting == "color_by_measure_name"
+        else ("shapes", "mountedShapes", "circle")
+    )
+    entities["chart:trend"].data["visualization"][slot] = {
+        "items": [{"type": "PSEUDO"}],
+        "settings": {map_name: {"amount": mapped}},
+    }
+    root = bi_project.paths.project_root
+    before = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    checkpoint_bytes = checkpoint.read_bytes()
+    try:
+        with pytest.raises(DataLensUtilsError, match=f"scatter.*{setting}"):
+            bi_project.pull(chart_keys=["trend"])
+        assert {path: path.read_bytes() for path in before} == before
         assert checkpoint.read_bytes() == checkpoint_bytes
         assert not api.writes
     finally:

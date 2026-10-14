@@ -243,3 +243,58 @@ def test_unexpressible_defaults_are_not_silently_dropped():
     chart = SimpleNamespace(category="wizard", data={"params": []}, raw={})
     with pytest.raises(DataLensUtilsError, match="mapping"):
         chart_defaults(chart)
+
+@pytest.mark.parametrize("dry_run", [True, False])
+@pytest.mark.parametrize("setting", ["color_by_measure_name", "shape_by_measure_name"])
+def test_unsupported_scatter_encoding_blocks_copy_import(bi_project, dry_run, setting):
+    api = MemoryDataLens()
+    try:
+        client, source, charts = audit_tab(api)
+        original = next(iter(charts.values()))
+        ds = client.get.dataset(by_id=original.dataset_ids[0])
+        scatter = (
+            api.client.create.wizard_chart.scatter(name=original.name, location=api.folder)
+            .dataset(ds)
+            .x([ds.fields.by_name("value1")])
+            .y([ds.fields.by_name("value2")])
+            .build()
+        )
+        slot, map_name = (
+            ("colors", "mountedColors")
+            if setting == "color_by_measure_name"
+            else ("shapes", "mountedShapes")
+        )
+        scatter.data["visualization"][slot] = {
+            "items": [{"type": "PSEUDO"}],
+            "settings": {
+                map_name: {
+                    ds.fields.by_name("value1").guid: "red"
+                    if setting == "color_by_measure_name"
+                    else "circle",
+                },
+            },
+        }
+        charts[original.id] = replace(scatter, id=original.id)
+        clear_destination(bi_project)
+        bi_project.client_factory = lambda _: nullcontext(client)
+        before = {
+            path: path.read_bytes()
+            for path in bi_project.paths.project_root.rglob("*")
+            if path.is_file()
+        }
+        documents = copy.deepcopy(api.documents)
+        api.writes.clear()
+        result = bi_project.import_dashboard(dashboard_id=source.id, mode="copy", dry_run=dry_run)
+        assert not result["written"]
+        assert any(
+            "scatter" in value["reason"] and setting in value["reason"]
+            for value in result["blockers"]
+        )
+        assert any(
+            value["status"] == "unsupported" and setting in value["reason"]
+            for value in result["fidelity"]
+        )
+        assert {
+            path: path.read_bytes()
+            for path in bi_project.paths.project_root.rglob("*")
+            if path.is_file()

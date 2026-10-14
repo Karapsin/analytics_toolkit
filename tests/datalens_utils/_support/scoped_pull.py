@@ -78,7 +78,9 @@ def recovered_pull(project, monkeypatch, *, chart_overrides=None, source_sql=Non
         recipe_field_guids={"category": "category"},
         sources={"source": {"id": "source-id"}},
     )
-    remember_inferred_fields(cloud, definition, source_identities(cloud, definition, owned), owned)
+    remember_inferred_fields(
+        cloud, definition, source_identities(cloud, definition, owned), owned
+    )
     store.remember("dataset:sales", cloud)
     api = MemoryDataLens()
     factory = getattr(api.client.create.wizard_chart, chart_definition["type"])

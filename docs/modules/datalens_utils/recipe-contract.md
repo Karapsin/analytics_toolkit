@@ -133,7 +133,11 @@ For Measure Names use `color_by_measure_name: {colors_map: {"Revenue": "#ff0000"
 and `shape_by_measure_name: {shapes_map: {"Revenue": "circle"}}`; at least two
 measures must be placed. Measure color accepts `field`, optional `mode`,
 `palette`, and `reversed`. The selected visualization must support the operation.
-Unsupported source settings produce fidelity blockers.
+Line charts support these Measure Names mappings; scatter builders do not.
+A requested setting absent from the selected public builder raises
+`DataLensUtilsError` with the chart type and setting name. Imports report
+unsupported fidelity and refuse local writing; pulls leave recipes and checkpoints
+unchanged. Settings are never silently omitted.
 
 Wizard chart-level `params` cannot be authored through the supported SDK.
 Import normalizes source chart defaults into every dashboard placement.

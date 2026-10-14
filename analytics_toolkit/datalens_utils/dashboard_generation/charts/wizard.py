@@ -183,6 +183,10 @@ def validate_definition(definition: Any) -> Any:
 
 def _settings(builder: Any, dataset: Any, owned: Any, definition: Any) -> Any:
     for method, values in definition.get("settings", {}).items():
+        operation = getattr(builder, method, None)
+        if not callable(operation):
+            message = f"Wizard {definition['type']!r} does not support setting {method!r}."
+            raise DataLensUtilsError(message)
         for value in values if isinstance(values, list) else [values]:
             arguments = dict(value)
             field = arguments.pop("field", None)
@@ -190,7 +194,7 @@ def _settings(builder: Any, dataset: Any, owned: Any, definition: Any) -> Any:
                 if field is None:
                     message = f"Wizard setting {method!r} needs a field."
                     raise DataLensUtilsError(message)
-                getattr(builder, method)(_resolve(dataset, owned, field), **arguments)
+                operation(_resolve(dataset, owned, field), **arguments)
             else:
                 for map_name in ("colors_map", "shapes_map"):
                     if map_name in arguments and method.endswith("measure_name"):
@@ -198,7 +202,7 @@ def _settings(builder: Any, dataset: Any, owned: Any, definition: Any) -> Any:
                             _resolve(dataset, owned, name): mapped
                             for name, mapped in arguments[map_name].items()
                         }
-                getattr(builder, method)(**arguments)
+                operation(**arguments)
     return builder
 
 
@@ -298,141 +302,3 @@ def configure(  # noqa: C901, PLR0912
         for name, direction in definition.get("sort", ()):
             builder.add_sort(_resolve(dataset, owned, name), direction=direction)
     if chart is not None and "filters" in definition:
-        for value in chart.data.get("sources", {}).get("filters", ()):
-            builder.delete_filter(value["guid"])
-    for rule in definition.get("filters", ()):
-        builder.add_filter(
-            _resolve(dataset, owned, rule["field"]),
-            operation=rule["operation"],
-            values=rule.get("values", ()),
-        )
-    title = definition.get("chart_title", definition.get("title"))
-    if definition["type"] != "indicator" and title is not None:
-        builder.chart_title(
-            text=title, mode="show" if definition.get("show_title", True) else "hide"
-        )
-    if "description" in definition:
-        builder.description(definition["description"])
-    for axis, title in definition.get("axis_titles", {}).items():
-        builder.axis_title(axis, mode="manual", text=title)
-    if "labels" in definition:
-        builder.labels([_resolve(dataset, owned, name) for name in definition["labels"]])
-    if "labels_position" in definition:
-        builder.labels_position(mode=definition["labels_position"])
-    for name, formatting in definition.get("formats", {}).items():
-        builder.measure_format(_resolve(dataset, owned, name), **formatting)
-    if "totals" in definition:
-        builder.totals(enabled=definition["totals"])
-    return _settings(builder, dataset, owned, definition)
-
-
-def create_builder(context: Any, datasets: Any, definition: Any, folder: Any) -> Any:
-    validate_definition(definition)
-    builder = getattr(context.client.create.wizard_chart, definition["type"])(
-        name=definition["name"], location=folder
-    )
-    return configure(
-        builder.dataset(datasets[definition["dataset"]]),
-        context,
-        datasets,
-        definition,
-        creation=True,
-    )
-
-
-def validate_handle_changes(chart: Any, datasets: Any, definition: Any) -> None:
-    registered = registered_local_fields(chart)
-    for field in local_fields(definition, datasets[definition["dataset"]]).values():
-        if isinstance(field, WizardHierarchy):
-            saved = next(
-                (
-                    value
-                    for value in chart.data.get("sources", {}).get("hierarchies", ())
-                    if value.get("guid") == field.guid
-                ),
-                None,
-            )
-            if saved and (
-                saved.get("title") != field.title
-                or [
-                    value.get("guid") if isinstance(value, Mapping) else value
-                    for value in saved.get("fields", ())
-                ]
-                != [member.guid for member in field.fields]
-            ):
-                msg = (
-                    "Hierarchy declaration or topology changes are unsupported; retain "
-                    "stable members."
-                )
-                raise DataLensUtilsError(msg)
-            continue
-        saved = registered.get(field.guid)
-        if isinstance(field, WizardAggregatedMeasure):
-            if saved and (
-                saved.get("title") != field.title or saved.get("source") != field.field.source
-            ):
-                msg = (
-                    "Aggregated measure declaration changes require a supported "
-                    "explicit replacement operation."
-                )
-                raise DataLensUtilsError(msg)
-            continue
-        if saved and any(
-            saved.get(attribute) != getattr(field, attribute)
-            for attribute in ("title", "cast", "type", "aggregation")
-        ):
-            message = (
-                "Changing the title/type/aggregation of Wizard local field "
-                f"{field.title!r}"
-                " is unsupported; keep its stable declaration and edit its "
-                "formula."
-            )
-            raise DataLensUtilsError(message)
-
-
-def validate_change(chart: Any, context: Any, datasets: Any, definition: Any) -> Any:
-    if chart.visualization_id != VISUALIZATIONS[definition["type"]]:
-        message = (
-            "Changing Wizard visualization of "
-            f"{definition['name']!r}"
-            " is unsupported; its existing ID was retained."
-        )
-        raise DataLensUtilsError(message)
-    expected_ids = tuple(
-        dict.fromkeys(
-            [
-                datasets[definition["dataset"]].id,
-                *(
-                    datasets[layer["dataset"]].id
-                    for layer in definition.get("layers", ())
-                    if layer.get("dataset")
-                ),
-            ]
-        )
-    )
-    if chart.dataset_ids != expected_ids:
-        message = f"Wizard chart {definition['name']!r} references a different dataset."
-        raise DataLensUtilsError(message)
-    validate_handle_changes(chart, datasets, definition)
-    if definition["type"] in {"combined_chart", "geolayer"}:
-        from analytics_toolkit.datalens_utils.validation.charts import (  # noqa: PLC0415 - Adapter cycle.
-            wizard_issues,
-        )
-
-        # Layer and map topology are create-only in this SDK. Never enter a
-        # field-removal rebuild that would dismantle an unrepairable map.
-        problems = [
-            issue
-            for issue in wizard_issues(chart, context, datasets, definition)
-            if issue.startswith(("layer ", "map center"))
-            and not (definition["type"] == "combined_chart" and issue.endswith("x fields"))
-        ]
-        if problems:
-            message = (
-                "Changing layers/map topology of "
-                f"{definition['name']!r}"
-                " is unsupported: "
-                f"{', '.join(problems)}"
-                "."
-            )
-            raise DataLensUtilsError(message)
