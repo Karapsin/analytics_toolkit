@@ -22,6 +22,8 @@ Generated from package version bumps and recent commit history.
 - Retry the original OAuth initiation URL after browser navigation timeouts in the disposable authentication harness, with fast service-free regression coverage for recovery and exhausted retries.
 - Preserve OAuth timeout recovery and its service-free regressions while restoring current-dev version markers and retaining pending release notes under Unreleased.
 - Reconcile user-approval labels automatically without clearing genuine holds or stale-head safeguards
+- Route malformed changelog fragments to fresh correction plans instead of repeating metadata failures
+- Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 - Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
 
 ## 1.3.12.5 - 2026-10-14

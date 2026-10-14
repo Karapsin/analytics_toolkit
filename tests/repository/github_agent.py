@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import subprocess
@@ -459,6 +460,8 @@ class _RefreshDiscoveryGitHub:
         return self._response(path, method)
 
     def _response(self, path: str, method: str) -> Any:
+        if path.startswith("contents/agent_tools/changelog/"):
+            return {"content": base64.b64encode(b"- Valid task fragment\n").decode()}
         if path.startswith("actions/runs/"):
             return self.run_metadata[path.rsplit("/", 1)[1]]
         if path == "collaborators/owner/permission":

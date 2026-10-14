@@ -114,6 +114,14 @@ attachment; the Pi owns all later corrections, CI, approvals and merges. A durab
 handoff permits the local clone to refresh clean dev and begin another planned task
 while the previous PR remains pending. Offline machines refresh at their next start.
 
+Discovery reads each changed changelog fragment from the immutable PR head before
+queuing deterministic metadata folding. A malformed fragment starts a fresh
+correction plan with its exact path and formatting requirement, rather than
+repeating the same failed fold. The signed task context and normal independent
+plan review, final review, fast CI and protected approval requirements still apply.
+GitHub read failures retry without inventing a formatting rejection; genuine
+owner holds remain in place.
+
 Cleanup removes unchanged branches belonging to merged PRs after merge and daily
 through existing reconciliation. Expected-head leases reject deletion races. Dev,
 main, protected/open-PR/active branches and unknown or unmerged work are preserved.
