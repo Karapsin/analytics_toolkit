@@ -18,12 +18,19 @@ DATASET_FILE = "configs/DL objects/datasets.json"
 CHART_FILE = "configs/DL objects/charts/wizard/line/trend.json"
 
 
-def recovered_pull(project, monkeypatch, *, chart_overrides=None):
+def recovered_pull(project, monkeypatch, *, chart_overrides=None, source_sql=None):
     root = project.paths.project_root
     registry = load_registry()
     definition = copy.deepcopy(registry.resources["dataset:sales"].definition)
     definition.pop("id")
     definition["copy_from"] = "source-dataset"
+    if source_sql is not None:
+        definition["sources"]["source"].update(
+            factory="ch_subselect", parameters={}, sql_file="assets/source.sql"
+        )
+        asset = root / "assets/source.sql"
+        asset.parent.mkdir(parents=True, exist_ok=True)
+        asset.write_text(source_sql, encoding="utf-8")
     write(root, DATASET_FILE, {"sales": definition})
     chart_definition = copy.deepcopy(registry.resources["chart:trend"].definition)
     chart_definition.pop("id")
@@ -48,6 +55,15 @@ def recovered_pull(project, monkeypatch, *, chart_overrides=None):
     registry = load_registry()
     store = BIResourceStore(registry)
     original = dataset()
+    if source_sql is not None:
+        original = replace(
+            original,
+            sources=(
+                replace(
+                    original.sources[0], source_type="CH_SUBSELECT", parameters={"subsql": source_sql}
+                ),
+            ),
+        )
     cloud = replace(
         original,
         result_schema=(

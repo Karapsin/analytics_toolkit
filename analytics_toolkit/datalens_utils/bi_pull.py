@@ -136,6 +136,8 @@ def extract_resource(  # noqa: PLR0913 - One baseline and its dependency snapsho
 def propose_resource(
     resource: Any, key: str, merged: dict[str, Any], proposed: dict[str, Any]
 ) -> None:
+    # A clean local merge can alias the incoming snapshot retained as the baseline.
+    merged = copy.deepcopy(merged)
     if resource.kind in {"connection", "collection", "workbook", "html_page", "dataset"}:
         filename = {
             "connection": "connections",

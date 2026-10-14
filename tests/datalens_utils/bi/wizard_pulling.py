@@ -20,7 +20,7 @@ def test_public_pull_replaces_complete_encoding_settings(bi_project, monkeypatch
     settings = {
         "color_by_dimension": {"field": "category"},
         "shape_by_dimension": {"field": "category", "shapes_map": {"a": "circle"}},
-        "palette": {"id": "default"},
+        "palette": {"id": "defaultScheme"},
         "legend": {"mode": "hide"},
     }
     api, entities, checkpoint = recovered_pull(
@@ -102,7 +102,7 @@ def test_public_pull_updates_internal_title_independently(bi_project, monkeypatc
     root = bi_project.paths.project_root
     untouched = (root / DATASET_FILE).read_bytes()
     previous = json.loads(checkpoint.read_text())["resources"]
-    entities["chart:trend"].data["visualization"]["chartSettings"].update(
+    entities["chart:trend"].data["visualization"].setdefault("chartSettings", {}).update(
         title="Remote internal", titleMode="hide"
     )
     try:

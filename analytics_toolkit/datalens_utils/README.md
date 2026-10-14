@@ -45,6 +45,8 @@ removals, while preserving unrelated settings. When `chart_title` is explicitly
 managed, pulls update it independently of the default widget `title`. Removing the
 remote internal title pulls as `chart_title: null`, including absent `chartSettings`.
 Definitions without `chart_title` retain the legacy title update.
+Version-2 pulls retain complete remote definitions and SQL/JS assets in the
+checkpoint baseline so subsequent pulls can merge against the same snapshot.
 `apply(chart_keys=[...])` applies affected local changes. Both also accept
 `dataset_keys=[...]` or `ui=True`; these scopes are mutually exclusive.
 `verify(full=True)` checks full published metadata and references.

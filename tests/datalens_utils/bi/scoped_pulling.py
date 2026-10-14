@@ -8,8 +8,10 @@ import pytest
 from analytics_toolkit.datalens_utils.bi_engine import local_datasets
 from analytics_toolkit.datalens_utils.bi_pull_identity import normalize_dataset
 from analytics_toolkit.datalens_utils.dataset_identity import resolved_guid
+from analytics_toolkit.datalens_utils.editing.state import fingerprint
 from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
 from analytics_toolkit.datalens_utils.recipe import load_registry
+from analytics_toolkit.datalens_utils.resources.bi_store import safe_metadata
 
 from tests.datalens_utils._support.bi import dataset, write
 from tests.datalens_utils._support.scoped_pull import CHART_FILE, DATASET_FILE, recovered_pull
@@ -180,3 +182,48 @@ def test_dataset_normalization_restores_cache_guids_without_rewriting_authored_f
             copy.deepcopy(ambiguous),
             {"fields": {"a": {"guid": "first"}, "b": {"guid": "second"}}},
         )
+
+
+@pytest.mark.parametrize("scope", ["dataset", "chart"])
+def test_public_clean_local_pull_retains_complete_baseline(bi_project, monkeypatch, scope):
+    source_sql = "SELECT category FROM sales"
+    api, entities, checkpoint = recovered_pull(bi_project, monkeypatch, source_sql=source_sql)
+    root = bi_project.paths.project_root
+    selected_key = "dataset:sales" if scope == "dataset" else "chart:trend"
+    unselected_key = "chart:trend" if scope == "dataset" else "dataset:sales"
+    selected_file = DATASET_FILE if scope == "dataset" else CHART_FILE
+    unselected_file = CHART_FILE if scope == "dataset" else DATASET_FILE
+    options = {"dataset_keys": ["sales"]} if scope == "dataset" else {"chart_keys": ["trend"]}
+    previous = json.loads(checkpoint.read_text())["resources"]
+    assert load_registry().resources[selected_key].files == previous[selected_key]["baseline"]
+    entities[selected_key] = replace(entities[selected_key], name="Remote name")
+    untouched = (root / unselected_file).read_bytes()
+    try:
+        report = bi_project.pull(**options)
+        assert report["pulled_resources"] == [selected_key]
+        state = json.loads(checkpoint.read_text())["resources"]
+        baseline = state[selected_key]["baseline"]
+        assert baseline == load_registry().resources[selected_key].files
+        assert baseline["definition"]["name"] == "Remote name"
+        assert state[selected_key]["fingerprint"] == fingerprint(baseline)
+        assert state[selected_key]["metadata"] == safe_metadata(entities[selected_key], scope)
+        assert state[unselected_key] == previous[unselected_key]
+        assert (root / unselected_file).read_bytes() == untouched
+        assert state["dataset:sales"]["field_guids"]["category"] == "inferred-category"
+        assert state["dataset:sales"]["baseline"]["assets/source.sql"] == source_sql
+        assert (root / "assets/source.sql").read_text() == source_sql
+        if scope == "dataset":
+            assert baseline["definition"]["fields"]["category"]["guid"] == "category"
+        else:
+            assert baseline["definition"]["aggregated_measures"]["Count"]["field"] == "category"
+            assert baseline["definition"]["local_fields"][0]["guid"] == "local"
+            assert baseline["definition"]["hierarchies"]["Group"]["fields"] == ["category", "local"]
+        before = {path: (root / path).read_bytes() for path in (selected_file, unselected_file)}
+        checkpoint_bytes = checkpoint.read_bytes()
+        bi_project.pull(**options)
+        assert {path: (root / path).read_bytes() for path in before} == before
+        assert checkpoint.read_bytes() == checkpoint_bytes
+        assert (root / "assets/source.sql").read_text() == source_sql
+        assert not api.writes
+    finally:
+        api.client.close()
