@@ -1,0 +1,102 @@
+name: python-support
+run-name: Python support ${{ inputs.candidate }} ${{ inputs.python }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Immutable dev SHA to probe
+        required: true
+        type: string
+      python:
+        description: Newest published stable Python minor
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-support-${{ inputs.candidate }}-${{ inputs.python }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate bounded inputs
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          PYTHON_MINOR: ${{ inputs.python }}
+        run: |
+          python - <<'PY'
+          import os, re
+          assert re.fullmatch('[0-9a-f]{40}', os.environ['CANDIDATE'])
+          assert re.fullmatch(r'3\.[0-9]+', os.environ['PYTHON_MINOR'])
+          PY
+
+  probe:
+    name: probe (${{ matrix.extra }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        extra: [core, airflow, clickhouse-native, tui, datalens, all]
+    steps:
+      - name: Checkout trusted runner
+        uses: actions/checkout@v6
+        with:
+          path: control
+          persist-credentials: false
+      - name: Checkout immutable candidate without write credentials
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.candidate }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python }}
+          cache: pip
+      - name: Prepare unpublished expansion for installation
+        working-directory: control
+        env:
+          PYTHON_MINOR: ${{ inputs.python }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from release_routines.lib.python_support import load_policy, transition, sync
+          root = Path('../candidate').resolve()
+          policy = transition(load_policy(root), os.environ['PYTHON_MINOR'], set())
+          (root / 'release_routines/python_support.json').write_text(json.dumps(policy, indent=2) + '\n')
+          sync(root, policy)
+          PY
+      - name: Install core or requested extra
+        working-directory: candidate
+        env:
+          EXTRA: ${{ matrix.extra }}
+        run: |
+          python -m pip install --upgrade pip
+          if [ "$EXTRA" = core ]; then
+            python -m pip install -e . pytest
+          else
+            python -m pip install -e ".[${EXTRA}]" pytest
+          fi
+          python -m pip check
+      - name: Validate installed functionality
+        working-directory: candidate
+        env:
+          EXTRA: ${{ matrix.extra }}
+        run: |
+          if [ "$EXTRA" = core ]; then
+            python -m pytest -q tests/ab_utils tests/dates tests/datetime tests/excel tests/general tests/atk
+            python -c 'from analytics_toolkit import sql; assert callable(sql.read)'
+          else
+            python -m release_routines.lib.python_support_probe "$EXTRA"
+          fi
+      - run: python -m pip freeze
+        if: always()

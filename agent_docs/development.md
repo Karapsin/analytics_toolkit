@@ -12,13 +12,19 @@ status calls report changes without repeating routing and command details. Use
 
 The managed pre-commit check runs four ordered stages. A fast static gate checks
 metadata, minimum constraints, documentation, compileall, Ruff, and mypy. The
-coverage stage is the canonical Python 3.11 test run and enforces 90% branch
+coverage stage prefers the core midpoint within the common extra range and enforces 90% branch
 coverage, plus the stricter committed statement and branch ratchets in
 `release_routines/coverage_targets.json`. Artifact smoke tests run next, followed
-by the Python 3.8 through 3.14 compatibility matrix and the Python 3.8
-minimum-dependency environment. Python
-3.11 is omitted from that matrix because coverage already exercises it. The matrix
-also runs offline DataLens conformance on Python 3.10 with SDK 3.1.0 and 3.2.0.
+by the compatibility matrix derived from `release_routines/python_support.json`
+and the oldest-minor minimum-dependency environment. When extras have no common
+interpreter, coverage uses multiple compatible test selections and combines branch
+data before applying every global and module ratchet. All selected interpreters
+must be provisioned; a missing run or incompatible extra fails the gate. A local
+latest-dependency environment is omitted only when coverage runs its equivalent
+test selection. Offline
+DataLens conformance uses the oldest minor compatible with both core and the SDK,
+with SDK 3.1.0 and 3.2.0. The normal window contains seven stable minors; retain
+older minors during extra-readiness overlap. Python 3.8 is explicitly retired.
 The matrix defaults to three parallel tox workers; set `PRECOMMIT_PARALLELISM` to a
 positive integer to tune local resource use. The minimum environment must also
 pass `pip check`.

@@ -76,8 +76,10 @@ def show_tables(
         index=normalized.index,
         dtype=object,
     )
-    normalized["table_size"] = normalized[_TABLE_SIZE_BYTES_COLUMN].map(
-        _format_table_size,
+    normalized["table_size"] = pd.Series(
+        (_format_table_size(value) for value in normalized[_TABLE_SIZE_BYTES_COLUMN]),
+        index=normalized.index,
+        dtype=object,
     )
     return normalized.loc[:, _SHOW_TABLES_COLUMNS].copy()
 

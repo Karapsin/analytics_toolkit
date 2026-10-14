@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.connection import airflow_compat
+
 from tests.sql._support.connection_config import (
     Callable,
     Path,
@@ -18,8 +20,10 @@ from tests.sql._support.connection_config import (
 )
 
 
+@pytest.mark.parametrize("major", ["2", "3"])
 def test_clickhouse_airflow_ca_variable_validation(
     monkeypatch: pytest.MonkeyPatch,
+    major: str,
 ) -> None:
     config = replace(
         config_module.get_connection_config("ch"),
@@ -27,25 +31,19 @@ def test_clickhouse_airflow_ca_variable_validation(
         ca_certs_variable="ch_ca",
     )
 
-    real_import = builtins.__import__
+    real_import = airflow_compat.import_module
 
-    def reject_airflow_import(
-        name: str,
-        globals_: object = None,
-        locals_: object = None,
-        fromlist: object = (),
-        level: int = 0,
-    ) -> object:
-        if name == "airflow.models.variable":
-            message = "airflow unavailable"
-            raise ImportError(message)
-        return real_import(name, globals_, locals_, fromlist, level)
+    def reject_airflow_import(name: str) -> object:
+        if name == "airflow":
+            return types.SimpleNamespace(__version__=f"{major}.0.0")
+        message = "airflow unavailable"
+        raise ImportError(message)
 
-    monkeypatch.setattr(builtins, "__import__", reject_airflow_import)
+    monkeypatch.setattr(airflow_compat, "import_module", reject_airflow_import)
     with pytest.raises(SqlConfigError, match="Variable support is unavailable"):
         connection_module._resolve_ch_ca_certs(config)
 
-    monkeypatch.setattr(builtins, "__import__", real_import)
+    monkeypatch.setattr(airflow_compat, "import_module", real_import)
     install_fake_airflow(monkeypatch, {}, {"ch_ca": " "})
     with pytest.raises(SqlConfigError, match="must be a non-empty string"):
         connection_module._resolve_ch_ca_certs(config)

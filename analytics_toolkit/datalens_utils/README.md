@@ -8,14 +8,18 @@ calling project.
 Managed selector ignore edges use stable source/target ordering across supported
 Python versions and hash seeds.
 
-Install the optional engine dependencies on Python 3.10 or newer:
+Install the optional engine dependencies using an interpreter in the published
+[`datalens` support range](../../docs/PYTHON_SUPPORT.md#accepted-compatibility-ranges):
 
 ```sh
 pip install 'analytics-toolkit[datalens]'
 ```
 
-Base imports support Python 3.8 through 3.14 and do not import the SDK, read a
-recipe, install tools, obtain credentials, or create files. SDK operations are
+Base imports support the configured core Python window and do not import the SDK,
+read a recipe, install tools, obtain credentials, or create files. See the
+[Python support policy](../../docs/PYTHON_SUPPORT.md#accepted-compatibility-ranges)
+for the explicit core, `datalens`, and `[all]` ranges. Operations require at least
+Python 3.10 within the supported `datalens` range. SDK operations are
 compatible with `datalens-sdk` 3.1.0 and 3.2.0. New installations use 3.2.0.
 Dashboard projects reuse the existing interpreter and tools.
 

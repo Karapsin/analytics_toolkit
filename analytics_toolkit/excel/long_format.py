@@ -660,7 +660,7 @@ def _table_block_height(
 
 
 def _coerce_excel_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    object_columns = df.select_dtypes(include=["object"]).columns
+    object_columns = df.columns[df.dtypes.eq(object)]
     if object_columns.empty:
         return df
 

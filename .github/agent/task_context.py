@@ -22,7 +22,7 @@ def validate(value: Any) -> dict[str, Any]:
     if any(not isinstance(value[k], str) or IDENTITY.fullmatch(value[k]) is None
            for k in ("task_id", "producer_id")):
         raise ValueError("Invalid task or producer identity.")
-    if value["source"] not in {"user", "standing-integration-repair"}:
+    if value["source"] not in {"user", "standing-integration-repair", "standing-python-support"}:
         raise ValueError("Unsupported task authority.")
     if not isinstance(value["starting_prompt"], str) or not value["starting_prompt"].strip():
         raise ValueError("The original user prompt is required; summaries are not substitutes.")

@@ -121,8 +121,9 @@ The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 Operation/retry and connection-identity reports, orchestration timelines, and
 type-normalization mismatch reports are also always present. Stress runs add
 memory samples, connection-pressure results, lock timelines, and concurrent
-writer results. For startup failures, inspect `startup.log` first. GitHub jobs
-print its last 80 lines on failure so captured Compose errors are visible even
+writer results. For image-build failures, inspect `build.log`; for startup
+failures, inspect `startup.log`. GitHub jobs print the last 80 lines of each
+existing log on failure so captured Compose errors are visible even
 when the managed check response contains only an exit status. An early HTTP failure no longer
 prevents native startup diagnostics from being collected. An exit status and a
 missing native artifact alone do not identify the startup cause; use the captured
@@ -132,11 +133,24 @@ runner tests cover both transport attempts, the first failure status, teardown,
 and stopping later profiles after the failed profile. Cleanup cases group the
 HTTP status, failing transport, and expected status into one parametrized tuple
 to retain every failure combination within the strict lint argument limit.
+All six cleanup cases invoke the mocked runner and assert the first failure status,
+both transport startup logs, and teardown and leak-check attempts for both transports.
 These tests run in the normal non-integration suite without external programs.
+The workflow's policy job selects compatible Python and Airflow matrices without
+starting services. Fast diagnostics checks identify the five service jobs
+(`core-http`, `core-native`, `auth`, `fault`, and `stress`) by their job IDs,
+independently of policy preparation and job order. Missing service jobs fail
+explicitly; additional metadata jobs do not require service diagnostics.
+Every service job must report both captured build and startup logs on failure,
+check that each file exists before printing its bounded tail, and always upload
+each diagnostic artifact with missing files treated as an error.
 The startup-diagnostics workflow guard checks all integration execution jobs and
 requires the core HTTP/native, auth, fault, and stress suites. Separate policy
 jobs may be added without changing the suite count; missing startup reports in
-execution jobs still fail fast CI.
+execution jobs still fail fast CI. Removing either log pattern independently
+fails the service-free regression checks for every named service job and for
+additional integration execution jobs.
+
 Batch diagnostics tests synchronize fake connection failures before asserting
 that both running queries failed. A separate sequential case verifies that an
 unstarted query remains cancelled with zero attempts and that the original
@@ -174,11 +188,14 @@ frontends for the native wire protocol, including hostname-verification
 failures. Completion requires no toolkit tables, labelled
 queries, MinIO stage objects, project containers, networks, or volumes.
 
-The auth and fault CI jobs install `integration/requirements-auth.txt` without
-the optional agent MCP dependency set. Airflow's pinned constraints own that
-environment; keeping MCP SDK and its HTTP client requirements out prevents the
-test bootstrap from downgrading one dependency set to satisfy the other. The
-jobs still run `pip check` before starting services.
+The integration workflow derives interpreters from core support, native transport
+support, and pinned dependency compatibility. Authentication keeps both Airflow
+majors wherever their pinned releases overlap; retired cases are reported. The
+auth and fault jobs render their committed requirement file for the selected
+interpreter, including the matching versioned Airflow 2 constraint URL. The local
+Python 3.11 constraint remains unchanged. These jobs omit the optional agent MCP
+dependency set and run `pip check` before starting services. If no pinned release
+can cover required scenarios, validation requires a compatible dependency upgrade.
 
 Normal commit completion waits only for required fast CI; advisory integration
 jobs continue independently. Release readiness reruns and requires the

@@ -18,6 +18,7 @@ Generated from package version bumps and recent commit history.
 - Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
 - Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
+- Support seven rolling Python minors with continued extension, validated extra and combined [all] ranges, automated update PRs, and Airflow 3 compatibility; retain the named-service-job diagnostics regression repair and the evidenced Python-support formatting correction.
 - Build disposable integration MinIO services from the existing pinned upstream release commits to avoid denied container pulls; retain S3 setup and cleanup and add fast service-free configuration regression guards.
 - Fix SQL integration fault actions to include the enabled Greenplum Compose profile while retaining the project-service guard, and reactivate loopback connection settings before auth cleanup to invalidate cached Airflow aliases. Add service-free Python regressions for both failures.
 

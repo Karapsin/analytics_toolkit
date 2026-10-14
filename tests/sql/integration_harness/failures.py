@@ -132,6 +132,116 @@ def test_failed_startup_still_creates_both_transport_logs_and_tears_down(
     assert all(command[-3:] == ["down", "--volumes", "--remove-orphans"] for command in teardown)
 
 
+_SERVICE_JOB_IDS = ("core-http", "core-native", "auth", "fault", "stress")
+
+
+def _workflow_jobs(workflow: str) -> dict[str, str]:
+    blocks = re.split(r"(?m)^  ([a-z][a-z0-9_-]*):\n", workflow.split("\njobs:\n", 1)[1])
+    return {blocks[index]: blocks[index + 1] for index in range(1, len(blocks), 2)}
+
+
+def _assert_service_diagnostics(workflow: str) -> None:
+    jobs = _workflow_jobs(workflow)
+    for name in _SERVICE_JOB_IDS:
+        assert name in jobs, f"missing service job: {name}"
+        job = jobs[name]
+        reports = job.split("- name: Report captured startup diagnostics\n", 1)
+        assert len(reports) == 2, name
+        report = reports[1].split("      - name:", 1)[0]
+        assert "if: failure()" in report, name
+        assert "for log in .integration-artifacts/*/*/build.log " in report, name
+        assert ".integration-artifacts/*/*/startup.log; do" in report, name
+        assert 'if [ -f "$log" ]; then' in report, name
+        assert 'tail -n 80 "$log"' in report, name
+        uploads = [
+            step for step in job.split("      - name:") if "uses: actions/upload-artifact@" in step
+        ]
+        profile, _, driver = name.partition("-")
+        drivers = (driver,) if driver else ("http", "native")
+        for transport in drivers:
+            path = f"path: .integration-artifacts/{profile}/{transport}\n"
+            assert any(path in upload for upload in uploads), name
+        for upload in uploads:
+            assert "if: always()" in upload, name
+            assert "path: .integration-artifacts/" in upload, name
+            assert "if-no-files-found: error" in upload, name
+
+
+def test_policy_only_jobs_do_not_require_service_diagnostics() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    policy = _workflow_jobs(workflow)["policy"]
+    assert "Report captured startup diagnostics" not in policy
+    workflow += "\n  additional-policy:\n" + policy
+    _assert_integration_startup_reports(workflow)
+
+
+def test_reordered_jobs_do_not_change_service_diagnostics() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    jobs = _workflow_jobs(workflow)
+    reordered = workflow.split("\njobs:\n", 1)[0] + "\njobs:\n"
+    reordered += "".join(f"  {name}:\n{body.rstrip()}\n\n" for name, body in reversed(jobs.items()))
+    _assert_integration_startup_reports(reordered)
+
+
+@pytest.mark.parametrize("job_id", _SERVICE_JOB_IDS)
+def test_missing_service_jobs_are_rejected(job_id: str) -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    job = _workflow_jobs(workflow)[job_id]
+    broken = workflow.replace(f"  {job_id}:\n{job}", "", 1)
+    with pytest.raises(AssertionError, match=f"missing service job: {job_id}"):
+        _assert_service_diagnostics(broken)
+
+
+@pytest.mark.parametrize("job_id", _SERVICE_JOB_IDS)
+@pytest.mark.parametrize(
+    "required",
+    [
+        "- name: Report captured startup diagnostics",
+        "if: failure()",
+        ".integration-artifacts/*/*/build.log",
+        ".integration-artifacts/*/*/startup.log",
+        'if [ -f "$log" ]; then',
+        'tail -n 80 "$log"',
+        "if: always()",
+        "path: .integration-artifacts/",
+        "if-no-files-found: error",
+    ],
+)
+def test_missing_service_diagnostics_are_rejected(job_id: str, required: str) -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    job = _workflow_jobs(workflow)[job_id]
+    broken = job.replace(required, "removed diagnostic requirement", 1)
+    assert broken != job
+    for guard in (_assert_service_diagnostics, _assert_integration_startup_reports):
+        with pytest.raises(AssertionError, match=job_id):
+            guard(workflow.replace(job, broken, 1))
+
+
+@pytest.mark.parametrize(
+    ("job_id", "driver"),
+    [
+        ("core-http", "http"),
+        ("core-native", "native"),
+        ("auth", "http"),
+        ("auth", "native"),
+        ("fault", "http"),
+        ("fault", "native"),
+        ("stress", "http"),
+        ("stress", "native"),
+    ],
+)
+def test_missing_transport_artifacts_are_rejected(job_id: str, driver: str) -> None:
+    profile = job_id.partition("-")[0]
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    job = _workflow_jobs(workflow)[job_id]
+    steps = job.split("      - name:")
+    path = f"path: .integration-artifacts/{profile}/{driver}\n"
+    broken = "      - name:".join(step for step in steps if path not in step)
+    assert broken != job
+    with pytest.raises(AssertionError, match=job_id):
+        _assert_service_diagnostics(workflow.replace(job, broken, 1))
+
+
 def _assert_integration_startup_reports(workflow: str) -> None:
     sections = re.split(
         r"(?m)^  ([a-z][a-z0-9_-]*):\n",
@@ -146,15 +256,17 @@ def _assert_integration_startup_reports(workflow: str) -> None:
     }
 
     assert required <= execution_jobs.keys(), "Missing required integration suites"
+    _assert_service_diagnostics(workflow)
     for name, job in execution_jobs.items():
         assert "- name: Report captured startup diagnostics\n" in job, name
         report = job.split("- name: Report captured startup diagnostics\n", 1)[1]
         report = report.split("      - name:", 1)[0]
-        assert "if: failure()" in report
-        assert "for log in .integration-artifacts/*/*/build.log " in report
-        assert ".integration-artifacts/*/*/startup.log; do" in report
-        assert 'tail -n 80 "$log"' in report
-        assert "if-no-files-found: error" in job
+        assert "if: failure()" in report, name
+        assert "for log in .integration-artifacts/*/*/build.log " in report, name
+        assert ".integration-artifacts/*/*/startup.log; do" in report, name
+        assert 'if [ -f "$log" ]; then' in report, name
+        assert 'tail -n 80 "$log"' in report, name
+        assert "if-no-files-found: error" in job, name
 
 
 def test_every_integration_job_reports_captured_startup_errors() -> None:
@@ -201,6 +313,28 @@ def test_startup_report_guard_checks_additional_execution_jobs() -> None:
 
     with pytest.raises(AssertionError, match="extra-suite"):
         _assert_integration_startup_reports(workflow)
+
+
+@pytest.mark.parametrize(
+    "required",
+    [
+        ".integration-artifacts/*/*/build.log",
+        ".integration-artifacts/*/*/startup.log",
+        'if [ -f "$log" ]; then',
+        "if: failure()",
+        'tail -n 80 "$log"',
+        "if-no-files-found: error",
+    ],
+)
+def test_additional_execution_jobs_require_both_log_reports(required: str) -> None:
+    workflow = (REPO_ROOT / ".github/workflows/sql-integration.yml").read_text(encoding="utf-8")
+    job = _workflow_jobs(workflow)["core-http"]
+    _assert_integration_startup_reports(workflow + "\n  extra-suite:\n" + job)
+    broken = job.replace(required, "removed diagnostic requirement", 1)
+    assert broken != job
+
+    with pytest.raises(AssertionError, match="extra-suite"):
+        _assert_integration_startup_reports(workflow + "\n  extra-suite:\n" + broken)
 
 
 @pytest.mark.parametrize("job_name", ["core-http", "core-native", "auth", "fault", "stress"])

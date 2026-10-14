@@ -1,0 +1,4 @@
+apache-airflow==3.3.2
+playwright==1.54.0
+pytest-timeout>=2.4,<3
+s3fs==2025.2.0

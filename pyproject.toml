@@ -7,7 +7,7 @@ name = "analytics-toolkit"
 version = "1.3.12.5"
 description = "Shared Python utilities for SQL, Excel, dates, and DataLens dashboards."
 readme = "README.md"
-requires-python = ">=3.8,<3.15"
+requires-python = ">=3.9,<3.16"
 license = { file = "LICENSE" }
 authors = [
   { name = "analytics_toolkit contributors" },
@@ -25,13 +25,13 @@ classifiers = [
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Topic :: Database",
   "Topic :: Office/Business",
   "Topic :: Scientific/Engineering :: Information Analysis",
@@ -40,18 +40,18 @@ dependencies = [
   "clickhouse-connect>=0.5.14,<1",
   "fsspec>=2024.2",
   "lz4>=4.3.2,<5",
-  "numpy>=1.24.2,<2",
+  "numpy>=1.24.2,<3",
   "openpyxl>=3.1.1,<4",
   "orjson>=3.8.7,<4",
-  "pandas>=1.4.4,<3",
+  "pandas>=1.4.4,<4",
   "psycopg2-binary>=2.9.5,<3",
-  "pyarrow>=14,<23",
+  "pyarrow>=14,<27",
   "python-dateutil>=2.8.2,<3",
   "pytz>=2022.7",
   "requests>=2.28.2,<3",
   "s3fs>=2024.2",
   "scipy>=1.10.1,<2",
-  "sqlglot>=26.33,<31",
+  "sqlglot>=30.22,<31",
   "sqlparse>=0.4.3,<1",
   "tqdm>=4.65.0,<5",
   "trino>=0.320,<1",
@@ -59,10 +59,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-airflow = ["apache-airflow>=2.4,<3"]
+airflow = ["apache-airflow>=2.4,<4"]
 clickhouse-native = [
-  "clickhouse-driver>=0.2.9,<0.2.10; python_version == '3.8'",
-  "clickhouse-driver>=0.2.10,<1; python_version >= '3.9'",
+  "clickhouse-driver>=0.2.10,<1",
 ]
 tui = [
   "pyperclip>=1.11,<2",
@@ -75,9 +74,8 @@ tui = [
 ]
 datalens = ["datalens-sdk==3.2.0; python_version >= '3.10'"]
 all = [
-  "apache-airflow>=2.4,<3",
-  "clickhouse-driver>=0.2.9,<0.2.10; python_version == '3.8'",
-  "clickhouse-driver>=0.2.10,<1; python_version >= '3.9'",
+  "apache-airflow>=2.4,<4",
+  "clickhouse-driver>=0.2.10,<1",
   "pyperclip>=1.11,<2",
   "textual>=0.73,<0.74; python_version < '3.13'",
   "textual[syntax]>=0.89.1,<0.90; python_version >= '3.13'",
@@ -108,6 +106,7 @@ include = ["analytics_toolkit*", "atk"]
 "analytics_toolkit.datalens_utils" = ["bootstrap_assets/*.sh", "bootstrap_assets/*.ps1"]
 
 [tool.ruff]
+# Keep the existing syntax/formatting baseline; runtime support is owned by the policy.
 target-version = "py38"
 line-length = 100
 src = ["analytics_toolkit", "atk", "tests", "agent_tools", "release_routines"]
@@ -145,7 +144,7 @@ ignore = [
 "tests/**/*.py" = ["ARG", "FBT", "PLR2004", "S", "SLF001"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 strict = true
 pretty = true
 show_error_codes = true
@@ -176,7 +175,7 @@ module = [
 ]
 ignore_missing_imports = true
 
-# The optional SDK requires Python 3.10; mypy checks our public Python 3.8 floor.
+# The optional SDK requires Python 3.10; mypy checks the configured public floor.
 [[tool.mypy.overrides]]
 module = ["datalens_sdk.*"]
 follow_imports = "skip"

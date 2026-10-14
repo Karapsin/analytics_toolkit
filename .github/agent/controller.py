@@ -13,12 +13,14 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal, overload
+from types import SimpleNamespace
 from urllib.parse import quote
 
 REVIEW = "agent-review"
 WRITER = "agent:writing"
 STATE_TITLE = "GitHub agent integration monitor"
 REPAIR_BRANCH = "codex/integration-repair-"
+PYTHON_BRANCH = "codex/python-support-"
 SHA = re.compile(r"[0-9a-f]{40}")
 IDENTITIES: dict[tuple[str, str, str], bool] = {}
 MODULES: dict[str, Any] = {}
@@ -40,14 +42,18 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
     body = pr.get("body") or ""
     head = pr["head"]["sha"]
     if proto.MARKER not in body and pr["user"].get("type") == "Bot":
+        if pr["head"].get("ref", "").startswith(PYTHON_BRANCH):
+            raise ValueError("Python support proposals require signed task context.")
         # Older App repairs inherit the already-authorized standing repair task.
         # The immutable signed head is part of this legacy task identity.
         value = proto.repair_context(head, "legacy-repair:" + head)
         actor = value["producer_id"]
     else:
         value = proto.parse(body)
-        if value["source"] == "standing-integration-repair" and pr["user"].get("type") != "Bot":
+        if value["source"] in {"standing-integration-repair", "standing-python-support"} and pr["user"].get("type") != "Bot":
             raise ValueError("Only the trusted App can inherit the standing repair authority.")
+        if value["source"] == "standing-python-support" and not pr["head"]["ref"].startswith(PYTHON_BRANCH):
+            raise ValueError("Python support authority requires a dedicated proposal branch.")
         directory = os.environ.get("AGENT_CONTROL_DIR")
         if not directory:
             raise RuntimeError("Trusted signature checkout is unavailable.")
@@ -171,7 +177,7 @@ def trusted(pr: dict[str, Any], repository: str) -> bool:
     app = os.environ.get("AGENT_APP_SLUG", "analytics-toolkit-agent-717959") + "[bot]"
     own = author.get("type") == "User" and author.get("login", "").casefold() == owner.casefold()
     repair = (author.get("type") == "Bot" and author.get("login") == app
-              and pr["head"].get("ref", "").startswith(REPAIR_BRANCH))
+              and pr["head"].get("ref", "").startswith((REPAIR_BRANCH, PYTHON_BRANCH)))
     return (not pr["draft"] and pr["base"]["ref"] == "dev" and
             pr["head"].get("repo") is not None and
             pr["head"]["repo"]["full_name"] == repository and pr["state"] == "open"
@@ -206,6 +212,10 @@ def policy_path(path: str) -> bool:
     return (path.startswith((".github/agent/", ".codex/")) or path in {
         ".github/workflows/github-agent.yml", ".github/workflows/agent-dispatch.yml",
         ".github/workflows/agent-visual.yml", ".github/workflows/publish.yml",
+        ".github/workflows/python-support.yml",
+        "release_routines/lib/python_support.py",
+        "release_routines/lib/project_metadata.py",
+        "release_routines/lib/check_readme_dependencies.py",
         ".github/required-workflows.json", "agent_tools/machine_signing.py"})
 
 
@@ -310,6 +320,7 @@ def save_monitor(gh: GitHub, state: dict[str, Any]) -> None:
     unresolved = {key: value for key, value in state["runs"].items() if value.get("needs")}
     body = json.dumps({"started": state["started"], "tracked_runs": len(state["runs"]),
                        "outstanding_failures": len(unresolved),
+                       "python_support": state.get("python_support", {}),
                        "runs": dict(list(unresolved.items())[-15:])}, indent=2)
     if body != state.get("published"):
         gh.api(f"issues/{state['issue']}", "PATCH", {"body": body[:60000]})
@@ -435,6 +446,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
     _resolve_runs(gh, state)
     base = gh.base()
     pulls = gh.pulls()
+    trusted_module("python_support").tick(SimpleNamespace(command=command, trusted_module=trusted_module, signing_options=signing_options, dispatch=dispatch), gh, state, base, pulls)
     tasks = []
     for pr in sorted(pulls, key=lambda item: item["number"]):
         if not trusted(pr, gh.repository):
@@ -444,7 +456,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
             permission = gh.api(f"collaborators/{author['login']}/permission")["permission"]
             if permission not in {"admin", "write", "maintain"}:
                 continue
-        elif not (pr["head"]["ref"].startswith(REPAIR_BRANCH)
+        elif not (pr["head"]["ref"].startswith((REPAIR_BRANCH, PYTHON_BRANCH))
                   or trusted_module("review_control").enrolled_feature(gh.repository, pr["head"]["ref"])):
             continue
         pr = gh.pull(pr["number"])

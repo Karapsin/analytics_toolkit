@@ -96,7 +96,7 @@ def test_sql_function_signature_check_reports_missing_export_and_malformed_block
 def test_repository_minimum_constraints_match_runtime_dependencies() -> None:
     project = load_project(REPO_ROOT / "pyproject.toml")
     dependencies = [str(requirement) for requirement in project["dependencies"]]
-    constraints = (REPO_ROOT / "constraints" / "py38-min.txt").read_text(encoding="utf-8")
+    constraints = (REPO_ROOT / "constraints" / "python-min.txt").read_text(encoding="utf-8")
 
     assert validate_minimum_constraints(dependencies, constraints) == []
 
@@ -104,19 +104,20 @@ def test_repository_minimum_constraints_match_runtime_dependencies() -> None:
 def test_github_test_matrix_installs_optional_tui_dependencies() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
 
-    assert workflow.count("-e '.[tui,datalens]'") == 2
+    assert "python_support_install" in workflow
+    assert "extras:" in workflow
 
 
 def test_auth_integration_jobs_keep_mcp_out_of_airflow_environment() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "sql-integration.yml").read_text(
         encoding="utf-8"
     )
-    auth_and_fault = workflow.split("  auth:", 1)[1].split("  stress:", 1)[0]
+    auth_and_fault = workflow.split("\n  auth:\n", 1)[1].split("\n  stress:\n", 1)[0]
     auth_requirements = (REPO_ROOT / "integration" / "requirements-auth.txt").read_text(
         encoding="utf-8"
     )
 
-    assert "integration/requirements-auth.txt" in auth_and_fault
+    assert "python_support_integration --requirements" in auth_and_fault
     assert "agent_tools/requirements-mcp.txt" not in auth_and_fault
     assert "python -m pip check" in auth_and_fault
     assert "pytest-timeout>=2.4,<3" in auth_requirements

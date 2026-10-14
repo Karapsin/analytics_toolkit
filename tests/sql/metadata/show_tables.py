@@ -519,6 +519,7 @@ def test_show_tables_formats_byte_counts(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert calls
     assert result["row_count"].tolist() == [0, 1000, None, None]
+    assert result["table_size"].dtype == object
     assert result["table_size"].tolist() == [
         "0 B",
         "1.00 KiB",

@@ -63,6 +63,15 @@
           "reason": "Advisory immutable PR candidates are queued before merge and after conflicts or repair fixes; manual release validation remains available."
         },
         {
+          "name": "python-support",
+          "path": ".github/workflows/python-support.yml",
+          "classification": "python_support_readiness",
+          "events": [
+            "workflow_dispatch"
+          ],
+          "reason": "Read-only exact-SHA probes establish newest-minor core and extra readiness for reviewed support-window proposals."
+        },
+        {
           "name": "wiki-sync",
           "path": ".github/workflows/wiki-sync.yml",
           "classification": "main_only_publish",

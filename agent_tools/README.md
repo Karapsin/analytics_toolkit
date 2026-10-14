@@ -190,7 +190,7 @@ external database endpoints.
 
 Managed pre-commit checks run as separate static, coverage, artifact, and Python
 matrix commands, stopping before downstream work when a stage fails. Coverage
-is the canonical Python 3.11 test run; the remaining Python 3.8 through 3.14
+runs on the middle supported Python minor; the remaining policy-derived
 matrix omits that duplicate and defaults to three parallel tox workers. Set
 `PRECOMMIT_PARALLELISM` to a positive integer to tune it. Artifact installs use
 fresh virtual environments with a shared `.tox/pip-cache` download cache.
@@ -276,9 +276,13 @@ Questions during coding pause work and return through the same exchange. The Pi
 runs no repository checks, builds or renders; GitHub performs validation and a fresh
 independent agent reviews the final PR.
 
-The agent-only validation environment constrains `virtualenv>=21.1,<21.5` so
-the required Python 3.8 matrix remains runnable. Project setup resolves this
-constraint together with tox; it does not change public package dependencies.
+The agent-only validation environment uses `virtualenv>=21.1,<22` together with
+tox. Python 3.8 is retired. The support policy generates interpreter requirements
+and test environments; see [Python support](../docs/PYTHON_SUPPORT.md). The trusted
+controller proposes signed updates and dispatches read-only newest-minor probes
+through `python-support.yml`. Each proposal retains independent review and fast CI.
+Deploy the approved controller, probe workflow, dispatch bridge, task-context
+protocol and trusted policy helpers together; do not activate a partial deployment.
 
 ## User documentation wiki exporter
 

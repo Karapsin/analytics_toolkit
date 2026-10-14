@@ -60,9 +60,26 @@ pyenv_python() {
   printf '%s\n' "${python_path}"
 }
 
+resolve_python_minor() {
+  local version="$1"
+  local installed_version
+  if command -v "python${version}" >/dev/null 2>&1; then
+    command -v "python${version}"
+    return
+  fi
+  if command -v pyenv >/dev/null 2>&1 && installed_version="$(pyenv latest "${version}" 2>/dev/null)"; then
+    pyenv_python "${installed_version}"
+    return
+  fi
+  if [ -x "${repo_root}/.venv/bin/uv" ]; then
+    "${repo_root}/.venv/bin/uv" python find --no-project --no-python-downloads "${version}"
+    return
+  fi
+  printf 'Required Python minor is not installed: %s; install it or set PYTHON%s.\n' "${version}" "${version//./}" >&2
+  return 1
+}
+
 export PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache
-# pip 25.0.1 is the final virtualenv seed line that supports Python 3.8.
-export VIRTUALENV_PIP=25.0.1
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${repo_root}/.tox/pip-cache}"
 
 run_static_gate() {
@@ -74,48 +91,58 @@ run_static_gate() {
   run_stage package-metadata "${script_dir}/scripts/check_package_metadata.sh" || static_status=1
   run_stage readme-dependencies "${script_dir}/scripts/check_readme_dependencies.sh" || static_status=1
   run_stage minimum-constraints python -m release_routines.lib.check_minimum_constraints || static_status=1
+  run_stage python-support python -m release_routines.lib.python_support check || static_status=1
   run_stage docs-coverage "${script_dir}/scripts/check_docs_coverage.sh" || static_status=1
   run_stage docs-links "${script_dir}/scripts/check_docs_links.sh" || static_status=1
   run_stage compileall python -m compileall analytics_toolkit atk tests || compile_status=1
   [ "${compile_status}" -eq 0 ] || static_status=1
+  configure_python_matrix
   run_stage tox-static tox -e lint,type || static_status=1
   return "${static_status}"
 }
 
 configure_python_matrix() {
-  require_command pyenv
-  export PYTHON38
-  export PYTHON39
-  export PYTHON310
-  export PYTHON311
-  export PYTHON312
-  export PYTHON313
-  export PYTHON314
-
-  PYTHON38="$(pyenv_python 3.8.18)"
-  PYTHON39="$(pyenv_python 3.9.25)"
-  PYTHON310="$(pyenv_python 3.10.20)"
-  PYTHON311="$(pyenv_python 3.11.15)"
-  PYTHON312="$(pyenv_python 3.12.13)"
-  PYTHON313="$(pyenv_python 3.13.13)"
-  PYTHON314="$(pyenv_python 3.14.5)"
+  local version
+  local variable_name
+  local python_path
+  local selected_versions
+  if [ "${1:-all}" = "coverage" ]; then
+    selected_versions="$(python -m release_routines.lib.python_support coverage-pythons)"
+  else
+    selected_versions="$(python -c 'from pathlib import Path; from release_routines.lib.python_support import load_policy, versions; print(" ".join(versions(load_policy(Path.cwd()))))')"
+  fi
+  for version in ${selected_versions}; do
+    variable_name="PYTHON${version//./}"
+    python_path="${!variable_name:-}"
+    if [ -z "${python_path}" ]; then
+      python_path="$(resolve_python_minor "${version}")"
+    fi
+    export "${variable_name}=${python_path}"
+  done
 }
 
-configure_python311() {
-  require_command pyenv
-  export PYTHON311
-  PYTHON311="$(pyenv_python 3.11.15)"
+configure_canonical_python() {
+  local version
+  local variable_name
+  local python_path
+  version="$(python -m release_routines.lib.python_support coverage)"
+  variable_name="PYTHON${version//./}"
+  python_path="${!variable_name:-}"
+  if [ -z "${python_path}" ]; then
+    python_path="$(resolve_python_minor "${version}")"
+  fi
+  export "${variable_name}=${python_path}"
 }
 
 run_coverage_gate() {
   require_command tox
-  configure_python311
+  configure_python_matrix coverage
   run_stage tox-coverage tox -e coverage
 }
 
 run_artifact_gate() {
   require_command tox
-  configure_python311
+  configure_canonical_python
   run_stage tox-artifacts tox -e artifacts
 }
 
@@ -128,7 +155,7 @@ run_matrix_gate() {
     return 2
   fi
   configure_python_matrix
-  run_stage tox-matrix tox run-parallel -p "${parallelism}" -e py38-latest,py38-min,py39-latest,py310-latest,py310-sdk31,py310-sdk32,py312-latest,py313-latest,py314-latest
+  run_stage tox-matrix tox run-parallel -p "${parallelism}" -e "$(python -m release_routines.lib.python_support local-matrix)"
 }
 
 run_quick_gate() {

@@ -71,13 +71,7 @@ def test_real_airflow_connection_source_routes_all_backends(
     monkeypatch: pytest.MonkeyPatch,
     write_sql_connections: Callable[[dict[str, object]], Path],
 ) -> None:
-    import airflow.models  # noqa: PLC0415 - initialize all ORM models.
-    from airflow.hooks.base import BaseHook  # noqa: PLC0415 - auth-profile dependency.
-    from airflow.secrets.environment_variables import (  # noqa: PLC0415
-        EnvironmentVariablesBackend,
-    )
-
-    airflow.models.import_all_models()
+    _use_airflow_environment_backend(monkeypatch)
     include_greenplum = os.environ.get("SQL_INTEGRATION_GP") == "1"
     uris = _airflow_connection_uris(
         clickhouse_driver=os.environ.get("SQL_INTEGRATION_CLICKHOUSE_DRIVER", "http"),
@@ -86,18 +80,71 @@ def test_real_airflow_connection_source_routes_all_backends(
     aliases = {alias: {"type": alias.split("_", 1)[1]} for alias in uris}
     for alias, uri in uris.items():
         monkeypatch.setenv(f"AIRFLOW_CONN_{alias.upper()}", uri)
-    environment_backend = EnvironmentVariablesBackend()
-    monkeypatch.setattr(
-        BaseHook,
-        "get_connection",
-        staticmethod(environment_backend.get_connection),
-    )
     write_sql_connections({"source": "airflow", "connections": aliases})
 
     results = sql.validate_connections(list(aliases), connect=True)
     assert all(result.valid and result.connected for result in results), [
         (result.connection_key, result.valid, result.connected, result.error) for result in results
     ]
+
+
+def _use_airflow_environment_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    import airflow  # noqa: PLC0415 - auth-profile dependency.
+    from airflow.secrets.environment_variables import (  # noqa: PLC0415
+        EnvironmentVariablesBackend,
+    )
+
+    backend = EnvironmentVariablesBackend()
+    if airflow.__version__.startswith("3."):
+        from airflow.sdk.execution_time import supervisor  # noqa: PLC0415
+
+        # Keep the real SDK lookup and models, but isolate its secrets boundary
+        # from the execution API/metastore. All SQL endpoints remain disposable.
+        monkeypatch.setattr(supervisor, "ensure_secrets_backend_loaded", lambda: [backend])
+    else:
+        import airflow.models  # noqa: PLC0415
+        from airflow.hooks.base import BaseHook  # noqa: PLC0415
+
+        airflow.models.import_all_models()
+        monkeypatch.setattr(BaseHook, "get_connection", staticmethod(backend.get_connection))
+
+
+@pytest.mark.sql_scenario("auth.airflow.variables")
+def test_real_airflow_variables_and_certificate_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+) -> None:
+    from analytics_toolkit.sql.connection.config import get_connection_config  # noqa: PLC0415
+    from analytics_toolkit.sql.connection.get_sql_connection import (  # noqa: PLC0415
+        _resolve_ch_ca_certs,
+    )
+
+    _use_airflow_environment_backend(monkeypatch)
+    monkeypatch.setenv("AIRFLOW_VAR_ATK_INTEGRATION_HOST", "127.0.0.1")
+    certificate = Path(os.environ["SQL_INTEGRATION_CERTS"]) / "server.crt"
+    monkeypatch.setenv("AIRFLOW_VAR_ATK_INTEGRATION_CERT", str(certificate))
+    write_sql_connections(
+        {
+            "variable_ch": {
+                "type": "ch",
+                "host": {"from": "airflow_variable", "key": "atk_integration_host"},
+                "port": 18123,
+                "user": "integration",
+                "password": "integration",
+                "database": "integration",
+                "ca_certs_variable": "atk_integration_cert",
+            },
+        }
+    )
+    config = get_connection_config("variable_ch")
+    assert config.host == "127.0.0.1"
+    resolved = _resolve_ch_ca_certs(config)
+    assert resolved is not None
+    assert (
+        Path(resolved).read_text(encoding="utf-8").strip()
+        == certificate.read_text(encoding="utf-8").strip()
+    )
+    assert int(sql.read("variable_ch", "SELECT 1 AS value").iloc[0, 0]) == 1
 
 
 @pytest.mark.sql_scenario("auth.trino.oauth")

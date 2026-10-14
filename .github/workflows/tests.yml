@@ -10,9 +10,35 @@ permissions:
   contents: read
 
 jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      tests: ${{ steps.policy.outputs.tests }}
+      extras: ${{ steps.policy.outputs.extras }}
+      coverage: ${{ steps.policy.outputs.coverage }}
+      sdk: ${{ steps.policy.outputs.sdk }}
+      airflow: ${{ steps.policy.outputs.airflow }}
+      tools: ${{ steps.policy.outputs.tools }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - id: policy
+        run: |
+          python -m release_routines.lib.python_support check
+          echo "tests=$(python -m release_routines.lib.python_support matrix)" >> "$GITHUB_OUTPUT"
+          echo "extras=$(python -m release_routines.lib.python_support extras)" >> "$GITHUB_OUTPUT"
+          echo "coverage=$(python -m release_routines.lib.python_support coverage)" >> "$GITHUB_OUTPUT"
+          echo "sdk=$(python -m release_routines.lib.python_support sdk)" >> "$GITHUB_OUTPUT"
+          echo "airflow=$(python -m release_routines.lib.python_support airflow)" >> "$GITHUB_OUTPUT"
+          echo 'tools<<PYTHONS' >> "$GITHUB_OUTPUT"
+          python -m release_routines.lib.python_support tool-pythons >> "$GITHUB_OUTPUT"
+          echo 'PYTHONS' >> "$GITHUB_OUTPUT"
+
   fast-checks:
     name: fast-checks
-    needs: [tests, sdk-conformance, quality]
+    needs: [matrix, tests, extras, airflow-compatibility, sdk-conformance, quality]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -22,102 +48,116 @@ jobs:
         run: |
           python - <<'PY'
           import json, os
-          assert all(job["result"] == "success" for job in json.loads(os.environ["RESULTS"]).values())
+          results = json.loads(os.environ["RESULTS"])
+          assert all(
+              job["result"] == "success" or (
+                  name == "airflow-compatibility" and job["result"] == "skipped"
+                  and results["matrix"]["outputs"]["airflow"] == '{"include": []}'
+              )
+              for name, job in results.items()
+          )
           PY
 
   tests:
     name: ${{ matrix.env_name }}
+    needs: matrix
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - python-version: "3.8"
-            env_name: py38-latest
-          - python-version: "3.9"
-            env_name: py39-latest
-          - python-version: "3.10"
-            env_name: py310-latest
-          - python-version: "3.11"
-            env_name: py311-latest
-          - python-version: "3.12"
-            env_name: py312-latest
-          - python-version: "3.13"
-            env_name: py313-latest
-          - python-version: "3.14"
-            env_name: py314-latest
-          - python-version: "3.8"
-            env_name: py38-min
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-      - name: Install latest test environment
-        if: matrix.env_name != 'py38-min'
-        run: python -m pip install -e '.[tui,datalens]' pytest
-
-      - name: Install minimum Python 3.8 test environment
-        if: matrix.env_name == 'py38-min'
-        run: python -m pip install -c constraints/py38-min.txt -e '.[tui,datalens]' pytest==8.3.5
-
-      - name: Validate minimum dependency constraints
-        if: matrix.env_name == 'py38-min'
-        run: |
-          python -m release_routines.lib.check_minimum_constraints
-          python -m pip check
-
-      - name: Compile package and tests
-        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
-
-      - name: Run tests
-        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q
-
-      - name: Freeze environment
-        if: always()
-        run: python -m pip freeze
-
-  sdk-conformance:
-    name: ${{ matrix.env_name }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        env_name: [py310-sdk31, py310-sdk32]
+      matrix: ${{ fromJSON(needs.matrix.outputs.tests) }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
           cache: pip
-      - run: python -m pip install "tox>=4,<5"
-      - run: tox -e ${{ matrix.env_name }}
+      - run: python -m pip install --upgrade pip
+      - name: Install supported test extras
+        run: |
+          if [[ '${{ matrix.env_name }}' == *-min ]]; then
+            python -m pip install -c constraints/python-min.txt pytest==8.3.5
+            python -m release_routines.lib.python_support_install min
+            python -m release_routines.lib.check_minimum_constraints
+          else
+            python -m pip install pytest
+            python -m release_routines.lib.python_support_install latest
+          fi
+          python -m pip check
+      - run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit atk tests
+      - run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m release_routines.lib.python_support_test
+      - run: python -m pip freeze
+        if: always()
+
+  extras:
+    name: Python ${{ matrix.python-version }} extra ${{ matrix.extra }}
+    needs: matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.extras) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[${{ matrix.extra }}]' pytest
+      - run: python -m pip check
+      - run: python -m release_routines.lib.python_support_probe '${{ matrix.extra }}'
+
+  airflow-compatibility:
+    name: Airflow ${{ matrix.airflow }} on Python ${{ matrix.python }}
+    needs: matrix
+    if: >-
+      ${{ needs.matrix.outputs.airflow != '{"include": []}' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.airflow) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - name: Install the release's upstream constrained dependencies
+        run: |
+          python -m pip install 'apache-airflow==${{ matrix.airflow }}' -c 'https://raw.githubusercontent.com/apache/airflow/constraints-${{ matrix.airflow }}/constraints-${{ matrix.python }}.txt'
+          python -m pip install -e '.[airflow]' 'apache-airflow==${{ matrix.airflow }}' pytest
+      - run: python -m pip check
+      - run: python -m release_routines.lib.python_support_probe airflow
+
+  sdk-conformance:
+    name: DataLens SDK ${{ matrix.sdk }}
+    needs: matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ['31', '32']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ needs.matrix.outputs.sdk }}
+          cache: pip
+      - run: python -m pip install 'tox>=4,<5'
+      - run: tox -e "py${SDK_PYTHON//./}-sdk${SDK_VERSION}"
+        env:
+          SDK_PYTHON: ${{ needs.matrix.outputs.sdk }}
+          SDK_VERSION: ${{ matrix.sdk }}
 
   quality:
     name: quality gates
+    needs: matrix
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: ${{ needs.matrix.outputs.tools }}
           cache: pip
-
-      - name: Install tox
-        run: python -m pip install --upgrade "tox>=4,<5"
-
-      - name: Run lint, type, coverage, and artifact gates
-        run: tox -e lint,type,coverage,artifacts
+      - run: python -m pip install --upgrade 'tox>=4,<5'
+      - run: tox -e lint,type,coverage,artifacts

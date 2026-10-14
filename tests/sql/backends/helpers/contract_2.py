@@ -31,6 +31,7 @@ def test_gp_insert_normalization_and_dataframe_delegation(
     normalized = gp_insert.normalize_insert_batch(object(), batch)
     assert normalized.iloc[0].tolist() == [1.0, "x", str(uuid_value)]
     assert normalized.iloc[1].tolist() == [None, None, None]
+    assert normalized["uuid_value"].dtype == object
     assert gp_insert.normalize_insert_rows(object(), [[pd.NA, uuid_value]]) == [
         (None, str(uuid_value))
     ]

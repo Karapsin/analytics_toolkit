@@ -8,6 +8,8 @@
 - [Modules documentation](modules/README.md)
 - [Changelog](CHANGELOG.md)
 
+- [Python and optional-extra support](PYTHON_SUPPORT.md)
+
 ## Agent workflows
 
 - [GitHub wiki synchronization](WIKI_SYNC.md)

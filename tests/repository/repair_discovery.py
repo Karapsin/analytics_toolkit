@@ -50,6 +50,7 @@ def _discovery_with_inventory_failure(
     status: int,
 ) -> tuple[Any, ...]:
     monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(controller.trusted_module("python_support"), "tick", lambda *_args: None)
     metadata = {
         "id": 7,
         "run_attempt": 1,

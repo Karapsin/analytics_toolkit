@@ -212,7 +212,8 @@ repository safety rules and must not access databases or read `.connections`.
 
 ## Project Overview
 
-`analytics_toolkit` is a Python `>=3.8,<3.15` utility package with six public
+`analytics_toolkit` uses the rolling Python support policy in
+`release_routines/python_support.json` and is a utility package with six public
 areas:
 
 - `analytics_toolkit.ab_utils`: AB-test metric comparison helpers.
@@ -303,6 +304,10 @@ specific documentation update that would make future RAG retrieval unambiguous.
 - Owner exact-head `/agent approve-policy <sha>` approval is retained for
   `.github/agent/`, `.codex/`, the controller/dispatch/capture/publishing workflows,
   `.github/required-workflows.json` and `agent_tools/machine_signing.py`.
+  The Python-support controller's trusted generator and parser helpers
+  (`release_routines/lib/python_support.py`, `project_metadata.py`, and
+  `check_readme_dependencies.py`) are also protected because the controller
+  executes them while publishing signed proposals with write credentials.
   Ordinary instructions, tools, integration repairs and test workflows use
   independent prompt-aligned review and fast CI. Both renamed paths are checked.
   Local agents must not post owner approval. The authenticated Telegram handler

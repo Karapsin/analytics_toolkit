@@ -78,8 +78,13 @@ def test_facade_parses_on_python38():
 def test_required_sdk_version_errors():
     with patch("analytics_toolkit.datalens_utils.project.sys.version_info", (3, 8)), pytest.raises(
         DataLensDependencyError, match=r"3\.10"
-    ):
+    ) as error:
         require_sdk()
+    message = str(error.value)
+    assert "configured core Python window" in message
+    assert "docs/PYTHON_SUPPORT.md" in message
+    assert "datalens and [all] ranges" in message
+    assert "3.8" not in message
     with patch("analytics_toolkit.datalens_utils.project.sys.version_info", (3, 11)), patch(
         "analytics_toolkit.datalens_utils.project.version", return_value="3.0.0"
     ), pytest.raises(DataLensDependencyError, match=r"found 3\.0\.0"):

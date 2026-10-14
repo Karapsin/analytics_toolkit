@@ -555,6 +555,12 @@ key contents are redacted.
 
 ## Airflow-Source Connections
 
+The toolkit supports Airflow 2 and 3. Airflow 3 resolves Connections and Variables
+through the public Task SDK during task execution; Airflow 2 uses its legacy
+hook/model APIs. Both versions share the same toolkit configuration and SQL calls.
+See [Python support](../../PYTHON_SUPPORT.md) for Python and `all` extra compatibility.
+
+
 In Airflow DAGs, keep credentials in Airflow Connections and use an
 Airflow-source `.connections` file with routing metadata only:
 
