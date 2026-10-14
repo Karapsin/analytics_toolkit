@@ -3,6 +3,7 @@ from __future__ import annotations
 # ruff: noqa: EM102, I001, TRY003
 
 import json
+import os
 import subprocess
 import threading
 import time
@@ -27,6 +28,8 @@ class FaultController:
         self.include_greenplum = include_greenplum
         self.timeline: list[dict[str, Any]] = []
         self.restore_actions: list[tuple[str, str]] = []
+        self.scenario_id = os.environ.get("SQL_INTEGRATION_TEST_ID", "unknown")
+        self._written_events = 0
 
     def pause(self, service: str) -> None:
         self._act("pause", service)
@@ -40,6 +43,9 @@ class FaultController:
 
     def restart(self, service: str) -> None:
         self._act("restart", service)
+        self.restore_actions = [
+            item for item in self.restore_actions if item != ("restart", service)
+        ]
 
     def stop(self, service: str) -> None:
         self._act("stop", service)
@@ -71,9 +77,11 @@ class FaultController:
 
     def write_timeline(self) -> None:
         self.artifact_dir.mkdir(parents=True, exist_ok=True)
-        (self.artifact_dir / "fault-timeline.json").write_text(
-            json.dumps(self.timeline, indent=2), encoding="utf-8"
-        )
+        path = self.artifact_dir / "fault-timeline.json"
+        previous = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        previous.extend(self.timeline[self._written_events :])
+        path.write_text(json.dumps(previous, indent=2), encoding="utf-8")
+        self._written_events = len(self.timeline)
 
     def _act(self, action: str, service: str) -> None:
         services = self._run("config", "--services").stdout.split()
@@ -90,6 +98,7 @@ class FaultController:
         self.timeline.append(
             {
                 "timestamp_monotonic": time.monotonic(),
+                "scenario_id": self.scenario_id,
                 "action": action,
                 "service": service,
                 "ok": ok,

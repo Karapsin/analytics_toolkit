@@ -103,7 +103,13 @@ The browser login helper retries the original OAuth initiation URL up to three
 times after a navigation or login-visibility timeout. Reloading the current page
 can strand recovery on a blank or failed redirect page after a Keycloak outage.
 Service-free harness tests cover both timeout phases and preserve the final
-navigation error when all attempts fail.
+navigation error when all attempts fail. Every negative/fault OAuth browser attempt
+appends a scenario-tagged record to `oauth-browser.log`, including its operation
+phase, sanitized initiation URL, and the complete exception on failure. Passwords,
+client secrets, token values, URL credentials, query strings, and OAuth state paths
+are redacted. Browser cleanup runs after navigation, login, callback, and wait
+failures and preserves the primary exception if closing also fails. Generic
+browser failures are not retried.
 
 Every scenario uses a profile run ID and test ID in table, stage, object, and
 query-label names. The per-test registry cancels labelled queries, drops tables,
@@ -130,7 +136,12 @@ The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 `active-queries.json`, and `failed-query-details.json` below
 `.integration-artifacts/<profile>/<http|native>/`. A profile-level
 `transport-parity.json` records the collection comparison. Fault runs also write
-`fault-timeline.json`; auth runs preserve browser and authentication logs.
+`fault-timeline.json`; events retain their scenario IDs across controllers, and
+later empty scenarios preserve earlier history. Successful explicit service
+restarts discharge their pending fixture recovery action, so cleanup does not
+restart a service again after readiness checks. Failed explicit restarts retain
+fallback recovery, and other services still restore in reverse order.
+Auth runs preserve browser and authentication logs.
 Operation/retry and connection-identity reports, orchestration timelines, and
 type-normalization mismatch reports are also always present. Stress runs add
 memory samples, connection-pressure results, lock timelines, and concurrent
