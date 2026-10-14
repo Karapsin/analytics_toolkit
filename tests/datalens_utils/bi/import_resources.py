@@ -66,7 +66,7 @@ def test_dataset_import_preserves_fields_parameters_rules_settings_and_sql_asset
     source = replace(
         original.sources[0],
         source_type="CH_SUBSELECT",
-        parameters={"db_name": "example", "subsql": "SELECT category FROM sales"},
+        parameters={"subsql": "SELECT category FROM sales"},
     )
     value = replace(
         original,
@@ -206,6 +206,8 @@ def test_whole_dashboard_import_discovers_chart_dataset_connection_closure(bi_pr
     connection = Connection(id="ch", name="CH", type="clickhouse", installation="yacloud")
     client = SimpleNamespace(
         capabilities=api.client.capabilities,
+        create=api.client.create,
+        INSTALLATION=api.client.INSTALLATION,
         navigation=SimpleNamespace(get_entries=lambda **kwargs: iter(())),
         get=SimpleNamespace(
             dashboard=lambda **kwargs: dashboard,

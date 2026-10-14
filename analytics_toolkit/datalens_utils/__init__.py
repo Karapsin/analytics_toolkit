@@ -4,6 +4,7 @@ from .capabilities import get_capabilities
 from .deployment import BIProjectDeployment, TargetLocation
 from .errors import (
     DataLensCapabilityError,
+    DataLensComponentError,
     DataLensConfigurationError,
     DataLensDependencyError,
     DataLensUtilsError,
@@ -14,6 +15,7 @@ from .session import Deployment, ProjectPaths
 __all__ = [
     "BIProjectDeployment",
     "DataLensCapabilityError",
+    "DataLensComponentError",
     "DataLensConfigurationError",
     "DataLensDependencyError",
     "DataLensProject",

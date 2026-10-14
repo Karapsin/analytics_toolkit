@@ -9,7 +9,8 @@ from analytics_toolkit.datalens_utils.dashboard_generation.charts import editor,
 from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
 from analytics_toolkit.datalens_utils.settings import read_chart_definitions, read_config
 
-from tests.datalens_utils._support.sdk import configured_datasets
+from tests.datalens_utils._support.bi import dataset
+from tests.datalens_utils._support.sdk import MemoryDataLens, configured_datasets
 
 
 @pytest.mark.parametrize(
@@ -317,3 +318,57 @@ def test_wizard_replaces_owned_formula_in_saved_chart(session_state):
     wizard.configure(builder, None, datasets, definition)
     builder.replace_formula.assert_called_once_with("local", formula="1")
     assert builder.add_filter.call_args.kwargs == {"operation": "IN", "values": ["North"]}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({}, "Widget"),
+        ({"chart_title": "Internal"}, "Internal"),
+        ({"chart_title": None}, None),
+    ],
+)
+@pytest.mark.parametrize("show_title", [True, False])
+def test_wizard_builder_respects_internal_title_ownership(overrides, expected, show_title):
+    api = MemoryDataLens()
+    definition = {
+        "type": "line",
+        "name": "Trend",
+        "dataset": "sales",
+        "title": "Widget",
+        "show_title": show_title,
+        "fields": {"x": ["category"], "y": ["Amount"]},
+        **overrides,
+    }
+    try:
+        spec = wizard.create_builder(
+            SimpleNamespace(client=api.client), {"sales": dataset()}, definition, api.folder
+        ).to_spec()
+        if expected is None:
+            assert "title" not in spec.chart_settings
+            assert "titleMode" not in spec.chart_settings
+        else:
+            assert spec.chart_settings["title"] == expected
+            assert spec.chart_settings["titleMode"] == ("show" if show_title else "hide")
+        assert definition["title"] == "Widget"
+        assert not api.writes
+    finally:
+        api.client.close()
+
+
+def test_indicator_builder_retains_optional_title():
+    api = MemoryDataLens()
+    definition = {
+        "type": "indicator",
+        "name": "Amount",
+        "dataset": "sales",
+        "fields": {"y": ["Amount"]},
+    }
+    try:
+        spec = wizard.create_builder(
+            SimpleNamespace(client=api.client), {"sales": dataset()}, definition, api.folder
+        ).to_spec()
+        assert "title" not in spec.chart_settings
+        assert not api.writes
+    finally:
+        api.client.close()

@@ -262,9 +262,17 @@ class ResourceStore:
             if entity is None:
                 raise
         self.checkpoint(key, entity, scope=scope, mutation=True)
+        if scope == "dataset":
+            from analytics_toolkit.datalens_utils.dataset_identity import (  # noqa: PLC0415 - Resource lifecycle boundary.
+                check_components,
+            )
+
+            check_components(entity, key, "create")
         entity = getter(by_id=entity.id)
         self.verify_location(entity, name)
         self.checkpoint(key, entity, scope=scope)
+        if scope == "dataset":
+            check_components(entity, key, "create fetch")
         return entity
 
     def rename(self, key: Any, entity: Any, name: Any, getter: Any) -> Any:

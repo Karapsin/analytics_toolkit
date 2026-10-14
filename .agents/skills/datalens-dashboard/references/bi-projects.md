@@ -42,3 +42,16 @@ dependencies or bootstrap tools in a dashboard project.
 
 See the toolkit's public BI workflow and `examples/datalens_bi` for the complete
 configuration contract and upstream requirements for blocked operations.
+
+For copying, use `mode="copy"` (CLI `--mode copy`), a destination recipe without
+copied IDs, and a separate unused runtime. Connections are reused; datasets,
+charts and the destination dashboard get new IDs. Adopt mode is the default and
+retains location restrictions. `copy_from` prevents accidental name adoption.
+Copied Editor Meta uses managed semantic aliases while retaining unrelated authored
+content. Chart defaults are normalized onto every repeated placement.
+
+Read the public [copy-tab walkthrough](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/datalens_utils/copy-tab.md)
+and [recipe contract](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/datalens_utils/recipe-contract.md)
+for exact inputs, fidelity statuses, precedence and recovery boundaries. These
+contracts should resolve ordinary consumer work; package source is a debugging
+fallback. Match the documentation branch/version to the installed toolkit.

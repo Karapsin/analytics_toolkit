@@ -39,7 +39,14 @@ report = project.reconcile()
 the full creation/recovery workflow, verifies published metadata, exports it
 externally, and records persistent IDs. `status()` returns resource statuses.
 `pull(chart_keys=[...], branch="published")` imports remote changes with a
-three-way merge; `branch="saved"` explicitly imports a draft.
+three-way merge; `branch="saved"` explicitly imports a draft. Wizard pulls replace
+color/shape bindings, maps and palettes with the observed remote settings, including
+removals, while preserving unrelated settings. When `chart_title` is explicitly
+managed, pulls update it independently of the default widget `title`. Removing the
+remote internal title pulls as `chart_title: null`, including absent `chartSettings`.
+Definitions without `chart_title` retain the legacy title update.
+Version-2 pulls retain complete remote definitions and SQL/JS assets in the
+checkpoint baseline so subsequent pulls can merge against the same snapshot.
 `apply(chart_keys=[...])` applies affected local changes. Both also accept
 `dataset_keys=[...]` or `ui=True`; these scopes are mutually exclusive.
 `verify(full=True)` checks full published metadata and references.
@@ -138,7 +145,8 @@ existing workbook, while `workbook(key=...)` references its recipe declaration.
 Changing between these storage models is a migration blocker. Enterprise uses
 `installation="enterprise"` and `base_url`; `token_env` optionally names an
 OAuth token. YC retains existing CLI/profile authentication or uses `token_env`.
-Injected client factories remain supported.
+Injected client factories remain supported. Injected clients must provide the public
+SDK client contract, including `INSTALLATION` for source installation validation.
 
 Named connections, collections, workbooks and HTML pages live in their respective
 JSON mappings beneath `configs/DL objects/`. Existing connections are read-only
@@ -181,10 +189,28 @@ preview = project.import_tab(dashboard_id="source-dashboard", tab_id="business-t
 result = project.import_dashboard(dashboard_id="source-dashboard", dry_run=False)
 ```
 
-Imports merge into the current project and change no cloud resources. Preview is
+Imports merge into the current project and change no cloud resources.
+`mode="adopt"` (default) retains IDs and location checks. Explicit `mode="copy"`
+accepts dependencies across folders, omits copied persistent IDs, reuses existing
+connections and uses a separate unused runtime. `copy_from` records provenance
+and prevents accidental exact-name adoption in the destination. CLI imports accept
+`--mode copy`. See the [copy walkthrough](../../docs/modules/datalens_utils/copy-tab.md)
+and [version-2 recipe contract](../../docs/modules/datalens_utils/recipe-contract.md). Preview is
 the default. Import discovers dependencies, extracts available SQL/JS assets,
 retains IDs and placement parameters, and reports collisions and unsupported
-features. Local writing requires a blocker-free staged recipe; failed
+features. Fidelity entries identify individual features, statuses and reasons.
+Wizard colors/shapes, including Measure Names, are reconstructed; unrepresented
+source settings block writing. Settings must be callable on the selected public
+SDK builder: line charts support Measure Names color/shape mappings, while scatter
+charts do not. Unsupported operations raise `DataLensUtilsError` naming the chart
+type and setting; import reports a fidelity blocker and pull preserves local files
+and checkpoints. A field's format must agree across every occurrence,
+including placements with absent or empty formatting; differing formats block local
+writing because the recipe format applies to the whole field.
+Chart defaults become defaults on every placement;
+explicit placement values win. `chart_title: null` retains an absent internal title.
+Copied Editor definitions use `meta_links_mode: "managed"` to rewrite declared
+aliases only; authored Meta is the default for existing definitions. Local writing requires a blocker-free staged recipe; failed
 replacements roll back. Version-1 projects need explicit `upgrade_recipe=True`.
 Unresolved dynamic Editor dependencies, incompatible locations, unknown item
 forms and unavailable authored source retrieval block writes.
@@ -205,3 +231,34 @@ HTTP fallbacks or private SDK imports.
 
 See the [advanced BI workflow](../../docs/modules/datalens_utils/bi-projects.md)
 and its portable example for full recipe details.
+
+Dataset creation adopts source-qualified inferred fields before adding missing
+fields. Actual GUIDs are checkpointed. Version-2 pulls keep declared recipe GUIDs
+stable, including cache GUID formulas, Wizard aggregate sources and dataset-backed
+hierarchy members. Dataset-only and chart-only pulls update only selected resources
+and their baselines; runtime checkpoints retain inferred cloud identities.
+After an interrupted source-only create,
+read-only preflight resolves provisional field GUIDs against the retained dataset
+on a temporary checkpoint; reconciliation saves the recovered identities and
+publishes only after complete draft verification. Preflight leaves recipe files,
+runtime checkpoints and remote resources unchanged. Backend component errors raise
+`DataLensComponentError` after checkpointing any created ID and stop dependent
+writes and publication. Its diagnostics are exposed in JSON CLI failure reports.
+Local validation does not validate backend inference. `verify()` compares a
+published deployment with its recipe; import fidelity separately assesses source
+parity. Both leave numerical results and rendering unchecked.
+
+Reconciliation preflight and read-only `plan()`/`status()` read the saved branch for
+owned datasets with a pending checkpoint inside the planned write scope, including
+source-only drafts with missing or stale published revisions. Plan and status report
+recovery without changing recipes, checkpoints or remote resources.
+Dependencies outside the planned write scope, verification and pull keep published
+defaults. Identity, recipe fingerprint and remote revision checks still apply; recovery never
+recreates a retained dataset.
+
+Before publication, the final fetched draft must match managed source parameters,
+field identities and kinds, formulas, parameter defaults, joins, default filters,
+settings, description, RLS and cache configuration. The engine retains ownership
+of requested join, filter and RLS removals until metadata confirms completion,
+including across restarts, while preserving unmanaged entries. Nonconvergence
+stops publication and dependent writes with the dataset ID and checkpoint intact.
