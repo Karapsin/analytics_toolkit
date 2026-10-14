@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
+
 ## 1.3.12.5 - 2026-10-14
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
