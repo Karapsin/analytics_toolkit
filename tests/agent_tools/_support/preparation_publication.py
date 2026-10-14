@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent_tools import release_preparation as preparation
 from agent_tools import sessions, task_context
+from agent_tools import release_preparation as preparation
 from release_routines.lib import release_candidate as candidate
 from tests.agent_tools._support.mcp import _write_minimal_repo_files
 
