@@ -14,6 +14,7 @@ Generated from package version bumps and recent commit history.
 - Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
 - Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
+- Preserve DataLens copy imports, encoding and parameter fidelity, managed Editor relocation, inferred dataset recovery and component diagnostics; pull complete Wizard encodings and keep managed internal titles separate from widget defaults. Record removed managed Wizard titles as null in recipes and pull baselines. Keep complete pull baselines for repeatable scoped imports.
 
 ## 1.3.12.4 - 2026-10-12
 
