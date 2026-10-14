@@ -1,1 +1,0 @@
-- Build disposable integration MinIO services from the existing pinned upstream release commits to avoid denied container pulls; retain S3 setup and cleanup and add fast service-free configuration regression guards.
