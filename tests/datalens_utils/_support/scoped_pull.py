@@ -6,7 +6,10 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 from analytics_toolkit.datalens_utils import bi_engine
-from analytics_toolkit.datalens_utils.bi_datasets import remember_inferred_fields, source_identities
+from analytics_toolkit.datalens_utils.bi_datasets import (
+    remember_inferred_fields,
+    source_identities,
+)
 from analytics_toolkit.datalens_utils.dashboard_generation.charts import wizard
 from analytics_toolkit.datalens_utils.recipe import load_registry
 from analytics_toolkit.datalens_utils.resources.bi_store import BIResourceStore
@@ -78,9 +81,7 @@ def recovered_pull(project, monkeypatch, *, chart_overrides=None, source_sql=Non
         recipe_field_guids={"category": "category"},
         sources={"source": {"id": "source-id"}},
     )
-    remember_inferred_fields(
-        cloud, definition, source_identities(cloud, definition, owned), owned
-    )
+    remember_inferred_fields(cloud, definition, source_identities(cloud, definition, owned), owned)
     store.remember("dataset:sales", cloud)
     api = MemoryDataLens()
     factory = getattr(api.client.create.wizard_chart, chart_definition["type"])

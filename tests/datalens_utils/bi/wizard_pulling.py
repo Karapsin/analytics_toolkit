@@ -233,6 +233,7 @@ def test_public_pull_conflicting_title_removal_keeps_files_and_checkpoint(bi_pro
     finally:
         api.client.close()
 
+
 @pytest.mark.parametrize("setting", ["color_by_measure_name", "shape_by_measure_name"])
 def test_public_pull_rejects_unsupported_scatter_settings(bi_project, monkeypatch, setting):
     api, entities, checkpoint = recovered_pull(
