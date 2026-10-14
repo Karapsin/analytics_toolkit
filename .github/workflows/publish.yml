@@ -56,11 +56,17 @@ jobs:
       id-token: write
 
     steps:
+      - name: Checkout candidate metadata and index guard
+        uses: actions/checkout@v6
+
       - name: Download distributions
         uses: actions/download-artifact@v6
         with:
           name: distributions
           path: dist/
+
+      - name: Check existing index artifacts
+        run: python -m release_routines.lib.release_candidate check-artifacts --stage testpypi
 
       - name: Publish package to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -79,11 +85,19 @@ jobs:
       id-token: write
 
     steps:
+      - name: Checkout candidate metadata and index guard
+        uses: actions/checkout@v6
+
       - name: Download distributions
         uses: actions/download-artifact@v6
         with:
           name: distributions
           path: dist/
 
+      - name: Check existing index artifacts
+        run: python -m release_routines.lib.release_candidate check-artifacts --stage pypi
+
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

@@ -69,21 +69,29 @@ def test_version_bump_does_not_partially_write_when_release_changelog_fails(
 
     monkeypatch.setattr(mcp_server, "_release_unreleased_changelog_text", fail_changelog)
 
-    result = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
+    result = mcp_server.version_bump(
+        "Consolidated agent MCP workflow",
+        change_type="release",
+        root=str(root),
+    )
 
     assert result["ok"] is False
     assert (root / "pyproject.toml").read_text(encoding="utf-8") == original_pyproject
     assert (root / "README.md").read_text(encoding="utf-8") == original_readme
 
 
-def test_version_bump_fails_when_readme_version_marker_is_missing_at_threshold(
+def test_version_bump_fails_when_readme_version_marker_is_missing_during_release(
     tmp_path: Path,
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
     _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
     (root / "README.md").write_text("# analytics_toolkit\n", encoding="utf-8")
 
-    result = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
+    result = mcp_server.version_bump(
+        "Consolidated agent MCP workflow",
+        change_type="release",
+        root=str(root),
+    )
 
     assert result["ok"] is False
     assert result["blockers"][0]["message"] == "Could not update README version"
@@ -101,9 +109,7 @@ def test_version_bump_force_release_requires_unreleased_entries(tmp_path: Path) 
     )
 
     assert result["ok"] is False
-    assert result["blockers"][0]["message"] == (
-        "no unreleased changelog entries are available to release"
-    )
+    assert result["blockers"][0]["message"] == "no unreleased entries; supply a release summary"
 
 
 def test_version_bump_force_releases_below_threshold(tmp_path: Path) -> None:
@@ -148,10 +154,6 @@ def test_version_bump_force_releases_below_threshold(tmp_path: Path) -> None:
             {"change_type": "implementation", "force_release": True},
             "force_release requires a release-oriented change_type",
         ),
-        (
-            {"summary": "Release summary", "change_type": "release", "force_release": True},
-            "omit summary when force_release is enabled",
-        ),
     ],
 )
 def test_version_bump_rejects_invalid_force_release_options(
@@ -168,9 +170,13 @@ def test_version_bump_rejects_invalid_force_release_options(
     assert result["blockers"][0]["message"] == message
 
 
-def test_version_bump_releases_tenth_unreleased_bullet(tmp_path: Path) -> None:
+@pytest.mark.parametrize("count", [8, 9, 10, 20])
+def test_version_bump_keeps_ordinary_versions_with_any_entry_count(
+    tmp_path: Path,
+    count: int,
+) -> None:
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
-    _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
+    _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, count + 1)])
     changelog_path = root / "docs" / "CHANGELOG.md"
     changelog_path.write_text(
         changelog_path.read_text(encoding="utf-8").replace(
@@ -182,19 +188,25 @@ def test_version_bump_releases_tenth_unreleased_bullet(tmp_path: Path) -> None:
 
     assert (
         mcp_server._count_unreleased_changelog_bullets(changelog_path.read_text(encoding="utf-8"))
-        == 9
+        == count
     )
 
+    original_changelog = changelog_path.read_text(encoding="utf-8")
+    metadata_paths = [root / "pyproject.toml", root / "README.md"]
+    original_metadata = [path.read_bytes() for path in metadata_paths]
     dry_run = mcp_server.version_bump("Tenth change", root=str(root), dry_run=True)
+    assert changelog_path.read_text(encoding="utf-8") == original_changelog
     applied = mcp_server.version_bump("Tenth change", root=str(root))
+    assert {key: applied["result"][key] for key in dry_run["result"]} == dry_run["result"]
 
-    assert dry_run["result"]["decision"] == "bump"
-    assert dry_run["result"]["planned_version"] == "1.3.9.14"
-    assert 'version = "1.3.9.14"' in (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert "**Version:** `1.3.9.14`" in (root / "README.md").read_text(encoding="utf-8")
+    assert [path.read_bytes() for path in metadata_paths] == original_metadata
+    assert dry_run["result"]["decision"] == "unreleased"
+    assert dry_run["result"]["planned_version"] is None
+    assert 'version = "1.3.9.13"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert "**Version:** `1.3.9.13`" in (root / "README.md").read_text(encoding="utf-8")
     changelog = (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## Unreleased" not in changelog
-    assert "## 1.3.9.14 - " in changelog
+    assert "## Unreleased" in changelog
+    assert "## 1.3.9.14 - " not in changelog
     assert "- Existing change 1 with wrapped\n  continuation text." in changelog
     assert "- Tenth change." in changelog
     assert applied["ok"] is True
@@ -217,7 +229,9 @@ def test_version_bump_updates_unreleased_below_threshold(tmp_path: Path) -> None
     root = _write_minimal_repo_files(tmp_path / "project", version="1.3.9.13")
 
     dry_run = mcp_server.version_bump(
-        "Consolidated agent MCP workflow", root=str(root), dry_run=True
+        "Consolidated agent MCP workflow",
+        root=str(root),
+        dry_run=True,
     )
     applied = mcp_server.version_bump("Consolidated agent MCP workflow", root=str(root))
 

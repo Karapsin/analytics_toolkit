@@ -11,6 +11,15 @@ Generated from package version bumps and recent commit history.
 - Preserve DataLens copy imports, encoding and parameter fidelity, managed Editor relocation, inferred dataset recovery and component diagnostics; restore Wizard configuration and change guards, explicit internal-title ownership, unsupported-encoding zero-write regressions and complete changelog history.
 - Fix Greenplum restart fault timing and batch retry coverage; correct regression imports for fast CI.
 
+- Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
+- Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
+- Recover reviewed releases after deleted preparation branches or newer dev changes, preserve publication safeguards, and restore current-dev offline helpers and regressions.
+- Recover interrupted TestPyPI pushes from journaled commits and verified legacy refs before reviewed release replacement, with fast restart and conflict regressions.
+- Preserve reviewed release-only version preparation and recovery, restore current-dev repair evidence and fast regressions, and correct strict lint/format findings without weakening quality gates.
+- Reserve version bumps and note rollover for explicit reviewed PyPI release preparation; restore this feature's version markers and keep pending notes Unreleased.
+- Reserve version bumps for reviewed PyPI releases and recover interrupted preparation PR publication without repushing stale heads or duplicating candidates.
+- Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
+
 ## 1.3.12.5 - 2026-10-14
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches

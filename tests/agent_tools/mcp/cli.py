@@ -177,13 +177,7 @@ def test_mcp_tool_wrapper_uses_consolidated_cli_names() -> None:
     output = json.loads(completed.stdout)
     assert output["ok"] is True
     assert output["tool"] == "version_bump"
-    changelog = (mcp_server.REPO_ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
-    expected_decision = (
-        "bump"
-        if mcp_server._count_unreleased_changelog_bullets(changelog) + 1
-        >= mcp_server.UNRELEASED_CHANGELOG_THRESHOLD
-        else "unreleased"
-    )
+    expected_decision = "unreleased"
     if mcp_server.sessions.load(mcp_server.REPO_ROOT).get("phase") == "feature":
         expected_decision = "fragment"
     assert output["result"]["decision"] == expected_decision

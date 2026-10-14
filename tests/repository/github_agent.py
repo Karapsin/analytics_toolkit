@@ -55,24 +55,43 @@ def test_foreign_fork_is_not_a_trusted_model_job() -> None:
     assert not controller.trusted(pr, "owner/repo")
 
 
-def test_serialized_changelog_fold_threshold_and_version_carry(tmp_path: Path) -> None:
+@pytest.mark.parametrize("count", [8, 9, 10, 20])
+def test_serialized_changelog_fold_preserves_versions_and_wrapped_notes(
+    tmp_path: Path,
+    count: int,
+) -> None:
     (tmp_path / "agent_tools/changelog").mkdir(parents=True)
     (tmp_path / "docs").mkdir()
-    (tmp_path / "pyproject.toml").write_text('version = "1.3.19.19"\n')
-    (tmp_path / "README.md").write_text("**Version:** `1.3.19.19`\n")
+    (tmp_path / "pyproject.toml").write_text('version = "1.3.19.19"\n', encoding="utf-8")
+    (tmp_path / "README.md").write_text("**Version:** `1.3.19.19`\n", encoding="utf-8")
+    metadata_paths = [tmp_path / "pyproject.toml", tmp_path / "README.md"]
+    original_metadata = [path.read_bytes() for path in metadata_paths]
+    pending_notes = (
+        "\n".join("- Existing " + str(i) for i in range(count)) + "\n  wrapped continuation"
+    )
+    historical_section = (
+        "## 1.3.19.19 - 2026-01-01\n\n- Released feature\n  historical continuation\n"
+    )
     changelog = tmp_path / "docs/CHANGELOG.md"
     changelog.write_text(
-        "# Changelog\n\n## Unreleased\n\n"
-        + "\n".join("- Existing " + str(i) for i in range(9))
-        + "\n\n## 1.3.19.19 - 2026-01-01\n"
+        "# Changelog\n\n## Unreleased\n\n" + pending_notes + "\n\n" + historical_section,
+        encoding="utf-8",
     )
-    (tmp_path / "agent_tools/changelog/one.md").write_text("- New feature\n")
+    (tmp_path / "agent_tools/changelog/one.md").write_text("- New feature\n", encoding="utf-8")
     assert controller.fold(tmp_path)
-    assert 'version = "1.4.0.0"' in (tmp_path / "pyproject.toml").read_text()
-    assert "**Version:** `1.4.0.0`" in (tmp_path / "README.md").read_text()
-    assert "## 1.4.0.0" in changelog.read_text()
+    assert [path.read_bytes() for path in metadata_paths] == original_metadata
+    assert changelog.read_text(encoding="utf-8") == (
+        "# Changelog\n\n## Unreleased\n\n"
+        + pending_notes
+        + "\n- New feature\n\n"
+        + historical_section
+    )
     assert not list((tmp_path / "agent_tools/changelog").glob("*.md"))
+    folded_changelog = changelog.read_bytes()
     assert not controller.fold(tmp_path)
+    assert changelog.read_bytes() == folded_changelog
+    assert [path.read_bytes() for path in metadata_paths] == original_metadata
+    assert folded_changelog.count(b"- New feature\n") == 1
 
 
 def test_provisioning_has_no_api_model_execution() -> None:
