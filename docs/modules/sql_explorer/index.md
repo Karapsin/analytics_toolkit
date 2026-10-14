@@ -157,8 +157,9 @@ readable and terminal columns stay aligned, including tabs, wide characters,
 horizontal scrolling, and empty lines. Carets and selections remain visible when
 the command or find input has focus; search matches keep their yellow background
 through caret overlays. Occupied-cell carets preserve the original SQL foreground
-and background, including selection and find colors. Plain blank-cell bars carry
-no extra background. Presentation padding never changes the SQL buffer.
+and background, including selection and find colors. Blank-cell bars preserve the
+existing cell background, including inherited backgrounds. Presentation padding
+never changes the SQL buffer.
 Text inputs retain steady non-blinking carets. The compact active tab uses a dark surface with amber text and always includes its database key.
 The editor displays line numbers, keeps its vertical scrollbar on the right,
 shows the active one-based line and column in its lower-right corner without
@@ -178,8 +179,9 @@ and their Shift variants extend every cursor's independent selection.
 Ctrl+Shift+Up and Ctrl+Shift+Down extend
 each existing selection by one logical line, preserving its anchor and intended
 column across short or empty lines. Repeated presses extend across many lines;
-reversing direction shrinks the selection without creating cursors. Shift+Up
-and Shift+Down add a cursor above or below the active cursor. Repeating the key
+reversing direction shrinks the selection without creating cursors. Clicking in the
+editor chooses a new preferred column, even when the caret stays at the same
+clamped position. Shift+Up and Shift+Down add a cursor above or below the active cursor. Repeating the key
 chains cursors across as many logical lines as needed;
 pressing toward an existing cursor at the exact projected position removes it.
 Other positions on that row remain, and at least one cursor always remains.

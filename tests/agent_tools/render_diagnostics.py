@@ -110,8 +110,7 @@ def _assert_find_scene(terminal: dict[str, Any]) -> None:
     region = terminal["regions"][0]
     for layer in ("widget_rows", "composed_rows"):
         assert all(
-            any("order" in text for text in _highlighted_runs(row))
-            for row in region[layer][:3]
+            any("order" in text for text in _highlighted_runs(row)) for row in region[layer][:3]
         )
 
 
@@ -344,7 +343,7 @@ def test_region_row_limits_and_missing_rows_are_explicit(
     assert result["missing"]
     assert result["regions"][0]["widget_rows"][0]["text"] == "widget"
     assert result["regions"][0]["composed_rows"][0]["text"] == "composed"
-    monkeypatch.setattr(diagnostics, "_targets", lambda *_args: list())
+    monkeypatch.setattr(diagnostics, "_targets", lambda *_args: [])
     assert diagnostics.terminal_diagnostics(app, "database-picker")["missing"]
 
 
@@ -379,9 +378,7 @@ def test_invisible_required_region_invalidates_terminal_evidence(
         display=display,
         render=lambda: "Heading",
     )
-    app = SimpleNamespace(
-        screen=SimpleNamespace(_compositor=SimpleNamespace(render_strips=list))
-    )
+    app = SimpleNamespace(screen=SimpleNamespace(_compositor=SimpleNamespace(render_strips=list)))
     monkeypatch.setattr(diagnostics, "_targets", lambda *_args: [("heading", widget, 1)])
     result = diagnostics.terminal_diagnostics(app, "database-picker")
     assert result["missing"] == ["heading:not_visible"]

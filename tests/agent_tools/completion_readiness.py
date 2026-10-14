@@ -3,13 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from analytics_toolkit.sql_explorer.completion_commands import SqlExplorerCompletionCommandsMixin
-from analytics_toolkit.sql_explorer.editor import SqlEditor
 from rich.segment import Segment
 from textual.geometry import Region
 from textual.strip import Strip
 
 from agent_tools.sql_explorer_visual_scene import _completion_readiness
+from analytics_toolkit.sql_explorer.completion_commands import SqlExplorerCompletionCommandsMixin
+from analytics_toolkit.sql_explorer.editor import SqlEditor
 
 
 class MenuState(SimpleNamespace):

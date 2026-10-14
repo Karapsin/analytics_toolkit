@@ -91,9 +91,9 @@ def test_controls_use_amber_while_text_selection_retains_translucency() -> None:
             )
             workspace.command_input.value = "format"
             workspace.command_input.action_select_all()
-            assert workspace.command_input.get_component_styles("input--selection").background == (
-                amber.with_alpha(0.45)
-            )
+            assert workspace.command_input.get_component_styles(
+                "input--selection"
+            ).background == amber.with_alpha(0.45)
 
     asyncio.run(exercise())
 

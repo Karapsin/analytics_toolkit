@@ -95,7 +95,7 @@ class SqlEditor(TextArea):
         scrollbar = self.horizontal_scrollbar
         scrollbar.window_virtual_size = self.virtual_size.width
         scrollbar.window_size = self.scrollable_content_region.width
-        scrollbar.position = self.scroll_x
+        scrollbar.position = int(self.scroll_x)
 
     def watch_scroll_x(self, old_value: float = 0.0, new_value: float = 0.0) -> None:
         super().watch_scroll_x(old_value, new_value)
@@ -199,9 +199,7 @@ class SqlEditor(TextArea):
         target = Selection.cursor((target_row, min(column, len(self.document[target_row]))))
         existing = next(
             (
-                selection
-                for selection in self._secondary_selections
-                if selection.end == target.end
+                selection for selection in self._secondary_selections if selection.end == target.end
             ),
             None,
         )
@@ -622,7 +620,8 @@ class SqlEditor(TextArea):
             event.stop()
             event.prevent_default()
             self._edit_cursors(
-                "\n" if event.key == "enter" else (event.character or ""), paired=event.is_printable
+                "\n" if event.key == "enter" else (event.character or ""),
+                paired=event.is_printable,
             )
             return
         await super()._on_key(event)
@@ -637,6 +636,8 @@ class SqlEditor(TextArea):
     async def _on_mouse_down(self, event: events.MouseDown) -> None:
         self._collapse_for_single_cursor_action()
         await super()._on_mouse_down(event)
+        # A click is a new column choice even when the clamped position is unchanged.
+        self._cursor_preferences = {self.selection: self.selection.end[1]}
 
     async def _on_click(self, event: events.Click) -> None:
         location = self.get_target_document_location(event)
@@ -816,13 +817,9 @@ class SqlEditor(TextArea):
                 else:
                     width = 1
                     cell = next(iter(strip.crop(x, x + 1)), Segment(""))
-                    caret_style = style + Style(underline=False)
+                    caret_style = (cell.style or Style()) + style + Style(underline=False)
                     if any(start <= selection.end < end for start, end in self._search_matches):
-                        caret_style = (cell.style or Style()) + caret_style + Style(color="#000000")
-                    elif any(
-                        min(item) <= selection.end < max(item) for item in self.cursor_selections
-                    ):
-                        caret_style = (cell.style or Style()) + caret_style
+                        caret_style += Style(color="#000000")
                     caret = Strip([Segment("│", caret_style)])
                 strip = Strip.join([strip.crop(0, x), caret, strip.crop(x + width)])
         return strip.adjust_cell_length(self.scrollable_content_region.width, self.rich_style)
@@ -859,6 +856,10 @@ class SqlEditor(TextArea):
                         Style(color=self.app.get_css_variables()["accent"], bold=False),
                         column,
                         column + 1,
+                    )
+                else:
+                    line.stylize(
+                        Style(underline=True, bold=False, reverse=False), column, column + 1
                     )
         # Search colors take precedence over selection and caret foregrounds.
         for (start_row, start_column), (end_row, end_column) in self._search_matches:

@@ -21,7 +21,11 @@ from agent_tools.sql_explorer_render_diagnostics import (
     terminal_diagnostics,
 )
 from agent_tools.sql_explorer_visual import TERMINAL_COLUMNS, TERMINAL_ROWS, VIEWPORT
-from agent_tools.sql_explorer_visual_scene import VisualExplorerApp, _write_evidence, create_scene
+from agent_tools.sql_explorer_visual_scene import (
+    VisualExplorerApp,
+    _write_evidence,
+    create_scene,
+)
 
 if TYPE_CHECKING:
     from textual.app import App

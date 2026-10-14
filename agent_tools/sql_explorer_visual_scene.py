@@ -16,6 +16,17 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+from rich.text import Text
+from textual.app import ScreenStackError
+from textual.color import Color
+from textual.css.query import NoMatches
+from textual.widgets import Button, Collapsible, Input, OptionList, Static
+
+from agent_tools.sql_explorer_render_diagnostics import (
+    SELECTOR_SCENES,
+    selector_readiness_assertions,
+    selector_readiness_snapshot,
+)
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.connections import ConnectionsRestart
 from analytics_toolkit.sql_explorer.connections_picker import (
@@ -42,17 +53,6 @@ from analytics_toolkit.sql_explorer.widgets import (
     DiscardChangesScreen,
     FileNavigationScreen,
     ResultTable,
-)
-from rich.text import Text
-from textual.app import ScreenStackError
-from textual.color import Color
-from textual.css.query import NoMatches
-from textual.widgets import Button, Collapsible, Input, OptionList, Static
-
-from agent_tools.sql_explorer_render_diagnostics import (
-    SELECTOR_SCENES,
-    selector_readiness_assertions,
-    selector_readiness_snapshot,
 )
 
 if TYPE_CHECKING:
@@ -117,19 +117,23 @@ class VisualExplorerApp(SqlExplorerApp):
             or scene_id in {
                 "command-completion",
                 "database-completion",
+                "directory-armed",
                 "save-changes",
                 "save-changes-cancel",
             }
         )
         self.scene_configured = self.creation_scene_ready
-        self._pending_scene_screen: SaveChangesScreen | CreateTableScreen | None = None
+        self._pending_scene_screen: (
+            SaveChangesScreen | CreateTableScreen | FileNavigationScreen | None
+        ) = None
+        self._directory_scene_initialized = False
         super().__init__(VisualSession())
 
     def on_mount(self) -> None:
         super().on_mount()
         self.call_after_refresh(self._configure_visual_scene)
 
-    async def _configure_visual_scene(self) -> None:  # noqa: C901, PLR0912
+    async def _configure_visual_scene(self) -> None:
         workspace = self.active_workspace
         workspace.editor.text = "\n".join(
             (
@@ -139,6 +143,49 @@ class VisualExplorerApp(SqlExplorerApp):
             )
         )
         scene = self.visual_scene_id
+        if scene.startswith("journal-"):
+            self._configure_journal_scene(scene)
+        elif scene.startswith("create-table"):
+            await self._open_creation_scene(scene)
+        elif scene.startswith("completion"):
+            self._configure_completion_scene(scene)
+        elif scene in {"command-completion", "database-completion"}:
+            self._configure_command_scene(scene)
+        elif scene in {"tab-database-change", "formatted-sql", "tabs-overflow", "find-replace"}:
+            self._configure_document_scene(scene)
+        elif scene in {"query-running", "result-success", "result-message"}:
+            self._configure_results_scene(scene)
+        elif scene in {
+            "file-open",
+            "directory-armed",
+            "new-file",
+            "mutation-confirm",
+            "discard-confirm",
+            "connections-switch-save",
+            "save-changes",
+            "save-changes-cancel",
+            "export-confirm",
+        }:
+            await self._configure_modal_scene(scene)
+        elif scene in {
+            "keyboard-multicursor",
+            "editor-command-caret",
+            "column-ruler-scrolled",
+            "results-vertical",
+            "results-resized",
+            "help-shortcuts",
+            "help-movement",
+            "help-movement-end",
+        }:
+            self._configure_workspace_scene(scene)
+        elif scene != "editor-ready":
+            raise ValueError(f"unsupported SQL Explorer visual scene: {scene}")
+
+        self.call_after_refresh(self._refresh_visual_evidence)
+        self.set_interval(0.2, self._refresh_visual_evidence)
+
+    def _configure_journal_scene(self, scene: str) -> None:
+        workspace = self.active_workspace
         if scene.startswith("journal-"):
             journal = QueryJournal(self.visual_evidence_path.parent / scene)
             if scene == "journal-populated":
@@ -156,11 +203,10 @@ class VisualExplorerApp(SqlExplorerApp):
                 path.write_bytes(b"invalid SQLite database")
             self.push_screen(JournalScreen(journal, "gp"))
             self.set_timer(0.6, self._mark_scene_ready)
-        elif scene.startswith("create-table"):
-            await self._open_creation_scene(scene)
-        elif scene.startswith("completion"):
-            self._configure_completion_scene(scene)
-        elif scene in {"command-completion", "database-completion"}:
+
+    def _configure_command_scene(self, scene: str) -> None:
+        workspace = self.active_workspace
+        if scene in {"command-completion", "database-completion"}:
             command = workspace.command_input
             command.value = "db wa" if scene == "database-completion" else "c"
             command.cursor_position = len(command.value)
@@ -172,7 +218,10 @@ class VisualExplorerApp(SqlExplorerApp):
                 self.call_after_refresh(self._mark_scene_ready)
 
             self.set_timer(0.3, show_commands)
-        elif scene == "tab-database-change":
+
+    def _configure_document_scene(self, scene: str) -> None:
+        workspace = self.active_workspace
+        if scene == "tab-database-change":
             self._add_workspace()
             self.set_timer(0.3, self._switch_visual_database)
         elif scene == "formatted-sql":
@@ -195,7 +244,10 @@ class VisualExplorerApp(SqlExplorerApp):
             self.action_open_find()
             self.query_one("#find-pattern", Input).value = "order"
             self.query_one("#replace-pattern", Input).value = "purchase"
-        elif scene == "query-running":
+
+    def _configure_results_scene(self, scene: str) -> None:
+        workspace = self.active_workspace
+        if scene == "query-running":
             workspace.query_state = "running"
             workspace.busy = True
             workspace.session.active_query = ExplorerQueryState(
@@ -248,12 +300,17 @@ class VisualExplorerApp(SqlExplorerApp):
             self._set_notice("SQL explorer operation failed.", workspace)
             self.show_message("PermissionError: relation daily_orders is not readable", workspace)
             self._update_status(workspace)
-        elif scene == "file-open":
+
+    async def _configure_modal_scene(self, scene: str) -> None:
+        workspace = self.active_workspace
+        if scene == "file-open":
             self.push_screen(FileNavigationScreen(Path.cwd()))
         elif scene == "directory-armed":
             picker = FileNavigationScreen(Path.cwd(), select_directory=True)
-            self.push_screen(picker)
-            self.call_after_refresh(picker.action_cancel)
+            self._pending_scene_screen = picker
+            await self.push_screen(picker)
+            # Defer configuration past mounting, refresh and queued input/tree messages.
+            picker.call_after_refresh(picker.call_later, self._settle_directory_scene, picker)
         elif scene == "new-file":
             self.push_screen(NewSqlFileScreen())
         elif scene == "mutation-confirm":
@@ -286,7 +343,16 @@ class VisualExplorerApp(SqlExplorerApp):
                     confirm_label="Save all",
                 )
             )
-        elif scene == "keyboard-multicursor":
+
+    def _configure_workspace_scene(self, scene: str) -> None:
+        if scene in {"keyboard-multicursor", "editor-command-caret", "column-ruler-scrolled"}:
+            self._configure_editor_scene(scene)
+        else:
+            self._configure_panes_scene(scene)
+
+    def _configure_editor_scene(self, scene: str) -> None:
+        workspace = self.active_workspace
+        if scene == "keyboard-multicursor":
             workspace.editor.cursor_location = (1, 14)
             workspace.editor.add_cursors(1, -1)
             workspace.editor.add_cursors(1, 1)
@@ -298,7 +364,10 @@ class VisualExplorerApp(SqlExplorerApp):
         elif scene == "column-ruler-scrolled":
             workspace.editor.text = "select " + "x" * 300
             workspace.editor.cursor_location = (0, 251)
-        elif scene in {"results-vertical", "results-resized"}:
+
+    def _configure_panes_scene(self, scene: str) -> None:
+        workspace = self.active_workspace
+        if scene in {"results-vertical", "results-resized"}:
             self.show_dataframe(
                 pd.DataFrame(
                     {"order_id": [101, 102], "customer_name": ["Ada", "Lin"], "revenue": [125, 240]}
@@ -309,11 +378,6 @@ class VisualExplorerApp(SqlExplorerApp):
             self._command_help(["shortcuts" if scene == "help-shortcuts" else "movement"])
             if scene == "help-movement-end":
                 self.set_timer(0.5, lambda: workspace.result_message.scroll_end(animate=False))
-        elif scene != "editor-ready":
-            raise ValueError(f"unsupported SQL Explorer visual scene: {scene}")
-
-        self.call_after_refresh(self._refresh_visual_evidence)
-        self.set_interval(0.2, self._refresh_visual_evidence)
 
     def _configure_completion_scene(self, scene: str) -> None:
         """Set editor state before opening deterministic fake suggestions."""
@@ -372,10 +436,32 @@ class VisualExplorerApp(SqlExplorerApp):
         screen = self._pending_scene_screen
         if isinstance(screen, SaveChangesScreen):
             self._focus_save_choice(screen)
+        elif isinstance(screen, FileNavigationScreen):
+            if self._directory_scene_initialized:
+                self._configure_directory_scene(screen)
         else:
             self._configure_creation_scene(screen, self.visual_scene_id)
         if self.scene_configured:
             self._pending_scene_screen = None
+
+    def _settle_directory_scene(self, screen: FileNavigationScreen) -> None:
+        if self._pending_scene_screen is screen:
+            self._directory_scene_initialized = True
+            self._configure_pending_scene()
+
+    def _configure_directory_scene(self, screen: FileNavigationScreen) -> None:
+        try:
+            if not self.screen_stack or self.screen is not screen or not screen.is_mounted:
+                return
+            details = self._scene_readiness_details()
+            if not details["conditions"].get("required_controls", False):
+                return
+            # Use the existing Escape action once. Readiness only observes afterward.
+            screen.action_cancel()
+            self.scene_configured = True
+            screen.call_after_refresh(self._poll_scene_readiness)
+        except (NoMatches, ScreenStackError):
+            return
 
     def _refresh_visual_evidence(self) -> None:
         self._configure_pending_scene()
@@ -518,7 +604,8 @@ class VisualDatabasePickerApp(DatabasePickerApp):
 
     def on_mount(self) -> None:
         super().on_mount()
-        self.query_one(OptionList)._mouse_hovering_over = 1  # noqa: SLF001 - freeze hover for capture.
+        # Freeze hover for the deterministic capture.
+        self.query_one(OptionList)._mouse_hovering_over = 1  # noqa: SLF001
         self.call_after_refresh(self._refresh_visual_evidence)
         self.set_interval(0.2, self._refresh_visual_evidence)
 
@@ -578,10 +665,42 @@ def _scene_control_readiness(app: Any, screen: Any, details: dict[str, Any]) -> 
     scene = app.visual_scene_id
     if scene in {"save-changes", "save-changes-cancel"}:
         _save_readiness(app, screen, details)
+    elif scene == "directory-armed":
+        _directory_readiness(app, screen, details)
     elif scene.startswith("create-table"):
         _creation_readiness(screen, scene, details)
     elif scene.startswith("completion"):
         _completion_readiness(app, details)
+
+
+DIRECTORY_ARMED_NOTICE = "Enter: select this directory   Escape: cancel   Arrows: keep browsing"
+
+
+def _directory_readiness(app: Any, screen: Any, details: dict[str, Any]) -> None:
+    conditions = details["conditions"]
+    conditions["expected_modal"] = isinstance(screen, FileNavigationScreen)
+    if not conditions["expected_modal"]:
+        return
+    conditions["directory_mode"] = screen.select_directory
+    conditions["required_controls"] = False
+    for selector in (
+        "#navigation-path",
+        "#navigation-tree",
+        "#navigation-select-directory",
+        "#navigation-notice",
+    ):
+        _required_control(screen, selector, details)
+    if details["missing_controls"] or details["unmounted_controls"]:
+        return
+    conditions["required_controls"] = True
+    button = screen.query_one("#navigation-select-directory", Button)
+    content = screen.query_one("#navigation-notice", Static).renderable
+    text = content.plain if isinstance(content, Text) else str(content)
+    details["notice_text"] = text[:512]
+    conditions["directory_armed"] = bool(screen._directory_confirmation_armed)  # noqa: SLF001
+    conditions["armed_button"] = button.has_class("armed")
+    conditions["requested_focus"] = app.focused is button
+    conditions["armed_notice"] = text == DIRECTORY_ARMED_NOTICE
 
 
 def _save_readiness(app: Any, screen: Any, details: dict[str, Any]) -> None:
@@ -816,6 +935,11 @@ def _write_evidence(
     if scene_id in SELECTOR_SCENES:
         selector_snapshot = selector_readiness_snapshot(app, scene_id)
         assertions.update(selector_readiness_assertions(selector_snapshot))
+    if scene_id == "directory-armed" and isinstance(app, VisualExplorerApp):
+        readiness = app._scene_readiness_details()
+        assertions.update(
+            {f"directory:{name}": value for name, value in readiness["conditions"].items()}
+        )
     assertions.update(_button_color_assertions(app))
 
     payload = {
@@ -828,6 +952,8 @@ def _write_evidence(
         "assertions": assertions,
         "ok": bool(assertions) and all(assertions.values()),
     }
+    if scene_id == "directory-armed" and isinstance(app, VisualExplorerApp):
+        payload["scene_readiness"] = app._scene_readiness_details()
     if selector_snapshot is not None:
         payload["selector_readiness"] = selector_snapshot
     # A mounted scene may emit an incomplete diagnostic frame before it settles,

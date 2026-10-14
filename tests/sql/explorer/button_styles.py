@@ -22,9 +22,7 @@ from textual.widgets import Button, Collapsible, Input, Static
 from tests.sql._support.explorer import FakeSession
 
 
-async def _exercise_dialog_buttons(
-    pilot: Any, container: Any, palette: dict[str, str]
-) -> None:
+async def _exercise_dialog_buttons(pilot: Any, container: Any, palette: dict[str, str]) -> None:
     buttons = list(container.query(Button))
     neutral = Color.parse(palette["surface"])
     amber = Color.parse(palette["accent"])
@@ -61,8 +59,10 @@ async def _hover_button(pilot: Any, button: Button) -> None:
     await pilot.pause()
     # Coordinates identify repeated removal controls on Textual 0.73 too.
     region = button.content_region
-    await pilot.hover(offset=(region.x + region.width // 2, region.y))
-    assert button.mouse_hover
+    x, y = region.x + region.width // 2, region.y
+    await pilot.hover(offset=(x, y))
+    target, _ = button.screen.get_widget_at(x, y)
+    assert target is button
 
 
 class DisabledColorReference(Static):

@@ -6,11 +6,14 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
+- Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
+- SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
+
 - Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
 - Fix the Greenplum first-batch restart integration checkpoint and retry budget; add a service-free regression that checks exact rows, rollback, and fresh-connection recovery.
 - Preserve DataLens copy imports, encoding and parameter fidelity, managed Editor relocation, inferred dataset recovery and component diagnostics; restore Wizard configuration and change guards, explicit internal-title ownership, unsupported-encoding zero-write regressions and complete changelog history.
 - Fix Greenplum restart fault timing and batch retry coverage; correct regression imports for fast CI.
-- Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
 
 - Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
 - Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
@@ -20,22 +23,16 @@ Generated from package version bumps and recent commit history.
 - Reserve version bumps and note rollover for explicit reviewed PyPI release preparation; restore this feature's version markers and keep pending notes Unreleased.
 - Reserve version bumps for reviewed PyPI releases and recover interrupted preparation PR publication without repushing stale heads or duplicating candidates.
 - Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
-
-- Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
-- Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
-- Recover reviewed releases after deleted preparation branches or newer dev changes, preserve publication safeguards, and restore current-dev offline helpers and regressions.
-- Recover interrupted TestPyPI pushes from journaled commits and verified legacy refs before reviewed release replacement, with fast restart and conflict regressions.
-- Preserve reviewed release-only version preparation and recovery, restore current-dev repair evidence and fast regressions, and correct strict lint/format findings without weakening quality gates.
-- Reserve version bumps and note rollover for explicit reviewed PyPI release preparation; restore this feature's version markers and keep pending notes Unreleased.
-- Reserve version bumps for reviewed PyPI releases and recover interrupted preparation PR publication without repushing stale heads or duplicating candidates.
-- Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
+- Retry the original OAuth initiation URL after browser navigation timeouts in the disposable authentication harness, with fast service-free regression coverage for recovery and exhausted retries.
+- Preserve OAuth timeout recovery and its service-free regressions while restoring current-dev version markers and retaining pending release notes under Unreleased.
 - Reconcile user-approval labels automatically without clearing genuine holds or stale-head safeguards
-- Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
+- Route malformed changelog fragments to fresh correction plans instead of repeating metadata failures
+- Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
+- Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
 
 ## 1.3.12.5 - 2026-10-14
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
-- SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
 - Add release-activated GitHub wiki synchronization from main user documentation.
 - Use explicit UTF-8 reads in GitHub wiki synchronization regressions to satisfy the strict lint gate.

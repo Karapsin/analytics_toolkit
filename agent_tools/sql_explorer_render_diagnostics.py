@@ -1,7 +1,5 @@
 """Bounded, scene-specific evidence for the terminal to SVG rendering pipeline."""
 
-# ruff: noqa: PLR2004
-
 from __future__ import annotations
 
 import hashlib
@@ -416,8 +414,7 @@ def _editor_diagnostics(app: Any, scene: str, result: dict[str, Any]) -> None:
         }
         if scene == "find-replace":
             result["editor"]["matches"] = [
-                [list(start), list(end)]
-                for start, end in editor._search_matches  # noqa: SLF001
+                [list(start), list(end)] for start, end in editor._search_matches  # noqa: SLF001
             ]
         else:
             scrollbar = editor.horizontal_scrollbar

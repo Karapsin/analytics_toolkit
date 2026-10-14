@@ -175,12 +175,11 @@ def _install_browser_oauth(
 
 def _open_keycloak_login(page, url: str, timeout_error: type[BaseException]):
     last_error: BaseException | None = None
-    for attempt in range(_BROWSER_LOGIN_ATTEMPTS):
+    for _attempt in range(_BROWSER_LOGIN_ATTEMPTS):
         try:
-            if attempt == 0:
-                page.goto(url, wait_until="domcontentloaded")
-            else:
-                page.reload(wait_until="domcontentloaded")
+            # A timed-out redirect can leave a blank or failed intermediate page.
+            # Restart the OAuth initiation instead of reloading that page.
+            page.goto(url, wait_until="domcontentloaded")
             username = page.locator("#username")
             username.wait_for(state="visible", timeout=_BROWSER_LOGIN_TIMEOUT_MS)
         except timeout_error as exc:  # noqa: PERF203 - browser waits are intentionally retried.

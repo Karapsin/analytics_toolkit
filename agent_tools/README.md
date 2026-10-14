@@ -188,6 +188,20 @@ Timeout errors include bounded readiness conditions,
 missing or unmounted controls, incomplete rows, notice text, requested focus,
 and freshly evaluated geometry assertions before teardown and evidence removal.
 The timeout and every required geometry check remain unchanged.
+
+The `directory-armed` fixture configures its pending picker after mounting,
+refresh and queued initialization messages, then invokes the existing Escape
+action once. Readiness requires directory-selection mode, mounted path/tree,
+selection-button and notice controls, the armed flag and button class, selection
+button focus, and the exact notice
+`Enter: select this directory   Escape: cancel   Arrows: keep browsing`.
+Periodic readiness checks observe these conditions without re-arming the picker.
+Geometry includes the same semantic assertions and bounded scene-state evidence;
+lost focus, styling or instructions blocks capture and appears in timeout
+diagnostics. Service-free regressions retain the state across idle refreshes and
+verify Enter selection, Escape cancellation and arrow browsing on the real fixture.
+These changes require a new full 46-scene capture and independent PNG review;
+the initialization timing hypothesis remains unverified until GitHub validation.
 Button color assertions retain `button_focus_color:<id>` for named controls.
 Controls without IDs use their widget class, sorted CSS classes and query index
 (for example, `button_focus_color:Button.remove-column[0]`), so every removal

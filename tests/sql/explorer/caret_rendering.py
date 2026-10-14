@@ -220,3 +220,51 @@ def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
             assert editor.text == "SELECT"
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("background", [None, "#123456"])
+def test_blank_and_end_caret_bars_preserve_original_cell_background(
+    background: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 30)):
+            editor = app.active_workspace.editor
+            editor.text = "x\n"
+            editor._set_selections(Selection.cursor((0, 1)), [Selection.cursor((1, 0))])
+            original = Style(
+                color="#abcdef", bgcolor=background, bold=True, underline=True, reverse=True
+            )
+            width = editor.scrollable_content_region.width
+
+            def native_line(_editor: TextArea, row: int) -> Strip:
+                return Strip(
+                    [
+                        Segment(" " * editor.gutter_width),
+                        Segment("x " if row == 0 else " ", original),
+                    ]
+                ).adjust_cell_length(width)
+
+            monkeypatch.setattr(TextArea, "render_line", native_line)
+            for focused in (True, False):
+                if focused:
+                    editor.focus()
+                else:
+                    app.active_workspace.command_input.focus()
+                for row, column in ((0, 1), (1, 0)):
+                    left = editor.gutter_width + column
+                    caret = editor.render_line(row).crop(left, left + 1)
+                    assert caret.text == "│"
+                    assert caret.cell_length == 1
+                    assert all(segment.style.bgcolor == original.bgcolor for segment in caret)
+                    assert all(
+                        segment.style.color.get_truecolor().hex
+                        == app.get_css_variables()["accent"].lower()
+                        and segment.style.bold is False
+                        and segment.style.underline is False
+                        and segment.style.reverse is False
+                        for segment in caret
+                    )
+            assert editor.text == "x\n"
+
+    asyncio.run(exercise())

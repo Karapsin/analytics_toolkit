@@ -199,3 +199,28 @@ def test_vertical_extension_keeps_each_anchor_and_intended_column() -> None:
             )
 
     asyncio.run(exercise())
+
+
+def test_click_at_clamped_position_resets_preferred_column() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(120, 40)) as pilot:
+            editor = app.active_workspace.editor
+            editor.text = "abcdefghij\nx\nabcdefghij"
+            editor._set_selections(Selection.cursor((0, 8)), [])
+            editor.focus()
+            await pilot.press("down")
+            assert editor.cursor_location == (1, 1)
+            assert editor.logical_column == 8
+            viewport = editor.scrollable_content_region
+            assert await pilot.click(
+                offset=(viewport.x + editor.gutter_width + 1, viewport.y + 1)
+            )
+            assert editor.cursor_location == (1, 1)
+            assert editor.logical_column == 1
+            await pilot.press("down")
+            assert editor.cursor_location == (2, 1)
+            assert editor.cursor_count == 1
+            assert editor.text == "abcdefghij\nx\nabcdefghij"
+
+    asyncio.run(exercise())

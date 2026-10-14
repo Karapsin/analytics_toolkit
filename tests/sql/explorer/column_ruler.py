@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
-from analytics_toolkit.sql_explorer.app import SqlExplorerApp
-from analytics_toolkit.sql_explorer.movement import move_command
-from analytics_toolkit.sql_explorer.ruler import ColumnRuler, column_numbers, ruler_labels
+import pytest
 from textual.document._document import Selection
 
+from analytics_toolkit.sql_explorer.app import SqlExplorerApp
+from analytics_toolkit.sql_explorer.editor import SqlEditor
+from analytics_toolkit.sql_explorer.movement import move_command
+from analytics_toolkit.sql_explorer.ruler import ColumnRuler, column_numbers, ruler_labels
 from tests.sql._support.explorer import FakeSession
 
 
@@ -108,12 +111,22 @@ def test_ruler_tracks_main_cursor_scroll_and_command_focus() -> None:
             )
             active_x = editor.gutter_width + editor.gutter.left + 251 - int(editor.scroll_x)
             assert rendered.plain.splitlines()[-1][active_x] == "2"
-            caret = editor.render_line(0).crop(
-                active_x - editor.gutter.left, active_x - editor.gutter.left + 1
-            )
+            selections = editor.cursor_selections
+            active = editor.selection
+            editor._set_selections(Selection.cursor((0, 250)), [])
+            await pilot.pause()
+            left = active_x - editor.gutter.left
+            original_cell = editor.render_line(0).crop(left, left + 1)
+            assert original_cell.text == "x"
+            original = next(iter(original_cell)).style
+            editor._set_selections(active, [item for item in selections if item != active])
+            await pilot.pause()
+            caret = editor.render_line(0).crop(left, left + 1)
+            assert caret.text == "x"
             assert all(
                 segment.text == "x"
-                and segment.style.color.triplet.hex == app.get_css_variables()["accent"].lower()
+                and segment.style.color == original.color
+                and segment.style.bgcolor == original.bgcolor
                 and segment.style.underline is True
                 and segment.style.bold is False
                 for segment in caret
@@ -201,3 +214,24 @@ def test_horizontal_scrollbar_tracks_offset_extents_resize_and_shorter_document(
             assert editor.max_scroll_x == 0
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(("offset", "cell"), [(0.0, 0), (12.75, 12), (48.0, 48)])
+def test_horizontal_scrollbar_uses_the_rendered_integer_cell(offset: float, cell: int) -> None:
+    scrollbar = SimpleNamespace(position=0, window_size=0, window_virtual_size=0)
+    editor = SimpleNamespace(
+        is_mounted=True,
+        horizontal_scrollbar=scrollbar,
+        scroll_x=offset,
+        virtual_size=SimpleNamespace(width=300),
+        scrollable_content_region=SimpleNamespace(width=80),
+    )
+    SqlEditor._sync_horizontal_scrollbar(editor)
+    assert scrollbar.position == cell
+    assert isinstance(scrollbar.position, int)
+    assert scrollbar.window_size == 80
+    assert scrollbar.window_virtual_size == 300
+
+
+def test_unmounted_editor_does_not_access_scrollbar_controls() -> None:
+    SqlEditor._sync_horizontal_scrollbar(SimpleNamespace(is_mounted=False))
