@@ -103,6 +103,14 @@ browser installed by the auth job; injected bearer tokens are not accepted.
 Every scenario uses a profile run ID and test ID in table, stage, object, and
 query-label names. The per-test registry cancels labelled queries, drops tables,
 removes MinIO objects, and restores paused services before it scans for leaks.
+The first-batch database restart scenario holds Greenplum's driver failure inside
+the batch retry operation, restores the service, then allows rollback and a fresh
+connection retry. It configures two batch attempts: append transfers do not use
+the full-transfer retry count. Trino and ClickHouse retain the ambiguous-stage
+checkpoint and original-target assertions. A service-free simulation exercises
+the scenario with the real batch retry loop and verifies exact rows, a single
+failed insert, rollback, and connection replacement.
+
 Fault actions use the same enabled Compose profiles as startup, including `gp`
 when Greenplum is enabled; the project-service guard remains active. Before
 registry cleanup and leak scans, the fixture reactivates the loopback connection
