@@ -18,15 +18,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.parametrize("driver", ["http", "native"])
-@pytest.mark.parametrize("leak", [False, True])
-def test_cleanup_reactivates_cached_airflow_source_before_registry_and_scans(
+def _prepare_cleanup_registry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     write_sql_connections: Callable[[dict[str, object]], Path],
     driver: str,
-    leak: bool,
-) -> None:
+) -> integration_resources.ResourceRegistry:
     monkeypatch.setenv("SQL_INTEGRATION_PROFILE", "auth")
     monkeypatch.setenv("SQL_INTEGRATION_GP", "1")
     monkeypatch.setenv("SQL_INTEGRATION_CLICKHOUSE_DRIVER", driver)
@@ -40,6 +37,19 @@ def test_cleanup_reactivates_cached_airflow_source_before_registry_and_scans(
     )
     registry.table("trino", "iceberg.integration.owned")
     registry.query("ch", "owned-query")
+    return registry
+
+
+@pytest.mark.parametrize("driver", ["http", "native"])
+@pytest.mark.parametrize("leak", [False, True])
+def test_cleanup_reactivates_cached_airflow_source_before_registry_and_scans(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    write_sql_connections: Callable[[dict[str, object]], Path],
+    driver: str,
+    leak: bool,
+) -> None:
+    registry = _prepare_cleanup_registry(monkeypatch, tmp_path, write_sql_connections, driver)
     cleaned: list[tuple[str, str]] = []
     scanned: list[tuple[str, str]] = []
 
