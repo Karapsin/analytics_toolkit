@@ -21,6 +21,7 @@ Generated from package version bumps and recent commit history.
 - Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
 - Reconcile user-approval labels automatically without clearing genuine holds or stale-head safeguards
 - Route malformed changelog fragments to fresh correction plans instead of repeating metadata failures
+- Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 
 ## 1.3.12.5 - 2026-10-14
 
