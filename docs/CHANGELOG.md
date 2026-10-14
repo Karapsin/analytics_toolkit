@@ -10,6 +10,7 @@ Generated from package version bumps and recent commit history.
 - Fix the Greenplum first-batch restart integration checkpoint and retry budget; add a service-free regression that checks exact rows, rollback, and fresh-connection recovery.
 - Preserve DataLens copy imports, encoding and parameter fidelity, managed Editor relocation, inferred dataset recovery and component diagnostics; restore Wizard configuration and change guards, explicit internal-title ownership, unsupported-encoding zero-write regressions and complete changelog history.
 - Fix Greenplum restart fault timing and batch retry coverage; correct regression imports for fast CI.
+- Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
 
 ## 1.3.12.5 - 2026-10-14
 
