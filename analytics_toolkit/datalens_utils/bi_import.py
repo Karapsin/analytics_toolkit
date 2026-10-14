@@ -7,6 +7,9 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
+from datalens_sdk import DataLensConfigurationError as SDKConfigurationError
+from datalens_sdk import DataLensValidationError
+
 from .auth.client import datalens_client
 from .bi_import_resources import (
     chart_definition,
@@ -18,6 +21,8 @@ from .bi_import_resources import (
 from .bi_import_ui import ui_definition
 from .deployment import BIProjectDeployment
 from .errors import DataLensConfigurationError, DataLensUtilsError
+from .import_copy import check_copy_key, copy_preflight, place_defaults, relocate
+from .import_fidelity import record, wizard_source_issues
 from .recipe import load_registry
 from .recipe_io import replace_files, stage_and_validate
 from .resources.bi_store import entry_description
@@ -36,7 +41,8 @@ def _merge_mapping(local: Any, incoming: Any, path: str) -> Any:
                 else copy.deepcopy(value)
             )
         return result
-    raise DataLensUtilsError("Import collision at " + path + "; existing content was preserved.")
+    message = "Import collision at " + path + "; existing content was preserved."
+    raise DataLensUtilsError(message)
 
 
 def _compatible_location(entity: Any, registry: Any) -> None:
@@ -160,8 +166,17 @@ def import_dataset(client: Any, entity: Any, context: Any) -> None:
     registry, proposed, report = context.registry, context.proposed, context.report
     dataset_keys, connection_keys = context.dataset_keys, context.connection_keys
     try:
-        _compatible_location(entity, registry)
+        if context.mode == "adopt":
+            _compatible_location(entity, registry)
         value, assets = dataset_definition(client, entity, connection_keys)
+        if any("manual" in source.parameters for source in entity.sources):
+            record(
+                report,
+                "dataset:" + dataset_keys[identifier],
+                "source parameters",
+                "normalized",
+                "Removed API-only manual flag from public factory arguments.",
+            )
         resource = registry.resources.get("dataset:" + dataset_keys[identifier])
         if resource is not None and resource.definition.get("sources"):
             checkpoint = current_session().paths.runtime_root / "resources.json"
@@ -174,23 +189,43 @@ def import_dataset(client: Any, entity: Any, context: Any) -> None:
             )
         proposed["configs/DL objects/datasets.json"][dataset_keys[identifier]] = value
         proposed.update(assets)
-        report["fidelity"].append(
-            {
-                "resource": "dataset:" + dataset_keys[identifier],
-                "status": "preserved",
-                "features": [
-                    "sources",
-                    "fields",
-                    "parameters",
-                    "joins",
-                    "RLS",
-                    "filters",
-                    "cache",
-                ],
-            }
-        )
+        if context.mode == "copy":
+            check_copy_key(registry, "dataset:" + dataset_keys[identifier], context.mode)
+            relocate(value, "dataset", identifier, report, "dataset:" + dataset_keys[identifier])
+        for feature in ["sources", "fields", "parameters", "joins", "RLS", "filters", "cache"]:
+            record(
+                report,
+                "dataset:" + dataset_keys[identifier],
+                feature,
+                "preserved",
+                "Extracted from published public SDK metadata and compiled locally.",
+            )
     except (DataLensUtilsError, KeyError) as error:
+        record(report, "dataset:" + identifier, "source metadata", "unsupported", str(error))
         report["blockers"].append({"resource": "dataset:" + identifier, "reason": str(error)})
+
+
+def check_imported_chart(entity: Any, context: Any, value: Any) -> None:
+    dataset_keys, chart_keys = context.dataset_keys, context.chart_keys
+    datasets, report, identifier = context.datasets, context.report, entity.id
+    if entity.category == "wizard":
+        issues = wizard_source_issues(
+            context.client,
+            entity,
+            {dataset_keys[key]: item for key, item in datasets.items()},
+            value,
+        )
+        if issues:
+            for issue in issues:
+                record(
+                    report,
+                    "chart:" + chart_keys[identifier],
+                    issue,
+                    "unsupported",
+                    "Source feature is not reproduced by the public recipe builder.",
+                )
+            message = "Wizard source parity failed: " + ", ".join(issues)
+            raise DataLensUtilsError(message)
 
 
 def import_chart(entity: Any, context: Any) -> None:
@@ -209,7 +244,8 @@ def import_chart(entity: Any, context: Any) -> None:
     datasets, selected, dashboard = context.datasets, context.selected, context.dashboard
     state = current_session()
     try:
-        _compatible_location(entity, registry)
+        if context.mode == "adopt":
+            _compatible_location(entity, registry)
         value, assets = chart_definition(
             entity,
             {dataset_keys[key]: value for key, value in datasets.items()},
@@ -217,6 +253,10 @@ def import_chart(entity: Any, context: Any) -> None:
             next(tab.id for tab in dashboard.tabs if tab.id in selected),
         )
         value["key"] = chart_keys[identifier]
+        check_imported_chart(entity, context, value)
+        if context.mode == "copy":
+            check_copy_key(registry, "chart:" + chart_keys[identifier], context.mode)
+            relocate(value, "chart", identifier, report, "chart:" + chart_keys[identifier])
         relative = (
             "configs/DL objects/charts/"
             + value["family"]
@@ -234,14 +274,26 @@ def import_chart(entity: Any, context: Any) -> None:
             )
         proposed[relative] = value
         proposed.update(assets)
-        report["fidelity"].append(
-            {
-                "resource": "chart:" + chart_keys[identifier],
-                "status": "preserved",
-                "features": ["bindings", "placements", "authored assets", "parameters"],
-            }
-        )
-    except (DataLensUtilsError, KeyError, StopIteration) as error:
+        features = ["bindings", "authored assets"]
+        if entity.category == "wizard":
+            features.extend(["colors", "shapes", "formulas", "filters", "formatting", "settings"])
+        for feature in features:
+            record(
+                report,
+                "chart:" + chart_keys[identifier],
+                feature,
+                "preserved",
+                "Extracted from published public SDK metadata and compiled locally.",
+            )
+    except (
+        DataLensUtilsError,
+        KeyError,
+        StopIteration,
+        SDKConfigurationError,
+        DataLensValidationError,
+        TypeError,
+    ) as error:
+        record(report, "chart:" + identifier, "source metadata", "unsupported", str(error))
         report["blockers"].append({"resource": "chart:" + identifier, "reason": str(error)})
 
 
@@ -268,6 +320,7 @@ def import_ui(context: Any) -> None:
         )
         settings = ui.pop("imported_dashboard_settings")
         parameters = ui.pop("imported_global_parameters")
+        place_defaults(ui, context.charts, chart_keys, report)
         proposed.update(ui)
         proposed["configs/DL objects/dashboard.json"] = {
             "settings": settings,
@@ -276,21 +329,24 @@ def import_ui(context: Any) -> None:
             "support_description": dashboard.data.get("supportDescription", ""),
             "access_description": dashboard.data.get("accessDescription", ""),
         }
-        report["fidelity"].append(
-            {
-                "resource": "dashboard:" + dashboard_id,
-                "status": "preserved",
-                "features": [
-                    "tabs",
-                    "shared selectors",
-                    "layout",
-                    "member wiring",
-                    "aliases",
-                    "placement parameters",
-                    "settings",
-                ],
-            }
-        )
+        if context.mode == "copy":
+            proposed["configs/DL objects/dashboard.json"]["copy_from"] = dashboard_id
+        for feature in [
+            "tabs",
+            "shared selectors",
+            "layout",
+            "member wiring",
+            "aliases",
+            "placement parameters",
+            "settings",
+        ]:
+            record(
+                report,
+                "dashboard:" + dashboard_id,
+                feature,
+                "preserved",
+                "Extracted from published public SDK metadata and compiled locally.",
+            )
     except (DataLensUtilsError, KeyError) as error:
         report["blockers"].append({"resource": "dashboard:" + dashboard_id, "reason": str(error)})
 
@@ -317,7 +373,11 @@ def merge_file(  # noqa: PLR0913 - One atomic file merge and its collision repor
 ) -> None:
     try:
         if path.exists():
-            local = json.loads(path.read_text()) if relative.endswith(".json") else path.read_text()
+            local = (
+                json.loads(path.read_text())
+                if relative.startswith("configs/") and relative.endswith(".json")
+                else path.read_text()
+            )
             if legacy and relative in {
                 "configs/runtime.json",
                 "configs/DL objects/datasets.json",
@@ -373,13 +433,10 @@ def prepare_upgrade(context: Any, *, legacy: bool) -> None:
                 )
 
 
-def import_recipe(
-    *,
-    dashboard_id: str,
-    tab_id: str | None = None,
-    dry_run: bool = True,
-    upgrade_recipe: bool = False,
-) -> dict[str, Any]:
+def validate_import_inputs(dashboard_id: Any, tab_id: Any, mode: str) -> None:
+    if mode not in {"adopt", "copy"}:
+        message = "Import mode must be adopt or copy."
+        raise DataLensConfigurationError(message)
     if (
         not isinstance(dashboard_id, str)
         or not dashboard_id
@@ -387,6 +444,17 @@ def import_recipe(
     ):
         msg = "Import requires a dashboard ID and, for a tab, a nonempty tab ID."
         raise DataLensConfigurationError(msg)
+
+
+def import_recipe(
+    *,
+    dashboard_id: str,
+    tab_id: str | None = None,
+    dry_run: bool = True,
+    upgrade_recipe: bool = False,
+    mode: str = "adopt",
+) -> dict[str, Any]:
+    validate_import_inputs(dashboard_id, tab_id, mode)
     state = current_session()
     registry = load_registry()
     legacy = state.runtime.get("schema_version", 1) == 1
@@ -398,6 +466,8 @@ def import_recipe(
         "proposed_files": {},
         "fidelity": [],
         "blockers": [],
+        "mode": mode,
+        "provenance": {},
     }
     if legacy and not upgrade_recipe:
         report["blockers"].append(
@@ -407,7 +477,16 @@ def import_recipe(
             }
         )
         return report
+    record(
+        report,
+        "dashboard:" + dashboard_id,
+        "backend inference, numerical results and rendering",
+        "unchecked",
+        "Import performs metadata reads and offline compilation only.",
+    )
     known = known_resources(registry)
+    if mode == "copy":
+        copy_preflight(registry, report)
     proposed: dict[str, Any] = {}
     charts: dict[str, Any] = {}
     datasets: dict[str, Any] = {}
@@ -431,6 +510,12 @@ def import_recipe(
             dependencies.datasets,
             dependencies.connections,
         )
+        report["provenance"] = {
+            "dashboard": dashboard.id,
+            "charts": sorted(charts),
+            "datasets": sorted(datasets),
+            "connections": sorted(connections),
+        }
         connection_keys = {
             identifier: known.get("connection", {}).get(
                 identifier, semantic_key("connection", identifier)
@@ -462,6 +547,9 @@ def import_recipe(
             datasets=datasets,
             selected=selected,
             dashboard=dashboard,
+            charts=charts,
+            client=client,
+            mode=mode,
         )
         for entity in datasets.values():
             import_dataset(client, entity, context)

@@ -112,9 +112,9 @@ def test_ruler_tracks_main_cursor_scroll_and_command_focus() -> None:
                 active_x - editor.gutter.left, active_x - editor.gutter.left + 1
             )
             assert all(
-                segment.text == "│"
+                segment.text == "x"
                 and segment.style.color.triplet.hex == app.get_css_variables()["accent"].lower()
-                and segment.style.bgcolor is None
+                and segment.style.underline is True
                 and segment.style.bold is False
                 for segment in caret
             )
@@ -156,5 +156,48 @@ def test_delete_command_uses_editor_selections_and_undo() -> None:
             app._handle_command(["del", "extra"])
             assert "Usage: del" in str(app.active_workspace.result_message.render())
             assert editor.text == "abc"
+
+    asyncio.run(exercise())
+
+
+def test_horizontal_scrollbar_tracks_offset_extents_resize_and_shorter_document() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(120, 40)) as pilot:
+            editor = app.active_workspace.editor
+            editor.text = "SELECT " + "x" * 500
+            app.active_workspace.command_input.focus()
+            await pilot.pause()
+            scrollbar = editor.horizontal_scrollbar
+            painted = []
+            composed = []
+            for x in (0, editor.max_scroll_x // 2, editor.max_scroll_x):
+                editor.scroll_to(x=x, animate=False, force=True)
+                await pilot.pause()
+                assert scrollbar.position == editor.scroll_x
+                assert scrollbar.window_virtual_size == editor.virtual_size.width
+                assert scrollbar.window_size == editor.scrollable_content_region.width
+                assert scrollbar.window_virtual_size - scrollbar.window_size == editor.max_scroll_x
+                painted.append(
+                    [(segment.text, str(segment.style)) for segment in scrollbar.render_line(0)]
+                )
+                region = scrollbar.region
+                screen_strip = app.screen._compositor.render_strips()[region.y].crop(
+                    region.x, region.right
+                )
+                composed.append([(segment.text, str(segment.style)) for segment in screen_strip])
+            assert painted[0] != painted[1]
+            assert painted[1] != painted[2]
+            assert composed[0] != composed[1]
+            assert composed[1] != composed[2]
+            await pilot.resize_terminal(90, 35)
+            await pilot.pause()
+            assert scrollbar.position == editor.scroll_x
+            assert scrollbar.window_size == editor.scrollable_content_region.width
+            editor.text = "SELECT 1"
+            await pilot.pause()
+            assert editor.scroll_x == scrollbar.position == 0
+            assert scrollbar.window_virtual_size == editor.virtual_size.width
+            assert editor.max_scroll_x == 0
 
     asyncio.run(exercise())

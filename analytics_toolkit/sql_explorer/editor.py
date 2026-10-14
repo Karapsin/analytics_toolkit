@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+from copy import copy
 from time import monotonic
 from typing import TYPE_CHECKING, Any, ClassVar, Tuple, cast
 
@@ -32,7 +33,7 @@ SearchMatch: TypeAlias = Tuple[Tuple[int, int], Tuple[int, int]]
 
 
 class SqlEditor(TextArea):
-    """A Textual editor with independent selections on separate logical lines."""
+    """A Textual editor with independent cursors and anchored selections."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "cursor_up", "Cursor up", show=False),
@@ -61,9 +62,16 @@ class SqlEditor(TextArea):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._secondary_selections: list[Selection] = []
-        self._cursor_edits: list[tuple[object, tuple[Selection, ...], tuple[Selection, ...]]] = []
-        self._preferred_column: int | None = None
-        self._preferred_location: tuple[int, int] | None = None
+        self._cursor_edits: list[
+            tuple[
+                object,
+                tuple[Selection, ...],
+                tuple[Selection, ...],
+                dict[Selection, int],
+                dict[Selection, int],
+            ]
+        ] = []
+        self._cursor_preferences: dict[Selection, int] = {}
         self._search_pattern = ""
         self._search_matches: tuple[SearchMatch, ...] = ()
         self._search_index = -1
@@ -79,6 +87,28 @@ class SqlEditor(TextArea):
         self.cursor_blink = False
         if not self.soft_wrap:
             self._refresh_size()
+
+    def _sync_horizontal_scrollbar(self) -> None:
+        """TextArea scrolling must also update the scrollbar's numeric model."""
+        if not self.is_mounted:
+            return
+        scrollbar = self.horizontal_scrollbar
+        scrollbar.window_virtual_size = self.virtual_size.width
+        scrollbar.window_size = self.scrollable_content_region.width
+        scrollbar.position = self.scroll_x
+
+    def watch_scroll_x(self) -> None:
+        self._sync_horizontal_scrollbar()
+
+    def on_idle(self) -> None:
+        if not self.is_mounted:
+            return
+        # Layout and document changes can update extents without a scroll event.
+        self._sync_horizontal_scrollbar()
+        app = cast("Any", self.app)
+        workspace = app.active_workspace
+        if workspace.editor is self and workspace.completion_menu.is_open:
+            app._position_completion(workspace)  # noqa: SLF001 -- tab-owned layout callback.
 
     @property
     def cursor_count(self) -> int:
@@ -105,8 +135,15 @@ class SqlEditor(TextArea):
     def _selection_key(selection: Selection) -> tuple[tuple[int, int], tuple[int, int]]:
         return tuple(sorted(selection))  # type: ignore[return-value]
 
-    def _set_selections(self, active: Selection, secondary: list[Selection]) -> None:
+    def _set_selections(
+        self,
+        active: Selection,
+        secondary: list[Selection],
+        *,
+        preferences: dict[Selection, int] | None = None,
+    ) -> None:
         merged: list[tuple[bool, Selection]] = []
+        resolved_preferences = dict(preferences or {})
         entries = [(True, active), *((False, item) for item in secondary)]
         for flag, selection in sorted(entries, key=lambda entry: self._selection_key(entry[1])):
             is_active, item = flag, selection
@@ -120,19 +157,15 @@ class SqlEditor(TextArea):
                     if direction.start > direction.end
                     else Selection(low, high)
                 )
+                resolved_preferences[item] = resolved_preferences.get(direction, direction.end[1])
                 is_active = is_active or previous_active
             merged.append((is_active, item))
         active = next(item for is_active, item in merged if is_active)
-        seen_rows = {active.end[0]}
-        retained: list[Selection] = []
-        for is_active, item in merged:
-            if not is_active and item.end[0] not in seen_rows:
-                retained.append(item)
-                seen_rows.add(item.end[0])
-        self._secondary_selections = retained
+        self._secondary_selections = [item for is_active, item in merged if not is_active]
+        self._cursor_preferences = {
+            item: resolved_preferences.get(item, item.end[1]) for _, item in merged
+        }
         self.selection = active
-        self._preferred_column = None
-        self._preferred_location = None
         self.scroll_cursor_visible()
         self.refresh()
         self.post_message(self.SelectionChanged(self.selection, self))
@@ -140,6 +173,9 @@ class SqlEditor(TextArea):
     def collapse_to_active(self) -> None:
         if self._secondary_selections:
             self._secondary_selections = []
+            self._cursor_preferences = {
+                self.selection: self._cursor_preferences.get(self.selection, self.selection.end[1])
+            }
             self.refresh()
 
     def _collapse_for_single_cursor_action(self) -> None:
@@ -153,24 +189,30 @@ class SqlEditor(TextArea):
 
     def _add_cursor(self, direction: int) -> None:
         active = self.selection
-        row, column = active.end
+        row = active.end[0]
         target_row = row + direction
         if target_row < 0 or target_row >= self.document.line_count:
             return
+        column = self.logical_column
+        target = Selection.cursor((target_row, min(column, len(self.document[target_row]))))
         existing = next(
             (
                 selection
                 for selection in self._secondary_selections
-                if selection.end[0] == target_row
+                if selection.end == target.end
             ),
             None,
         )
         if existing is not None:
             self._secondary_selections.remove(existing)
+            self._cursor_preferences.pop(existing, None)
             self.refresh()
             return
-        target = Selection.cursor((target_row, min(column, len(self.document[target_row]))))
-        self._set_selections(target, [*self._secondary_selections, active])
+        self._set_selections(
+            target,
+            [*self._secondary_selections, active],
+            preferences={**self._cursor_preferences, target: column},
+        )
 
     def move_to_line_start(self, line_number: int) -> None:
         self._set_selections(Selection.cursor((line_number - 1, 0)), [])
@@ -202,15 +244,11 @@ class SqlEditor(TextArea):
         application.copy_to_explorer_clipboard(value, fragments=fragments)
 
     def paste_clipboard(self, value: str) -> bool:
+        application = cast("SqlExplorerApp", self.app)
+        copied = application.clipboard_fragments(value)
         if not value:
             return False
-        application = cast("SqlExplorerApp", self.app)
-        self._edit_cursors(
-            value,
-            fragments=paste_fragments(
-                value, self.cursor_count, application.clipboard_fragments(value)
-            ),
-        )
+        self._edit_cursors(value, fragments=paste_fragments(value, self.cursor_count, copied))
         self.focus()
         return True
 
@@ -232,7 +270,11 @@ class SqlEditor(TextArea):
         paired: bool = False,
         fragments: tuple[str, ...] | None = None,
     ) -> None:
+        self._set_selections(
+            self.selection, self._secondary_selections, preferences=self._cursor_preferences
+        )
         before = (self.selection, *self._secondary_selections)
+        before_preferences = dict(self._cursor_preferences)
         original = Document(self.text)
         entries = [(False, selection) for selection in self._secondary_selections]
         entries.append((True, self.selection))
@@ -253,6 +295,18 @@ class SqlEditor(TextArea):
             insertion = fragments[index] if fragments is not None else insert
             start, end, value, caret = cursor_edit(self.text, (start, end), insertion, action)
             edits.append((start, end, value, caret, active))
+        # Adjacent carets may expand into overlapping destructive ranges (for
+        # example, deleting an empty pair). Delete the union only once.
+        reconciled: list[tuple[int, int, str, int, bool]] = []
+        for start, end, value, caret, active in sorted(edits):
+            if reconciled and not value and not reconciled[-1][2] and start < reconciled[-1][1]:
+                previous = reconciled.pop()
+                reconciled.append(
+                    (previous[0], max(previous[1], end), "", 0, active or previous[4])
+                )
+            else:
+                reconciled.append((start, end, value, caret, active))
+        edits = reconciled
         self.history.checkpoint()
         old_batches = self.history.undo_stack
         previous_edit = old_batches[-1][-1] if old_batches else None
@@ -294,14 +348,26 @@ class SqlEditor(TextArea):
         self._cursor_edits = [entry for entry in self._cursor_edits if id(entry[0]) in retained]
         if batches and batches[-1][-1] is not previous_edit:
             self._cursor_edits.append(
-                (batches[-1][-1], before, (self.selection, *self._secondary_selections))
+                (
+                    batches[-1][-1],
+                    before,
+                    (self.selection, *self._secondary_selections),
+                    before_preferences,
+                    dict(self._cursor_preferences),
+                )
             )
 
     def _history_cursors(self, edit: object, *, redo: bool) -> None:
-        for recorded, before, after in reversed(self._cursor_edits):
+        for recorded, before, after, before_preferences, after_preferences in reversed(
+            self._cursor_edits
+        ):
             if recorded is edit:
                 selections = after if redo else before
-                self._set_selections(selections[0], list(selections[1:]))
+                self._set_selections(
+                    selections[0],
+                    list(selections[1:]),
+                    preferences=after_preferences if redo else before_preferences,
+                )
                 return
         self.collapse_to_active()
 
@@ -319,36 +385,44 @@ class SqlEditor(TextArea):
 
     @property
     def logical_column(self) -> int:
-        if self._preferred_location != self.cursor_location or self._preferred_column is None:
-            return self.cursor_location[1]
-        return self._preferred_column
+        return self._cursor_preferences.get(self.selection, self.cursor_location[1])
 
     def move_rows(self, amount: int, *, select: bool = False) -> None:
-        column = self.logical_column
         last = self.document.line_count - 1
-        self._move_all(
-            lambda point: (
-                max(0, min(last, point[0] + amount)),
-                min(column, len(self.document[max(0, min(last, point[0] + amount))])),
-            ),
-            select=select,
+        moved: list[tuple[bool, Selection]] = []
+        preferences: dict[Selection, int] = {}
+        for active, selection in [
+            (True, self.selection),
+            *((False, item) for item in self._secondary_selections),
+        ]:
+            column = self._cursor_preferences.get(selection, selection.end[1])
+            origin = selection.end
+            if not select and not selection.is_empty:
+                origin = min(selection) if amount < 0 else max(selection)
+                column = origin[1]
+            row = max(0, min(last, origin[0] + amount))
+            target = (row, min(column, len(self.document[row])))
+            item = Selection(selection.start, target) if select else Selection.cursor(target)
+            moved.append((active, item))
+            preferences[item] = column
+        self._set_selections(
+            next(item for active, item in moved if active),
+            [item for active, item in moved if not active],
+            preferences=preferences,
         )
-        self._preferred_column = column
-        self._preferred_location = self.cursor_location
 
     def add_cursors(self, count: int, direction: int) -> None:
         row = self.cursor_location[0]
         column = self.logical_column
         secondary = list(self._secondary_selections)
+        preferences = dict(self._cursor_preferences)
         for distance in range(1, min(count, self.document.line_count) + 1):
             target = row + direction * distance
             if 0 <= target < self.document.line_count:
-                secondary.append(
-                    Selection.cursor((target, min(column, len(self.document[target]))))
-                )
-        self._set_selections(self.selection, secondary)
-        self._preferred_column = column
-        self._preferred_location = self.cursor_location
+                item = Selection.cursor((target, min(column, len(self.document[target]))))
+                secondary.append(item)
+                preferences[item] = column
+        self._set_selections(self.selection, secondary, preferences=preferences)
 
     def select_shortcut(self, *, default_catalog: str | None = None) -> bool:
         if self.cursor_count != 1 or not self.selection.is_empty:
@@ -378,12 +452,22 @@ class SqlEditor(TextArea):
         self._set_selections(Selection.cursor(result.end_location), [])
         return True
 
-    def _move_all(self, location_for: Any, *, select: bool = False) -> None:
+    def _move_all(
+        self,
+        location_for: Any,
+        *,
+        select: bool = False,
+        collapse_direction: int = 0,
+    ) -> None:
         entries = [(False, selection) for selection in self._secondary_selections]
         entries.append((True, self.selection))
         moved: list[tuple[bool, Selection]] = []
         for active, selection in entries:
-            target = location_for(selection.end)
+            target = (
+                (min(selection) if collapse_direction < 0 else max(selection))
+                if not select and not selection.is_empty and collapse_direction
+                else location_for(selection.end)
+            )
             moved.append(
                 (active, Selection(selection.start, target) if select else Selection.cursor(target))
             )
@@ -446,21 +530,17 @@ class SqlEditor(TextArea):
         self._horizontal_move(1, select=select)
 
     def _horizontal_move(self, amount: int, *, select: bool = False) -> None:
-        if self.cursor_count == 1:
-            self._move_all(self._left_of if amount < 0 else self._right_of, select=select)
-            return
-        column = max(0, self.logical_column + amount)
         self._move_all(
-            lambda point: (point[0], min(column, len(self.document[point[0]]))), select=select
+            self._left_of if amount < 0 else self._right_of,
+            select=select,
+            collapse_direction=amount,
         )
-        self._preferred_column = column
-        self._preferred_location = self.cursor_location
 
     def action_cursor_word_left(self, select: bool = False) -> None:
-        self._move_all(self._word_left_of, select=select)
+        self._move_all(self._word_left_of, select=select, collapse_direction=-1)
 
     def action_cursor_word_right(self, select: bool = False) -> None:
-        self._move_all(self._word_right_of, select=select)
+        self._move_all(self._word_right_of, select=select, collapse_direction=1)
 
     def action_home(self) -> None:
         self.action_cursor_line_start()
@@ -491,9 +571,10 @@ class SqlEditor(TextArea):
         self._apply_batch_edit("", delete_right=True)
 
     def action_cut(self) -> None:
-        if any(not selection.is_empty for selection in self.cursor_selections):
+        if self.cursor_count > 1 or not self.selection.is_empty:
             self.copy_to_clipboard()
-            self._apply_batch_edit("")
+            if any(not selection.is_empty for selection in self.cursor_selections):
+                self._apply_batch_edit("")
 
     def action_paste(self) -> None:
         self.paste_clipboard(cast("SqlExplorerApp", self.app).paste_from_explorer_clipboard())
@@ -552,8 +633,6 @@ class SqlEditor(TextArea):
         await super().on_event(event)
 
     async def _on_mouse_down(self, event: events.MouseDown) -> None:
-        self._preferred_column = None
-        self._preferred_location = None
         self._collapse_for_single_cursor_action()
         await super()._on_mouse_down(event)
 
@@ -670,18 +749,66 @@ class SqlEditor(TextArea):
         return count
 
     def render_line(self, y: int) -> Strip:
-        strip = super().render_line(y)
-        style = Style(color=self.app.get_css_variables()["accent"], bold=False)
+        # Textual's block cursor must not mask SQL or an active find match.
+        theme = self._theme
+        if theme is not None:
+            self._theme = copy(theme)
+            self._theme.cursor_style = Style(underline=True, bold=False, reverse=False)
+        try:
+            strip = super().render_line(y)
+        finally:
+            self._theme = theme
+        # Apply find colors after Textual's primary selection/cursor rendering.
+        for start, end in self._search_matches:
+            start_x, start_y = self.wrapped_document.location_to_offset(start)
+            end_x, end_y = self.wrapped_document.location_to_offset(end)
+            if start_y == end_y == y + int(self.scroll_y):
+                left = max(self.gutter_width, start_x - int(self.scroll_x) + self.gutter_width)
+                right = min(strip.cell_length, end_x - int(self.scroll_x) + self.gutter_width)
+                if left < right:
+                    strip = Strip.join(
+                        [
+                            strip.crop(0, left),
+                            Strip(
+                                Segment(
+                                    segment.text,
+                                    (segment.style or Style()) + _SEARCH_MATCH_STYLE,
+                                    segment.control,
+                                )
+                                for segment in strip.crop(left, right)
+                            ),
+                            strip.crop(right),
+                        ]
+                    )
+        style = Style(color=self.app.get_css_variables()["accent"], bold=False, reverse=False)
         for selection in self.cursor_selections:
+            row, column = selection.end
             cursor_x, cursor_y = self.wrapped_document.location_to_offset(selection.end)
             x = cursor_x - int(self.scroll_x) + self.gutter_width
             if (
                 y == cursor_y - int(self.scroll_y)
                 and self.gutter_width <= x < self.scrollable_content_region.width
             ):
-                strip = Strip.join(
-                    [strip.crop(0, x), Strip([Segment("│", style)]), strip.crop(x + 1)]
-                )
+                if column < len(self.document[row]) and not self.document[row][column].isspace():
+                    next_x, next_y = self.wrapped_document.location_to_offset((row, column + 1))
+                    width = max(1, next_x - cursor_x) if next_y == cursor_y else 1
+                    caret_style = style + Style(underline=True)
+                    if any(start <= selection.end < end for start, end in self._search_matches):
+                        caret_style = Style(
+                            color="black", underline=True, bold=False, reverse=False
+                        )
+                    caret = Strip(
+                        Segment(
+                            segment.text,
+                            (segment.style or Style()) + caret_style,
+                            segment.control,
+                        )
+                        for segment in strip.crop(x, x + width)
+                    )
+                else:
+                    width = 1
+                    caret = Strip([Segment("│", style)])
+                strip = Strip.join([strip.crop(0, x), caret, strip.crop(x + width)])
         return strip
 
     def get_line(self, line_index: int) -> Text:
@@ -718,52 +845,79 @@ class SqlEditor(TextArea):
 
     def action_completion_or_indent(self) -> None:
         if self.cursor_count > 1:
-            self._apply_batch_edit(_INDENT)
+            self.action_indent()
             return
         cast("SqlExplorerApp", self.app).action_complete()
 
     def action_indent(self) -> None:
-        if self.cursor_count > 1:
+        if all(selection.is_empty for selection in self.cursor_selections):
             self._apply_batch_edit(_INDENT)
-            return
-        start, end = self.selection
-        if start == end:
-            result = self.replace(_INDENT, start, end)
-            self.cursor_location = result.end_location
-            return
-        low, high = sorted((start, end))
-        first = low[0]
-        last = high[0] - (high[1] == 0 and high[0] > low[0])
-        lines = self.text.splitlines(keepends=True)
-        for row in range(last, first - 1, -1):
-            lines[row] = _INDENT + lines[row]
-        self.text = "".join(lines)
-        self.selection = Selection(
-            (low[0], 0), (high[0], high[1] + (len(_INDENT) if high[0] <= last else 0))
-        )
+        else:
+            self._indent_rows(unindent=False)
 
     def action_unindent(self) -> None:
-        self._collapse_for_single_cursor_action()
-        start, end = self.selection
-        if start != end:
-            low, high = sorted((start, end))
-            first = low[0]
+        self._indent_rows(unindent=True)
+
+    def _indent_rows(self, *, unindent: bool) -> None:
+        before = (self.selection, *self._secondary_selections)
+        before_preferences = dict(self._cursor_preferences)
+        rows: set[int] = set()
+        for selection in before:
+            low, high = sorted(selection)
             last = high[0] - (high[1] == 0 and high[0] > low[0])
-            lines = self.text.splitlines(keepends=True)
-            removed: dict[int, int] = {}
-            for row in range(first, last + 1):
-                amount = min(len(lines[row]) - len(lines[row].lstrip(" ")), 4)
-                removed[row] = amount
-                lines[row] = lines[row][amount:]
-            self.text = "".join(lines)
-            self.selection = Selection(
-                (low[0], max(0, low[1] - removed.get(low[0], 0))),
-                (high[0], max(0, high[1] - removed.get(high[0], 0))),
-            )
+            rows.update(range(low[0], last + 1))
+        amounts: dict[int, int] = {}
+        for row in rows:
+            line = self.document[row]
+            if unindent:
+                amount = min(len(line) - len(line.lstrip(" ")), len(_INDENT))
+                empty_columns = [
+                    item.end[1] for item in before if item.is_empty and item.end[0] == row
+                ]
+                if empty_columns:
+                    amount = min(amount, min(empty_columns))
+                amounts[row] = -amount
+            else:
+                amounts[row] = len(_INDENT)
+        if not any(amounts.values()):
             return
-        row, column = self.cursor_location
-        line = self.document[row]
-        removable = min(len(line) - len(line.lstrip(" ")), 4, column)
-        if removable:
-            self.replace("", (row, 0), (row, removable))
-            self.cursor_location = (row, column - removable)
+        first, last = min(rows), max(rows)
+        original = Document(self.text)
+        lines = original.lines[first : last + 1]
+        for index, row in enumerate(range(first, last + 1)):
+            amount = amounts.get(row, 0)
+            lines[index] = _INDENT + lines[index] if amount > 0 else lines[index][-amount:]
+        self.history.checkpoint()
+        self.replace(
+            "\n".join(lines),
+            (first, 0),
+            (last, len(original[last])),
+            maintain_selection_offset=False,
+        )
+        self.history.checkpoint()
+
+        def translate(point: tuple[int, int]) -> tuple[int, int]:
+            row, column = point
+            return row, max(0, column + amounts.get(row, 0))
+
+        after = tuple(Selection(translate(item.start), translate(item.end)) for item in before)
+        if not unindent and len(before) == 1 and not before[0].is_empty:
+            low, high = sorted(after[0])
+            low = (low[0], 0)
+            after = (
+                Selection(high, low) if before[0].start > before[0].end else Selection(low, high),
+            )
+        preferences = {
+            new: max(0, before_preferences.get(old, old.end[1]) + amounts.get(old.end[0], 0))
+            for old, new in zip(before, after)
+        }
+        self._set_selections(after[0], list(after[1:]), preferences=preferences)
+        self._cursor_edits.append(
+            (
+                self.history.undo_stack[-1][-1],
+                before,
+                (self.selection, *self._secondary_selections),
+                before_preferences,
+                dict(self._cursor_preferences),
+            )
+        )

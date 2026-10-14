@@ -35,3 +35,24 @@ including every chart/dataset revision and path; dashboard revision alone is
 insufficient. Avoid concurrent UI editing: resources are not one atomic snapshot.
 
 For named BI resources and tab/whole-dashboard imports, see [BI projects](bi-projects.md).
+
+Local validation cannot validate backend source inference. Dataset component
+errors stop reconciliation immediately after retaining any created ID; preserve
+`DataLensComponentError.diagnostics` and the checkpoint. Resume the owned draft
+with the same runtime after correcting the cause; never reset it to recreate.
+Copy mode refuses exact-name adoption. Diagnose cache metadata mismatches separately.
+`verify()` establishes recipe/deployment parity, not source/import parity; review
+per-feature import fidelity first. See the public
+[copy and recovery guide](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/datalens_utils/copy-tab.md).
+
+For owned version-2 dataset writes with a pending checkpoint, reconciliation
+preflight reads the saved branch, even when no published revision exists.
+Verification, pull and dependencies outside the write scope retain their published
+defaults. Remote-change, identity and fingerprint guards continue to apply.
+
+Publication requires a final fetched draft matching every managed source, field,
+formula, parameter, join, filter, setting, description, RLS and cache value.
+Requested removals keep their checkpoint ownership across interrupted saves until
+fetched metadata proves completion. Unmanaged entries remain preserved. Four
+nonconverging reconciliation passes stop publication and dependent writes; keep
+the runtime checkpoint and correct the underlying cause before resuming.

@@ -1,5 +1,10 @@
 """Compact command reference and specialized keyboard references."""
 
+import re
+
+from rich.table import Table
+from rich.text import Text
+
 HELP_TEXT = """SQL Explorer commands
   Query: run, cancel, format, create_table, clear query|results|all
   Files/tabs: open, save, connections, db KEY, to_csv, to_excel
@@ -88,10 +93,30 @@ MOVEMENT_HELP = """Movement and selection (case-sensitive; coordinates are 1-bas
 
 Relative moves affect all cursors; absolute moves and selections use the main
 cursor and collapse extras. Short lines clamp carets; longer lines restore the
-intended column. Left/Right aligns all cursors without multicursor line wrapping.
+intended column independently. Left/Right crosses logical line boundaries.
 d/u/pd/pu clamp at document boundaries and never insert lines or edit text.
 Only absolute mv adds text; its 100-new-line and 10-new-column caps clamp targets.
 Arrows/Home/End and Ctrl+Left/Right move; Shift variants select.
-Shift+Up/Down adds/removes cursors; Ctrl+Home/End moves to document bounds.
+Shift+Up/Down toggles the exact projected cursor position; Ctrl+Home/End moves to document bounds.
 Ctrl+Shift+Up/Down extends selections by one logical line without adding cursors.
 """
+
+
+def help_table(content: str) -> Table:
+    """Keep wrapped descriptions aligned beside their command."""
+    rows: list[tuple[str, str]] = []
+    for line in content.splitlines():
+        match = re.match(r"^  (\S.*?) {2,}(\S.*)$", line)
+        if match:
+            rows.append((match[1], match[2]))
+        elif line.startswith("    ") and rows:
+            command, description = rows[-1]
+            rows[-1] = command, description + " " + line.strip()
+        else:
+            rows.append(("", line.strip()))
+    table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
+    table.add_column(width=26, no_wrap=True)
+    table.add_column(ratio=1, overflow="fold")
+    for command, description in rows:
+        table.add_row(Text(command), Text(description))
+    return table

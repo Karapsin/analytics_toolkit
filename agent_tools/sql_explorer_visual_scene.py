@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+from rich.text import Text
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.connections import ConnectionsRestart
 from analytics_toolkit.sql_explorer.connections_picker import (
@@ -47,6 +48,12 @@ from textual.app import ScreenStackError
 from textual.color import Color
 from textual.css.query import NoMatches
 from textual.widgets import Button, Collapsible, Input, OptionList, Static
+
+from agent_tools.sql_explorer_render_diagnostics import (
+    SELECTOR_SCENES,
+    selector_readiness_assertions,
+    selector_readiness_snapshot,
+)
 
 if TYPE_CHECKING:
     from textual.app import App
@@ -107,8 +114,14 @@ class VisualExplorerApp(SqlExplorerApp):
         self.visual_manifest_path = manifest_path
         self.creation_scene_ready = not (
             scene_id.startswith(("create-table", "journal-"))
-            or scene_id in {"command-completion", "database-completion"}
+            or scene_id in {
+                "command-completion",
+                "database-completion",
+                "save-changes",
+                "save-changes-cancel",
+            }
         )
+        self.scene_configured = self.creation_scene_ready
         super().__init__(VisualSession())
 
     def on_mount(self) -> None:
@@ -243,9 +256,18 @@ class VisualExplorerApp(SqlExplorerApp):
             )
             self._update_status(workspace)
         elif scene == "result-success":
-            workspace.editor.text = "\n".join(
-                f"SELECT {index} AS row_number, '{'x' * 80}' AS wide_value"
-                for index in range(1, 45)
+            workspace.editor.text = (
+                "SELECT order_id, customer_name, revenue, long_note\n"
+                "FROM analytics.daily_orders;\n"
+                + "\n".join(f"-- Review note {index}: {'x' * 80}" for index in range(1, 43))
+            )
+            frame = pd.DataFrame(
+                {
+                    "order_id": range(1, 21),
+                    "customer_name": [f"Customer {index:02d}" for index in range(1, 21)],
+                    "revenue": [index * 12.75 for index in range(1, 21)],
+                    "long_note": ["priority order / reviewed" * 4 for _ in range(20)],
+                }
             )
             workspace.session.last_query = ExplorerQueryState(
                 "sql_explorer run=visual",
@@ -256,22 +278,13 @@ class VisualExplorerApp(SqlExplorerApp):
             )
             workspace.last_run_result = ExplorerRunResult(
                 route=ExecutionRoute.READ,
-                dataframe=pd.DataFrame(),
+                dataframe=frame,
                 displayed_rows=20,
                 total_rows=1_248,
                 truncated=True,
                 status="Showing the first 20 of 1,248 rows.",
             )
-            self.show_dataframe(
-                pd.DataFrame(
-                    {
-                        "order_id": range(1, 61),
-                        "customer_name": [f"Customer {index:02d}" for index in range(1, 61)],
-                        "revenue": [index * 12.75 for index in range(1, 61)],
-                        "long_note": ["priority order / reviewed" * 4 for _ in range(60)],
-                    }
-                )
-            )
+            self.show_dataframe(frame)
             self._update_status(workspace)
         elif scene == "result-message":
             workspace.session.last_query = ExplorerQueryState(
@@ -293,10 +306,13 @@ class VisualExplorerApp(SqlExplorerApp):
         elif scene == "new-file":
             self.push_screen(NewSqlFileScreen())
         elif scene == "mutation-confirm":
+            workspace.editor.text = (
+                "DELETE FROM analytics.daily_orders WHERE order_date < CURRENT_DATE - 90"
+            )
             self.push_screen(
                 ConfirmMutationScreen(
                     build_execution_plan(
-                        "DELETE FROM analytics.daily_orders WHERE order_date < CURRENT_DATE - 90",
+                        workspace.editor.text,
                         "gp",
                     ),
                     db_key="gp",
@@ -308,11 +324,10 @@ class VisualExplorerApp(SqlExplorerApp):
         elif scene == "connections-switch-save":
             self._request_exit(restart=ConnectionsRestart(Path("/Users/analyst/new/.connections")))
         elif scene in {"save-changes", "save-changes-cancel"}:
-            self.push_screen(SaveChangesScreen("quarterly_report.sql"))
-            if scene == "save-changes-cancel":
-                self.call_after_refresh(
-                    lambda: self.screen.query_one("#save-changes-cancel", Button).focus()
-                )
+            screen = SaveChangesScreen(workspace.file_label)
+            self.push_screen(screen)
+
+            self.set_timer(0.3, lambda: self._focus_save_choice(screen))
         elif scene == "export-confirm":
             self.push_screen(
                 ConfirmExportScreen(
@@ -333,7 +348,11 @@ class VisualExplorerApp(SqlExplorerApp):
             workspace.editor.text = "select " + "x" * 300
             workspace.editor.cursor_location = (0, 251)
         elif scene in {"results-vertical", "results-resized"}:
-            self.show_dataframe(pd.DataFrame({"customer": ["Ada", "Lin"], "revenue": [125, 240]}))
+            self.show_dataframe(
+                pd.DataFrame(
+                    {"order_id": [101, 102], "customer_name": ["Ada", "Lin"], "revenue": [125, 240]}
+                )
+            )
             self._command_results(["switch"] if scene == "results-vertical" else ["shrink", "4"])
         elif scene in {"help-shortcuts", "help-movement", "help-movement-end"}:
             self._command_help(["shortcuts" if scene == "help-shortcuts" else "movement"])
@@ -351,6 +370,7 @@ class VisualExplorerApp(SqlExplorerApp):
         self.active_workspace.command_input.focus()
 
     def _refresh_visual_evidence(self) -> None:
+        self._poll_scene_readiness()
         if not self.creation_scene_ready:
             return
         if not self._restore_primary_overflow_tab():
@@ -359,8 +379,136 @@ class VisualExplorerApp(SqlExplorerApp):
             self, self.visual_scene_id, self.visual_evidence_path, self.visual_manifest_path
         )
 
+    def _scene_readiness_details(self) -> dict[str, Any]:  # noqa: C901, PLR0912
+        """Describe current conditions without treating lifecycle loss as success."""
+        conditions = {"screen_available": False, "screen_mounted": False}
+        details: dict[str, Any] = {
+            "configured": self.scene_configured,
+            "conditions": conditions,
+            "missing_controls": [],
+            "unmounted_controls": [],
+            "incomplete_rows": [],
+            "notice_text": "",
+            "screen_class": None,
+            "focus_id": None,
+        }
+        try:
+            if not self.screen_stack:
+                return details
+            screen = self.screen
+            details["screen_class"] = type(screen).__name__
+            conditions["screen_available"] = True
+            conditions["screen_mounted"] = bool(screen.is_mounted)
+            if not screen.is_mounted:
+                return details
+            details["focus_id"] = getattr(self.focused, "id", None)
+            scene = self.visual_scene_id
+            if scene in {"save-changes", "save-changes-cancel"}:
+                conditions["expected_modal"] = isinstance(screen, SaveChangesScreen)
+                if not conditions["expected_modal"]:
+                    return details
+                choice = "cancel" if scene == "save-changes-cancel" else "save"
+                conditions["document_identity"] = screen.title == self.active_workspace.file_label
+                selector = f"#save-changes-{choice}"
+                conditions["required_controls"] = False
+                try:
+                    button = screen.query_one(selector, Button)
+                except NoMatches:
+                    details["missing_controls"].append(selector)
+                    return details
+                conditions["required_controls"] = bool(button.is_mounted)
+                if not button.is_mounted:
+                    details["unmounted_controls"].append(selector)
+                conditions["requested_focus"] = self.focused is button
+            elif scene.startswith("create-table"):
+                conditions["expected_modal"] = isinstance(screen, CreateTableScreen)
+                if not conditions["expected_modal"]:
+                    return details
+                conditions["required_controls"] = False
+                selectors = (
+                    "#create-table-name",
+                    "#create-table-source",
+                    "#create-from-sql",
+                    "#create-insert_data",
+                    "#create-skip_if_exists",
+                    "#create-drop_if_exists",
+                    "#create-table-submit",
+                    "#create-table-notice",
+                )
+                for selector in selectors:
+                    try:
+                        control = screen.query_one(selector)
+                    except NoMatches:
+                        details["missing_controls"].append(selector)
+                        continue
+                    if not control.is_mounted:
+                        details["unmounted_controls"].append(selector)
+                if details["missing_controls"] or details["unmounted_controls"]:
+                    return details
+                values = screen.values()
+                conditions["required_controls"] = all(
+                    field.is_mounted
+                    for field in screen.query(".create-column-name, .create-column-type")
+                )
+                if scene == "create-table-invalid":
+                    details["incomplete_rows"] = [
+                        index
+                        for index, (name, kind) in enumerate(values["rows"])
+                        if not name or not kind
+                    ][:32]
+                    notice = screen.query_one("#create-table-notice", Static)
+                    # Static.render() returns a visual wrapper in Textual 0.73.
+                    # renderable exposes the original str/Text as plain text.
+                    content = notice.renderable
+                    if isinstance(content, Text):
+                        text = content.plain
+                    elif isinstance(content, str):
+                        text = content
+                    else:
+                        raise TypeError(
+                            "Validation notice must contain plain text"
+                        )
+                    details["notice_text"] = text[:512]
+                    conditions["incomplete_rows"] = bool(details["incomplete_rows"])
+                    conditions["validation_feedback"] = "Each column needs" in text
+            return details
+        except (NoMatches, ScreenStackError):
+            conditions["lifecycle_stable"] = False
+            return details
+
+    def _selector_readiness_snapshot(self) -> dict[str, Any]:
+        """Collect failure evidence independently of production readiness."""
+        return selector_readiness_snapshot(self, self.visual_scene_id)
+
+    def _scene_state_ready(self) -> bool:
+        """Do not publish a capture until its intended application state has settled."""
+        if not all(self._scene_readiness_details()["conditions"].values()):
+            return False
+        if self.visual_scene_id in SELECTOR_SCENES:
+            return all(selector_readiness_assertions(self._selector_readiness_snapshot()).values())
+        return True
+
+    def _poll_scene_readiness(self) -> None:
+        self.creation_scene_ready = self.scene_configured and self._scene_state_ready()
+
     def _mark_scene_ready(self) -> None:
-        self.creation_scene_ready = True
+        if self._scene_state_ready():
+            self.scene_configured = True
+        self._poll_scene_readiness()
+
+    def _focus_save_choice(self, screen: SaveChangesScreen) -> None:
+        try:
+            if not self.screen_stack or self.screen is not screen or not screen.is_mounted:
+                return
+            choice = "cancel" if self.visual_scene_id == "save-changes-cancel" else "save"
+            button = screen.query_one(f"#save-changes-{choice}", Button)
+            if not button.is_mounted:
+                return
+            button.focus()
+            self.scene_configured = True
+            screen.call_after_refresh(self._poll_scene_readiness)
+        except (NoMatches, ScreenStackError):
+            return
 
     def _restore_primary_overflow_tab(self) -> bool:
         """Restore the review tab while tolerating a screen being torn down."""
@@ -382,11 +530,23 @@ class VisualExplorerApp(SqlExplorerApp):
                 "from analytics.orders\ngroup by customer_id"
             ),
         }
+        if scene == "create-table-invalid":
+            draft["rows"] = [("customer_id", ""), ("revenue", "NUMERIC(18,2)")]
         screen = CreateTableScreen("gp", "gp", draft)
         self.push_screen(screen)
 
-        def configure() -> None:
-            if not screen.is_mounted:
+        self.set_timer(0.3, lambda: self._configure_creation_scene(screen, scene))
+
+    def _configure_creation_scene(self, screen: CreateTableScreen, scene: str) -> None:
+        try:
+            if not self.screen_stack or self.screen is not screen or not screen.is_mounted:
+                return
+            if self.scene_configured:
+                self._poll_scene_readiness()
+                return
+            # Check mounting before values(), independently of validation feedback.
+            details = self._scene_readiness_details()
+            if not details["conditions"].get("required_controls", False):
                 return
             if scene == "create-table-types":
                 field = screen.query(".create-column-type").first(Input)
@@ -395,14 +555,14 @@ class VisualExplorerApp(SqlExplorerApp):
             elif scene == "create-table-advanced":
                 advanced = screen.query_one("#create-table-advanced", Collapsible)
                 advanced.collapsed = False
+                screen.query_one("#create-table-name", Input).focus()
                 advanced.scroll_visible(top=True, animate=False)
             elif scene == "create-table-invalid":
-                screen.query_one("#create-table-notice", Static).update(
-                    "Each column needs a name and SQL type."
-                )
-            self.creation_scene_ready = True
-
-        self.set_timer(0.3, configure)
+                screen.query_one("#create-table-submit", Button).press()
+            self.scene_configured = True
+            screen.call_after_refresh(self._poll_scene_readiness)
+        except (NoMatches, ScreenStackError):
+            return
 
     def _open_visual_completion(self) -> None:
         self._open_completion(
@@ -501,9 +661,12 @@ def _refresh_evidence_if_mounted(
     manifest_path: Path,
 ) -> bool:
     """Refresh evidence while a scene is mounted, tolerating normal teardown."""
-    if not app.screen_stack:
-        return False
     try:
+        if not app.screen_stack:
+            return False
+        screen = app.screen
+        if not screen.is_mounted:
+            return False
         _write_evidence(app, scene_id, evidence_path, manifest_path)
     except (NoMatches, ScreenStackError):
         return False
@@ -527,6 +690,12 @@ def _write_evidence(
     evidence_path: Path,
     manifest_path: Path,
 ) -> None:
+    # A final capture owns its diagnostics. Timers and teardown may refresh geometry,
+    # but must not replace the exported frame's evidence.
+    if evidence_path.exists():
+        previous = json.loads(evidence_path.read_text(encoding="utf-8"))
+        if "render_diagnostics" in previous:
+            return
     required = _manifest_scene(manifest_path, scene_id)["required_elements"]
     elements: dict[str, dict[str, Any]] = {}
     assertions: dict[str, bool] = {}
@@ -594,6 +763,10 @@ def _write_evidence(
                     widget.vertical_scrollbar.region.right == widget.content_region.right
                 )
 
+    selector_snapshot = None
+    if scene_id in SELECTOR_SCENES:
+        selector_snapshot = selector_readiness_snapshot(app, scene_id)
+        assertions.update(selector_readiness_assertions(selector_snapshot))
     assertions.update(_button_color_assertions(app))
 
     payload = {
@@ -606,6 +779,8 @@ def _write_evidence(
         "assertions": assertions,
         "ok": bool(assertions) and all(assertions.values()),
     }
+    if selector_snapshot is not None:
+        payload["selector_readiness"] = selector_snapshot
     # A mounted scene may emit an incomplete diagnostic frame before it settles,
     # but teardown must never replace geometry that already passed every check.
     if not payload["ok"] and evidence_path.exists():
@@ -618,12 +793,14 @@ def _write_evidence(
 
 def _button_color_assertions(app: App[Any]) -> dict[str, bool]:
     assertions = {}
-    for button in app.screen.query("ModalScreen Button, FindReplaceBar Button"):
+    for index, button in enumerate(app.screen.query("ModalScreen Button, FindReplaceBar Button")):
         focused = button.has_focus and not button.disabled
         color = app.get_css_variables()["accent" if focused else "surface"]
-        assertions[f"button_focus_color:{button.id}"] = button.styles.background == Color.parse(
-            color
-        )
+        identity = button.id
+        if identity is None:
+            classes = ".".join(sorted(button.classes))
+            identity = f"{type(button).__name__}.{classes}[{index}]"
+        assertions[f"button_focus_color:{identity}"] = button.styles.background == Color.parse(color)
     return assertions
 
 

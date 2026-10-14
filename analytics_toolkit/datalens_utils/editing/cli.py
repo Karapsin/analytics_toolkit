@@ -21,6 +21,7 @@ def parser() -> Any:
             "--write", action="store_true", help="Write a blocker-free staged merge."
         )
         command.add_argument("--upgrade-recipe", action="store_true")
+        command.add_argument("--mode", choices=("adopt", "copy"), default="adopt")
         command.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     for name in ("capabilities", "plan", "reconcile"):
         command = commands.add_parser(name)

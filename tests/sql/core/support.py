@@ -6,10 +6,41 @@ import importlib
 
 import pandas as pd
 import pytest
+from analytics_toolkit import sql
 
 from tests.sql._support.assertions import assert_sql_calls, assert_sql_equal, strip_query_label
 from tests.sql._support.scripted import ConnectionSequence, ScriptedConnection, SqlResponse
-from tests.sql._support.tasks import sql_task_spec
+from tests.sql._support.tasks import patch_task_operations, sql_task_spec
+
+
+@pytest.mark.parametrize("mode", ["async", "parallel"])
+def test_task_operation_seam_isolates_modes_and_restores_original_runners(
+    monkeypatch, mode
+) -> None:
+    module = importlib.import_module(f"analytics_toolkit.sql.orchestration.{mode}_sql")
+    original = module.read_sql
+    other_mode = "parallel" if mode == "async" else "async"
+    other_module = importlib.import_module(f"analytics_toolkit.sql.orchestration.{other_mode}_sql")
+    other_original = other_module.read_sql
+    rows = pd.DataFrame({"value": [7]})
+    calls = []
+
+    def read(**kwargs):
+        calls.append(kwargs)
+        return rows
+
+    with monkeypatch.context() as patch:
+        with pytest.raises(ValueError, match="Unsupported fake task operations"):
+            patch_task_operations(patch, mode=mode, read=read, unknown=read)
+        assert module.read_sql is original
+        patch_task_operations(patch, mode=mode, read=read)
+        assert other_module.read_sql is other_original
+        result = getattr(sql, f"{mode}_sql")([sql_task_spec("read")], progress=False)
+        pd.testing.assert_frame_equal(result["task_0"], rows)
+        assert len(calls) == 1
+        assert calls[0]["db_key"] == "gp"
+        assert calls[0]["query"].endswith("select 1")
+    assert module.read_sql is original
 
 
 @pytest.mark.parametrize("dialect", ["postgres", "trino", "clickhouse"])

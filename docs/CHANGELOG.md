@@ -6,9 +6,22 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
+- Preserve DataLens copy imports, encoding and parameter fidelity, managed Editor relocation, inferred dataset recovery and component diagnostics; restore Wizard configuration and change guards, explicit internal-title ownership, unsupported-encoding zero-write regressions and complete changelog history.
+
+## 1.3.12.5 - 2026-10-14
+
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
+- Add release-activated GitHub wiki synchronization from main user documentation.
+- Use explicit UTF-8 reads in GitHub wiki synchronization regressions to satisfy the strict lint gate.
+- Stabilize suite-wide test boundaries and held-worker cap detection with paired real/bypassed limiter regressions, restore Parquet adapter forwarding contracts, fix evidenced lint/format findings with original-exception and interrupt cleanup regressions, and preserve startup-diagnostics guards and changelog entries.
+- Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
+- Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
+- Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
+- Build disposable integration MinIO services from the existing pinned upstream release commits to avoid denied container pulls; retain S3 setup and cleanup and add fast service-free configuration regression guards.
+- Fix SQL integration fault actions to include the enabled Greenplum Compose profile while retaining the project-service guard, and reactivate loopback connection settings before auth cleanup to invalidate cached Airflow aliases. Add service-free Python regressions for both failures.
 
 ## 1.3.12.4 - 2026-10-12
 

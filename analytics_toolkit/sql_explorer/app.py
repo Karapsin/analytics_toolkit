@@ -740,13 +740,11 @@ class SqlExplorerApp(
         if arguments not in ([], ["shortcuts"], ["movement"]):
             self.show_error(SqlExplorerConfigurationError("Usage: help [shortcuts|movement]"))
             return
-        self.show_message(
-            MOVEMENT_HELP
-            if arguments == ["movement"]
-            else SHORTCUTS_HELP
-            if arguments
-            else HELP_TEXT
+        content = (
+            MOVEMENT_HELP if arguments == ["movement"] else SHORTCUTS_HELP if arguments else HELP_TEXT
         )
+        self.show_message(content)
+        self.active_workspace.result_message.update_help(content)
 
     def _command_exit(self, arguments: list[str]) -> None:
         if arguments:
@@ -888,7 +886,8 @@ class SqlExplorerApp(
             value = pyperclip.paste()
         except pyperclip.PyperclipException:
             return self._clipboard
-        return value or self._clipboard
+        self.clipboard_fragments(value)
+        return value
 
     def _update_all_statuses(self) -> None:
         for workspace in tuple(self._workspaces.values()):

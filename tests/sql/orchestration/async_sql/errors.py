@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from analytics_toolkit import sql as sql_module
+
+from tests._support.concurrency import ConcurrencyProbe
 from tests.sql._support.async_sql import (
     Any,
-    async_module,
     pd,
     pytest,
-    threading,
-    time,
     time_print,
 )
+from tests.sql._support.tasks import observe_task_cap, patch_task_operations
 
 
 def test_async_sql_fail_fast_false_prints_failed_task_query(
@@ -20,9 +21,9 @@ def test_async_sql_fail_fast_false_prints_failed_task_query(
     def fake_read_sql(**kwargs: Any) -> str:
         raise error
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
 
-    result = async_module.async_sql(
+    result = sql_module.async_sql(
         [
             {
                 "name": "broken",
@@ -50,10 +51,10 @@ def test_async_sql_fail_fast_true_prints_failed_transfer_sql(
     def fake_transfer_table(**kwargs: Any) -> str:
         raise error
 
-    monkeypatch.setattr(async_module, "transfer_table", fake_transfer_table)
+    patch_task_operations(monkeypatch, mode="async", transfer=fake_transfer_table)
 
     with pytest.raises(RuntimeError) as exc_info:
-        async_module.async_sql(
+        sql_module.async_sql(
             [
                 {
                     "name": "copy_table",
@@ -81,21 +82,13 @@ def test_async_sql_fail_fast_true_prints_failed_transfer_sql(
 def test_async_sql_lower_soft_cap_avoids_hard_cap_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    lock = threading.Lock()
-    active_workers = 0
-    max_active_workers = 0
+    probe = ConcurrencyProbe(5, held=True)
 
     def fake_read_sql(**kwargs: Any) -> str:
-        nonlocal active_workers, max_active_workers
-        with lock:
-            active_workers += 1
-            max_active_workers = max(max_active_workers, active_workers)
-        time.sleep(0.1)
-        with lock:
-            active_workers -= 1
-        return kwargs["query"]
+        with probe.worker():
+            return kwargs["query"]
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
 
     tasks = [
         {
@@ -106,15 +99,18 @@ def test_async_sql_lower_soft_cap_avoids_hard_cap_error(
         for index in range(11)
     ]
 
-    result = async_module.async_sql(
-        tasks,
-        concurrency=11,
-        soft_concurrency_cap=5,
-        hard_concurrency_cap=10,
+    observation = observe_task_cap(monkeypatch, probe, mode="async", calls=11)
+    result = observation.run(
+        lambda: sql_module.async_sql(
+            tasks,
+            concurrency=11,
+            soft_concurrency_cap=5,
+            hard_concurrency_cap=10,
+        )
     )
 
     assert list(result) == [f"task_{index}" for index in range(11)]
-    assert max_active_workers == 5
+    probe.assert_complete(calls=11)
 
 
 def test_async_sql_task_context_task_id_is_included_for_failed_tasks(
@@ -130,10 +126,10 @@ def test_async_sql_task_context_task_id_is_included_for_failed_tasks(
         time_print("task output before failure")
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
 
     with pytest.raises(RuntimeError, match="boom"):
-        async_module.async_sql(
+        sql_module.async_sql(
             [
                 {
                     "name": "copy_table",

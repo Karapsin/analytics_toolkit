@@ -9,7 +9,9 @@ from typing import Any
 
 from .bi_datasets import field_handles, relation_snapshot, source_identities
 from .bi_import_resources import dataset_cache
+from .bi_pull_identity import normalize_chart, normalize_dataset
 from .bi_pull_ui import pull_dashboard
+from .dataset_identity import resolved_definition
 from .editing.pull import pull_chart
 from .editing.state import fingerprint, merge
 from .errors import DataLensUtilsError
@@ -134,6 +136,8 @@ def extract_resource(  # noqa: PLR0913 - One baseline and its dependency snapsho
 def propose_resource(
     resource: Any, key: str, merged: dict[str, Any], proposed: dict[str, Any]
 ) -> None:
+    # A clean local merge can alias the incoming snapshot retained as the baseline.
+    merged = copy.deepcopy(merged)
     if resource.kind in {"connection", "collection", "workbook", "html_page", "dataset"}:
         filename = {
             "connection": "connections",
@@ -170,13 +174,14 @@ def propose_resource(
 
 
 def extract_dataset(entity: Any, resource: Any, old: dict[str, Any]) -> dict[str, Any]:
-    result: dict[str, Any] = copy.deepcopy(resource.definition)
+    result: dict[str, Any] = resolved_definition(resource.definition, old)
     result.update(name=entity.name, description=entity.description)
     sources = source_identities(entity, result, old)
     for key, source in sources.items():
         value = result["sources"][key]
         value["id"] = source.id
         value["parameters"] = dict(source.parameters)
+        value["parameters"].pop("manual", None)
         if value.get("sql_file"):
             value["parameters"].pop("subsql", None)
     fields = field_handles(entity, result, sources)
@@ -189,7 +194,7 @@ def extract_dataset(entity: Any, resource: Any, old: dict[str, Any]) -> dict[str
             kind=field.type,
             aggregation=field.aggregation,
         )
-        for name in ("description", "hidden"):
+        for name in ("description", "hidden", "ui_settings"):
             if name in value or getattr(field, name):
                 value[name] = getattr(field, name)
     for key, value in result.get("relations", {}).items():
@@ -253,6 +258,10 @@ def pull_resources(  # noqa: PLR0913 - Three-way baseline, dependency snapshots 
             raise DataLensUtilsError(key + " lacks a verified three-way baseline.")
         base = copy.deepcopy(old["baseline"])
         incoming = extract_resource(client, resource, entity, old, base, datasets, charts)
+        if resource.kind == "dataset":
+            normalize_dataset(incoming["definition"], base["definition"])
+        elif resource.kind == "chart":
+            normalize_chart(incoming["definition"], registry, store, datasets)
         merged = merge(base, resource.files, incoming, key)
         baselines[key] = incoming
         propose_resource(resource, key, merged, proposed)

@@ -166,6 +166,67 @@ completion. The receipt records the host and capture method and is bound to
 the complete reviewed content; only a current all-pass receipt allows commit
 or push. Failed or interrupted captures require a new review session.
 
+Capture waits for both intended scene state and passing geometry, with a bounded
+timeout. Save scenes require the active document name and requested button focus;
+invalid create-table scenes require an incomplete row and its validation notice.
+Normal modal teardown postpones readiness, including delayed configuration and
+queued readiness callbacks. Evidence refreshes require a mounted active screen;
+only missing-control and screen-stack lifecycle errors are handled, while
+unexpected errors still fail.
+Immediately before export, capture rechecks readiness, removes stale geometry,
+and validates every required control again. Missing controls or a timeout block
+PNG export. Configuration is recorded after mounted controls are available and the
+intended action has been requested; periodic refreshes then poll settled state
+without resubmitting validation. Invalid-scene feedback is read from the Static
+plain-text renderable; an unexpected renderable fails instead of passing on its
+object representation. Control mounting is checked before reading modal values.
+Timeout errors include bounded readiness conditions,
+missing or unmounted controls, incomplete rows, notice text, requested focus,
+and freshly evaluated geometry assertions before teardown and evidence removal.
+The timeout and every required geometry check remain unchanged.
+Button color assertions retain `button_focus_color:<id>` for named controls.
+Controls without IDs use their widget class, sorted CSS classes and query index
+(for example, `button_focus_color:Button.remove-column[0]`), so every removal
+button is checked separately. Modal buttons use the surface color when neutral
+or disabled, the shared hover color under the pointer, and amber for enabled
+keyboard focus, including focus with hover.
+
+For database-picker, find-replace, column-ruler-scrolled, create-table-advanced,
+create-table-schema, create-table-invalid, and create-table-sql, geometry JSON also includes bounded
+`render_diagnostics`: widget and composed terminal strips, styles and control
+state, SVG clips/transforms, scrollbar state, and frame hashes. Missing or
+truncated layers explicitly report incompleteness. The PNG and diagnostic hashes
+come from one export; atomic evidence replacement protects that frame from later
+timer refreshes. These diagnostics do not replace geometry checks or individual
+review of every full PNG.
+
+The schema, invalid and SQL creation scenes also record scoped source-selector
+children: `SelectCurrent`, its `Static#label`, and the active arrow, with the
+inactive arrow described separately. Diagnostics retain the selected/expected
+mode, computed styles, child/content geometry, ancestor clipping and complete
+bounded render-cache/compositor rows. `visibility_ok` and explicit visibility
+findings are separate from collection completeness; successfully observing blank
+text does not approve the selector. The region budget is nine; row, cell, SVG and
+512 KiB payload bounds remain in force and omissions remain explicit.
+
+Schema, invalid-schema and SQL scenes require complete selector evidence, the
+expected source value, and readable composed label/arrow output contained within
+every ancestor clip. These checks gate both current scene readiness and freshly
+evaluated final geometry. Source and advanced Boolean selectors place their frame
+on the inner `SelectCurrent`, leaving the outer three-row allocation borderless
+and unpadded. Positive regressions require complete, visible selector evidence
+and passing readiness assertions for all three source scenes; failure regressions
+retain observational evidence without approving the frame.
+
+Diagnostic collection remains observational and available for failed frames.
+Timeout observations are retained in a sibling `*.timeout.json` file, including
+selector rows, even if the error log truncates its summary. Final capture deletes
+stale geometry before rechecking readiness and geometry; a previous successful
+frame cannot approve a clipped selector. Service-free regressions cover composed
+output, containment after resize/scroll, keyboard choices, and deliberate double
+framing. GitHub must run these on Textual 0.73.x and 0.89.1 and perform a fresh
+46-scene capture and individual full-PNG review before publication.
+
 Normal `version-bump` calls add the supplied summary under `## Unreleased` and
 roll the section into a new version when it reaches ten bullets. For an explicit
 release below that threshold, use `--change-type release --force-release`
@@ -279,3 +340,10 @@ independent agent reviews the final PR.
 The agent-only validation environment constrains `virtualenv>=21.1,<21.5` so
 the required Python 3.8 matrix remains runnable. Project setup resolves this
 constraint together with tox; it does not change public package dependencies.
+
+## User documentation wiki exporter
+
+`wiki_sync.py` exports validated user documentation to the separate GitHub wiki.
+It uses only the Python standard library; source Markdown remains authoritative.
+See [wiki synchronization setup and retries](../docs/WIKI_SYNC.md) for release
+activation, credentials, validation, and ownership of generated pages.

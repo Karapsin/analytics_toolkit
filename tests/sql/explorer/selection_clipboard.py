@@ -143,7 +143,7 @@ def test_multiline_fragments_cut_and_clipboard_replacement(monkeypatch) -> None:
     asyncio.run(exercise())
 
 
-def test_carets_are_thin_bars_without_changing_text() -> None:
+def test_carets_preserve_occupied_cells_and_use_bars_in_blank_cells() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
@@ -159,9 +159,16 @@ def test_carets_are_thin_bars_without_changing_text() -> None:
                 for row in range(3):
                     strip = editor.render_line(row)
                     bars = [segment for segment in strip if segment.text == "│"]
-                    assert len(bars) == 1
-                    assert bars[0].style.bold is False
-                    assert bars[0].style.bgcolor is None
+                    if row == 0:
+                        assert "select 1" in strip.text
+                        caret = strip.crop(editor.gutter_width + 2, editor.gutter_width + 3)
+                        assert caret.text == "l"
+                        assert all(segment.style.underline for segment in caret)
+                        assert not bars
+                    else:
+                        assert len(bars) == 1
+                        assert bars[0].style.bold is False
+                        assert bars[0].style.bgcolor is None
             assert editor.text == "select 1\n\nlast"
 
     asyncio.run(exercise())

@@ -28,6 +28,7 @@ def run_cli(project: Any, argv: Any = ()) -> Any:
                 tab_id=getattr(arguments, "tab_id", None),
                 dry_run=not arguments.write,
                 upgrade_recipe=arguments.upgrade_recipe,
+                mode=arguments.mode,
                 reporter=(lambda *_args, **_kwargs: None) if arguments.json else print,
             )
         else:
@@ -51,6 +52,7 @@ def run_cli(project: Any, argv: Any = ()) -> Any:
                         "operation": arguments.command or "reconcile",
                         "error": str(error),
                         "capabilities": getattr(error, "report", None),
+                        "diagnostics": getattr(error, "diagnostics", None),
                     },
                     ensure_ascii=False,
                 )

@@ -6,8 +6,8 @@ import pytest
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.completion import CompletionCoordinator
 
+from tests.sql._support.completion import FakeProvider, _wait_for
 from tests.sql._support.explorer import FakeSession
-from tests.sql.explorer.completion import FakeProvider, _wait_for
 
 
 @pytest.mark.parametrize("prefix", ["", "o", "order", "orders", "orders_archive"])

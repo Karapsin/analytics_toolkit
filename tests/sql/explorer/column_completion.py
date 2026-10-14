@@ -18,7 +18,7 @@ from analytics_toolkit.sql_explorer.completion import (
 from sqlglot import exp
 from sqlglot.optimizer.scope import Scope
 
-from tests.sql.explorer.completion import FakeProvider
+from tests.sql._support.completion import FakeProvider
 
 
 @pytest.mark.parametrize(

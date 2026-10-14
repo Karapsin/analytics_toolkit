@@ -8,6 +8,10 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from analytics_toolkit import sql as sql_module
+
+from tests._support.concurrency import WAIT_SECONDS, wait_event
+from tests.sql._support.tasks import patch_task_operations
 
 async_module = importlib.import_module("analytics_toolkit.sql.orchestration.async_sql")
 cancellation_module = importlib.import_module("analytics_toolkit.sql.execution.cancellation")
@@ -454,16 +458,15 @@ def test_async_sql_keyboard_interrupt_stops_queued_tasks(
         calls.append(query)
         if query == "long":
             started.set()
-            while True:
-                cancellation_module.raise_if_cancelled()
-                time.sleep(0.001)
+            cancellation_module.wait_or_raise_if_cancelled(WAIT_SECONDS)
+            pytest.fail("Running query was not cancelled")
         return query
 
     def interrupt(_context: Any) -> None:
-        assert started.wait(timeout=1)
+        wait_event(started)
         raise error
 
-    monkeypatch.setattr(async_module, "read_sql", fake_read_sql)
+    patch_task_operations(monkeypatch, mode="async", read=fake_read_sql)
     monkeypatch.setattr(
         async_module,
         "cancel_scope_queries",
@@ -471,7 +474,7 @@ def test_async_sql_keyboard_interrupt_stops_queued_tasks(
     )
 
     with pytest.raises(KeyboardInterrupt) as caught:
-        async_module.async_sql(
+        sql_module.async_sql(
             [
                 {"name": "running", "type": "read", "db_key": "gp", "query": "long"},
                 {
@@ -497,6 +500,7 @@ def test_existing_loop_bridge_propagates_caller_interrupt_to_runner(
     scope = cancellation_module.SqlCancellationScope()
     error = KeyboardInterrupt("positron interrupt")
     coroutine_cancelled = threading.Event()
+    coroutine_started = threading.Event()
 
     class InterruptingQueue:
         def __init__(self, maxsize: int) -> None:
@@ -507,11 +511,12 @@ def test_existing_loop_bridge_propagates_caller_interrupt_to_runner(
             self.item = item
 
         def get(self) -> Any:
-            time.sleep(0.02)
+            wait_event(coroutine_started)
             raise error
 
     async def wait_forever() -> dict[str, Any]:
         try:
+            coroutine_started.set()
             await asyncio.Event().wait()
         finally:
             coroutine_cancelled.set()
