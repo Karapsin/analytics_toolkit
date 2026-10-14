@@ -63,7 +63,9 @@ def recovered_pull(project, monkeypatch, *, chart_overrides=None, source_sql=Non
             original,
             sources=(
                 replace(
-                    original.sources[0], source_type="CH_SUBSELECT", parameters={"subsql": source_sql}
+                    original.sources[0],
+                    source_type="CH_SUBSELECT",
+                    parameters={"subsql": source_sql},
                 ),
             ),
         )
