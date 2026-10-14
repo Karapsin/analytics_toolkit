@@ -29,6 +29,7 @@ Generated from package version bumps and recent commit history.
 - Route malformed changelog fragments to fresh correction plans instead of repeating metadata failures
 - Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 - Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
+- Preserve SQL Explorer multicursor selection, clipboard spreading and readable thin carets; stabilize armed-directory scene setup and semantic readiness, correct quality and scrollbar typing failures, retain CODE6 fixes and changelog history, and add focused service-free regressions.
 
 ## 1.3.12.5 - 2026-10-14
 
