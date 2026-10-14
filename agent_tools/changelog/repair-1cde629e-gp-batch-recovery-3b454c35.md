@@ -1,0 +1,1 @@
+- Fix the Greenplum first-batch restart integration checkpoint and retry budget; add a service-free regression that checks exact rows, rollback, and fresh-connection recovery.
