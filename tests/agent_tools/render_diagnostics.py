@@ -16,6 +16,7 @@ from textual.widgets import Checkbox
 from agent_tools import sql_explorer_render_diagnostics as diagnostics
 from agent_tools import sql_explorer_visual, sql_explorer_visual_capture, sql_explorer_visual_scene
 from tests._support.paths import REPO_ROOT
+from tests.agent_tools._support import wait_for_scene
 
 
 def test_strip_records_unicode_cells_and_resolved_styles() -> None:
@@ -90,18 +91,41 @@ def test_svg_and_json_bounds_explicitly_invalidate_incomplete_evidence() -> None
     assert len(json.dumps(bounded, indent=4).encode()) <= diagnostics.MAX_BYTES
 
 
+def _highlighted_runs(row: dict[str, Any]) -> list[str]:
+    runs: list[str] = []
+    end = -1
+    for span in row["spans"]:
+        if span["background"] != "#ffff00":
+            end = -1
+            continue
+        if span["x"] == end:
+            runs[-1] += span["text"]
+        else:
+            runs.append(span["text"])
+        end = span["x"] + span["cells"]
+    return runs
+
+
 def _assert_find_scene(terminal: dict[str, Any]) -> None:
     assert len(terminal["editor"]["matches"]) == 3
     assert terminal["editor"]["selections"]
     region = terminal["regions"][0]
     for layer in ("widget_rows", "composed_rows"):
         assert all(
-            any(
-                "order" in span["text"] and span["background"] == "#ffff00"
-                for span in row["spans"]
-            )
+            any("order" in text for text in _highlighted_runs(row))
             for row in region[layer][:3]
         )
+
+
+@pytest.mark.parametrize("broken", [False, True])
+def test_find_evidence_accepts_split_carets_but_rejects_a_highlight_gap(broken: bool) -> None:
+    spans = [
+        Segment("or", Style(bgcolor="#ffff00")),
+        Segment("d", Style(bgcolor="#20252a" if broken else "#ffff00", underline=True)),
+        Segment("er", Style(bgcolor="#ffff00")),
+    ]
+    row = diagnostics.strip_record(Strip(spans), x=0, y=0, width=5)
+    assert ("order" in _highlighted_runs(row)) is not broken
 
 
 def _assert_scrollbar_scene(terminal: dict[str, Any]) -> None:
@@ -142,7 +166,7 @@ def test_target_scenes_collect_only_bounded_widget_and_composed_regions(
             scene, tmp_path / "geometry.json", REPO_ROOT / sql_explorer_visual.MANIFEST
         )
         async with app.run_test(size=(208, 47)) as pilot:
-            await pilot.pause(0.7)
+            await wait_for_scene(app, pilot)
             terminal = diagnostics.terminal_diagnostics(app, scene)
             assert not terminal["missing"]
             assert not terminal["omissions"]
@@ -274,7 +298,7 @@ def test_checkbox_diagnostics_track_true_disabled_and_focused_states(tmp_path: P
             REPO_ROOT / sql_explorer_visual.MANIFEST,
         )
         async with app.run_test(size=(208, 47)) as pilot:
-            await pilot.pause(0.7)
+            await wait_for_scene(app, pilot)
             checkbox = app.screen.query_one("#create-skip_if_exists", Checkbox)
             checkbox.value = True
             checkbox.focus()
@@ -410,9 +434,7 @@ def test_clipped_selector_remains_observable_but_blocks_readiness_and_final_geom
         manifest = REPO_ROOT / sql_explorer_visual.MANIFEST
         app = sql_explorer_visual_scene.VisualExplorerApp(scene, evidence, manifest)
         async with app.run_test(size=(208, 47)) as pilot:
-            await pilot.pause()
-            app._configure_creation_scene(app.screen, scene)
-            await pilot.pause()
+            await wait_for_scene(app, pilot)
             app._poll_scene_readiness()
             assert sql_explorer_visual_capture._scene_ready(app)
             selector = app.screen.query_one("#create-table-source")

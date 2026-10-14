@@ -167,10 +167,15 @@ def test_empty_external_clipboard_invalidates_fragments_even_before_paste(
 ) -> None:
     monkeypatch.setattr(app_module.pyperclip, "copy", lambda _: None)
     monkeypatch.setattr(app_module.pyperclip, "paste", lambda: "")
-    app = SqlExplorerApp(FakeSession())
-    app.copy_to_explorer_clipboard("a\nb", fragments=("a", "b"))
-    assert app.paste_from_explorer_clipboard() == ""
-    assert app.clipboard_fragments("a\nb") is None
+
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        app.copy_to_explorer_clipboard("a\nb", fragments=("a", "b"))
+        assert app.paste_from_explorer_clipboard() == ""
+        assert app.clipboard_fragments("a\nb") is None
+
+    asyncio.run(exercise())
+
 
 def test_vertical_extension_keeps_each_anchor_and_intended_column() -> None:
     async def exercise() -> None:

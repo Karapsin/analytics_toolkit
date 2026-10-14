@@ -122,13 +122,14 @@ class VisualExplorerApp(SqlExplorerApp):
             }
         )
         self.scene_configured = self.creation_scene_ready
+        self._pending_scene_screen: SaveChangesScreen | CreateTableScreen | None = None
         super().__init__(VisualSession())
 
     def on_mount(self) -> None:
         super().on_mount()
         self.call_after_refresh(self._configure_visual_scene)
 
-    def _configure_visual_scene(self) -> None:  # noqa: C901, PLR0912
+    async def _configure_visual_scene(self) -> None:  # noqa: C901, PLR0912
         workspace = self.active_workspace
         workspace.editor.text = "\n".join(
             (
@@ -156,7 +157,7 @@ class VisualExplorerApp(SqlExplorerApp):
             self.push_screen(JournalScreen(journal, "gp"))
             self.set_timer(0.6, self._mark_scene_ready)
         elif scene.startswith("create-table"):
-            self._open_creation_scene(scene)
+            await self._open_creation_scene(scene)
         elif scene == "completion-narrowed":
             workspace.editor.text = "SELECT customer_na FROM analytics.daily_orders"
             workspace.editor.cursor_location = (0, len("SELECT customer_na"))
@@ -325,9 +326,9 @@ class VisualExplorerApp(SqlExplorerApp):
             self._request_exit(restart=ConnectionsRestart(Path("/Users/analyst/new/.connections")))
         elif scene in {"save-changes", "save-changes-cancel"}:
             screen = SaveChangesScreen(workspace.file_label)
-            self.push_screen(screen)
-
-            self.set_timer(0.3, lambda: self._focus_save_choice(screen))
+            self._pending_scene_screen = screen
+            await self.push_screen(screen)
+            screen.call_after_refresh(self._configure_pending_scene)
         elif scene == "export-confirm":
             self.push_screen(
                 ConfirmExportScreen(
@@ -369,7 +370,19 @@ class VisualExplorerApp(SqlExplorerApp):
         self._command_database(["warehouse_connection"])
         self.active_workspace.command_input.focus()
 
+    def _configure_pending_scene(self) -> None:
+        if self.scene_configured or self._pending_scene_screen is None:
+            return
+        screen = self._pending_scene_screen
+        if isinstance(screen, SaveChangesScreen):
+            self._focus_save_choice(screen)
+        else:
+            self._configure_creation_scene(screen, self.visual_scene_id)
+        if self.scene_configured:
+            self._pending_scene_screen = None
+
     def _refresh_visual_evidence(self) -> None:
+        self._configure_pending_scene()
         self._poll_scene_readiness()
         if not self.creation_scene_ready:
             return
@@ -520,7 +533,7 @@ class VisualExplorerApp(SqlExplorerApp):
             return False
         return False
 
-    def _open_creation_scene(self, scene: str) -> None:
+    async def _open_creation_scene(self, scene: str) -> None:
         draft = {
             "table_name": "sandbox.customer_summary",
             "rows": [("customer_id", "BIGINT"), ("revenue", "NUMERIC(18,2)")],
@@ -533,9 +546,9 @@ class VisualExplorerApp(SqlExplorerApp):
         if scene == "create-table-invalid":
             draft["rows"] = [("customer_id", ""), ("revenue", "NUMERIC(18,2)")]
         screen = CreateTableScreen("gp", "gp", draft)
-        self.push_screen(screen)
-
-        self.set_timer(0.3, lambda: self._configure_creation_scene(screen, scene))
+        self._pending_scene_screen = screen
+        await self.push_screen(screen)
+        screen.call_after_refresh(self._configure_pending_scene)
 
     def _configure_creation_scene(self, screen: CreateTableScreen, scene: str) -> None:
         try:

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 _INDENT = "    "
 _DOUBLE_CLICK_SECONDS = 0.5
-_SEARCH_MATCH_STYLE = Style(color="black", bgcolor="bright_yellow", bold=True)
+_SEARCH_MATCH_STYLE = Style(color="#000000", bgcolor="#ffff00", bold=True)
 SearchMatch: TypeAlias = Tuple[Tuple[int, int], Tuple[int, int]]
 
 
@@ -762,9 +762,18 @@ class SqlEditor(TextArea):
         for start, end in self._search_matches:
             start_x, start_y = self.wrapped_document.location_to_offset(start)
             end_x, end_y = self.wrapped_document.location_to_offset(end)
-            if start_y == end_y == y + int(self.scroll_y):
-                left = max(self.gutter_width, start_x - int(self.scroll_x) + self.gutter_width)
-                right = min(strip.cell_length, end_x - int(self.scroll_x) + self.gutter_width)
+            visual_row = y + int(self.scroll_y)
+            if start_y <= visual_row <= end_y:
+                left = (
+                    max(self.gutter_width, start_x - int(self.scroll_x) + self.gutter_width)
+                    if visual_row == start_y
+                    else self.gutter_width
+                )
+                right = (
+                    min(strip.cell_length, end_x - int(self.scroll_x) + self.gutter_width)
+                    if visual_row == end_y
+                    else strip.cell_length
+                )
                 if left < right:
                     strip = Strip.join(
                         [
@@ -795,7 +804,7 @@ class SqlEditor(TextArea):
                     caret_style = style + Style(underline=True)
                     if any(start <= selection.end < end for start, end in self._search_matches):
                         caret_style = Style(
-                            color="black", underline=True, bold=False, reverse=False
+                            color="#000000", underline=True, bold=False, reverse=False
                         )
                     caret = Strip(
                         Segment(
@@ -807,33 +816,36 @@ class SqlEditor(TextArea):
                     )
                 else:
                     width = 1
-                    caret = Strip([Segment("│", style)])
+                    cell = next(iter(strip.crop(x, x + 1)), Segment(""))
+                    caret_style = (cell.style or self.rich_style) + style + Style(underline=False)
+                    if any(start <= selection.end < end for start, end in self._search_matches):
+                        caret_style += Style(color="#000000")
+                    caret = Strip([Segment("│", caret_style)])
                 strip = Strip.join([strip.crop(0, x), caret, strip.crop(x + width)])
-        return strip
+        return strip.adjust_cell_length(self.scrollable_content_region.width, self.rich_style)
+
+    def _selection_style(self) -> Style:
+        theme = self._theme
+        if theme is not None and theme.selection_style is not None:
+            return theme.selection_style
+        return self.get_component_rich_style("text-area--selection")
 
     def get_line(self, line_index: int) -> Text:
+        # TextArea owns the document. All padding and overlays are presentation only.
         line = super().get_line(line_index)
-        for (start_row, start_column), (end_row, end_column) in self._search_matches:
-            if start_row == line_index == end_row:
-                line.stylize(_SEARCH_MATCH_STYLE, start_column, end_column)
-        theme = self._theme
         selections = self._secondary_selections
         if not self.has_focus:
-            selections = [*selections, Selection.cursor(self.selection.end)]
+            selections = [*selections, self.selection]
         for selection in selections:
             start, end = sorted(selection)
-            if (
-                start[0] <= line_index <= end[0]
-                and start != end
-                and theme
-                and theme.selection_style
-            ):
+            if start[0] <= line_index <= end[0] and start != end:
                 line.stylize(
-                    theme.selection_style,
+                    self._selection_style(),
                     start[1] if line_index == start[0] else 0,
                     end[1] if line_index == end[0] else len(line),
                 )
-            if selection.end[0] == line_index and theme and theme.cursor_style:
+        for selection in self.cursor_selections:
+            if selection.end[0] == line_index:
                 column = selection.end[1]
                 line.pad_right(max(0, column + 1 - len(line)))
                 line.stylize(
@@ -841,6 +853,10 @@ class SqlEditor(TextArea):
                     column,
                     column + 1,
                 )
+        # Search colors take precedence over selection and caret foregrounds.
+        for (start_row, start_column), (end_row, end_column) in self._search_matches:
+            if start_row == line_index == end_row:
+                line.stylize(_SEARCH_MATCH_STYLE, start_column, end_column)
         return line
 
     def action_completion_or_indent(self) -> None:

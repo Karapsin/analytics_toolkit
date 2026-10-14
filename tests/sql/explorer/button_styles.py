@@ -89,7 +89,7 @@ def test_create_table_buttons_keep_individual_focus_and_hover_colors(advanced: b
             await pilot.pause()
             field = screen.query_one("#create-table-name", Input)
             buttons = list(screen.query(Button))
-            removals = list(screen.query(".remove-column", Button))
+            removals = [button for button in buttons if button.has_class("remove-column")]
             assert len(removals) == 2
             assert len(buttons) == 5
             palette = application.get_css_variables()

@@ -82,7 +82,15 @@ def test_controls_use_amber_while_text_selection_retains_translucency() -> None:
             workspace.editor.selection = Selection((0, 0), (0, 6))
             workspace.editor.focus()
             await pilot.pause()
-            assert workspace.editor._theme.selection_style.bgcolor != amber.rich_color
+            selection = workspace.editor.render_line(0).crop(
+                workspace.editor.gutter_width, workspace.editor.gutter_width + 6
+            )
+            assert selection.text == "select"
+            assert all(
+                segment.style.bgcolor is not None
+                and segment.style.bgcolor != amber.rich_color
+                for segment in selection
+            )
             workspace.command_input.value = "format"
             workspace.command_input.action_select_all()
             assert workspace.command_input.get_component_styles(

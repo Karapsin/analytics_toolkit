@@ -9,6 +9,7 @@ from analytics_toolkit.sql_explorer.help_text import MOVEMENT_HELP, SHORTCUTS_HE
 from rich.console import Console
 from textual.color import Color
 from textual.geometry import Region
+from textual.widget import Widget
 from textual.widgets import Button, Collapsible, Input, OptionList, Select
 
 from tests.sql._support.explorer import FakeSession
@@ -172,7 +173,7 @@ def _assert_selector_painted(app: SqlExplorerApp, selector: Select, expected: st
         region = child.region
         assert region.width > 0 and region.height == 1
         ancestor = child.parent
-        while ancestor is not None:
+        while isinstance(ancestor, Widget):
             clip = ancestor.scrollable_content_region
             assert clip.x <= region.x < region.right <= clip.right
             assert clip.y <= region.y < region.bottom <= clip.bottom

@@ -12,6 +12,7 @@ from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
 from analytics_toolkit.sql_explorer.widgets import ConfirmMutationScreen
 from tests._support.paths import REPO_ROOT
+from tests.agent_tools._support import wait_for_scene
 
 
 @pytest.mark.parametrize("scene", ["save-changes", "save-changes-cancel"])
@@ -24,7 +25,7 @@ def test_save_fixture_names_active_document_and_waits_for_requested_focus(
             scene, tmp_path / "evidence.json", REPO_ROOT / sql_explorer_visual.MANIFEST
         )
         async with app.run_test(size=(208, 47)) as pilot:
-            await pilot.pause(0.5)
+            await wait_for_scene(app, pilot)
             assert isinstance(app.screen, SaveChangesScreen)
             assert app.screen.title == app.active_workspace.file_label
             choice = "cancel" if scene.endswith("cancel") else "save"
@@ -46,7 +47,7 @@ def test_invalid_fixture_uses_real_incomplete_column_validation(tmp_path: Path) 
             REPO_ROOT / sql_explorer_visual.MANIFEST,
         )
         async with app.run_test(size=(208, 47)) as pilot:
-            await pilot.pause(0.5)
+            await wait_for_scene(app, pilot)
             screen = app.screen
             assert isinstance(screen, CreateTableScreen)
             with pytest.raises(ValueError, match="Each column needs"):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -17,6 +18,7 @@ from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
 
 
 class ReadinessApp:
+    _configure_pending_scene = cast("Any", scenes.VisualExplorerApp._configure_pending_scene)
     _scene_readiness_details = cast("Any", scenes.VisualExplorerApp._scene_readiness_details)
     _poll_scene_readiness = cast("Any", scenes.VisualExplorerApp._poll_scene_readiness)
     _refresh_visual_evidence = cast("Any", scenes.VisualExplorerApp._refresh_visual_evidence)
@@ -33,6 +35,7 @@ class ReadinessApp:
         self.focused: Any = None
         self.creation_scene_ready = False
         self.scene_configured = False
+        self._pending_scene_screen: Any = None
         self.visual_evidence_path = Path("geometry.json")
         self.visual_manifest_path = Path("manifest")
         self._restore_primary_overflow_tab = lambda: True
@@ -314,32 +317,35 @@ def validated_app() -> tuple[ReadinessApp, Mock, MountedNotice]:
 def test_delayed_validation_is_polled_without_resubmitting(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    app, screen, notice = validated_app()
-    lookup = screen.query_one.side_effect
-    submit = Mock(is_mounted=True)
-    screen.query_one.side_effect = lambda selector, *args: (
-        submit if selector == "#create-table-submit" else lookup(selector, *args)
-    )
-    app._configure_creation_scene(screen, app.visual_scene_id)
-    assert app.scene_configured
-    assert not app.creation_scene_ready
-    submit.press.assert_called_once()
-    app.visual_evidence_path = tmp_path / "geometry.json"
-    app.visual_manifest_path = tmp_path / "manifest"
-    refresh = Mock()
-    monkeypatch.setattr(scenes, "_refresh_evidence_if_mounted", refresh)
-    app._refresh_visual_evidence()
-    refresh.assert_not_called()
-    notice.update(Text("Each column needs a name and SQL type"))
-    app._refresh_visual_evidence()
-    assert app.creation_scene_ready
-    refresh.assert_called_once()
-    assert app._scene_readiness_details()["notice_text"] == (
-        "Each column needs a name and SQL type"
-    )
-    submit.press.assert_called_once()
-    app._configure_creation_scene(screen, app.visual_scene_id)
-    submit.press.assert_called_once()
+    async def exercise() -> None:
+        app, screen, notice = validated_app()
+        lookup = screen.query_one.side_effect
+        submit = Mock(is_mounted=True)
+        screen.query_one.side_effect = lambda selector, *args: (
+            submit if selector == "#create-table-submit" else lookup(selector, *args)
+        )
+        app._configure_creation_scene(screen, app.visual_scene_id)
+        assert app.scene_configured
+        assert not app.creation_scene_ready
+        submit.press.assert_called_once()
+        app.visual_evidence_path = tmp_path / "geometry.json"
+        app.visual_manifest_path = tmp_path / "manifest"
+        refresh = Mock()
+        monkeypatch.setattr(scenes, "_refresh_evidence_if_mounted", refresh)
+        app._refresh_visual_evidence()
+        refresh.assert_not_called()
+        notice.update(Text("Each column needs a name and SQL type"))
+        app._refresh_visual_evidence()
+        assert app.creation_scene_ready
+        refresh.assert_called_once()
+        assert app._scene_readiness_details()["notice_text"] == (
+            "Each column needs a name and SQL type"
+        )
+        submit.press.assert_called_once()
+        app._configure_creation_scene(screen, app.visual_scene_id)
+        submit.press.assert_called_once()
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize(
@@ -347,13 +353,16 @@ def test_delayed_validation_is_polled_without_resubmitting(
     ["Each column needs a name and SQL type", Text("Each column needs a name and SQL type")],
 )
 def test_invalid_notice_reads_real_static_renderable(content: Any) -> None:
-    app, screen, _notice = validated_app()
-    notice = MountedNotice(content)
-    lookup = screen.query_one.side_effect
-    screen.query_one.side_effect = lambda selector, *args: (
-        notice if selector == "#create-table-notice" else lookup(selector, *args)
-    )
-    assert app._scene_state_ready()
+    async def exercise() -> None:
+        app, screen, _notice = validated_app()
+        notice = MountedNotice(content)
+        lookup = screen.query_one.side_effect
+        screen.query_one.side_effect = lambda selector, *args: (
+            notice if selector == "#create-table-notice" else lookup(selector, *args)
+        )
+        assert app._scene_state_ready()
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize(
@@ -361,77 +370,143 @@ def test_invalid_notice_reads_real_static_renderable(content: Any) -> None:
 )
 @pytest.mark.parametrize("state", ["missing", "unmounted"])
 def test_configuration_rejects_unavailable_required_control(selector: str, state: str) -> None:
-    app, screen, notice = validated_app()
-    notice.update(Text("Each column needs a name and SQL type"))
-    lookup = screen.query_one.side_effect
+    async def exercise() -> None:
+        app, screen, notice = validated_app()
+        notice.update(Text("Each column needs a name and SQL type"))
+        lookup = screen.query_one.side_effect
 
-    def unavailable(requested: str, *args: object) -> object:
-        if requested == selector:
-            if state == "missing":
-                raise NoMatches("required control absent")
-            return SimpleNamespace(is_mounted=False)
-        return lookup(requested, *args)
+        def unavailable(requested: str, *args: object) -> object:
+            if requested == selector:
+                if state == "missing":
+                    raise NoMatches("required control absent")
+                return SimpleNamespace(is_mounted=False)
+            return lookup(requested, *args)
 
-    screen.query_one.side_effect = unavailable
-    app._configure_creation_scene(screen, app.visual_scene_id)
-    assert not app.scene_configured
-    assert not app._scene_state_ready()
-    details = app._scene_readiness_details()
-    key = "missing_controls" if state == "missing" else "unmounted_controls"
-    assert details[key] == [selector]
-    screen.call_after_refresh.assert_not_called()
+        screen.query_one.side_effect = unavailable
+        app._configure_creation_scene(screen, app.visual_scene_id)
+        assert not app.scene_configured
+        assert not app._scene_state_ready()
+        details = app._scene_readiness_details()
+        key = "missing_controls" if state == "missing" else "unmounted_controls"
+        assert details[key] == [selector]
+        screen.call_after_refresh.assert_not_called()
+
+    asyncio.run(exercise())
 
 
 def test_poll_rejects_state_loss_after_configuration() -> None:
-    app, screen, notice = validated_app()
-    notice.update(Text("Each column needs a name and SQL type"))
-    app.scene_configured = True
-    app._poll_scene_readiness()
-    assert app.creation_scene_ready
-    screen.is_mounted = False
-    app._poll_scene_readiness()
-    assert not app.creation_scene_ready
+    async def exercise() -> None:
+        app, screen, notice = validated_app()
+        notice.update(Text("Each column needs a name and SQL type"))
+        app.scene_configured = True
+        app._poll_scene_readiness()
+        assert app.creation_scene_ready
+        screen.is_mounted = False
+        app._poll_scene_readiness()
+        assert not app.creation_scene_ready
+
+    asyncio.run(exercise())
 
 
 def test_invalid_notice_rejects_unexpected_renderable() -> None:
-    app, screen, _notice = validated_app()
-    lookup = screen.query_one.side_effect
-    notice = SimpleNamespace(is_mounted=True, renderable=object())
-    screen.query_one.side_effect = lambda selector, *args: (
-        notice if selector == "#create-table-notice" else lookup(selector, *args)
-    )
-    with pytest.raises(TypeError, match="Validation notice must contain plain text"):
-        app._scene_state_ready()
+    async def exercise() -> None:
+        app, screen, _notice = validated_app()
+        lookup = screen.query_one.side_effect
+        notice = SimpleNamespace(is_mounted=True, renderable=object())
+        screen.query_one.side_effect = lambda selector, *args: (
+            notice if selector == "#create-table-notice" else lookup(selector, *args)
+        )
+        with pytest.raises(TypeError, match="Validation notice must contain plain text"):
+            app._scene_state_ready()
+
+    asyncio.run(exercise())
 
 
 def test_configuration_does_not_read_values_of_unmounted_controls() -> None:
-    app, screen, _notice = validated_app()
-    lookup = screen.query_one.side_effect
-    screen.query_one.side_effect = lambda selector, *args: (
-        SimpleNamespace(is_mounted=False)
-        if selector == "#create-table-name"
-        else lookup(selector, *args)
-    )
-    screen.values.side_effect = RuntimeError("unmounted values accessed")
-    app._configure_creation_scene(screen, app.visual_scene_id)
-    screen.values.assert_not_called()
-    assert not app.scene_configured
-    assert not app.creation_scene_ready
+    async def exercise() -> None:
+        app, screen, _notice = validated_app()
+        lookup = screen.query_one.side_effect
+        screen.query_one.side_effect = lambda selector, *args: (
+            SimpleNamespace(is_mounted=False)
+            if selector == "#create-table-name"
+            else lookup(selector, *args)
+        )
+        screen.values.side_effect = RuntimeError("unmounted values accessed")
+        app._configure_creation_scene(screen, app.visual_scene_id)
+        screen.values.assert_not_called()
+        assert not app.scene_configured
+        assert not app.creation_scene_ready
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize("failure", ["incomplete", "wrong_value", "clipped"])
 def test_selector_failure_revokes_readiness_after_configuration(failure: str) -> None:
-    app, _screen, notice = validated_app()
-    notice.update(Text("Each column needs a name and SQL type"))
-    app.scene_configured = True
-    app._poll_scene_readiness()
+    async def exercise() -> None:
+        app, _screen, notice = validated_app()
+        notice.update(Text("Each column needs a name and SQL type"))
+        app.scene_configured = True
+        app._poll_scene_readiness()
+        assert app.creation_scene_ready
+        if failure == "incomplete":
+            app.selector_snapshot["collection_complete"] = False
+        elif failure == "wrong_value":
+            app.selector_snapshot["selector"]["selected_value"] = "from_sql"
+        else:
+            app.selector_snapshot["selector"]["visibility_ok"] = False
+        app._poll_scene_readiness()
+        assert not app.creation_scene_ready
+        assert not app._scene_state_ready()
+
+    asyncio.run(exercise())
+
+
+def test_pending_save_configuration_retries_mounting_and_never_restores_later_focus() -> None:
+    app, screen = save_app("save-changes-cancel")
+    app._pending_scene_screen = screen
+    button = screen.query_one.return_value
+    button.focus.side_effect = lambda: setattr(app, "focused", button)
+    screen.call_after_refresh.side_effect = lambda callback: callback()
+    screen.is_mounted = False
+    app.focused = None
+    app._configure_pending_scene()
+    assert not app.scene_configured
+    button.focus.assert_not_called()
+    screen.is_mounted = True
+    app._configure_pending_scene()
+    assert app.scene_configured
     assert app.creation_scene_ready
-    if failure == "incomplete":
-        app.selector_snapshot["collection_complete"] = False
-    elif failure == "wrong_value":
-        app.selector_snapshot["selector"]["selected_value"] = "from_sql"
-    else:
-        app.selector_snapshot["selector"]["visibility_ok"] = False
+    assert app._pending_scene_screen is None
+    button.focus.assert_called_once()
+    app.focused = object()
+    app._configure_pending_scene()
     app._poll_scene_readiness()
     assert not app.creation_scene_ready
-    assert not app._scene_state_ready()
+    button.focus.assert_called_once()
+
+
+def test_pending_invalid_configuration_retries_missing_controls_and_submits_once() -> None:
+    async def exercise() -> None:
+        app, screen, notice = validated_app()
+        app._pending_scene_screen = screen
+        lookup = screen.query_one.side_effect
+        submit = Mock(is_mounted=True)
+        screen.query_one.side_effect = NoMatches("controls still mounting")
+        app._configure_pending_scene()
+        assert not app.scene_configured
+        submit.press.assert_not_called()
+        screen.query_one.side_effect = lambda selector, *args: (
+            submit if selector == "#create-table-submit" else lookup(selector, *args)
+        )
+        app._configure_pending_scene()
+        assert app.scene_configured
+        assert not app.creation_scene_ready
+        assert app._pending_scene_screen is None
+        submit.press.assert_called_once()
+        app._configure_pending_scene()
+        notice.update(Text("Each column needs a name and SQL type"))
+        app._poll_scene_readiness()
+        assert app.creation_scene_ready
+        submit.press.assert_called_once()
+
+    asyncio.run(exercise())

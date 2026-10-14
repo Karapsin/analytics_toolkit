@@ -93,6 +93,33 @@ promotions into main and successful production PyPI release workflows. TestPyPI
 and automation-only main mirrors are excluded. Notifications use a private,
 durable outbox, retry delivery failures and deduplicate successful events.
 
+## Companion recommendation-policy activation
+
+The companion `self_host` coordinator owns recommendation-policy review and
+deployment. SQL Explorer correction workers preserve that staged candidate and
+must not deploy it, duplicate its patch, or report it as active.
+
+Before activation, independently review the exact candidate and verify compatible
+trusted task readers and any required authenticated owner approvals. Rehearse that
+same reviewed version on an isolated off-Pi runner with disposable state,
+synthetic credentials, and fake external boundaries. Passing GitHub regressions
+alone does not satisfy this deployment gate.
+
+The rehearsal must cover durable recommended choices and question provenance;
+native planning, coding, and correction transitions; mixed questions that retain
+genuine-input holds; restart recovery; stale request revisions; protected
+exact-head approvals; and preservation of checkpoints, private state,
+authentication, and unrelated files. Exercise rollback to the previous service
+source while retaining later answers and private state. Retain the candidate
+identity, environment, scenario results, and rollback evidence.
+
+Activate only after those gates pass and active work is safely drained. Then
+perform live acceptance for durable recommended decisions, genuine-input and
+protected-approval holds, restart recovery, and preserved authentication and
+checkpoints. Failed acceptance requires rollback. The root coordinator retains
+its complete tracked-PR inventory and monitoring obligations through successful
+dev merges, required post-merge validation, and companion live acceptance.
+
 ## Merge and repair behavior
 
 Merges require current `fast-checks` and the App's `agent-review`, against the

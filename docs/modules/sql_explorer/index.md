@@ -153,9 +153,11 @@ focus remains in the command pane. Secondary editor cursors remain visible on em
 
 The editor uses steady thin carets, including secondary cursors: underlines on
 occupied cells and vertical bars on blank/end cells. SQL characters remain
-readable and terminal columns stay aligned. Text inputs retain steady
-non-blinking carets. The compact active
-tab uses a dark surface with amber text and always includes its database key.
+readable and terminal columns stay aligned, including tabs, wide characters,
+horizontal scrolling, and empty lines. Carets and selections remain visible when
+the command or find input has focus; search matches keep their yellow background
+through caret overlays. Presentation padding never changes the SQL buffer.
+Text inputs retain steady non-blinking carets. The compact active tab uses a dark surface with amber text and always includes its database key.
 The editor displays line numbers, keeps its vertical scrollbar on the right,
 shows the active one-based line and column in its lower-right corner without
 covering the first editor rows, applies SQL syntax
