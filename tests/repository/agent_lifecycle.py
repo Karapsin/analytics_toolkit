@@ -332,6 +332,45 @@ def test_selected_merge_head_race_does_not_clean_branches(
     cleanup.cleanup.assert_not_called()
 
 
+def publication_plan(proto: Any, location: str, resolution: str) -> dict[str, Any]:
+    text = "Preserve export fidelity."
+    approvals = {("approved", "correction"): 1}
+    approval_index = 0 if resolution == "unrelated" else approvals.get((resolution, location))
+    return {
+        "id": proto.plan_id(text),
+        "text": text,
+        "approval_index": approval_index,
+        "starting_prompt_approval": resolution == "approved" and location == "starting",
+    }
+
+
+def publication_blob(context: dict[str, Any], *args: str) -> str | bytes:
+    png = b"\x89PNG\r\n\x1a\nsanitized image"
+    if args[1] == "ls-tree":
+        path = context["images"][0]["path"]
+        return ("100644 blob " + "f" * 40 + "\t" + path + "\0").encode()
+    return {"-t": "blob", "-s": str(len(png))}.get(args[2], png)
+
+
+def publication_git(context: dict[str, Any], mode: str, branch: str) -> Any:
+    proto = controller.trusted_module("task_context")
+    responses = {
+        "diff": "tests/regression.py",
+        "write-tree": "tree",
+        "rev-parse": "tree",
+        "commit-tree": "c" * 40,
+        "log": "Recovered feature" + proto.trailers(context, context["producer_id"]),
+        "ls-remote": "d" * 40 + "\trefs/heads/" + branch if mode == "recovered-feature" else "",
+    }
+
+    def command(*args: str, **kwargs: Any) -> str | bytes:
+        if args[1] in {"ls-tree", "cat-file"}:
+            return publication_blob(context, *args)
+        return responses.get(args[1], "")
+
+    return command
+
+
 def publication_context(reference: str, location: str, resolution: str) -> dict[str, Any]:
     proto = controller.trusted_module("task_context")
     context: dict[str, Any] = {
@@ -350,20 +389,7 @@ def publication_context(reference: str, location: str, resolution: str) -> dict[
     if location == "correction":
         context["corrections"].append(reference)
     if resolution in {"approved", "unapproved", "unrelated"}:
-        text = "Preserve export fidelity."
-        approval_index: int | None = None
-        if resolution == "approved" and location == "correction":
-            approval_index = 1
-        elif resolution == "unrelated":
-            approval_index = 0
-        context["plans"].append(
-            {
-                "id": proto.plan_id(text),
-                "text": text,
-                "approval_index": approval_index,
-                "starting_prompt_approval": resolution == "approved" and location == "starting",
-            }
-        )
+        context["plans"].append(publication_plan(proto, location, resolution))
     elif resolution == "image":
         image_hash = hashlib.sha256(b"\x89PNG\r\n\x1a\nsanitized image").hexdigest()
         context["images"].append(
@@ -435,30 +461,7 @@ def reference_publication(tmp_path: Path, monkeypatch: Any) -> Any:
             controller, "task_metadata", Mock(return_value={"task_digest": task["task_digest"]})
         )
 
-        def command(*args: str, **kwargs: Any) -> str | bytes:
-            if args[1] == "ls-tree":
-                path = context["images"][0]["path"]
-                return ("100644 blob " + "f" * 40 + "\t" + path + "\0").encode()
-            if args[1] == "cat-file":
-                png = b"\x89PNG\r\n\x1a\nsanitized image"
-                if args[2] == "-t":
-                    return "blob"
-                if args[2] == "-s":
-                    return str(len(png))
-                return png
-            if args[1] == "diff":
-                return "tests/regression.py"
-            if args[1] == "write-tree" or args[1] == "rev-parse":
-                return "tree"
-            if args[1] == "commit-tree":
-                return "c" * 40
-            if args[1] == "ls-remote" and mode == "recovered-feature":
-                return "d" * 40 + "\trefs/heads/" + task["branch"]
-            if args[1] == "log":
-                return "Recovered feature" + proto.trailers(context, context["producer_id"])
-            return ""
-
-        git = Mock(side_effect=command)
+        git = Mock(side_effect=publication_git(context, mode, task["branch"]))
         monkeypatch.setattr(controller, "command", git)
         return gh, task, git
 

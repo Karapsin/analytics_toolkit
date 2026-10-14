@@ -127,17 +127,26 @@ compatible; workers with an older controller use the idle-only merge fallback.
 ## Updating trusted automation
 
 The companion worker dependency is staged, not active, at
-[self_host commit 6930a0f553545315f80273267cab10026534fc56](https://github.com/Karapsin/self_host/commit/6930a0f553545315f80273267cab10026534fc56),
-with successful [exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38464258543/job/115526996500).
-The `operator/companion-6930a0f55354-ci.json` receipt maps changed sources/tests
-in `self_host-task-evidence-6930a0f55354/` and unchanged files in the earlier
-`self_host-task-evidence-87b767597824/` namespace to the final commit through
-source hashes and Git blob proofs. Both namespaces must accompany controller
-review. It supersedes ancestors `87b7675978243d815b5b3902fc69cc2a241cf0b0`,
-`b817a0541a59bb028d42ff9c243d503a39d62ba1`
-and `0ae2ffc5ce5892bedd4a37f627dc9b190958e27b`;
-retain the earlier receipts as historical evidence. Toolkit does not duplicate
-worker code or remove any companion features. CI receipts are not owner approval.
+[self_host commit 8a153830751278c1a0d1ed54ef310d37c5b94932](https://github.com/Karapsin/self_host/commit/8a153830751278c1a0d1ed54ef310d37c5b94932),
+with successful [exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38491515819/job/115617553053).
+The immutable `operator/companion-8a1538307512-ci.json` receipt contains the
+complete `source_files` SHA256 and `source_blob_proofs` mapping to this commit.
+Review every mapped file using its declared evidence path; unchanged files retain
+historical namespace aliases whose Git blobs and hashes are proven at the final pin.
+
+| Evidence namespace | Files mapped by the final receipt |
+| --- | --- |
+| `self_host-task-evidence-8a1538307512/` | Shared question policy, task-evidence regressions and worker README |
+| `self_host-task-evidence-0867b569ea4f/` | Native planning and intake |
+| `self_host-task-evidence-03d3ecdcb6f9/` | Publication-reference regressions |
+| `self_host-task-evidence-7b4987098acd/` | Toolkit v2 task-context fixture |
+| `self_host-task-evidence-87b767597824/` | Remaining worker sources/configuration, workflow and regressions |
+
+All five namespaces must accompany final independent review. Receipts for
+`6930a0`, `b39a3c`, `fce9f1`, `87b767`, `b817a0`, `0ae2ff` and other
+ancestors are historical evidence, not active dependency selections or approval
+of this changed code. Toolkit does not duplicate worker code or remove companion
+features. CI receipts are not owner approval.
 
 The dependency hashes the full logical key for non-request job directories.
 Execution and both status paths share `job_runtime.directory`, avoiding the
@@ -203,7 +212,8 @@ Verify stale claims recover and PR writer ownership stays exclusive. Fifteen
 minutes of inactivity is diagnostic; retain the thirty-minute model deadline.
 Record acceptance for the entire inventory. Missing metadata, queued checks,
 failed gates or unexplained non-progress block operational completion. Integration
-success remains advisory; MinIO stack repair is a separate follow-up.
+success remains advisory. MinIO repair PR #17 is already merged into dev; retain
+its pinned-source build configuration, licenses and service-free regressions.
 
 Only the controller, prompts, schemas, fixed dispatch bridge, capture workflow,
 and workflow classification manifest are copied to `main` for automation.
@@ -310,23 +320,29 @@ link to their visible chronological correction rather than repeating it; the
 signed payload and parser retain the complete text.
 
 The coordinator owns companion implementation, rehearsal and deployment in its
-separate self_host checkout. The pinned dependency candidate is
-`b39a3c8cc0859ecb4a00528b45e38f54199cbfee`; inspect its mapped immutable source/tests
-and `operator/companion-b39a3c8cc085-ci.json` receipt and its complete 29-file mapping. It is staged, not active.
-Exact-commit green CI does not establish independent review, owner approval or
-successful deployment rehearsal. This descendant applies the genuine-input
-guard before native recommended answers and before coding recommendations or
-tooling retries. Mixed tooling/evidence batches remain unanswered, retaining
-options, request identity, revision and checkpoint. The snapshot's
-`test_task_evidence.py` covers fresh native/coding holds and reconciliation,
-routine recovery, legacy unlabeled-question replanning, authenticated GitHub
-answers and visual rejection. `test_checkpoint_bytes.py` covers exact saved bytes
-through replanning and independent review. Final independent review must inspect
-this pin; ancestor reviews do not approve its changed code. The 6930a0, 7b498
-and earlier receipts remain historical evidence. The corrected descendant retains
-repeated authenticated approvals in `approval_indices` and rejects invalid recovery
-images before PR creation, attachment updates or context enrollment. Its focused
-regressions exercise the real toolkit resolver and successful create/update recovery.
+separate self_host checkout. The final pinned dependency candidate is
+`8a153830751278c1a0d1ed54ef310d37c5b94932`; inspect
+`operator/companion-8a1538307512-ci.json` and the complete source/blob/hash mapping
+listed above. It is staged, not active. Exact-commit green CI does not establish
+independent review, owner approval or successful deployment rehearsal.
+
+Native planning and intake share `question_policy.question_kind`. Only explicitly
+classified routine implementation choices receive recommended answers.
+Credentials (including API keys), actual artifacts and their locations,
+unverifiable approval provenance, approvals, cancellations and unknown requirements
+remain holds. Mixed batches receive no automatic answers before native replies,
+coding recommendations, tooling retries or waiting-request recovery. Retain exact
+questions/options, request identities, revisions and checkpoint bytes.
+The final mapped `test_task_evidence.py` covers API-key and approval-provenance
+holds across native planning, coding and recovery, mixed batches, positive routine
+choices, legacy unlabeled-question replanning, manifest pagination, authenticated
+GitHub answers, long job keys, claim cleanup and visual rejection.
+`test_checkpoint_bytes.py` covers saved bytes through replanning and independent
+review. Final independent review must inspect this pin; ancestor reviews do not
+approve it. The descendant retains repeated authenticated approvals in
+`approval_indices` and rejects invalid recovery images before PR creation,
+attachment updates or context enrollment. Focused regressions exercise the real
+toolkit resolver and successful create/update recovery.
 
 The trusted controller calls `task_context.require_resolved` after the review-only
 return and before any code-publication mutation. This gate also covers existing
@@ -358,8 +374,8 @@ these companion boundaries and correlated approval records; toolkit
 `tests/repository/agent_lifecycle.py` exercises the real resolver with mocked
 Git/GitHub publication operations.
 
-The receipt links successful Repository Checks run `38478140218`, job
-`115573851226`, to the exact candidate and declares hashes for its workflow,
+The final receipt links successful Repository Checks run `38491515819`, job
+`115617553053`, to the exact candidate and declares hashes for its workflow,
 `agent_tools/workflow.py`, service sources and rehearsal test. The workflow's
 `run-checks --level prepush` invokes `unittest discover -s agent_tools/tests -v`,
 which discovers `test_worker_rollout_rehearsal.py`. Its synthetic rehearsal
@@ -374,7 +390,7 @@ still require verified evidence for the exact final candidate.
 
 The earlier `operator/atk-worker-rollout-b817a0541a59-receipt.json` and its
 rehearsal script remain historical evidence. They cannot establish a successful
-rehearsal for changed `b39a3c…` source. Repeat affected steps and record a
+rehearsal for changed `8a153830751278c1a0d1ed54ef310d37c5b94932` source. Repeat affected steps and record a
 hash-bound exact-candidate receipt before activation; do not infer rehearsal
 success from green CI or this plan review.
 

@@ -5,7 +5,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from tests.repository.agent_lifecycle import publication_context, reference_publication
+from tests.repository.agent_lifecycle import (
+    publication_blob,
+    publication_context,
+    reference_publication,
+)
 from tests.repository.github_agent import controller
 
 if TYPE_CHECKING:
@@ -28,35 +32,52 @@ DEFECTS = [
 ]
 
 
+def damaged_tree(original: Any, path: str, defect: str) -> bytes:
+    variants = {
+        "missing": b"",
+        "malformed": b"invalid\0",
+        "duplicate": original * 2,
+        "symlink": ("120000 blob " + "f" * 40 + "\t" + path + "\0").encode(),
+    }
+    return variants.get(defect, original)
+
+
+def damaged_object(original: Any, defect: str, *args: str, **kwargs: Any) -> Any:
+    if defect == "unreadable":
+        message = "Image evidence object is unreadable."
+        raise RuntimeError(message)
+    if args[2] == "-s":
+        sizes = {"oversized": "524289", "empty": "0", "byte-count": "1"}
+        return sizes.get(defect, original(*args, **kwargs))
+    if args[2] == "blob" and defect == "changed":
+        return b"\x89PNG\r\n\x1a\nchanged image!!"
+    if args[2] == "blob" and defect == "non-png":
+        return b"x" * len(original(*args, **kwargs))
+    return original(*args, **kwargs)
+
+
 def damaged_blob(original: Any, context: dict[str, Any], defect: str) -> Any:
     path = context["images"][0]["path"]
 
     def command(*args: str, **kwargs: Any) -> Any:
         if args[1] == "ls-tree":
-            if defect == "missing":
-                return b""
-            if defect == "malformed":
-                return b"invalid\0"
-            if defect == "duplicate":
-                return original(*args, **kwargs) * 2
-            if defect == "symlink":
-                return ("120000 blob " + "f" * 40 + "\t" + path + "\0").encode()
+            return damaged_tree(original(*args, **kwargs), path, defect)
         if args[1] == "cat-file":
-            if defect == "unreadable":
-                raise RuntimeError("Image evidence object is unreadable.")
-            if args[2] == "-s":
-                if defect == "oversized":
-                    return "524289"
-                if defect == "empty":
-                    return "0"
-                if defect == "byte-count":
-                    return "1"
-            if args[2] == "blob":
-                if defect == "changed":
-                    return b"\x89PNG\r\n\x1a\nchanged image!!"
-                if defect == "non-png":
-                    return b"x" * len(original(*args, **kwargs))
+            return damaged_object(original, defect, *args, **kwargs)
         return original(*args, **kwargs)
+
+    return command
+
+
+def metadata_command(context: dict[str, Any]) -> Any:
+    proto = controller.trusted_module("task_context")
+
+    def command(*args: str, **kwargs: Any) -> Any:
+        if args[1] == "log":
+            return "Signed feature" + proto.trailers(context, context["producer_id"])
+        if args[1:3] == ("cat-file", "blob"):
+            assert kwargs["raw_stdout"]
+        return publication_blob(context, *args)
 
     return command
 
@@ -112,22 +133,7 @@ def test_signed_head_metadata_rejects_invalid_git_blobs(
 ) -> None:
     context = publication_context("[Image #1]", "starting", "image")
     proto = controller.trusted_module("task_context")
-    path = context["images"][0]["path"]
-    png = b"\x89PNG\r\n\x1a\nsanitized image"
-
-    def command(*args: str, **kwargs: Any) -> Any:
-        if args[1] == "log":
-            return "Signed feature" + proto.trailers(context, context["producer_id"])
-        if args[1] == "ls-tree":
-            return ("100644 blob " + "f" * 40 + "\t" + path + "\0").encode()
-        if args[2] == "-t":
-            return "blob"
-        if args[2] == "-s":
-            return str(len(png))
-        assert kwargs["raw_stdout"]
-        return png
-
-    git = Mock(side_effect=damaged_blob(command, context, defect))
+    git = Mock(side_effect=damaged_blob(metadata_command(context), context, defect))
     monkeypatch.setattr(controller, "command", git)
     monkeypatch.setenv("AGENT_CONTROL_DIR", str(tmp_path))
     gh = Mock()
@@ -144,21 +150,7 @@ def test_signed_head_metadata_rejects_invalid_git_blobs(
 def test_signed_head_metadata_accepts_approved_git_png(tmp_path: Path, monkeypatch: Any) -> None:
     context = publication_context("[Image #1]", "starting", "image")
     proto = controller.trusted_module("task_context")
-    path = context["images"][0]["path"]
-    png = b"\x89PNG\r\n\x1a\nsanitized image"
-
-    def command(*args: str, **kwargs: Any) -> Any:
-        if args[1] == "log":
-            return "Signed feature" + proto.trailers(context, context["producer_id"])
-        if args[1] == "ls-tree":
-            return ("100644 blob " + "f" * 40 + "\t" + path + "\0").encode()
-        if args[2] == "-t":
-            return "blob"
-        if args[2] == "-s":
-            return str(len(png))
-        return png
-
-    monkeypatch.setattr(controller, "command", command)
+    monkeypatch.setattr(controller, "command", metadata_command(context))
     monkeypatch.setenv("AGENT_CONTROL_DIR", str(tmp_path))
     gh = Mock()
     pr = {

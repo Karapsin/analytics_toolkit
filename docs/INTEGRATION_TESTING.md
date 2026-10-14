@@ -15,9 +15,28 @@ distributed and replicated table behavior is available. On x86_64,
 the same workflow also enables a Greenplum 6 profile. Apple Silicon runs the
 Trino and ClickHouse portions without emulating Greenplum.
 
-All service versions are pinned in `integration/docker-compose.yml`. Data uses
-temporary filesystems or anonymous Compose state and is removed after every
-run.
+Service versions are pinned in `integration/docker-compose.yml`. MinIO and its
+`mc` client build from the same upstream release commits through
+`integration/minio/Dockerfile`: server `RELEASE.2025-09-07T16-13-09Z`
+(`07c3a429bfed433e49018cb0f78a52145d4bedeb`) and client
+`RELEASE.2025-08-13T08-35-41Z`
+(`7394ce0dd2a80935aded936b09fa12cbb3cb8096`). Their upstream container pulls
+fail with access denied; switching registry names alone does not establish
+availability. Compose builds the pinned Go sources without MinIO registry
+credentials, retaining the S3 service, health probe, bucket initialization,
+and cleanup commands. The build still requires network access to the Go/Alpine
+base images, Go modules, and Alpine packages. Build errors remain startup failures
+in `startup.log`. Upstream AGPLv3 licenses are included in each built image;
+the corresponding source is available at the pinned upstream commits.
+
+Fast Python guards in `tests/repository/integration_images.py` inspect Compose
+and the Dockerfile without Docker or network access. They reject upstream MinIO
+image pulls, including auth/fault overrides, and verify the release pins and
+runtime commands, health probes and bucket setup. The GitHub Python 3.11 job also
+runs these guards explicitly before the normal suite. GitHub integration validates
+the actual builds and services.
+Data uses temporary filesystems or anonymous Compose state and is removed after
+every run.
 
 ## Running Locally
 

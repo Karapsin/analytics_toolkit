@@ -79,6 +79,10 @@ jobs:
       - name: Compile package and tests
         run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
 
+      - name: Guard merged MinIO build configuration without services
+        if: matrix.env_name == 'py311-latest'
+        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/repository/integration_images.py
+
       - name: Run tests
         run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q
 

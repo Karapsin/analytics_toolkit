@@ -23,6 +23,7 @@ Generated from package version bumps and recent commit history.
 - Split scoped-merge gate regressions to satisfy strict lint, retain recovered task and dev repair history, and align staged companion rollout evidence.
 - Bind starting-prompt plan approvals without changing historical digests, retain suppressed blocked-repair diagnostics and retry fingerprints, and gate the corrected companion rollout on exact-candidate rehearsal and live acceptance.
 - Block worker publication and recovery for unresolved plan/image references, preserve historical task verification, and document the final companion dependency and rollout gates.
+- Build disposable integration MinIO services from the existing pinned upstream release commits to avoid denied container pulls; retain S3 setup and cleanup and add fast service-free configuration regression guards.
 
 ## 1.3.12.4 - 2026-10-12
 

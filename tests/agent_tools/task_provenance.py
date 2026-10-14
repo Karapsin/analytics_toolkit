@@ -113,6 +113,9 @@ def test_reconciled_changelog_retains_feature_and_merged_dev_history() -> None:
         "evidence inventory failures.",
         "- Keep Pi recovery discovery regressions within strict lint gates while "
         "preserving transient-failure and retry coverage.",
+        "- Build disposable integration MinIO services from the existing pinned upstream "
+        "release commits to avoid denied container pulls; retain S3 setup and cleanup "
+        "and add fast service-free configuration regression guards.",
     ):
         assert changelog.count(bullet) == 1
     assert not any(
