@@ -99,6 +99,11 @@ Variable routing. Negative cases use wrong credentials and trust roots and
 assert that diagnostic output contains no password, private-key, token, or
 client-secret material. The OAuth scenarios require the Playwright Chromium
 browser installed by the auth job; injected bearer tokens are not accepted.
+The browser login helper retries the original OAuth initiation URL up to three
+times after a navigation or login-visibility timeout. Reloading the current page
+can strand recovery on a blank or failed redirect page after a Keycloak outage.
+Service-free harness tests cover both timeout phases and preserve the final
+navigation error when all attempts fail.
 
 Every scenario uses a profile run ID and test ID in table, stage, object, and
 query-label names. The per-test registry cancels labelled queries, drops tables,
