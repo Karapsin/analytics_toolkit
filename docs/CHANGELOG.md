@@ -7,6 +7,7 @@ Generated from package version bumps and recent commit history.
 ## Unreleased
 
 - Validate approved PNG evidence in staged and recovered Git trees before publication, repair focused CI fixtures, and pin the corrected staged RPI companion.
+- Preserve merged MinIO builds and changelog history, retain publication regressions within strict lint gates, and align RPI rollout with the corrected companion pin.
 
 ## 1.3.12.5 - 2026-10-13
 
