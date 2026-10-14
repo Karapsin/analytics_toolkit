@@ -19,6 +19,7 @@ Generated from package version bumps and recent commit history.
 - Reserve version bumps and note rollover for explicit reviewed PyPI release preparation; restore this feature's version markers and keep pending notes Unreleased.
 - Reserve version bumps for reviewed PyPI releases and recover interrupted preparation PR publication without repushing stale heads or duplicating candidates.
 - Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
+- Reconcile user-approval labels automatically without clearing genuine holds or stale-head safeguards
 
 ## 1.3.12.5 - 2026-10-14
 

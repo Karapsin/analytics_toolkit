@@ -264,6 +264,13 @@ def ready(pr: dict[str, Any], checks: list[dict[str, Any]], base: str, app_id: i
             and fast is not None and fast["conclusion"] == "success")
 
 
+def approval_ready(pr: dict[str, Any], checks: list[dict[str, Any]], base: str, app_id: int) -> bool:
+    """Policy approval is actionable only after other current-head gates pass."""
+    candidate = dict(pr, labels=[label for label in pr.get("labels", [])
+                                if label["name"] != "agent:needs-user"])
+    return ready(candidate, checks, base, app_id)
+
+
 def monitor(gh: GitHub) -> tuple[int, dict[str, Any]]:
     cached = _stored_state()
     if cached is not None:
@@ -462,6 +469,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
             continue
         controls = trusted_module("review_control")
         if controls.paused(gh, pr):
+            controls.reconcile_label(gh, pr, approval_required=True)
             continue
         try:
             metadata = task_metadata(gh, pr)
@@ -475,6 +483,9 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                 gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head,
                     "external_id": base, "status": "completed", "conclusion": "action_required",
                     "output": {"title": "Authorization required", "summary": denial}})
+            continue
+        approval_required = bool(authorization_error(gh, pr)) and approval_ready(pr, checks, base, app_id)
+        if not controls.reconcile_label(gh, pr, approval_required=approval_required):
             continue
         fast = fast_check(checks)
         comparison = gh.api(f"compare/{base}...{head}")
@@ -495,7 +506,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                 kind = "metadata"
         if (kind == "review" and existing and existing["status"] == "completed"
                 and existing.get("output", {}).get("title") != "Authorization required"):
-            if existing.get("conclusion") == "success" and authorization_error(gh, pr):
+            if approval_required:
                 paths = sorted({path for item in files for path in (item["filename"], item.get("previous_filename", ""))
                                 if policy_path(path)})
                 controls.approval_notice(gh, pr, paths, metadata["user_task"])
@@ -850,12 +861,17 @@ def merge(gh: GitHub, app_id: int, work: Path) -> None:
         if not trusted(pr, gh.repository):
             continue
         head, base = pr["head"]["sha"], gh.base()
-        if authorization_error(gh, pr):
+        denial = authorization_error(gh, pr)
+        controls = trusted_module("review_control")
+        checks = gh.checks(head)
+        approval_required = bool(denial) and (
+            bool(authorization_error(gh, pr, False)) or approval_ready(pr, checks, base, app_id))
+        if not controls.reconcile_label(gh, pr, approval_required=approval_required):
             continue
-        if trusted_module("review_control").paused(gh, pr):
+        if denial or controls.paused(gh, pr):
             continue
         task_metadata(gh, pr)
-        if not ready(pr, gh.checks(head), base, app_id):
+        if not ready(pr, checks, base, app_id):
             continue
         # Folding/rebasing must already have happened before final review.
         files = gh.pages(f"pulls/{pr['number']}/files?per_page=100")
