@@ -13,6 +13,7 @@ import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal, overload
 from urllib.parse import quote
 
@@ -23,6 +24,20 @@ REPAIR_BRANCH = "codex/integration-repair-"
 SHA = re.compile(r"[0-9a-f]{40}")
 IDENTITIES: dict[tuple[str, str, str], bool] = {}
 MODULES: dict[str, Any] = {}
+
+
+def orchestrator_context(identity: str) -> dict[str, Any]:
+    """Opt in to the owner-requested worker roles from approved trusted main."""
+    return trusted_module("orchestrator_policy").context(identity)
+
+
+def activate_automation(gh: Any, app_id: int, checkout: Path) -> dict[str, Any]:
+    """Trusted idle supervisor entrypoint; never a source-agent tool."""
+    return trusted_module("automation_promotion").run(
+        SimpleNamespace(**{name: globals()[name] for name in (
+            "command", "policy_path", "authorization_error", "task_metadata", "signing_options"
+        )}), gh, app_id, checkout
+    )
 
 
 def trusted_module(name: str) -> Any:
@@ -55,9 +70,9 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
         message = command("git", "log", "-1", "--format=%B", head, cwd=Path(directory))
         actor = proto.verify_commit(value, message)
     branch = pr["head"].get("ref", "")
-    if branch.startswith("codex/telegram-feature-") and not trusted_module("review_control").enrolled_feature(
+    if branch.startswith(("codex/telegram-feature-", "codex/orchestrator-")) and not trusted_module("review_control").enrolled_feature(
             gh.repository, branch, proto.digest(value)):
-        raise ValueError("Telegram feature context does not match the host-owned request.")
+        raise ValueError("Feature context does not match the host-owned request.")
     return {"user_task": value, "task_digest": proto.digest(value), "producer_id": actor}
 
 
