@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import copy
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
@@ -25,6 +26,8 @@ def _inventory_api(
 
     def api(path: str, method: str = "GET", data: Any = None) -> Any:
         nonlocal metadata_calls
+        if path.startswith("contents/agent_tools/changelog/"):
+            return {"content": base64.b64encode(b"- Valid task fragment\n").decode()}
         if path == "actions/runs/7":
             metadata_calls += 1
             # discover first refreshes the tracked run; the second call is inventory.
