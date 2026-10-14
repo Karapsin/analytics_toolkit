@@ -103,6 +103,12 @@ browser installed by the auth job; injected bearer tokens are not accepted.
 Every scenario uses a profile run ID and test ID in table, stage, object, and
 query-label names. The per-test registry cancels labelled queries, drops tables,
 removes MinIO objects, and restores paused services before it scans for leaks.
+Fault actions use the same enabled Compose profiles as startup, including `gp`
+when Greenplum is enabled; the project-service guard remains active. Before
+registry cleanup and leak scans, the fixture reactivates the loopback connection
+file to invalidate cached aliases and source settings changed by auth scenarios.
+Service-free Python harness tests cover profiled service stop/restore, rejection
+of services outside the enabled project, and cleanup after an Airflow source swap.
 
 The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 `collected-scenarios.json`, `leaks.json`, `minio-objects.json`,

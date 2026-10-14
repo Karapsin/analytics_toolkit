@@ -1,0 +1,1 @@
+- Fix SQL integration fault actions to include the enabled Greenplum Compose profile while retaining the project-service guard, and reactivate loopback connection settings before auth cleanup to invalidate cached Airflow aliases. Add service-free Python regressions for both failures.
