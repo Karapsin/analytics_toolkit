@@ -77,6 +77,14 @@ Telegram approval buttons. A new head invalidates approval. The host verifies th
 Telegram owner, channel, message, callback authentication and current PR head;
 the App posts a transparent audit comment. Local agents cannot approve for you.
 
+`agent:needs-user` reflects an actionable approval after current review and fast CI
+pass, or a private owner-input/veto
+hold. A successful Telegram approval reconciles it immediately; discovery and
+merge passes also repair it from current authorization and private holds. A
+failed label update retries without losing the approval. A concurrent new head
+retains the label until its own decision. Label cleanup preserves unrelated
+labels and never clears a question, veto, signature, review or CI gate.
+
 Rejection posts what changed, why it was rejected and the required corrections,
 mentions the owner and sends a plain Telegram alert. A fresh Pi correction agent
 plans the correction, a separate agent reviews that plan, and another agent edits.

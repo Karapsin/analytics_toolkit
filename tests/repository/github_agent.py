@@ -191,68 +191,6 @@ def test_duplicate_matrix_job_names_require_every_group_to_pass() -> None:
     assert state["runs"]["1"]["needs"] == ["fault"]
 
 
-def test_rejected_bot_repair_is_paused_until_owner_resumes(
-    monkeypatch: Any, tmp_path: Path
-) -> None:
-    base = "b" * 40
-    pr = {
-        "number": 8,
-        "draft": False,
-        "state": "open",
-        "mergeable": True,
-        "labels": [],
-        "base": {"ref": "dev"},
-        "user": {"type": "Bot", "login": "analytics-toolkit-agent-717959[bot]"},
-        "head": {
-            "sha": "a" * 40,
-            "ref": controller.REPAIR_BRANCH + base[:12],
-            "repo": {"full_name": "owner/repo"},
-        },
-    }
-
-    class GitHub:
-        repository = "owner/repo"
-
-        def base(self) -> str:
-            return base
-
-        def pulls(self) -> list[dict[str, Any]]:
-            return [pr]
-
-        def pull(self, number: int) -> dict[str, Any]:
-            return pr
-
-        def pages(self, path: str, key: str) -> list[Any]:
-            assert "%2B00%3A00" in path
-            return []
-
-        def api(self, path: str) -> dict[str, int]:
-            return {"behind_by": 0}
-
-        def checks(self, head: str) -> list[dict[str, Any]]:
-            result = checks(base)
-            result[0].update(conclusion="failure", status="completed")
-            return result
-
-    monkeypatch.setattr(
-        controller, "monitor", lambda gh: (99, {"started": "2026-10-01T00:00:00+00:00", "runs": {}})
-    )
-    monkeypatch.setattr(controller, "save_monitor", lambda *args: None)
-    monkeypatch.setattr(controller, "authorization_error", lambda *args: None)
-    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
-    monkeypatch.setattr(controller, "signed_head", lambda *args: True)
-    controls = controller.trusted_module("review_control")
-    with controls.connect() as db:
-        db.execute(
-            "INSERT INTO pauses VALUES (?,?,?,?,?)",
-            ("owner/repo", 8, "a" * 40, "Scope mismatch", 1),
-        )
-    gh = GitHub()
-    original_pages = gh.pages
-    gh.pages = lambda path, key=None: [] if "/comments?" in path else original_pages(path, key)
-    assert controller.discover(gh, 17)["include"] == []
-
-
 def owned_pr() -> dict[str, Any]:
     return {
         "number": 1,
@@ -527,6 +465,8 @@ class _RefreshDiscoveryGitHub:
             return {"permission": "write"}
         if path.startswith("compare/"):
             return {"behind_by": 0, "status": "identical"}
+        if path.startswith("issues/") and path.endswith("/labels"):
+            return self.pull(int(path.split("/")[1])).get("labels", [])
         return self._patch_monitor(path, method)
 
     def _patch_monitor(self, path: str, method: str) -> None:

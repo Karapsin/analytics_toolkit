@@ -21,6 +21,7 @@ Generated from package version bumps and recent commit history.
 - Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
 - Retry the original OAuth initiation URL after browser navigation timeouts in the disposable authentication harness, with fast service-free regression coverage for recovery and exhausted retries.
 - Preserve OAuth timeout recovery and its service-free regressions while restoring current-dev version markers and retaining pending release notes under Unreleased.
+- Reconcile user-approval labels automatically without clearing genuine holds or stale-head safeguards
 
 ## 1.3.12.5 - 2026-10-14
 
