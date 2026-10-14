@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+## 1.3.12.5 - 2026-10-14
+
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
 - Add release-activated GitHub wiki synchronization from main user documentation.
@@ -15,7 +17,7 @@ Generated from package version bumps and recent commit history.
 - Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
 - Support seven rolling Python minors with continued extension, validated extra and combined [all] ranges, automated update PRs, and Airflow 3 compatibility; retain the named-service-job diagnostics regression repair and the evidenced Python-support formatting correction.
-- Support seven rolling Python minors with continued extension, validated extra and combined [all] ranges, automated update PRs, and Airflow 3 compatibility; retain the named-service-job diagnostics regression repair and the evidenced Python-support formatting correction.
+- Build disposable integration MinIO services from the existing pinned upstream release commits to avoid denied container pulls; retain S3 setup and cleanup and add fast service-free configuration regression guards.
 
 ## 1.3.12.4 - 2026-10-12
 
