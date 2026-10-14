@@ -25,6 +25,7 @@ Generated from package version bumps and recent commit history.
 - Route malformed changelog fragments to fresh correction plans instead of repeating metadata failures
 - Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 - Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
+- Fixed disposable authentication fault cleanup restarting Keycloak again after explicit recovery and readiness checks. Retained scenario fault history and full redacted OAuth browser failure diagnostics with guaranteed browser cleanup and fast service-free regression coverage.
 
 ## 1.3.12.5 - 2026-10-14
 
