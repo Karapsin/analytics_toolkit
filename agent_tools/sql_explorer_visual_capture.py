@@ -11,9 +11,6 @@ from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 from xml.etree import ElementTree as ET
 
-from textual.app import ScreenStackError
-from textual.css.query import NoMatches
-
 from agent_tools.sql_explorer_render_diagnostics import (
     SCENES,
     render_diagnostics,
@@ -26,6 +23,8 @@ from agent_tools.sql_explorer_visual_scene import (
     _write_evidence,
     create_scene,
 )
+from textual.app import ScreenStackError
+from textual.css.query import NoMatches
 
 if TYPE_CHECKING:
     from textual.app import App
@@ -100,7 +99,7 @@ def _timeout_diagnostics(
 ) -> dict[str, Any]:
     """Evaluate current failure layers without reusing stale successful evidence."""
     details: dict[str, Any] = (
-        app._scene_readiness_details()  # noqa: SLF001
+        app.scene_readiness_details()
         if isinstance(app, VisualExplorerApp)
         else {"configured": True, "conditions": {"scene_state": _scene_ready(app)}}
     )

@@ -213,9 +213,7 @@ def test_click_at_clamped_position_resets_preferred_column() -> None:
             assert editor.cursor_location == (1, 1)
             assert editor.logical_column == 8
             viewport = editor.scrollable_content_region
-            assert await pilot.click(
-                offset=(viewport.x + editor.gutter_width + 1, viewport.y + 1)
-            )
+            assert await pilot.click(offset=(viewport.x + editor.gutter_width + 1, viewport.y + 1))
             assert editor.cursor_location == (1, 1)
             assert editor.logical_column == 1
             await pilot.press("down")

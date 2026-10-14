@@ -196,6 +196,10 @@ selection-button and notice controls, the armed flag and button class, selection
 button focus, and the exact notice
 `Enter: select this directory   Escape: cancel   Arrows: keep browsing`.
 Periodic readiness checks observe these conditions without re-arming the picker.
+The public harness method `scene_readiness_details()` exposes the existing
+readiness contract while retaining `_scene_readiness_details()` for compatibility.
+Each directory geometry payload collects readiness once, so its semantic assertions
+and recorded scene-state details describe the same observation.
 Geometry includes the same semantic assertions and bounded scene-state evidence;
 lost focus, styling or instructions blocks capture and appears in timeout
 diagnostics. Service-free regressions retain the state across idle refreshes and
@@ -207,7 +211,11 @@ Controls without IDs use their widget class, sorted CSS classes and query index
 (for example, `button_focus_color:Button.remove-column[0]`), so every removal
 button is checked separately. Modal buttons use the surface color when neutral
 or disabled, the shared hover color under the pointer, and amber for enabled
-keyboard focus, including focus with hover.
+keyboard focus, including focus with hover. Disabled-color regressions resolve an
+independent reference with explicit expected CSS beside each tested button under
+the same parent, preserving the ancestor background and contrast context. They
+compare CSS color, automatic contrast and rendered foreground exactly, and reject
+an intentionally incorrect reference foreground.
 
 For database-picker, find-replace, column-ruler-scrolled, create-table-advanced,
 create-table-schema, create-table-invalid, and create-table-sql, geometry JSON also includes bounded

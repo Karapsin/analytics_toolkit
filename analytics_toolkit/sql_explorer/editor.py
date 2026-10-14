@@ -198,9 +198,7 @@ class SqlEditor(TextArea):
         column = self.logical_column
         target = Selection.cursor((target_row, min(column, len(self.document[target_row]))))
         existing = next(
-            (
-                selection for selection in self._secondary_selections if selection.end == target.end
-            ),
+            (selection for selection in self._secondary_selections if selection.end == target.end),
             None,
         )
         if existing is not None:

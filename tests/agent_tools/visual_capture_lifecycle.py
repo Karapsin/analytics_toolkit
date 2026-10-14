@@ -164,7 +164,7 @@ def test_timeout_diagnostics_identify_current_failed_layer(
     geometry_ok: bool,
 ) -> None:
     class Explorer:
-        def _scene_readiness_details(self) -> dict[str, Any]:
+        def scene_readiness_details(self) -> dict[str, Any]:
             return {
                 "configured": configured,
                 "conditions": {"validation_feedback": state_ready},

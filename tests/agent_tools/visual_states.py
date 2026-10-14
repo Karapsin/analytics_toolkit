@@ -7,18 +7,18 @@ from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
+from analytics_toolkit.sql_explorer.create_table import creation_options
+from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
+from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
+from analytics_toolkit.sql_explorer.widgets import ConfirmMutationScreen, FileNavigationScreen
 from rich.text import Text
+from tests._support.paths import REPO_ROOT
+from tests.agent_tools._support import wait_for_scene
 from textual.css.query import NoMatches
 from textual.widgets import Button, Input, Static
 
 from agent_tools import sql_explorer_visual, sql_explorer_visual_capture
 from agent_tools import sql_explorer_visual_scene as scenes
-from analytics_toolkit.sql_explorer.create_table import creation_options
-from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
-from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
-from analytics_toolkit.sql_explorer.widgets import ConfirmMutationScreen, FileNavigationScreen
-from tests._support.paths import REPO_ROOT
-from tests.agent_tools._support import wait_for_scene
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -162,6 +162,9 @@ def test_directory_readiness_requires_every_armed_invariant(failure: str) -> Non
         app.focused = controls["#navigation-path"]
     elif failure == "notice":
         controls["#navigation-notice"].renderable = Text("21 matching entries.")
+    details = scenes.VisualExplorerApp.scene_readiness_details(app)
+    assert details == app._scene_readiness_details()
+    assert all(details["conditions"].values()) == (failure == "none")
     assert scenes.VisualExplorerApp._scene_state_ready(app) == (failure == "none")
     screen.action_cancel.assert_not_called()
 
@@ -189,7 +192,8 @@ def test_directory_readiness_rejects_each_unavailable_control(selector: str, fai
         screen.query_one.side_effect = lookup
     else:
         controls[selector].is_mounted = False
-    details = app._scene_readiness_details()
+    details = scenes.VisualExplorerApp.scene_readiness_details(app)
+    assert details == app._scene_readiness_details()
     key = "missing_controls" if failure == "missing" else "unmounted_controls"
     assert selector in details[key]
     assert not scenes.VisualExplorerApp._scene_state_ready(app)

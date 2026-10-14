@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -66,7 +67,7 @@ async def _hover_button(pilot: Any, button: Button) -> None:
 
 
 class DisabledColorReference(Static):
-    """Resolve CSS automatic contrast through Textual's own color contract."""
+    """Resolve the expected CSS contract beside the subject, independently."""
 
     DEFAULT_CSS = """
     DisabledColorReference {
@@ -130,7 +131,22 @@ async def _exercise_disabled_button(
     assert button.styles.background == neutral
     await _hover_button(pilot, button)
     assert button.styles.background == neutral
-    _assert_disabled_color(button, screen.query_one(DisabledColorReference))
+    reference = DisabledColorReference()
+    parent = button.parent
+    assert parent is not None
+    await parent.mount(reference, after=button)
+    try:
+        await pilot.pause()
+        assert reference.parent is button.parent
+        _assert_disabled_color(button, reference)
+        # An independent, incorrect foreground must still fail the strict contract.
+        reference.styles.color = "#ff0000"
+        await pilot.pause()
+        assert reference.rich_style.color != button.rich_style.color
+        with pytest.raises(AssertionError):
+            _assert_disabled_color(button, reference)
+    finally:
+        await reference.remove()
     _assert_removals_readable(removals)
     await pilot.hover(offset=(0, 0))
     button.disabled = False
@@ -189,10 +205,22 @@ def test_create_table_buttons_keep_individual_focus_and_hover_colors(advanced: b
             removals = [button for button in buttons if button.has_class("remove-column")]
             assert len(removals) == 2
             assert len(buttons) == 5
-            await screen.query_one("#create-table-actions").mount(DisabledColorReference())
-            await pilot.pause()
             palette = application.get_css_variables()
             for button in buttons:
                 await _exercise_create_button(pilot, screen, button, palette)
 
     asyncio.run(exercise())
+
+
+def test_disabled_color_comparison_rejects_only_rendered_foreground_mismatch() -> None:
+    # Matching CSS tokens alone cannot establish the rendered color contract.
+    button: Any = SimpleNamespace(
+        styles=SimpleNamespace(color="disabled", auto_color=True),
+        rich_style=SimpleNamespace(color="#707274"),
+    )
+    reference: Any = SimpleNamespace(
+        styles=SimpleNamespace(color="disabled", auto_color=True),
+        rich_style=SimpleNamespace(color="#6f7172"),
+    )
+    with pytest.raises(AssertionError):
+        _assert_disabled_color(button, reference)

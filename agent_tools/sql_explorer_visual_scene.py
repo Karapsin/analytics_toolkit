@@ -16,12 +16,6 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-from rich.text import Text
-from textual.app import ScreenStackError
-from textual.color import Color
-from textual.css.query import NoMatches
-from textual.widgets import Button, Collapsible, Input, OptionList, Static
-
 from agent_tools.sql_explorer_render_diagnostics import (
     SELECTOR_SCENES,
     selector_readiness_assertions,
@@ -54,6 +48,11 @@ from analytics_toolkit.sql_explorer.widgets import (
     FileNavigationScreen,
     ResultTable,
 )
+from rich.text import Text
+from textual.app import ScreenStackError
+from textual.color import Color
+from textual.css.query import NoMatches
+from textual.widgets import Button, Collapsible, Input, OptionList, Static
 
 if TYPE_CHECKING:
     from textual.app import App
@@ -114,7 +113,8 @@ class VisualExplorerApp(SqlExplorerApp):
         self.visual_manifest_path = manifest_path
         self.creation_scene_ready = not (
             scene_id.startswith(("create-table", "journal-", "completion"))
-            or scene_id in {
+            or scene_id
+            in {
                 "command-completion",
                 "database-completion",
                 "directory-armed",
@@ -473,6 +473,10 @@ class VisualExplorerApp(SqlExplorerApp):
         _refresh_evidence_if_mounted(
             self, self.visual_scene_id, self.visual_evidence_path, self.visual_manifest_path
         )
+
+    def scene_readiness_details(self) -> dict[str, Any]:
+        """Expose current scene conditions to capture and evidence consumers."""
+        return self._scene_readiness_details()
 
     def _scene_readiness_details(self) -> dict[str, Any]:
         """Describe current conditions without treating lifecycle loss as success."""
@@ -852,23 +856,11 @@ def _pane_gaps(workspace: Any, panes: list[Any]) -> bool:
     return all(right.region.y - left.region.bottom == 1 for left, right in zip(panes, panes[1:]))
 
 
-def _write_evidence(
-    app: App[Any],
-    scene_id: str,
-    evidence_path: Path,
-    manifest_path: Path,
-) -> None:
-    # A final capture owns its diagnostics. Timers and teardown may refresh geometry,
-    # but must not replace the exported frame's evidence.
-    if evidence_path.exists():
-        previous = json.loads(evidence_path.read_text(encoding="utf-8"))
-        if "render_diagnostics" in previous:
-            return
-    required = _manifest_scene(manifest_path, scene_id)["required_elements"]
+def _required_element_evidence(
+    app: App[Any], required: list[str]
+) -> tuple[dict[str, dict[str, Any]], dict[str, bool]]:
     elements: dict[str, dict[str, Any]] = {}
     assertions: dict[str, bool] = {}
-    if os.environ.get("SQL_EXPLORER_VISUAL_REQUIRE_COLOR_256") == "1":
-        assertions["color_256_renderer"] = app.console.color_system == "256"
     for selector in required:
         matches = [
             candidate
@@ -885,58 +877,96 @@ def _write_evidence(
             geometry["display"] and geometry["width"] > 0 and geometry["height"] > 0
         )
 
-    if isinstance(app, VisualExplorerApp) and len(app.screen_stack) == 1:
-        workspace = app.active_workspace
-        editor = workspace.editor
-        editor_status = workspace.query_one("#editor-status")
-        assertions["editor_status_no_overlap"] = editor.region.bottom == editor_status.region.y
-        assertions["editor_first_two_lines_visible"] = (
-            editor.content_region.height >= 2 and editor.scroll_offset.y == 0
-        )
-        tab = app.query_one("#tab-1")
-        assertions["compact_tab_height"] = tab.region.height == 1
-        if scene_id == "tabs-overflow":
-            assertions["tabs_overflow_first_tab_active"] = workspace.tab_id == "1"
-            assertions["overflow_keeps_tab_labels_visible"] = (
-                app.query_one("#tab-strip").scrollable_content_region.height >= 1
-            )
-        summary = workspace.query_one("#query-summary")
-        interrupt = workspace.query_one("#interrupt", Button)
-        run = workspace.query_one("#run-query", Button)
-        assertions["run_spelling"] = str(run.label) == "RUN"
-        assertions["run_visible_only_ready"] = run.display == (
-            not workspace.busy and workspace.query_state == "ready"
-        )
-        assertions["run_right_aligned"] = (
-            not run.display or run.region.right == summary.content_region.right
-        )
-        assertions["stop_spelling"] = str(interrupt.label) == "STOP"
-        assertions["interrupt_right_aligned"] = (
-            not interrupt.display or interrupt.region.right == summary.content_region.right
-        )
-        assertions["interrupt_visible_only_running"] = interrupt.display == (
-            workspace.query_state in {"running", "cancelling"}
-        )
-        _assert_changed_controls(app, scene_id, assertions)
+    return elements, assertions
 
-        panes = [workspace.query_one(".query-pane")]
-        if workspace.results_open:
-            panes.append(workspace.query_one(".result-pane"))
-        panes.append(workspace.query_one(".command-panel"))
-        assertions["pane_gaps"] = _pane_gaps(workspace, panes)
-        table = workspace.query_one(ResultTable)
-        for name, widget in (("editor", editor), ("result", table)):
-            if widget.show_vertical_scrollbar:
-                assertions[f"{name}_scrollbar_right"] = (
-                    widget.vertical_scrollbar.region.right == widget.content_region.right
-                )
+
+def _workspace_assertions(app: VisualExplorerApp, scene_id: str) -> dict[str, bool]:
+    assertions: dict[str, bool] = {}
+    workspace = app.active_workspace
+    editor = workspace.editor
+    editor_status = workspace.query_one("#editor-status")
+    assertions["editor_status_no_overlap"] = editor.region.bottom == editor_status.region.y
+    assertions["editor_first_two_lines_visible"] = (
+        editor.content_region.height >= 2 and editor.scroll_offset.y == 0
+    )
+    tab = app.query_one("#tab-1")
+    assertions["compact_tab_height"] = tab.region.height == 1
+    if scene_id == "tabs-overflow":
+        assertions["tabs_overflow_first_tab_active"] = workspace.tab_id == "1"
+        assertions["overflow_keeps_tab_labels_visible"] = (
+            app.query_one("#tab-strip").scrollable_content_region.height >= 1
+        )
+    summary = workspace.query_one("#query-summary")
+    interrupt = workspace.query_one("#interrupt", Button)
+    run = workspace.query_one("#run-query", Button)
+    assertions["run_spelling"] = str(run.label) == "RUN"
+    assertions["run_visible_only_ready"] = run.display == (
+        not workspace.busy and workspace.query_state == "ready"
+    )
+    assertions["run_right_aligned"] = (
+        not run.display or run.region.right == summary.content_region.right
+    )
+    assertions["stop_spelling"] = str(interrupt.label) == "STOP"
+    assertions["interrupt_right_aligned"] = (
+        not interrupt.display or interrupt.region.right == summary.content_region.right
+    )
+    assertions["interrupt_visible_only_running"] = interrupt.display == (
+        workspace.query_state in {"running", "cancelling"}
+    )
+    _assert_changed_controls(app, scene_id, assertions)
+
+    panes = [workspace.query_one(".query-pane")]
+    if workspace.results_open:
+        panes.append(workspace.query_one(".result-pane"))
+    panes.append(workspace.query_one(".command-panel"))
+    assertions["pane_gaps"] = _pane_gaps(workspace, panes)
+    table = workspace.query_one(ResultTable)
+    for name, widget in (("editor", editor), ("result", table)):
+        if widget.show_vertical_scrollbar:
+            assertions[f"{name}_scrollbar_right"] = (
+                widget.vertical_scrollbar.region.right == widget.content_region.right
+            )
+
+    return assertions
+
+
+def _persist_evidence(payload: dict[str, Any], evidence_path: Path) -> None:
+    # A mounted scene may emit an incomplete diagnostic frame before it settles,
+    # but teardown must never replace geometry that already passed every check.
+    if not payload["ok"] and evidence_path.exists():
+        return
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = evidence_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(evidence_path)
+
+
+def _write_evidence(
+    app: App[Any],
+    scene_id: str,
+    evidence_path: Path,
+    manifest_path: Path,
+) -> None:
+    # A final capture owns its diagnostics. Timers and teardown may refresh geometry,
+    # but must not replace the exported frame's evidence.
+    if evidence_path.exists():
+        previous = json.loads(evidence_path.read_text(encoding="utf-8"))
+        if "render_diagnostics" in previous:
+            return
+    required = _manifest_scene(manifest_path, scene_id)["required_elements"]
+    elements, assertions = _required_element_evidence(app, required)
+    if os.environ.get("SQL_EXPLORER_VISUAL_REQUIRE_COLOR_256") == "1":
+        assertions["color_256_renderer"] = app.console.color_system == "256"
+    if isinstance(app, VisualExplorerApp) and len(app.screen_stack) == 1:
+        assertions.update(_workspace_assertions(app, scene_id))
 
     selector_snapshot = None
     if scene_id in SELECTOR_SCENES:
         selector_snapshot = selector_readiness_snapshot(app, scene_id)
         assertions.update(selector_readiness_assertions(selector_snapshot))
+    readiness = None
     if scene_id == "directory-armed" and isinstance(app, VisualExplorerApp):
-        readiness = app._scene_readiness_details()
+        readiness = app.scene_readiness_details()
         assertions.update(
             {f"directory:{name}": value for name, value in readiness["conditions"].items()}
         )
@@ -952,18 +982,11 @@ def _write_evidence(
         "assertions": assertions,
         "ok": bool(assertions) and all(assertions.values()),
     }
-    if scene_id == "directory-armed" and isinstance(app, VisualExplorerApp):
-        payload["scene_readiness"] = app._scene_readiness_details()
+    if readiness is not None:
+        payload["scene_readiness"] = readiness
     if selector_snapshot is not None:
         payload["selector_readiness"] = selector_snapshot
-    # A mounted scene may emit an incomplete diagnostic frame before it settles,
-    # but teardown must never replace geometry that already passed every check.
-    if not payload["ok"] and evidence_path.exists():
-        return
-    evidence_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = evidence_path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(evidence_path)
+    _persist_evidence(payload, evidence_path)
 
 
 def _button_color_assertions(app: App[Any]) -> dict[str, bool]:
@@ -975,8 +998,8 @@ def _button_color_assertions(app: App[Any]) -> dict[str, bool]:
         if identity is None:
             classes = ".".join(sorted(button.classes))
             identity = f"{type(button).__name__}.{classes}[{index}]"
-        assertions[f"button_focus_color:{identity}"] = (
-            button.styles.background == Color.parse(color)
+        assertions[f"button_focus_color:{identity}"] = button.styles.background == Color.parse(
+            color
         )
     return assertions
 

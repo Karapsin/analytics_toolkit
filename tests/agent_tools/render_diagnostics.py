@@ -37,14 +37,14 @@ def test_strip_records_unicode_cells_and_resolved_styles() -> None:
 def _svg(text: str = "Heading") -> str:
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">'
-        '<style>.r1 {fill: #123456; font-weight: bold}</style>'
+        "<style>.r1 {fill: #123456; font-weight: bold}</style>"
         '<defs><clipPath id="terminal-line-0"><rect y="0" height="20" /></clipPath>'
         '<clipPath id="screen"><rect width="400" height="200" /></clipPath></defs>'
         '<g transform="translate(10,20)" clip-path="url(#screen)">'
         '<rect y="0" width="100" height="20" fill="#abcdef" />'
         '<g clip-path="url(#terminal-line-0)">'
         f'<text class="r1" x="0" y="15"><tspan>{text}</tspan></text>'
-        '</g></g></svg>'
+        "</g></g></svg>"
     )
 
 
@@ -500,3 +500,37 @@ def test_region_render_failure_retains_evidence_and_collects_later_regions(
     assert result["regions"][0]["widget_rows"] == []
     assert result["regions"][1]["widget_rows"][0]["text"] == "healthy "
     assert result["regions"][1]["composed_rows"][0]["text"] == "healthy "
+
+
+@pytest.mark.parametrize("missing", ["textual", "rich", "resvg-py"])
+def test_render_diagnostics_retains_unavailable_package_metadata(
+    monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    def package_version(package: str) -> str:
+        if package == missing:
+            raise diagnostics.PackageNotFoundError(package)
+        return f"{package}-version"
+
+    monkeypatch.setattr(diagnostics, "version", package_version)
+    app = SimpleNamespace(
+        size=SimpleNamespace(width=208, height=47),
+        console=SimpleNamespace(color_system="256"),
+    )
+    result = diagnostics.render_diagnostics(
+        app, "database-picker", _svg(), _svg(), b"png", _terminal()
+    )
+    assert result["versions"][missing] == "unavailable"
+    for package in {"textual", "rich", "resvg-py"} - {missing}:
+        assert result["versions"][package] == f"{package}-version"
+
+
+def test_render_diagnostics_propagates_unexpected_metadata_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def package_version(_package: str) -> str:
+        message = "broken package metadata"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(diagnostics, "version", package_version)
+    with pytest.raises(RuntimeError, match="broken package metadata"):
+        diagnostics.render_diagnostics(object(), "database-picker", "", "", b"", _terminal())

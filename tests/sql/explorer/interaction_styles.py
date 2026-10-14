@@ -73,8 +73,9 @@ def test_controls_use_amber_while_text_selection_retains_translucency() -> None:
             workspace.completion_menu.move_highlight(1)
             assert workspace.completion_menu.highlighted == 1
             assert (
-                workspace.completion_menu.get_component_styles("option-list--option-highlighted")
-                .background
+                workspace.completion_menu.get_component_styles(
+                    "option-list--option-highlighted"
+                ).background
                 == amber
             )
             workspace.editor.text = "select 1"
