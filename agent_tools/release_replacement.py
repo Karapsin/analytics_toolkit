@@ -8,8 +8,8 @@ import json
 import re
 from typing import TYPE_CHECKING
 
-from agent_tools import sessions
 from agent_tools import release_preparation as preparation
+from agent_tools import sessions
 from release_routines.lib import release_candidate as candidate
 
 if TYPE_CHECKING:
