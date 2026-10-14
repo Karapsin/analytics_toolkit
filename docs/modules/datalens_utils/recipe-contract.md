@@ -105,7 +105,8 @@ Its `fields` maps SDK slots (`x`, `y`, `y2`, `columns`, `rows`, `measures`,
 `points`, `size`, `labels`, `segments`) to ordered field-title lists.
 
 Wizard `title` is the default widget title. Optional `chart_title` overrides the
-internal title; explicit null leaves an absent source chart title absent. Pulling
+internal title. Builder creation uses this override when present, including explicit
+null to leave an absent source chart title absent; without it, creation uses `title`. Pulling
 an internal-title edit updates explicitly managed `chart_title` and preserves
 `title`. Removing the remote internal title records `chart_title: null` in both the
 recipe and pull baseline; missing `chartSettings` also means an absent title.

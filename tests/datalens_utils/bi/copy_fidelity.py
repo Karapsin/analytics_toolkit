@@ -244,6 +244,7 @@ def test_unexpressible_defaults_are_not_silently_dropped():
     with pytest.raises(DataLensUtilsError, match="mapping"):
         chart_defaults(chart)
 
+
 @pytest.mark.parametrize("dry_run", [True, False])
 @pytest.mark.parametrize("setting", ["color_by_measure_name", "shape_by_measure_name"])
 def test_unsupported_scatter_encoding_blocks_copy_import(bi_project, dry_run, setting):
@@ -298,3 +299,8 @@ def test_unsupported_scatter_encoding_blocks_copy_import(bi_project, dry_run, se
             path: path.read_bytes()
             for path in bi_project.paths.project_root.rglob("*")
             if path.is_file()
+        } == before
+        assert api.documents == documents
+        assert not api.writes
+    finally:
+        api.client.close()
