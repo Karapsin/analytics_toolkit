@@ -9,6 +9,8 @@
 ## Workflow Guides
 
 - [BI projects and dashboard import](bi-projects.md)
+- [Version-2 recipe contract](recipe-contract.md)
+- [Copy a tab, fidelity and recovery](copy-tab.md)
 
 Use the separate analytics_toolkit.datalens_utils module for configuration-driven
 YC dashboard creation, editing and recovery. See the [module README](../../../analytics_toolkit/datalens_utils/README.md)

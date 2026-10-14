@@ -199,28 +199,48 @@ class DataLensProject:
         return self._execute("validate")
 
     def import_tab(
-        self, *, dashboard_id: str, tab_id: str, dry_run: bool = True, upgrade_recipe: bool = False
+        self,
+        *,
+        dashboard_id: str,
+        tab_id: str,
+        dry_run: bool = True,
+        upgrade_recipe: bool = False,
+        mode: str = "adopt",
     ) -> dict[str, Any]:
         """Preview or merge one published tab and its dependency closure."""
         return self._import(
-            dashboard_id=dashboard_id, tab_id=tab_id, dry_run=dry_run, upgrade_recipe=upgrade_recipe
+            dashboard_id=dashboard_id,
+            tab_id=tab_id,
+            dry_run=dry_run,
+            upgrade_recipe=upgrade_recipe,
+            mode=mode,
         )
 
     def import_dashboard(
-        self, *, dashboard_id: str, dry_run: bool = True, upgrade_recipe: bool = False
+        self,
+        *,
+        dashboard_id: str,
+        dry_run: bool = True,
+        upgrade_recipe: bool = False,
+        mode: str = "adopt",
     ) -> dict[str, Any]:
         """Preview or merge every published tab and shared dependency."""
         return self._import(
-            dashboard_id=dashboard_id, tab_id=None, dry_run=dry_run, upgrade_recipe=upgrade_recipe
+            dashboard_id=dashboard_id,
+            tab_id=None,
+            dry_run=dry_run,
+            upgrade_recipe=upgrade_recipe,
+            mode=mode,
         )
 
-    def _import(
+    def _import(  # noqa: PLR0913 - Explicit facade import options and reporter.
         self,
         *,
         dashboard_id: str,
         tab_id: str | None,
         dry_run: bool,
         upgrade_recipe: bool,
+        mode: str = "adopt",
         reporter: Callable[..., None] | None = None,
     ) -> dict[str, Any]:
         started = time.perf_counter()
@@ -234,6 +254,7 @@ class DataLensProject:
                 tab_id=tab_id,
                 dry_run=dry_run,
                 upgrade_recipe=upgrade_recipe,
+                mode=mode,
             )
             return {
                 "operation": "import-tab" if tab_id is not None else "import-dashboard",

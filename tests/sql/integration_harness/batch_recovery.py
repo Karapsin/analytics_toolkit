@@ -5,14 +5,15 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pandas as pd
-import pytest
-
 from analytics_toolkit.sql.dml.transfer.runtime import retry
+
 from tests.sql.integration._support.faults import FaultGate
 from tests.sql.integration.fault import recovery
 
 if TYPE_CHECKING:
     from typing import Any
+
+    import pytest
 
 
 class _Connection:

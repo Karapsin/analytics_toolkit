@@ -199,7 +199,9 @@ def plan_v2(registry: Any, *, resource_keys: Sequence[str] | None) -> dict[str, 
     capabilities = get_capabilities(installation=current_session().runtime["installation"])
     actions, conflicts = [], []
     with datalens_client() as client:
-        entities = read_entities(client, store, registry, inspected, allow_missing=True)
+        entities = read_entities(
+            client, store, registry, inspected, allow_missing=True, resume_writes=writes
+        )
         blockers = operation_blockers(client, store, registry, writes, entities)
         for key in inspected:
             resource = registry.resources[key]

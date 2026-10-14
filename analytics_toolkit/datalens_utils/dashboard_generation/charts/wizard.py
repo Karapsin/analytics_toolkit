@@ -82,6 +82,8 @@ def getter(client: Any) -> Any:
 
 
 def add_local_handles(definition: Any, dataset: Any, result: Any) -> None:
+    from analytics_toolkit.datalens_utils.dataset_identity import resolved_guid  # noqa: PLC0415
+
     for section in ("aggregated_measures", "hierarchies"):
         for title, spec in definition.get(section, {}).items():
             if not spec.get("guid") or title in result:
@@ -91,7 +93,7 @@ def add_local_handles(definition: Any, dataset: Any, result: Any) -> None:
                 continue
             if section == "aggregated_measures":
                 result[title] = WizardAggregatedMeasure(
-                    field=dataset.fields.by_guid(spec["field"]),
+                    field=dataset.fields.by_guid(resolved_guid(dataset, spec["field"])),
                     aggregation=spec["aggregation"],
                     title=title,
                     guid=spec["guid"],
@@ -99,7 +101,9 @@ def add_local_handles(definition: Any, dataset: Any, result: Any) -> None:
             else:
                 by_guid = {field.guid: field for field in result.values()}
                 members = [
-                    by_guid[value] if value in by_guid else dataset.fields.by_guid(value)
+                    by_guid[value]
+                    if value in by_guid
+                    else dataset.fields.by_guid(resolved_guid(dataset, value))
                     for value in spec["fields"]
                 ]
                 result[title] = WizardHierarchy(title=title, fields=members, guid=spec["guid"])
@@ -179,6 +183,10 @@ def validate_definition(definition: Any) -> Any:
 
 def _settings(builder: Any, dataset: Any, owned: Any, definition: Any) -> Any:
     for method, values in definition.get("settings", {}).items():
+        operation = getattr(builder, method, None)
+        if not callable(operation):
+            message = f"Wizard {definition['type']!r} does not support setting {method!r}."
+            raise DataLensUtilsError(message)
         for value in values if isinstance(values, list) else [values]:
             arguments = dict(value)
             field = arguments.pop("field", None)
@@ -186,7 +194,7 @@ def _settings(builder: Any, dataset: Any, owned: Any, definition: Any) -> Any:
                 if field is None:
                     message = f"Wizard setting {method!r} needs a field."
                     raise DataLensUtilsError(message)
-                getattr(builder, method)(_resolve(dataset, owned, field), **arguments)
+                operation(_resolve(dataset, owned, field), **arguments)
             else:
                 for map_name in ("colors_map", "shapes_map"):
                     if map_name in arguments and method.endswith("measure_name"):
@@ -194,7 +202,7 @@ def _settings(builder: Any, dataset: Any, owned: Any, definition: Any) -> Any:
                             _resolve(dataset, owned, name): mapped
                             for name, mapped in arguments[map_name].items()
                         }
-                getattr(builder, method)(**arguments)
+                operation(**arguments)
     return builder
 
 
@@ -303,9 +311,11 @@ def configure(  # noqa: C901, PLR0912
             values=rule.get("values", ()),
         )
     if definition["type"] != "indicator":
-        builder.chart_title(
-            text=definition["title"], mode="show" if definition.get("show_title", True) else "hide"
-        )
+        title = definition.get("chart_title", definition["title"])
+        if title is not None:
+            builder.chart_title(
+                text=title, mode="show" if definition.get("show_title", True) else "hide"
+            )
     if "description" in definition:
         builder.description(definition["description"])
     for axis, title in definition.get("axis_titles", {}).items():

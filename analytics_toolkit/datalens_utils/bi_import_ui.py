@@ -35,7 +35,7 @@ def import_widget(item: Any, tab: Any, endpoints: dict[str, str], context: Any) 
             ("hint", "hint"),
             ("auto_height", "autoHeight"),
         ):
-            if wire in value:
+            if wire in value and value[wire] != "":
                 member[public] = value[wire]
         members.append(member)
     presentation = {
@@ -77,7 +77,8 @@ def import_widget(item: Any, tab: Any, endpoints: dict[str, str], context: Any) 
             }
         )
     else:
-        raise DataLensUtilsError("Widget has no chart bindings: " + item.id)
+        message = "Widget has no chart bindings: " + item.id
+        raise DataLensUtilsError(message)
     senders.update(
         endpoints[value["id"]]
         for value, member in zip(data["tabs"], members)
@@ -119,7 +120,8 @@ def import_control_member(
         elif member.source_type == "manual":
             definition["source"] = {"kind": "manual", "param_name": source.param_name}
         else:
-            raise DataLensUtilsError("Unsupported selector source: " + str(member.source_type))
+            message = "Unsupported selector source: " + str(member.source_type)
+            raise DataLensUtilsError(message)
         control_options(member, definition, selected)
     files["configs/UI/selectors/" + member.id + ".json"] = definition
     endpoints[member.id] = member.id
@@ -248,7 +250,7 @@ def control_options(member: Any, definition: dict[str, Any], selected: set[str])
         ("inner_title", "innerTitle"),
         ("hint", "hint"),
     ):
-        if wire in source.raw:
+        if wire in source.raw and source.raw[wire] != "":
             definition["control"][public] = source.raw[wire]
     if member.impact_type == "allTabs":
         definition["affects"] = "all_tabs"
@@ -336,7 +338,8 @@ def ui_definition(  # noqa: PLR0913 - Stable import identities and managed proje
             if edge.get("from") not in endpoints or edge.get("to") not in endpoints:
                 if managed_items is not None:
                     continue
-                raise DataLensUtilsError("Unresolved directed wiring endpoint on tab " + tab.id)
+                message = "Unresolved directed wiring endpoint on tab " + tab.id
+                raise DataLensUtilsError(message)
             tab_ignored.add((endpoints[edge["from"]], endpoints[edge["to"]]))
         check_tab_routes(endpoints, active_senders(tab, endpoints, senders), tab_ignored, routing)
         ignored.update(tab_ignored)

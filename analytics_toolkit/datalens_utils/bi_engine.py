@@ -54,6 +54,9 @@ def local_datasets(registry: Any) -> dict[str, Any]:
                     "cast": value.get("cast", "string"),
                     "data_type": value.get("cast", "string"),
                     "aggregation": aggregation,
+                    "hidden": value.get("hidden", False),
+                    "description": value.get("description", ""),
+                    "ui_settings": value.get("ui_settings"),
                 }
             )
         for name, value in resource.definition.get("calculations", {}).items():
@@ -184,6 +187,7 @@ def read_entities(  # noqa: PLR0913 - Explicit read options and dependency snaps
     *,
     branch: str = "published",
     allow_missing: bool = False,
+    resume_writes: set[str] | None = None,
 ) -> dict[str, Any]:
     result = {}
     ids = {key: store.state["resources"].get(store.internal_key(key), {}).get("id") for key in keys}
@@ -212,7 +216,15 @@ def read_entities(  # noqa: PLR0913 - Explicit read options and dependency snaps
                 scope = "artifact" if resource.kind == "html_page" else store.scope(resource.kind)
                 if getattr(entry, "scope", scope) != scope:
                     raise DataLensUtilsError(key + " retained resource kind differs.")
-                entity = getter(client, resource)(by_id=ids[key], branch=branch)
+                checkpoint = store.state["resources"].get(store.internal_key(key), {})
+                selected_branch = (
+                    "saved"
+                    if resource.kind == "dataset"
+                    and key in (resume_writes or ())
+                    and checkpoint.get("pending_write")
+                    else branch
+                )
+                entity = getter(client, resource)(by_id=ids[key], branch=selected_branch)
                 if entity.id != ids[key]:
                     raise DataLensUtilsError(key + " returned identity differs.")
             else:
@@ -380,7 +392,14 @@ def run(
     inspected = dependencies
     with datalens_client() as client:
         validate_factories(client, registry)
-        entities = read_entities(client, store, registry, inspected, branch=branch)
+        entities = read_entities(
+            client,
+            store,
+            registry,
+            inspected,
+            branch=branch,
+            resume_writes=writes if command not in {"verify", "pull"} else None,
+        )
         if command == "pull":
             return pull_resources(client, store, registry, selected, entities, branch=branch)
         if command == "verify":
