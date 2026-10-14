@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+## 1.3.12.5 - 2026-10-14
+
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
 - Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
@@ -22,6 +24,7 @@ Generated from package version bumps and recent commit history.
 - Reserve version bumps and note rollover for explicit reviewed PyPI release preparation; restore this feature's version markers and keep pending notes Unreleased.
 - Reserve version bumps for reviewed PyPI releases and recover interrupted preparation PR publication without repushing stale heads or duplicating candidates.
 - Build disposable integration MinIO services from the existing pinned upstream release commits to avoid denied container pulls; retain S3 setup and cleanup and add fast service-free configuration regression guards.
+- Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
 
 ## 1.3.12.4 - 2026-10-12
 
