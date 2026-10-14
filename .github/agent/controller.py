@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import importlib.util
 import json
@@ -485,10 +486,26 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
             correction = correction or {"reason": reason, "changes": pr.get("title", "PR changes")}
         if correction:
             kind = "correction"
-        elif kind == "review":
+        else:
             files = gh.pages(f"pulls/{pr['number']}/files?per_page=100")
-            if any(item["filename"].startswith("agent_tools/changelog/")
-                   and item.get("status") != "removed" for item in files):
+            fragments = [item["filename"] for item in files
+                         if item["filename"].startswith("agent_tools/changelog/")
+                         and item["filename"].endswith(".md") and item.get("status") != "removed"]
+            problems = []
+            for path in fragments:
+                content = gh.api(f"contents/{quote(path, safe='/')}?ref={head}")
+                try:
+                    bullet = base64.b64decode(content["content"]).decode("utf-8").strip()
+                except (KeyError, ValueError, UnicodeError):
+                    problems.append(path + ": fragment must contain UTF-8 text.")
+                    continue
+                if not bullet.startswith("- ") or "\n" in bullet or "\r" in bullet:
+                    problems.append(path + ": fragment must contain one concise `- ` bullet.")
+            if problems:
+                kind = "correction"
+                correction = {"reason": "Changelog metadata cannot be folded; correct these fragments:\n"
+                              + "\n".join(problems), "changes": pr.get("title", "PR changes")}
+            elif kind == "review" and fragments:
                 kind = "metadata"
         if (kind == "review" and existing and existing["status"] == "completed"
                 and existing.get("output", {}).get("title") != "Authorization required"):
@@ -577,7 +594,7 @@ def fold(work: Path) -> bool:
     summaries = []
     for path in fragments:
         bullet = path.read_text().strip()
-        if not bullet.startswith("- ") or "\n" in bullet:
+        if not bullet.startswith("- ") or "\n" in bullet or "\r" in bullet:
             raise RuntimeError("Changelog fragments must contain one concise bullet.")
         summaries.append(bullet)
     marker = "## Unreleased"
