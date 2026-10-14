@@ -73,9 +73,8 @@ def test_controls_use_amber_while_text_selection_retains_translucency() -> None:
             workspace.completion_menu.move_highlight(1)
             assert workspace.completion_menu.highlighted == 1
             assert (
-                workspace.completion_menu.get_component_styles(
-                    "option-list--option-highlighted"
-                ).background
+                workspace.completion_menu.get_component_styles("option-list--option-highlighted")
+                .background
                 == amber
             )
             workspace.editor.text = "select 1"
@@ -87,15 +86,14 @@ def test_controls_use_amber_while_text_selection_retains_translucency() -> None:
             )
             assert selection.text == "select"
             assert all(
-                segment.style.bgcolor is not None
-                and segment.style.bgcolor != amber.rich_color
+                segment.style.bgcolor is not None and segment.style.bgcolor != amber.rich_color
                 for segment in selection
             )
             workspace.command_input.value = "format"
             workspace.command_input.action_select_all()
-            assert workspace.command_input.get_component_styles(
-                "input--selection"
-            ).background == amber.with_alpha(0.45)
+            assert workspace.command_input.get_component_styles("input--selection").background == (
+                amber.with_alpha(0.45)
+            )
 
     asyncio.run(exercise())
 

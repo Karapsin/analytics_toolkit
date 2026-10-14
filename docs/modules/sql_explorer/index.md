@@ -156,7 +156,9 @@ occupied cells and vertical bars on blank/end cells. SQL characters remain
 readable and terminal columns stay aligned, including tabs, wide characters,
 horizontal scrolling, and empty lines. Carets and selections remain visible when
 the command or find input has focus; search matches keep their yellow background
-through caret overlays. Presentation padding never changes the SQL buffer.
+through caret overlays. Occupied-cell carets preserve the original SQL foreground
+and background, including selection and find colors. Plain blank-cell bars carry
+no extra background. Presentation padding never changes the SQL buffer.
 Text inputs retain steady non-blinking carets. The compact active tab uses a dark surface with amber text and always includes its database key.
 The editor displays line numbers, keeps its vertical scrollbar on the right,
 shows the active one-based line and column in its lower-right corner without
@@ -245,6 +247,8 @@ In the editor, Tab is conditional:
 
 SQL completion menus sit below the active SQL row, or above it when space below
 is limited, and follow scrolling and terminal resizing without covering that row.
+A menu temporarily hidden by layout reappears when there is space again; Escape
+clears its candidates so later layout changes cannot reopen it.
 Completion menus shrink to their remaining matching rows. Catalog, schema,
 table, keyword, and column suggestions all filter locally as the prefix changes.
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import pytest
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
@@ -16,9 +17,126 @@ from analytics_toolkit.sql_explorer.widgets import (
     FileNavigationScreen,
 )
 from textual.color import Color
-from textual.widgets import Button, Collapsible, Input
+from textual.widgets import Button, Collapsible, Input, Static
 
 from tests.sql._support.explorer import FakeSession
+
+
+async def _exercise_dialog_buttons(
+    pilot: Any, container: Any, palette: dict[str, str]
+) -> None:
+    buttons = list(container.query(Button))
+    neutral = Color.parse(palette["surface"])
+    amber = Color.parse(palette["accent"])
+    hover = Color.parse(palette["panel-lighten-2"])
+    for selected in buttons:
+        await pilot.hover(offset=(0, 0))
+        selected.focus()
+        await pilot.pause()
+        for button in buttons:
+            assert button.styles.background == (amber if button is selected else neutral)
+            assert not button.styles.text_style.reverse
+            if button is not selected:
+                await pilot.hover(f"#{button.id}")
+                assert button.styles.background == hover
+                assert selected.styles.background == amber
+                await pilot.hover(offset=(0, 0))
+    await pilot.hover(offset=(0, 0))
+    for field in container.query(Input):
+        field.focus()
+        await pilot.pause()
+        assert all(button.styles.background == neutral for button in buttons)
+
+
+def _assert_removals_readable(removals: list[Button]) -> None:
+    for removal in removals:
+        assert removal.region.width == 3
+        assert removal.region.height == 1
+        assert "x" in removal.render_line(0).text
+        assert removal.tooltip == "Remove column"
+
+
+async def _hover_button(pilot: Any, button: Button) -> None:
+    button.scroll_visible(animate=False)
+    await pilot.pause()
+    # Coordinates identify repeated removal controls on Textual 0.73 too.
+    region = button.content_region
+    await pilot.hover(offset=(region.x + region.width // 2, region.y))
+    assert button.mouse_hover
+
+
+class DisabledColorReference(Static):
+    """Resolve CSS automatic contrast through Textual's own color contract."""
+
+    DEFAULT_CSS = """
+    DisabledColorReference {
+        color: $text-disabled;
+        background: $surface;
+        text-style: none;
+        tint: transparent;
+        display: none;
+    }
+    """
+
+
+def _assert_disabled_color(button: Button, reference: DisabledColorReference) -> None:
+    assert button.styles.color == reference.styles.color
+    assert button.styles.auto_color == reference.styles.auto_color
+    assert button.rich_style.color == reference.rich_style.color
+
+
+async def _exercise_create_button(
+    pilot: Any, screen: CreateTableScreen, button: Button, palette: dict[str, str]
+) -> None:
+    field = screen.query_one("#create-table-name", Input)
+    buttons = list(screen.query(Button))
+    removals = [item for item in buttons if item.has_class("remove-column")]
+    neutral = Color.parse(palette["surface"])
+    hover = Color.parse(palette["panel-lighten-2"])
+    amber = Color.parse(palette["accent"])
+    await pilot.hover(offset=(0, 0))
+    field.focus()
+    await pilot.pause()
+    assert all(item.styles.background == neutral for item in buttons)
+    _assert_removals_readable(removals)
+    await _hover_button(pilot, button)
+    _assert_removals_readable(removals)
+    assert button.styles.background == hover
+    button.focus()
+    await pilot.pause()
+    for item in buttons:
+        assert item.styles.background == (amber if item is button else neutral)
+    _assert_removals_readable(removals)
+    assert button.styles.color == Color.parse(palette["background"])
+    await pilot.hover(offset=(0, 0))
+    assert button.styles.background == amber
+    _assert_removals_readable(removals)
+    await _exercise_disabled_button(pilot, screen, button, palette)
+
+
+async def _exercise_disabled_button(
+    pilot: Any, screen: CreateTableScreen, button: Button, palette: dict[str, str]
+) -> None:
+    field = screen.query_one("#create-table-name", Input)
+    buttons = list(screen.query(Button))
+    removals = [item for item in buttons if item.has_class("remove-column")]
+    neutral = Color.parse(palette["surface"])
+    field.focus()
+    await pilot.pause()
+    assert all(item.styles.background == neutral for item in buttons)
+    _assert_removals_readable(removals)
+    button.disabled = True
+    await pilot.pause()
+    assert button.styles.background == neutral
+    await _hover_button(pilot, button)
+    assert button.styles.background == neutral
+    _assert_disabled_color(button, screen.query_one(DisabledColorReference))
+    _assert_removals_readable(removals)
+    await pilot.hover(offset=(0, 0))
+    button.disabled = False
+    await pilot.pause()
+    assert button.styles.background == neutral
+    _assert_removals_readable(removals)
 
 
 @pytest.mark.parametrize(
@@ -45,27 +163,7 @@ def test_dialogs_share_picker_hover_and_amber_keyboard_focus(screen_name: str) -
                 container = screens[screen_name]()
                 application.push_screen(container)
             await pilot.pause()
-            buttons = list(container.query(Button))
-            neutral = Color.parse(application.get_css_variables()["surface"])
-            amber = Color.parse(application.get_css_variables()["accent"])
-            hover = Color.parse(application.get_css_variables()["panel-lighten-2"])
-            for selected in buttons:
-                await pilot.hover(offset=(0, 0))
-                selected.focus()
-                await pilot.pause()
-                for button in buttons:
-                    assert button.styles.background == (amber if button is selected else neutral)
-                    assert not button.styles.text_style.reverse
-                    if button is not selected:
-                        await pilot.hover(f"#{button.id}")
-                        assert button.styles.background == hover
-                        assert selected.styles.background == amber
-                        await pilot.hover(offset=(0, 0))
-            await pilot.hover(offset=(0, 0))
-            for field in container.query(Input):
-                field.focus()
-                await pilot.pause()
-                assert all(button.styles.background == neutral for button in buttons)
+            await _exercise_dialog_buttons(pilot, container, application.get_css_variables())
 
     asyncio.run(exercise())
 
@@ -87,56 +185,14 @@ def test_create_table_buttons_keep_individual_focus_and_hover_colors(advanced: b
             await pilot.pause()
             screen.query_one("#create-table-advanced", Collapsible).collapsed = not advanced
             await pilot.pause()
-            field = screen.query_one("#create-table-name", Input)
             buttons = list(screen.query(Button))
             removals = [button for button in buttons if button.has_class("remove-column")]
             assert len(removals) == 2
             assert len(buttons) == 5
+            await screen.query_one("#create-table-actions").mount(DisabledColorReference())
+            await pilot.pause()
             palette = application.get_css_variables()
-            neutral = Color.parse(palette["surface"])
-            hover = Color.parse(palette["panel-lighten-2"])
-            amber = Color.parse(palette["accent"])
-
-            def assert_removals_readable() -> None:
-                for removal in removals:
-                    assert removal.region.width == 3
-                    assert removal.region.height == 1
-                    assert "x" in removal.render_line(0).text
-                    assert removal.tooltip == "Remove column"
-
             for button in buttons:
-                await pilot.hover(offset=(0, 0))
-                field.focus()
-                await pilot.pause()
-                assert all(item.styles.background == neutral for item in buttons)
-                assert_removals_readable()
-                await pilot.hover(button)
-                assert_removals_readable()
-                assert button.styles.background == hover
-                button.focus()
-                await pilot.pause()
-                for item in buttons:
-                    assert item.styles.background == (amber if item is button else neutral)
-                assert_removals_readable()
-                assert button.styles.color == Color.parse(palette["background"])
-                await pilot.hover(offset=(0, 0))
-                assert button.styles.background == amber
-                assert_removals_readable()
-                field.focus()
-                await pilot.pause()
-                assert all(item.styles.background == neutral for item in buttons)
-                assert_removals_readable()
-                button.disabled = True
-                await pilot.pause()
-                assert button.styles.background == neutral
-                await pilot.hover(button)
-                assert button.styles.background == neutral
-                assert button.styles.color == Color.parse(palette["text-disabled"])
-                assert_removals_readable()
-                await pilot.hover(offset=(0, 0))
-                button.disabled = False
-                await pilot.pause()
-                assert button.styles.background == neutral
-                assert_removals_readable()
+                await _exercise_create_button(pilot, screen, button, palette)
 
     asyncio.run(exercise())

@@ -26,6 +26,7 @@ from agent_tools.sql_explorer_visual_scene import VisualExplorerApp, _write_evid
 if TYPE_CHECKING:
     from textual.app import App
 
+
 _MAX_TIMEOUT_LOG_CHARS = 8192
 _MAX_GEOMETRY_ASSERTIONS = 64
 
@@ -86,9 +87,7 @@ def _capture_frame(
         app, scene, svg, framed_svg, screenshot.read_bytes(), terminal
     )
     temporary = evidence.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps(geometry, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    temporary.write_text(json.dumps(geometry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(evidence)
 
 
@@ -116,9 +115,9 @@ def _timeout_diagnostics(
         details["geometry"] = {
             "ok": geometry["ok"],
             "assertions": dict(entries[:_MAX_GEOMETRY_ASSERTIONS]),
-            "failed_assertions": [
-                key[:160] for key, value in entries if not value
-            ][:_MAX_GEOMETRY_ASSERTIONS],
+            "failed_assertions": [key[:160] for key, value in entries if not value][
+                :_MAX_GEOMETRY_ASSERTIONS
+            ],
             "assertion_count": len(entries),
             "truncated": len(entries) > _MAX_GEOMETRY_ASSERTIONS,
         }
@@ -135,6 +134,14 @@ def _timeout_summary(details: dict[str, Any]) -> str:
     return json.dumps({"truncated": True, "diagnostic_prefix": encoded[:2048]})
 
 
+def _write_timeout_diagnostics(evidence: Path, details: dict[str, Any]) -> None:
+    """Retain bounded observations outside the asynchronous capture loop."""
+    timeout_path = evidence.with_suffix(".timeout.json")
+    timeout_path.parent.mkdir(parents=True, exist_ok=True)
+    timeout_path.write_text(json.dumps(details, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    evidence.unlink(missing_ok=True)
+
+
 async def capture_scene(scene: str, evidence: Path, manifest: Path, screenshot: Path) -> None:
     app: App[object] = create_scene(scene, evidence, manifest)
     async with app.run_test(size=(TERMINAL_COLUMNS, TERMINAL_ROWS)) as pilot:
@@ -144,14 +151,8 @@ async def capture_scene(scene: str, evidence: Path, manifest: Path, screenshot: 
                 break
         else:
             details = _timeout_diagnostics(app, scene, evidence, manifest)
-            # Retain full bounded observations even when the log summary is truncated.
-            timeout_path = evidence.with_suffix(".timeout.json")
-            timeout_path.parent.mkdir(parents=True, exist_ok=True)
-            timeout_path.write_text(
-                json.dumps(details, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-            )
+            _write_timeout_diagnostics(evidence, details)
             diagnostics = _timeout_summary(details)
-            evidence.unlink(missing_ok=True)
             message = (
                 f"Scene {scene} timed out waiting for readiness and geometry; "
                 f"readiness_diagnostics={diagnostics}"

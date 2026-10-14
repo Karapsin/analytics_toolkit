@@ -1,5 +1,7 @@
 """Compact command reference and specialized keyboard references."""
 
+from __future__ import annotations
+
 import re
 
 from rich.table import Table
@@ -110,13 +112,13 @@ def help_table(content: str) -> Table:
         if match:
             rows.append((match[1], match[2]))
         elif line.startswith("    ") and rows:
-            command, description = rows[-1]
-            rows[-1] = command, description + " " + line.strip()
+            previous = rows[-1]
+            rows[-1] = (previous[0], previous[1] + " " + line.strip())
         else:
             rows.append(("", line.strip()))
     table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
     table.add_column(width=26, no_wrap=True)
     table.add_column(ratio=1, overflow="fold")
-    for command, description in rows:
-        table.add_row(Text(command), Text(description))
+    for row in rows:
+        table.add_row(Text(row[0]), Text(row[1]))
     return table

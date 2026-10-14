@@ -97,17 +97,19 @@ class SqlEditor(TextArea):
         scrollbar.window_size = self.scrollable_content_region.width
         scrollbar.position = self.scroll_x
 
-    def watch_scroll_x(self) -> None:
+    def watch_scroll_x(self, old_value: float = 0.0, new_value: float = 0.0) -> None:
+        super().watch_scroll_x(old_value, new_value)
         self._sync_horizontal_scrollbar()
 
-    def on_idle(self) -> None:
+    def on_idle(self, event: events.Idle | None = None) -> None:
+        del event
         if not self.is_mounted:
             return
         # Layout and document changes can update extents without a scroll event.
         self._sync_horizontal_scrollbar()
         app = cast("Any", self.app)
         workspace = app.active_workspace
-        if workspace.editor is self and workspace.completion_menu.is_open:
+        if workspace.editor is self and workspace.completion_menu.suggestions:
             app._position_completion(workspace)  # noqa: SLF001 -- tab-owned layout callback.
 
     @property
@@ -133,7 +135,7 @@ class SqlEditor(TextArea):
 
     @staticmethod
     def _selection_key(selection: Selection) -> tuple[tuple[int, int], tuple[int, int]]:
-        return tuple(sorted(selection))  # type: ignore[return-value]
+        return (min(selection), max(selection))
 
     def _set_selections(
         self,
@@ -553,12 +555,12 @@ class SqlEditor(TextArea):
             lambda location: (location[0], len(self.document[location[0]])), select=select
         )
 
-    def action_cursor_document_start(self) -> None:
-        self._move_all(lambda _location: (0, 0))
+    def action_cursor_document_start(self, select: bool = False) -> None:
+        self._move_all(lambda _location: (0, 0), select=select)
 
-    def action_cursor_document_end(self) -> None:
+    def action_cursor_document_end(self, select: bool = False) -> None:
         last_row = self.document.line_count - 1
-        self._move_all(lambda _location: (last_row, len(self.document[last_row])))
+        self._move_all(lambda _location: (last_row, len(self.document[last_row])), select=select)
 
     def action_select_all(self) -> None:
         self._collapse_for_single_cursor_action()
@@ -752,8 +754,9 @@ class SqlEditor(TextArea):
         # Textual's block cursor must not mask SQL or an active find match.
         theme = self._theme
         if theme is not None:
-            self._theme = copy(theme)
-            self._theme.cursor_style = Style(underline=True, bold=False, reverse=False)
+            render_theme = copy(theme)
+            render_theme.cursor_style = Style()
+            self._theme = render_theme
         try:
             strip = super().render_line(y)
         finally:
@@ -801,11 +804,7 @@ class SqlEditor(TextArea):
                 if column < len(self.document[row]) and not self.document[row][column].isspace():
                     next_x, next_y = self.wrapped_document.location_to_offset((row, column + 1))
                     width = max(1, next_x - cursor_x) if next_y == cursor_y else 1
-                    caret_style = style + Style(underline=True)
-                    if any(start <= selection.end < end for start, end in self._search_matches):
-                        caret_style = Style(
-                            color="#000000", underline=True, bold=False, reverse=False
-                        )
+                    caret_style = Style(underline=True, bold=False, reverse=False)
                     caret = Strip(
                         Segment(
                             segment.text,
@@ -817,9 +816,13 @@ class SqlEditor(TextArea):
                 else:
                     width = 1
                     cell = next(iter(strip.crop(x, x + 1)), Segment(""))
-                    caret_style = (cell.style or self.rich_style) + style + Style(underline=False)
+                    caret_style = style + Style(underline=False)
                     if any(start <= selection.end < end for start, end in self._search_matches):
-                        caret_style += Style(color="#000000")
+                        caret_style = (cell.style or Style()) + caret_style + Style(color="#000000")
+                    elif any(
+                        min(item) <= selection.end < max(item) for item in self.cursor_selections
+                    ):
+                        caret_style = (cell.style or Style()) + caret_style
                     caret = Strip([Segment("│", caret_style)])
                 strip = Strip.join([strip.crop(0, x), caret, strip.crop(x + width)])
         return strip.adjust_cell_length(self.scrollable_content_region.width, self.rich_style)
@@ -848,11 +851,15 @@ class SqlEditor(TextArea):
             if selection.end[0] == line_index:
                 column = selection.end[1]
                 line.pad_right(max(0, column + 1 - len(line)))
-                line.stylize(
-                    Style(color=self.app.get_css_variables()["accent"], bold=False),
-                    column,
-                    column + 1,
-                )
+                if (
+                    column >= len(self.document[line_index])
+                    or self.document[line_index][column].isspace()
+                ):
+                    line.stylize(
+                        Style(color=self.app.get_css_variables()["accent"], bold=False),
+                        column,
+                        column + 1,
+                    )
         # Search colors take precedence over selection and caret foregrounds.
         for (start_row, start_column), (end_row, end_column) in self._search_matches:
             if start_row == line_index == end_row:
@@ -880,7 +887,7 @@ class SqlEditor(TextArea):
         rows: set[int] = set()
         for selection in before:
             low, high = sorted(selection)
-            last = high[0] - (high[1] == 0 and high[0] > low[0])
+            last = high[0] - int(high[1] == 0 and high[0] > low[0])
             rows.update(range(low[0], last + 1))
         amounts: dict[int, int] = {}
         for row in rows:
@@ -891,7 +898,7 @@ class SqlEditor(TextArea):
                     item.end[1] for item in before if item.is_empty and item.end[0] == row
                 ]
                 if empty_columns:
-                    amount = min(amount, min(empty_columns))
+                    amount = min(amount, *empty_columns)
                 amounts[row] = -amount
             else:
                 amounts[row] = len(_INDENT)

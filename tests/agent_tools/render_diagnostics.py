@@ -20,9 +20,7 @@ from tests.agent_tools._support import wait_for_scene
 
 
 def test_strip_records_unicode_cells_and_resolved_styles() -> None:
-    strip = Strip(
-        [Segment("界e\u0301", Style(color="#123456", bgcolor="#abcdef", underline=True))]
-    )
+    strip = Strip([Segment("界e\u0301", Style(color="#123456", bgcolor="#abcdef", underline=True))])
     row = diagnostics.strip_record(strip, x=7, y=3, width=208)
     assert row["text"] == "界e\u0301"
     assert row["cells"] == 3
@@ -227,7 +225,9 @@ def test_final_capture_exports_once_hashes_same_frame_and_survives_geometry_refr
 
     monkeypatch.setattr(sql_explorer_visual_capture, "_write_evidence", write_evidence)
     monkeypatch.setattr(sql_explorer_visual_capture, "_write_png", write_png)
-    monkeypatch.setattr(sql_explorer_visual_capture, "terminal_diagnostics", lambda *_args: terminal)
+    monkeypatch.setattr(
+        sql_explorer_visual_capture, "terminal_diagnostics", lambda *_args: terminal
+    )
     sql_explorer_visual_capture._capture_frame(
         app, "database-picker", evidence, tmp_path / "unused", screenshot
     )
@@ -329,13 +329,13 @@ def test_region_row_limits_and_missing_rows_are_explicit(
     )
     app = SimpleNamespace(
         screen=SimpleNamespace(
-            _compositor=SimpleNamespace(
-                render_strips=lambda: [Strip([Segment("composed")])] * 47
-            )
+            _compositor=SimpleNamespace(render_strips=lambda: [Strip([Segment("composed")])] * 47)
         )
     )
     monkeypatch.setattr(
-        diagnostics, "_targets", lambda *_args: [(str(index), widget, 4) for index in range(diagnostics.MAX_REGIONS + 1)]
+        diagnostics,
+        "_targets",
+        lambda *_args: [(str(index), widget, 4) for index in range(diagnostics.MAX_REGIONS + 1)],
     )
     result = diagnostics.terminal_diagnostics(app, "database-picker")
     assert len(result["regions"]) == diagnostics.MAX_REGIONS
@@ -344,7 +344,7 @@ def test_region_row_limits_and_missing_rows_are_explicit(
     assert result["missing"]
     assert result["regions"][0]["widget_rows"][0]["text"] == "widget"
     assert result["regions"][0]["composed_rows"][0]["text"] == "composed"
-    monkeypatch.setattr(diagnostics, "_targets", lambda *_args: [])
+    monkeypatch.setattr(diagnostics, "_targets", lambda *_args: list())
     assert diagnostics.terminal_diagnostics(app, "database-picker")["missing"]
 
 
@@ -366,7 +366,7 @@ def test_missing_and_truncated_diagnostics_never_claim_completeness() -> None:
 
 
 @pytest.mark.parametrize(
-    "display,width,height", [(False, 8, 1), (True, 0, 1), (True, 8, 0)]
+    ("display", "width", "height"), [(False, 8, 1), (True, 0, 1), (True, 8, 0)]
 )
 def test_invisible_required_region_invalidates_terminal_evidence(
     monkeypatch: pytest.MonkeyPatch, display: bool, width: int, height: int
@@ -380,7 +380,7 @@ def test_invisible_required_region_invalidates_terminal_evidence(
         render=lambda: "Heading",
     )
     app = SimpleNamespace(
-        screen=SimpleNamespace(_compositor=SimpleNamespace(render_strips=lambda: []))
+        screen=SimpleNamespace(_compositor=SimpleNamespace(render_strips=list))
     )
     monkeypatch.setattr(diagnostics, "_targets", lambda *_args: [("heading", widget, 1)])
     result = diagnostics.terminal_diagnostics(app, "database-picker")
@@ -449,7 +449,9 @@ def test_clipped_selector_remains_observable_but_blocks_readiness_and_final_geom
             findings = snapshot["selector"]["findings"]
             assert "source-label:composed_rows:absent_expected_text" in findings
             assert not sql_explorer_visual_capture._scene_ready(app)
-            timeout = sql_explorer_visual_capture._timeout_diagnostics(app, scene, evidence, manifest)
+            timeout = sql_explorer_visual_capture._timeout_diagnostics(
+                app, scene, evidence, manifest
+            )
             assert timeout["selector_readiness"]["selector"]["findings"] == findings
             assert not timeout["geometry"]["ok"]
             assert "source_selector_visible" in timeout["geometry"]["failed_assertions"]
@@ -471,3 +473,33 @@ def test_clipped_selector_remains_observable_but_blocks_readiness_and_final_geom
             assert not png.exists()
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("error_type", [AttributeError, IndexError, RuntimeError])
+def test_region_render_failure_retains_evidence_and_collects_later_regions(
+    error_type: type[Exception], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(_region: Any) -> list[Strip]:
+        message = "diagnostic render failed"
+        raise error_type(message)
+
+    region = SimpleNamespace(x=0, y=0, width=8, height=1)
+    state = {"region": region, "disabled": False, "has_focus": False, "display": True}
+    broken = SimpleNamespace(id="broken", render_lines=fail, **state)
+    healthy = SimpleNamespace(
+        id="healthy", render_lines=lambda _region: [Strip([Segment("healthy ")])], **state
+    )
+    app = SimpleNamespace(
+        screen=SimpleNamespace(
+            _compositor=SimpleNamespace(render_strips=lambda: [Strip([Segment("healthy ")])])
+        )
+    )
+    monkeypatch.setattr(
+        diagnostics, "_targets", lambda *_args: [("broken", broken, 1), ("healthy", healthy, 1)]
+    )
+    result = diagnostics.terminal_diagnostics(app, "database-picker")
+    assert result["missing"] == [f"broken:{error_type.__name__}"]
+    assert not result["omissions"]
+    assert result["regions"][0]["widget_rows"] == []
+    assert result["regions"][1]["widget_rows"][0]["text"] == "healthy "
+    assert result["regions"][1]["composed_rows"][0]["text"] == "healthy "

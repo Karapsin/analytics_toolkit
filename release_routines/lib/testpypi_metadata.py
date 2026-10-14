@@ -4,11 +4,10 @@ import pathlib
 import sys
 
 
-def replace_project_name(new_name: str) -> None:
-    path = pathlib.Path("pyproject.toml")
-    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+def replace_project_name_text(text: str, new_name: str) -> str:
+    """Replace only [project].name, validating the marker before writing."""
+    lines = text.splitlines(keepends=True)
     in_project = False
-
     for index, line in enumerate(lines):
         stripped = line.strip()
         if stripped == "[project]":
@@ -18,10 +17,18 @@ def replace_project_name(new_name: str) -> None:
             break
         if in_project and line.startswith("name = "):
             lines[index] = f'name = "{new_name}"\n'
-            path.write_text("".join(lines), encoding="utf-8")
-            return
+            return "".join(lines)
+    message = "Could not find [project].name in pyproject.toml"
+    raise ValueError(message)
 
-    raise SystemExit("Could not find [project].name in pyproject.toml")
+
+def replace_project_name(new_name: str) -> None:
+    path = pathlib.Path("pyproject.toml")
+    try:
+        text = replace_project_name_text(path.read_text(encoding="utf-8"), new_name)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    path.write_text(text, encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> None:

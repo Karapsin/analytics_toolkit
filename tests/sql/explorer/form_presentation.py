@@ -24,8 +24,7 @@ def _assert_checkbox_painted(app: SqlExplorerApp, checkbox: BooleanCheckbox) -> 
         assert strip.text.startswith(expected)
         assert strip.text.rstrip().endswith(str(checkbox.value))
         assert all(
-            segment.style.color.get_truecolor().hex
-            != segment.style.bgcolor.get_truecolor().hex
+            segment.style.color.get_truecolor().hex != segment.style.bgcolor.get_truecolor().hex
             for segment in strip.crop(0, 3)
         )
 
@@ -70,7 +69,8 @@ def test_boolean_marks_labels_and_removal_control_agree() -> None:
             assert str(skip.label).endswith("True")
             await pilot.click("#create-drop_if_exists")
             await pilot.pause()
-            assert drop.value and not skip.value
+            assert drop.value
+            assert not skip.value
             _assert_checkbox_painted(app, skip)
             _assert_checkbox_painted(app, drop)
             skip.disabled = True
@@ -171,7 +171,8 @@ def _assert_selector_painted(app: SqlExplorerApp, selector: Select, expected: st
     composed = app.screen._compositor.render_strips()
     for child, text in ((label, expected), (arrow, "▲" if selector.expanded else "▼")):
         region = child.region
-        assert region.width > 0 and region.height == 1
+        assert region.width > 0
+        assert region.height == 1
         ancestor = child.parent
         while isinstance(ancestor, Widget):
             clip = ancestor.scrollable_content_region
@@ -190,7 +191,7 @@ def _assert_selector_painted(app: SqlExplorerApp, selector: Select, expected: st
 
 
 @pytest.mark.parametrize(
-    "source,invalid", [("table_schema", False), ("table_schema", True), ("from_sql", False)]
+    ("source", "invalid"), [("table_schema", False), ("table_schema", True), ("from_sql", False)]
 )
 def test_source_selector_composes_inside_frame_through_focus_resize_and_scroll(
     source: str, invalid: bool

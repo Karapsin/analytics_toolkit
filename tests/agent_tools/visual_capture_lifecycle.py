@@ -3,14 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import Mock
 
 import pytest
 
 from agent_tools import sql_explorer_visual_capture as capture
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.parametrize("ready", [False, True])
@@ -72,7 +74,9 @@ def test_timeout_prevents_export_even_with_stale_successful_geometry(
 
     def geometry(_app: object, _scene: str, fresh: Path, _manifest: Path) -> None:
         fresh.write_text(
-            json.dumps({"ok": not state_ready, "assertions": {"present:#required": not state_ready}}),
+            json.dumps(
+                {"ok": not state_ready, "assertions": {"present:#required": not state_ready}}
+            ),
             encoding="utf-8",
         )
 
@@ -99,7 +103,9 @@ def test_state_lost_during_final_drain_blocks_export(
     app = FakeCaptureApp(lambda _attempt: None)
     monkeypatch.setattr(capture, "create_scene", lambda *_args: app)
     monkeypatch.setattr(capture, "_scene_ready", lambda _app: app.pauses == 1)
-    monkeypatch.setattr(capture, "_write_evidence", lambda *_args: pytest.fail("unready validation"))
+    monkeypatch.setattr(
+        capture, "_write_evidence", lambda *_args: pytest.fail("unready validation")
+    )
     monkeypatch.setattr(capture, "_write_png", lambda *_args: pytest.fail("unready export"))
     with pytest.raises(RuntimeError, match="not ready"):
         asyncio.run(
@@ -130,7 +136,9 @@ def test_bounded_wait_accepts_settled_geometry_and_exports_once(
     assert exported == [True]
 
 
-@pytest.mark.parametrize("configured,state_ready", [(False, True), (True, False), (True, True)])
+@pytest.mark.parametrize(
+    ("configured", "state_ready"), [(False, True), (True, False), (True, True)]
+)
 def test_capture_requires_configuration_and_current_scene_state(
     monkeypatch: pytest.MonkeyPatch, configured: bool, state_ready: bool
 ) -> None:
@@ -145,7 +153,7 @@ def test_capture_requires_configuration_and_current_scene_state(
 
 
 @pytest.mark.parametrize(
-    "configured,state_ready,geometry_ok",
+    ("configured", "state_ready", "geometry_ok"),
     [(False, True, True), (True, False, True), (True, True, False)],
 )
 def test_timeout_diagnostics_identify_current_failed_layer(

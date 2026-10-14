@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
-import pytest
 from analytics_toolkit.sql_explorer import app as app_module
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from textual.document._document import Selection
 
 from tests.sql._support.explorer import FakeSession
+
+if TYPE_CHECKING:
+    import pytest
 
 
 def test_independent_columns_restore_after_short_lines_and_history() -> None:

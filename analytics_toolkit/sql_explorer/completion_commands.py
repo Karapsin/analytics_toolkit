@@ -359,7 +359,11 @@ class SqlExplorerCompletionCommandsMixin:
         """Position the screen overlay below (or above) the visible SQL row."""
         app = cast("Any", self)
         editor, menu = workspace.editor, workspace.completion_menu
-        if not menu.is_open or not editor.is_mounted:
+        # Hidden layout retains candidates; an explicit close clears them.
+        if not menu.suggestions or not editor.is_mounted:
+            return
+        if editor.cursor_count > 1 or not editor.selection.is_empty:
+            menu.styles.display = "none"
             return
         cursor_x, cursor_y = editor.wrapped_document.location_to_offset(editor.cursor_location)
         viewport = editor.scrollable_content_region
@@ -384,6 +388,7 @@ class SqlExplorerCompletionCommandsMixin:
         # content origin. Convert the visible screen position exactly once.
         origin = cast("Any", menu.parent).content_region
         menu.styles.offset = (x - origin.x, y - origin.y)
+        menu.styles.display = "block"
 
     def _accept_completion(
         self,
@@ -448,7 +453,7 @@ class SqlExplorerCompletionCommandsMixin:
         if editor.cursor_count > 1 or not editor.selection.is_empty:
             menu.styles.display = "none"
             return
-        if not menu.is_open:
+        if not menu.suggestions:
             return
         previous = workspace.completion_context
         context = app._completion_at_cursor(workspace)

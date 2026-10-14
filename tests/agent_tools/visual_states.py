@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from textual.widgets import Button, Static
-
-from agent_tools import sql_explorer_visual, sql_explorer_visual_scene
 from analytics_toolkit.sql_explorer.create_table import creation_options
 from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
 from analytics_toolkit.sql_explorer.widgets import ConfirmMutationScreen
+from textual.widgets import Button, Static
+
+from agent_tools import sql_explorer_visual, sql_explorer_visual_scene
 from tests._support.paths import REPO_ROOT
 from tests.agent_tools._support import wait_for_scene
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.parametrize("scene", ["save-changes", "save-changes-cancel"])

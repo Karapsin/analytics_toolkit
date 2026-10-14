@@ -3,7 +3,7 @@ from __future__ import annotations
 import shlex
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, cast
 
 import pyperclip
 from rich.text import Text
@@ -741,7 +741,11 @@ class SqlExplorerApp(
             self.show_error(SqlExplorerConfigurationError("Usage: help [shortcuts|movement]"))
             return
         content = (
-            MOVEMENT_HELP if arguments == ["movement"] else SHORTCUTS_HELP if arguments else HELP_TEXT
+            MOVEMENT_HELP
+            if arguments == ["movement"]
+            else SHORTCUTS_HELP
+            if arguments
+            else HELP_TEXT
         )
         self.show_message(content)
         self.active_workspace.result_message.update_help(content)
@@ -883,7 +887,7 @@ class SqlExplorerApp(
 
     def paste_from_explorer_clipboard(self) -> str:
         try:
-            value = pyperclip.paste()
+            value = cast("str", pyperclip.paste())
         except pyperclip.PyperclipException:
             return self._clipboard
         self.clipboard_fragments(value)

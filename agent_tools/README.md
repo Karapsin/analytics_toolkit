@@ -169,6 +169,10 @@ or push. Failed or interrupted captures require a new review session.
 Capture waits for both intended scene state and passing geometry, with a bounded
 timeout. Save scenes require the active document name and requested button focus;
 invalid create-table scenes require an incomplete row and its validation notice.
+Completion scenes start unready, open fake suggestions after editor refresh, and
+require a mounted, visible popup with composed suggestion text and valid geometry.
+A popup hidden during an earlier invalid layout must become visible when its
+cursor and available space are valid again.
 Normal modal teardown postpones readiness, including delayed configuration and
 queued readiness callbacks. Evidence refreshes require a mounted active screen;
 only missing-control and screen-stack lifecycle errors are handled, while
@@ -227,11 +231,68 @@ output, containment after resize/scroll, keyboard choices, and deliberate double
 framing. GitHub must run these on Textual 0.73.x and 0.89.1 and perform a fresh
 46-scene capture and individual full-PNG review before publication.
 
-Normal `version-bump` calls add the supplied summary under `## Unreleased` and
-roll the section into a new version when it reaches ten bullets. For an explicit
-release below that threshold, use `--change-type release --force-release`
-without a summary. Forced release is rejected for non-release change types and
-when there are no unreleased entries.
+For private controller visual corrections, collect the complete source patch first
+and publish only an isolated `agent-visual/<sha>` temporary capture candidate.
+GitHub must capture all 46 manifest scenes at 208x47 cells and full 1280x800 PNGs;
+an independent reviewer inspects every full PNG individually. Require every geometry
+check and scene verdict to pass in a new receipt bound to the actual candidate,
+capture artifacts, task digest, and complete patch. Remove the temporary ref before
+publishing the correction to the feature PR. Any source correction invalidates that
+receipt and repeats the candidate capture and review sequence; historical receipts
+cannot certify a changed patch. After publication, require fast CI, matrix/quality
+checks and a separate implementation review for the final published head and current
+dev base, preserving signatures and protected exact-head owner approval gates.
+
+Normal `version-bump` calls record a feature fragment or add the supplied
+summary under `## Unreleased`; they never bump versions, regardless of entry count.
+Documentation-only calls retain their no-bump behavior.
+
+An explicit `release-workflow --action merge-dev` request prepares one new
+version through a signed PR to dev, before validation/TestPyPI. Supply
+`--summary "Release summary"` when no unreleased entries exist. The optional
+`summary` Python/MCP argument is keyword-only; existing action/root arguments
+and action names remain unchanged. Re-enter the same action after review and merge.
+The structured pending response includes the PR link and continuation instruction.
+
+Private `.git/atk-release.json` state binds the release task, source SHA, version,
+branch, PR, candidate SHA/tree, workflow runs, and completed stages. Retries reuse
+the candidate and retained verified artifacts; they do not blindly recreate
+TestPyPI branches or GitHub releases. Changed dev content requires another
+preparation PR and fresh validation. Before pushing a temporary TestPyPI branch,
+the intended SHA and pending push are atomically journaled, and the signed commit
+is retained under a candidate-specific private local ref. Resume retries that
+exact commit if the push never reached origin. A remote ref is adopted only after
+checking its single candidate parent, project-name-only metadata change, full
+changed-path list, and agreement with any journaled SHA. Legacy state without a
+SHA can recover through the same checks before publication reconciliation.
+An established ref that disappears blocks recovery, except after a journaled,
+fully reconciled leased deletion. Unpublished replacement retains the prepared
+version and still requires one fresh reviewed PR. Status never prepares or increments.
+Direct release scripts require the same reviewed candidate and validation receipts.
+See [release instructions](../agent_docs/release.md) for the complete sequence.
+
+Low-level release-oriented `version-bump` options remain available for metadata
+preparation, including `--change-type release --force-release`. A summary can
+supply notes for an otherwise empty release. Metadata-only preparation PRs use
+the rolled release notes without adding a feature fragment that reopens Unreleased.
+Private implementation workers add regressions and edit sources without running
+programs, local pre-commit checks, tests, installs, or formatters. The trusted
+coordinator verifies task identity, pinned base/head, provenance, protected paths,
+and patch applicability before publishing an App-signed correction to the PR.
+For ordinary feature corrections, preserve versions and Unreleased notes. If the
+task-owned fragment is already folded, keep its note once and its signed history;
+do not recreate the consumed fragment. Before validation, verify that coordinator
+metadata children also preserve these invariants instead of applying an entry-count bump.
+Corrections retain current-dev repair discovery, bounded evidence handling, and
+unchanged no-patch retry suppression with their fast mocked regressions.
+GitHub then validates the exact corrected head through the focused regressions,
+Python matrix, SDK conformance, lint, type, coverage, and artifact gates. Successful
+`fast-checks`, fresh independent review, and authenticated exact-head owner policy
+approval for protected paths are required before merge; earlier-head results and
+approvals cannot substitute. This release feature changes protected publishing
+workflow guards and controller changelog folding, so the coordinator must present
+PR #7 and its final SHA for `/agent approve-policy <sha>` through the authenticated
+owner flow after validation and review; agents cannot grant that approval.
 
 `prepare-start` persists a private startup-context receipt below `.rag_index/`.
 `workflow-status` reuses it to return compact branch, dirty-state, diff, check
@@ -340,6 +401,55 @@ independent agent reviews the final PR.
 The agent-only validation environment constrains `virtualenv>=21.1,<21.5` so
 the required Python 3.8 matrix remains runnable. Project setup resolves this
 constraint together with tox; it does not change public package dependencies.
+
+## Release candidate recovery
+
+Ordinary entries do not bump versions. An explicit release prepares one new
+four-part version through an independently reviewed PR; see
+[release instructions](../agent_docs/release.md) for the publishing sequence.
+
+Re-enter the same release action to resume its candidate/version. TestPyPI retries
+adopt matching publish.yml workflow_dispatch runs for the exact temporary ref and
+SHA. Rejected dispatches are retryable; uncertain or interrupted attempts retain
+a five-minute deadline across invocations, then recheck GitHub and index files
+before a replacement dispatch. API/index failures block retry. The release-state
+lock excludes concurrent dispatchers. A late original dispatch can still produce
+a duplicate run. Saved runs and published files require retained matching artifacts.
+
+If publication stops after PR creation, recovery discovers the existing preparation
+PR across open and merged states before attempting another push. It verifies the
+release task, branch and base, then resumes durable Pi handoff using the original
+signed publication SHA. Corrections made by the Pi are never overwritten by the
+stale author head. Conflicting receipts, ambiguous PRs, closed unmerged PRs and
+GitHub discovery failures block recovery; only confirmed absence permits publication.
+
+A corrected preparation PR that merges with successful exact-head fast-checks
+and agent-review keeps the same version, PR and final reviewed notes. Recovery
+archives the old state and clears validation receipts and publication bindings.
+Current dev must match the final reviewed tree, and package/README versions and
+consumed release notes must remain consistent. Old active or uncertain publication,
+published artifacts and incompatible refs block adoption into that same PR.
+Reviewed metadata is read with surrounding whitespace stripped and one trailing
+newline restored per file. An empty `Unreleased` section is accepted when the
+versioned release notes remain present and all changelog fragments are consumed.
+Newer dev content automatically starts a replacement preparation PR under the
+same release task after publication reconciliation. An unpublished, untagged
+version is reused with combined notes; published or tag-reserved versions advance
+to the next unreserved four-part version. Published artifacts and their refs stay
+intact. Journaled generations recover interruptions without duplicate preparation
+PRs or manual state deletion, and require fresh review/checks and release validation.
+If recovery is interrupted after journaling a replacement workspace, the next
+resume clears the predecessor's validation receipts before publishing that workspace.
+
+The toolkit task's companion Telegram formatting plan was delivered separately.
+The supplied private operator attestation records task `100fd816ae2f`, Telegram
+messages 55–57 (canonical message 57), and plan SHA-256
+`dffec0da15ac21935897d533ca0d37e5e18bdea3cb905a8401c36507cac0c03a`.
+Its source bases are self_host `f26ec8f4d6def43f04acaa00d303976a7d6b7b04`
+and CIAN `ed8efdea19388a7590ff60d4bbe620b098b57bb2`. This is delivery
+evidence, not toolkit approval. Companion code and later companion command
+extensions are outside this PR; the toolkit formatting handoff covers GitHub-agent
+alerts, plans, questions and bridge responses in readable English HTML.
 
 ## User documentation wiki exporter
 

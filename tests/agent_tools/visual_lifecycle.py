@@ -7,14 +7,14 @@ from typing import Any, cast
 from unittest.mock import Mock
 
 import pytest
+from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
+from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
 from rich.text import Text
 from textual.app import ScreenStackError
 from textual.css.query import NoMatches
 from textual.widgets import Static
 
 from agent_tools import sql_explorer_visual_scene as scenes
-from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
-from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
 
 
 class ReadinessApp:
@@ -70,7 +70,9 @@ def create_app() -> tuple[ReadinessApp, Mock]:
     screen.query.return_value = []
     # Exercise the real values() lookups, including queries performed inside it.
     screen.values.side_effect = lambda: CreateTableScreen.values(screen)
-    screen.query_one.return_value = SimpleNamespace(value="table_schema", text="SELECT 1", is_mounted=True)
+    screen.query_one.return_value = SimpleNamespace(
+        value="table_schema", text="SELECT 1", is_mounted=True
+    )
     app = ReadinessApp("create-table-invalid", screen)
     return app, screen
 
@@ -118,7 +120,8 @@ def test_create_readiness_handles_missing_controls_inside_values(selector: str) 
 
     def lookup(requested: str, *_args: object) -> object:
         if requested == selector:
-            raise NoMatches("control removed during values")
+            message = "control removed during values"
+            raise NoMatches(message)
         return SimpleNamespace(value="table_schema", text="SELECT 1", is_mounted=True)
 
     screen.query_one.side_effect = lookup
@@ -203,13 +206,14 @@ def test_stack_teardown_is_unready(error: Exception) -> None:
 def test_unexpected_errors_propagate(operation: str) -> None:
     app, screen = create_app() if operation == "create_callback" else save_app("save-changes")
     screen.query_one.side_effect = RuntimeError("unexpected defect")
+    callbacks = {
+        "readiness": app._scene_state_ready,
+        "save_callback": lambda: app._focus_save_choice(screen),
+        "create_callback": lambda: app._configure_creation_scene(screen, "create-table-invalid"),
+    }
+    callback = callbacks[operation]
     with pytest.raises(RuntimeError, match="unexpected defect"):
-        if operation == "readiness":
-            app._scene_state_ready()
-        elif operation == "save_callback":
-            app._focus_save_choice(screen)
-        else:
-            app._configure_creation_scene(screen, "create-table-invalid")
+        callback()
 
 
 @pytest.mark.parametrize("scene", ["save-changes", "save-changes-cancel"])
@@ -225,7 +229,8 @@ def test_delayed_save_focus_marks_ready_only_after_requested_focus(scene: str) -
 
 
 @pytest.mark.parametrize(
-    "scene", ["create-table-schema", "create-table-types", "create-table-advanced", "create-table-sql"]
+    "scene",
+    ["create-table-schema", "create-table-types", "create-table-advanced", "create-table-sql"],
 )
 def test_all_creation_branches_require_available_controls(scene: str) -> None:
     app, screen = create_app()
@@ -289,7 +294,9 @@ def test_evidence_refresh_propagates_unexpected_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     app = SimpleNamespace(screen_stack=[object()], screen=SimpleNamespace(is_mounted=True))
-    monkeypatch.setattr(scenes, "_write_evidence", Mock(side_effect=RuntimeError("unexpected defect")))
+    monkeypatch.setattr(
+        scenes, "_write_evidence", Mock(side_effect=RuntimeError("unexpected defect"))
+    )
     with pytest.raises(RuntimeError, match="unexpected defect"):
         scenes._refresh_evidence_if_mounted(
             cast("Any", app), "save-changes", tmp_path / "geometry.json", tmp_path / "manifest"
@@ -378,7 +385,8 @@ def test_configuration_rejects_unavailable_required_control(selector: str, state
         def unavailable(requested: str, *args: object) -> object:
             if requested == selector:
                 if state == "missing":
-                    raise NoMatches("required control absent")
+                    message = "required control absent"
+                    raise NoMatches(message)
                 return SimpleNamespace(is_mounted=False)
             return lookup(requested, *args)
 

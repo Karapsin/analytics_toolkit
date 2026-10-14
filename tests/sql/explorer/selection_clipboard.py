@@ -153,8 +153,28 @@ def test_carets_preserve_occupied_cells_and_use_bars_in_blank_cells() -> None:
                 Selection.cursor((0, 2)), [Selection.cursor((1, 0)), Selection.cursor((2, 4))]
             )
             for focused in (True, False):
-                if not focused:
+                if focused:
+                    editor.focus()
+                else:
                     application.query_one("#command-input").focus()
+                # Compare with the same cells before secondary carets are drawn.
+                # Textual may resolve their inherited background on newer versions.
+                editor._set_selections(Selection.cursor((0, 2)), [])
+                await pilot.pause()
+                backgrounds = {
+                    row: next(
+                        iter(
+                            editor.render_line(row).crop(
+                                editor.gutter_width + column, editor.gutter_width + column + 1
+                            )
+                        )
+                    ).style.bgcolor
+                    for row, column in ((1, 0), (2, 4))
+                }
+                editor._set_selections(
+                    Selection.cursor((0, 2)),
+                    [Selection.cursor((1, 0)), Selection.cursor((2, 4))],
+                )
                 await pilot.pause()
                 for row in range(3):
                     strip = editor.render_line(row)
@@ -168,7 +188,9 @@ def test_carets_preserve_occupied_cells_and_use_bars_in_blank_cells() -> None:
                     else:
                         assert len(bars) == 1
                         assert bars[0].style.bold is False
-                        assert bars[0].style.bgcolor is None
+                        assert bars[0].style.bgcolor == backgrounds[row]
+                        assert not bars[0].style.reverse
+                        assert not bars[0].style.underline
             assert editor.text == "select 1\n\nlast"
 
     asyncio.run(exercise())

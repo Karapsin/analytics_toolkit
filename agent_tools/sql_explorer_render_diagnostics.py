@@ -164,7 +164,7 @@ def _source_selector(app: Any, scene: str) -> tuple[dict[str, Any], list[tuple[s
     expanded = bool(selector.expanded)
     snapshot.update(
         selected_value=str(selector.value),
-        allow_blank=selector._allow_blank,  # noqa: SLF001 - supported Textual stores this privately.
+        allow_blank=selector._allow_blank,  # noqa: SLF001 - Textual stores this privately.
         expanded=expanded,
         active_arrow="up-arrow" if expanded else "down-arrow",
     )
@@ -176,26 +176,34 @@ def _source_selector(app: Any, scene: str) -> tuple[dict[str, Any], list[tuple[s
         "source-inactive-arrow": f"SelectCurrent > .{'down-arrow' if expanded else 'up-arrow'}",
     }
     for name, query in queries.items():
-        try:
-            widget = selector if query is None else selector.query_one(query)
-        except NoMatches:
-            snapshot["collection_missing"].append(f"{name}:missing_child")
-            if name != "source-inactive-arrow":
-                snapshot["findings"].append(f"{name}:missing_child")
-            continue
-        snapshot["children"][name] = _selector_child_state(widget)
-        if snapshot["children"][name]["renderable_truncated"]:
-            snapshot["collection_missing"].append(f"{name}:renderable_limit")
-        if snapshot["children"][name]["ancestors_truncated"]:
-            snapshot["collection_missing"].append(f"{name}:ancestor_limit")
-        if name != "source-inactive-arrow":
-            targets.append((name, widget, max(1, widget.region.height)))
+        _selector_target(selector, name, query, snapshot, targets)
     return snapshot, targets
 
 
-def _selector_visibility(  # noqa: C901, PLR0912
-    snapshot: dict[str, Any], regions: list[dict[str, Any]]
+def _selector_target(
+    selector: Any,
+    name: str,
+    query: str | None,
+    snapshot: dict[str, Any],
+    targets: list[tuple[str, Any, int]],
 ) -> None:
+    try:
+        widget = selector if query is None else selector.query_one(query)
+    except NoMatches:
+        snapshot["collection_missing"].append(f"{name}:missing_child")
+        if name != "source-inactive-arrow":
+            snapshot["findings"].append(f"{name}:missing_child")
+        return
+    snapshot["children"][name] = _selector_child_state(widget)
+    if snapshot["children"][name]["renderable_truncated"]:
+        snapshot["collection_missing"].append(f"{name}:renderable_limit")
+    if snapshot["children"][name]["ancestors_truncated"]:
+        snapshot["collection_missing"].append(f"{name}:ancestor_limit")
+    if name != "source-inactive-arrow":
+        targets.append((name, widget, max(1, widget.region.height)))
+
+
+def _selector_visibility(snapshot: dict[str, Any], regions: list[dict[str, Any]]) -> None:
     """Observed visibility and evidence completeness deliberately have separate verdicts."""
     findings = snapshot["findings"]
     if snapshot.get("selected_value") != snapshot["expected_value"]:
@@ -204,57 +212,65 @@ def _selector_visibility(  # noqa: C901, PLR0912
     for name, state in snapshot["children"].items():
         if name == "source-inactive-arrow":
             continue  # Textual intentionally hides the opposite arrow.
-        if not state["mounted"] or not state["display"] or not state["visible"]:
-            findings.append(f"{name}:hidden_or_unmounted")
-        if (
-            state["styles"]["opacity"] in {"0", "0.0"}
-            or state["styles"]["text_opacity"] in {"0", "0.0"}
-        ):
-            findings.append(f"{name}:transparent_output")
-        if any(
-            not ancestor["display"]
-            or not ancestor["visible"]
-            or ancestor["opacity"] == 0
-            or ancestor["text_opacity"] == 0
-            for ancestor in state["ancestors"]
-        ):
-            findings.append(f"{name}:concealed_by_ancestor")
-        content = state["content_region"]
-        if content["width"] <= 0 or content["height"] <= 0:
-            findings.append(f"{name}:empty_content_region")
-        region = state["region"]
-        for ancestor in state["ancestors"]:
-            clip = ancestor["clip"]
-            if (
-                region["x"] < clip["x"]
-                or region["y"] < clip["y"]
-                or region["x"] + region["width"] > clip["x"] + clip["width"]
-                or region["y"] + region["height"] > clip["y"] + clip["height"]
-            ):
-                findings.append(f"{name}:ancestor_clipping")
-                break
-        entry = by_name.get(name, {})
-        if name not in {"source-label", "source-arrow"}:
-            continue
-        expected = (
-            snapshot["expected_value"]
-            if name == "source-label"
-            else ("▲" if snapshot.get("expanded") else "▼")
-        )
-        for layer in ("widget_rows", "composed_rows"):
-            rows = entry.get(layer, [])
-            if expected not in "\n".join(row["text"] for row in rows):
-                findings.append(f"{name}:{layer}:absent_expected_text")
-            readable = "".join(
-                span["text"]
-                for row in rows
-                for span in row["spans"]
-                if not span["flags"]["conceal"] and span["foreground"] != span["background"]
+        _selector_geometry_findings(name, state, findings)
+        if name in {"source-label", "source-arrow"}:
+            expected = (
+                snapshot["expected_value"]
+                if name == "source-label"
+                else ("▲" if snapshot.get("expanded") else "▼")
             )
-            if expected not in readable:
-                findings.append(f"{name}:{layer}:concealed_output")
+            _selector_text_findings(name, by_name.get(name, {}), expected, findings)
     snapshot["findings"] = sorted(set(findings))
     snapshot["visibility_ok"] = not snapshot["findings"]
+
+
+def _selector_geometry_findings(name: str, state: dict[str, Any], findings: list[str]) -> None:
+    if not state["mounted"] or not state["display"] or not state["visible"]:
+        findings.append(f"{name}:hidden_or_unmounted")
+    if (
+        state["styles"]["opacity"] in {"0", "0.0"}
+        or state["styles"]["text_opacity"] in {"0", "0.0"}
+    ):
+        findings.append(f"{name}:transparent_output")
+    if any(
+        not ancestor["display"]
+        or not ancestor["visible"]
+        or ancestor["opacity"] == 0
+        or ancestor["text_opacity"] == 0
+        for ancestor in state["ancestors"]
+    ):
+        findings.append(f"{name}:concealed_by_ancestor")
+    content = state["content_region"]
+    if content["width"] <= 0 or content["height"] <= 0:
+        findings.append(f"{name}:empty_content_region")
+    region = state["region"]
+    for ancestor in state["ancestors"]:
+        clip = ancestor["clip"]
+        if (
+            region["x"] < clip["x"]
+            or region["y"] < clip["y"]
+            or region["x"] + region["width"] > clip["x"] + clip["width"]
+            or region["y"] + region["height"] > clip["y"] + clip["height"]
+        ):
+            findings.append(f"{name}:ancestor_clipping")
+            break
+
+
+def _selector_text_findings(
+    name: str, entry: dict[str, Any], expected: str, findings: list[str]
+) -> None:
+    for layer in ("widget_rows", "composed_rows"):
+        rows = entry.get(layer, [])
+        if expected not in "\n".join(row["text"] for row in rows):
+            findings.append(f"{name}:{layer}:absent_expected_text")
+        readable = "".join(
+            span["text"]
+            for row in rows
+            for span in row["spans"]
+            if not span["flags"]["conceal"] and span["foreground"] != span["background"]
+        )
+        if expected not in readable:
+            findings.append(f"{name}:{layer}:concealed_output")
 
 
 def selector_readiness_snapshot(
@@ -349,75 +365,42 @@ def _widget_state(widget: Any) -> dict[str, Any]:
     return state
 
 
-def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:  # noqa: C901, PLR0912, PLR0915
-    """Separate the widget render cache from the screen compositor's actual strips."""
-    result: dict[str, Any] = {"regions": [], "missing": [], "omissions": []}
-    selector_targets = []
-    if scene in SELECTOR_SCENES:
-        snapshot, selector_targets = _source_selector(app, scene)
-        result["source_selector"] = snapshot
-        result["missing"].extend(snapshot["collection_missing"])
+def _collect_region_rows(
+    widget: Any,
+    composed: Any,
+    entry: dict[str, Any],
+    result: dict[str, Any],
+    count: int,
+) -> None:
+    """Record one bounded region and retain failures without aborting later regions."""
+    name, region = entry["name"], widget.region
+    width = min(region.width, MAX_CELLS)
     try:
-        targets = _targets(app, scene)
-        composed = app.screen._compositor.render_strips()  # noqa: SLF001
-    except (AttributeError, LookupError, NoMatches, ScreenStackError, RuntimeError) as error:
-        result["missing"].append(f"terminal:{type(error).__name__}")
-        if "source_selector" in result:
-            _selector_visibility(result["source_selector"], [])
-        return result
-    targets.extend(selector_targets)
-    if len(targets) > MAX_REGIONS:
-        result["omissions"].append("region_limit")
-        result["omissions"].extend(
-            f"{name}:region_limit" for name, *_rest in targets[MAX_REGIONS:]
-        )
-    row_budget = MAX_ROWS
-    for name, widget, requested_rows in targets[:MAX_REGIONS]:
-        region = widget.region
-        entry: dict[str, Any] = {
-            "name": name,
-            "region": _region_record(region),
-            "state": _widget_state(widget),
-            "widget_rows": [],
-            "composed_rows": [],
-        }
-        if name == "heading":
-            entry["state"]["renderable_text"] = str(widget.render())
-        result["regions"].append(entry)
-        if not widget.display or region.width <= 0 or region.height <= 0:
-            if not name.startswith("source-"):
-                result["missing"].append(f"{name}:not_visible")
-            continue
-        count = min(requested_rows, region.height, row_budget)
-        if count < requested_rows:
-            result["missing"].append(f"{name}:rows")
-        row_budget -= count
-        width = min(region.width, MAX_CELLS)
-        try:
-            local = widget.render_lines(Region(0, 0, width, count))
-            for row in range(count):
-                entry["widget_rows"].append(
-                    strip_record(local[row], x=region.x, y=region.y + row, width=width)
-                )
-                if not 0 <= region.y + row < len(composed) or region.x < 0:
-                    result["missing"].append(f"{name}:outside_screen")
-                    continue
-                screen_row = composed[region.y + row]
-                clipped = screen_row.crop(region.x, region.x + width)
-                entry["composed_rows"].append(
-                    strip_record(clipped, x=region.x, y=region.y + row, width=width)
-                )
-                if any(
-                    rows[-1]["truncated"]
-                    for rows in (entry["widget_rows"], entry["composed_rows"])
-                ):
-                    result["omissions"].append(f"{name}:row_truncated")
-                if clipped.cell_length < width:
-                    result["missing"].append(f"{name}:incomplete_screen_row")
-        except (AttributeError, IndexError, RuntimeError) as error:
-            result["missing"].append(f"{name}:{type(error).__name__}")
-        if region.width > MAX_CELLS:
-            result["omissions"].append(f"{name}:cell_limit")
+        local = widget.render_lines(Region(0, 0, width, count))
+        for row in range(count):
+            entry["widget_rows"].append(
+                strip_record(local[row], x=region.x, y=region.y + row, width=width)
+            )
+            if not 0 <= region.y + row < len(composed) or region.x < 0:
+                result["missing"].append(f"{name}:outside_screen")
+                continue
+            screen_row = composed[region.y + row]
+            clipped = screen_row.crop(region.x, region.x + width)
+            entry["composed_rows"].append(
+                strip_record(clipped, x=region.x, y=region.y + row, width=width)
+            )
+            if any(
+                rows[-1]["truncated"] for rows in (entry["widget_rows"], entry["composed_rows"])
+            ):
+                result["omissions"].append(f"{name}:row_truncated")
+            if clipped.cell_length < width:
+                result["missing"].append(f"{name}:incomplete_screen_row")
+    except (AttributeError, IndexError, RuntimeError) as error:
+        result["missing"].append(f"{name}:{type(error).__name__}")
+
+
+def _editor_diagnostics(app: Any, scene: str, result: dict[str, Any]) -> None:
+    """Attach caret, scrolling, and popup geometry only for their assigned scenes."""
     if scene in {"find-replace", "column-ruler-scrolled"}:
         editor = app.active_workspace.editor
         result["editor"] = {
@@ -450,6 +433,53 @@ def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:  # noqa: C901,
             "viewport": _region_record(editor.scrollable_content_region),
             "popup": _region_record(app.active_workspace.completion_menu.region),
         }
+
+
+def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:  # noqa: C901
+    """Separate the widget render cache from the screen compositor's actual strips."""
+    result: dict[str, Any] = {"regions": [], "missing": [], "omissions": []}
+    selector_targets = []
+    if scene in SELECTOR_SCENES:
+        snapshot, selector_targets = _source_selector(app, scene)
+        result["source_selector"] = snapshot
+        result["missing"].extend(snapshot["collection_missing"])
+    try:
+        targets = _targets(app, scene)
+        composed = app.screen._compositor.render_strips()  # noqa: SLF001
+    except (AttributeError, LookupError, NoMatches, ScreenStackError, RuntimeError) as error:
+        result["missing"].append(f"terminal:{type(error).__name__}")
+        if "source_selector" in result:
+            _selector_visibility(result["source_selector"], [])
+        return result
+    targets.extend(selector_targets)
+    if len(targets) > MAX_REGIONS:
+        result["omissions"].append("region_limit")
+        result["omissions"].extend(f"{name}:region_limit" for name, *_rest in targets[MAX_REGIONS:])
+    row_budget = MAX_ROWS
+    for name, widget, requested_rows in targets[:MAX_REGIONS]:
+        region = widget.region
+        entry: dict[str, Any] = {
+            "name": name,
+            "region": _region_record(region),
+            "state": _widget_state(widget),
+            "widget_rows": [],
+            "composed_rows": [],
+        }
+        if name == "heading":
+            entry["state"]["renderable_text"] = str(widget.render())
+        result["regions"].append(entry)
+        if not widget.display or region.width <= 0 or region.height <= 0:
+            if not name.startswith("source-"):
+                result["missing"].append(f"{name}:not_visible")
+            continue
+        count = min(requested_rows, region.height, row_budget)
+        if count < requested_rows:
+            result["missing"].append(f"{name}:rows")
+        row_budget -= count
+        _collect_region_rows(widget, composed, entry, result, count)
+        if region.width > MAX_CELLS:
+            result["omissions"].append(f"{name}:cell_limit")
+    _editor_diagnostics(app, scene, result)
     if "source_selector" in result:
         _selector_visibility(result["source_selector"], result["regions"])
     if not result["regions"]:
@@ -512,9 +542,7 @@ def svg_diagnostics(  # noqa: C901, PLR0912, PLR0915
         if _tag(node) == "rect" and "y" in node.attrib:
             y = float(node.get("y", "0"))
             rect_height = float(node.get("height", "0"))
-            in_row = any(
-                y < top + height and y + rect_height > top for top, height in intervals
-            )
+            in_row = any(y < top + height and y + rect_height > top for top, height in intervals)
         if in_clip or in_row:
             selected.add(node)
     # Clip definitions and ancestors retain coordinate systems and inherited styles.

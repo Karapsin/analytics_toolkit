@@ -344,7 +344,8 @@ ModalScreen Button, FindReplaceBar Button {
 
 INTERACTION_CSS = """
 /* Use one visible neutral hover color; keyboard selection stays amber. */
-Button:hover, Input:hover, TextArea:hover,
+Button:hover, ModalScreen Button:hover, FindReplaceBar Button:hover,
+Input:hover, TextArea:hover,
 OptionList > .option-list--option-hover,
 Tree > .tree--highlight-line,
 DataTable > .datatable--hover,
@@ -352,6 +353,8 @@ DataTable > .datatable--header-hover {
     background: $panel-lighten-2;
 }
 Button:focus, Button:focus:hover,
+ModalScreen Button:focus, ModalScreen Button:focus:hover,
+FindReplaceBar Button:focus, FindReplaceBar Button:focus:hover,
 .interrupt:focus, .interrupt:focus:hover,
 OptionList > .option-list--option-highlighted,
 OptionList > .option-list--option-hover-highlighted,
@@ -369,7 +372,9 @@ DataTable > .datatable--header-cursor {
 ModalScreen Button:focus, FindReplaceBar Button:focus, .interrupt:focus {
     border: solid $accent;
 }
-Button:disabled, Button:disabled:hover {
+Button:disabled, Button:disabled:hover,
+ModalScreen Button:disabled, ModalScreen Button:disabled:hover,
+FindReplaceBar Button:disabled, FindReplaceBar Button:disabled:hover {
     background: $surface;
     color: $text-disabled;
     text-style: none;

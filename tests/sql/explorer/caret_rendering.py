@@ -5,7 +5,11 @@ from copy import copy
 
 import pytest
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
+from rich.segment import Segment
+from rich.style import Style
 from textual.document._document import Selection
+from textual.strip import Strip
+from textual.widgets import TextArea
 
 from tests.sql._support.explorer import FakeSession
 
@@ -163,5 +167,56 @@ def test_bar_on_a_blank_search_cell_preserves_the_complete_highlight() -> None:
                     segment.style.bgcolor.get_truecolor().hex == "#ffff00" for segment in match
                 )
             assert editor.text == "x x"
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("background", [None, "#123456"])
+def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
+    background: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 30)):
+            editor = app.active_workspace.editor
+            editor.text = "SELECT"
+            editor._set_selections(Selection.cursor((0, 0)), [Selection.cursor((0, 2))])
+            original = Style(color="#abcdef", bgcolor=background)
+            width = editor.scrollable_content_region.width
+            segments = [Segment(" " * editor.gutter_width), Segment("SELECT", original)]
+            source = Strip(segments).adjust_cell_length(width)
+            native_render = TextArea.render_line
+            monkeypatch.setattr(TextArea, "render_line", lambda _editor, _row: source)
+            theme = editor._theme
+            cursor_style = theme.cursor_style
+            for focused in (True, False):
+                if focused:
+                    editor.focus()
+                else:
+                    app.active_workspace.command_input.focus()
+                strip = editor.render_line(0)
+                assert strip.text == source.text
+                assert strip.cell_length == source.cell_length
+                for column in (0, 2):
+                    left = editor.gutter_width + column
+                    cell = strip.crop(left, left + 1)
+                    assert all(segment.style.color == original.color for segment in cell)
+                    assert all(segment.style.bgcolor == original.bgcolor for segment in cell)
+                    assert all(segment.style.underline is True for segment in cell)
+                    assert all(segment.style.bold is False for segment in cell)
+                assert editor._theme is theme
+                assert theme.cursor_style is cursor_style
+
+            def fail_render(_editor: TextArea, _row: int) -> Strip:
+                message = "native render failed"
+                raise RuntimeError(message)
+
+            monkeypatch.setattr(TextArea, "render_line", fail_render)
+            with pytest.raises(RuntimeError, match="native render failed"):
+                editor.render_line(0)
+            assert editor._theme is theme
+            assert theme.cursor_style is cursor_style
+            monkeypatch.setattr(TextArea, "render_line", native_render)
+            assert editor.text == "SELECT"
 
     asyncio.run(exercise())

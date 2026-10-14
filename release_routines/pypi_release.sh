@@ -26,6 +26,7 @@ assert_clean_worktree() {
 require_command git
 
 assert_clean_worktree
+python -m release_routines.lib.release_candidate guard
 
 current_branch="$(git branch --show-current)"
 if [ "${current_branch}" != "main" ]; then

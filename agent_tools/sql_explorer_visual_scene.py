@@ -16,7 +16,6 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-from rich.text import Text
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.connections import ConnectionsRestart
 from analytics_toolkit.sql_explorer.connections_picker import (
@@ -44,6 +43,7 @@ from analytics_toolkit.sql_explorer.widgets import (
     FileNavigationScreen,
     ResultTable,
 )
+from rich.text import Text
 from textual.app import ScreenStackError
 from textual.color import Color
 from textual.css.query import NoMatches
@@ -113,7 +113,7 @@ class VisualExplorerApp(SqlExplorerApp):
         self.visual_evidence_path = evidence_path
         self.visual_manifest_path = manifest_path
         self.creation_scene_ready = not (
-            scene_id.startswith(("create-table", "journal-"))
+            scene_id.startswith(("create-table", "journal-", "completion"))
             or scene_id in {
                 "command-completion",
                 "database-completion",
@@ -158,15 +158,8 @@ class VisualExplorerApp(SqlExplorerApp):
             self.set_timer(0.6, self._mark_scene_ready)
         elif scene.startswith("create-table"):
             await self._open_creation_scene(scene)
-        elif scene == "completion-narrowed":
-            workspace.editor.text = "SELECT customer_na FROM analytics.daily_orders"
-            workspace.editor.cursor_location = (0, len("SELECT customer_na"))
-            self.set_timer(
-                0.3,
-                lambda: self._open_completion(
-                    self._completion_at_cursor(), ("customer_name",), accept_single=False
-                ),
-            )
+        elif scene.startswith("completion"):
+            self._configure_completion_scene(scene)
         elif scene in {"command-completion", "database-completion"}:
             command = workspace.command_input
             command.value = "db wa" if scene == "database-completion" else "c"
@@ -179,43 +172,6 @@ class VisualExplorerApp(SqlExplorerApp):
                 self.call_after_refresh(self._mark_scene_ready)
 
             self.set_timer(0.3, show_commands)
-        elif scene == "completion-cte-names":
-            workspace.editor.text = (
-                "WITH recent_orders AS (SELECT order_id FROM analytics.orders),\n"
-                "     recent_customers AS (SELECT customer_id FROM analytics.customers)\n"
-                "SELECT *\nFROM recent_"
-            )
-            workspace.editor.cursor_location = (3, len("FROM recent_"))
-            self.set_timer(
-                0.3,
-                lambda: self._open_completion(
-                    self._completion_at_cursor(),
-                    self._completion_at_cursor().local_relations,
-                    accept_single=False,
-                ),
-            )
-        elif scene in {"completion-columns", "completion-empty-columns", "completion-where-alias"}:
-            workspace.editor.text = (
-                "SELECT c.c FROM analytics.customers c "
-                "JOIN analytics.orders o ON c.id = o.customer_id"
-            )
-            if scene == "completion-where-alias":
-                workspace.editor.text = "SELECT *\nFROM analytics.customers AS c\nWHERE c."
-                workspace.editor.cursor_location = (2, len("WHERE c."))
-            elif scene == "completion-empty-columns":
-                workspace.editor.text = "SELECT  FROM analytics.customers"
-                workspace.editor.cursor_location = (0, 7)
-                workspace.completion_allow_empty_columns = True
-            else:
-                workspace.editor.cursor_location = (0, 10)
-            self.set_timer(
-                0.3,
-                lambda: self._open_completion(
-                    self._completion_at_cursor(),
-                    ("customer_id", "customer_name", "created_at"),
-                    accept_single=False,
-                ),
-            )
         elif scene == "tab-database-change":
             self._add_workspace()
             self.set_timer(0.3, self._switch_visual_database)
@@ -235,12 +191,6 @@ class VisualExplorerApp(SqlExplorerApp):
                 )
                 tab_workspace.saved_text = ""
             self._refresh_tab(self.active_workspace)
-        elif scene == "completion":
-            self._completion_pool.stop()
-            workspace.completion = None
-            workspace.editor.text = "SELECT customer_"
-            workspace.editor.cursor_location = (0, len(workspace.editor.text))
-            self.set_timer(0.3, self._open_visual_completion)
         elif scene == "find-replace":
             self.action_open_find()
             self.query_one("#find-pattern", Input).value = "order"
@@ -365,6 +315,52 @@ class VisualExplorerApp(SqlExplorerApp):
         self.call_after_refresh(self._refresh_visual_evidence)
         self.set_interval(0.2, self._refresh_visual_evidence)
 
+    def _configure_completion_scene(self, scene: str) -> None:
+        """Set editor state before opening deterministic fake suggestions."""
+        workspace = self.active_workspace
+        editor = workspace.editor
+        self._completion_pool.stop()
+        workspace.completion = None
+        suggestions = ("customer_id", "customer_name", "created_at")
+        if scene == "completion-narrowed":
+            editor.text = "SELECT customer_na FROM analytics.daily_orders"
+            editor.cursor_location = (0, len("SELECT customer_na"))
+            suggestions = ("customer_name",)
+        elif scene == "completion-cte-names":
+            editor.text = (
+                "WITH recent_orders AS (SELECT order_id FROM analytics.orders),\n"
+                "     recent_customers AS (SELECT customer_id FROM analytics.customers)\n"
+                "SELECT *\nFROM recent_"
+            )
+            editor.cursor_location = (3, len("FROM recent_"))
+            suggestions = ("recent_orders", "recent_customers")
+        elif scene == "completion-where-alias":
+            editor.text = "SELECT *\nFROM analytics.customers AS c\nWHERE c."
+            editor.cursor_location = (2, len("WHERE c."))
+        elif scene == "completion-empty-columns":
+            editor.text = "SELECT  FROM analytics.customers"
+            editor.cursor_location = (0, 7)
+            workspace.completion_allow_empty_columns = True
+        elif scene == "completion-columns":
+            editor.text = (
+                "SELECT c.c FROM analytics.customers c "
+                "JOIN analytics.orders o ON c.id = o.customer_id"
+            )
+            editor.cursor_location = (0, 10)
+        elif scene == "completion":
+            editor.text = "SELECT *\nFROM analytics.ord"
+            editor.cursor_location = (1, len("FROM analytics.ord"))
+            suggestions = ("orders", "order_items", "order_returns")
+        else:
+            raise ValueError(f"unsupported SQL Explorer visual scene: {scene}")
+        editor.focus()
+        self.call_after_refresh(self._show_completion_scene, suggestions)
+
+    def _show_completion_scene(self, suggestions: tuple[str, ...]) -> None:
+        self._open_completion(self._completion_at_cursor(), suggestions, accept_single=False)
+        self.scene_configured = True
+        self.call_after_refresh(self._mark_scene_ready)
+
     def _switch_visual_database(self) -> None:
         self._activate_tab("2")
         self._command_database(["warehouse_connection"])
@@ -392,7 +388,7 @@ class VisualExplorerApp(SqlExplorerApp):
             self, self.visual_scene_id, self.visual_evidence_path, self.visual_manifest_path
         )
 
-    def _scene_readiness_details(self) -> dict[str, Any]:  # noqa: C901, PLR0912
+    def _scene_readiness_details(self) -> dict[str, Any]:
         """Describe current conditions without treating lifecycle loss as success."""
         conditions = {"screen_available": False, "screen_mounted": False}
         details: dict[str, Any] = {
@@ -406,88 +402,17 @@ class VisualExplorerApp(SqlExplorerApp):
             "focus_id": None,
         }
         try:
-            if not self.screen_stack:
-                return details
-            screen = self.screen
-            details["screen_class"] = type(screen).__name__
-            conditions["screen_available"] = True
-            conditions["screen_mounted"] = bool(screen.is_mounted)
-            if not screen.is_mounted:
-                return details
-            details["focus_id"] = getattr(self.focused, "id", None)
-            scene = self.visual_scene_id
-            if scene in {"save-changes", "save-changes-cancel"}:
-                conditions["expected_modal"] = isinstance(screen, SaveChangesScreen)
-                if not conditions["expected_modal"]:
-                    return details
-                choice = "cancel" if scene == "save-changes-cancel" else "save"
-                conditions["document_identity"] = screen.title == self.active_workspace.file_label
-                selector = f"#save-changes-{choice}"
-                conditions["required_controls"] = False
-                try:
-                    button = screen.query_one(selector, Button)
-                except NoMatches:
-                    details["missing_controls"].append(selector)
-                    return details
-                conditions["required_controls"] = bool(button.is_mounted)
-                if not button.is_mounted:
-                    details["unmounted_controls"].append(selector)
-                conditions["requested_focus"] = self.focused is button
-            elif scene.startswith("create-table"):
-                conditions["expected_modal"] = isinstance(screen, CreateTableScreen)
-                if not conditions["expected_modal"]:
-                    return details
-                conditions["required_controls"] = False
-                selectors = (
-                    "#create-table-name",
-                    "#create-table-source",
-                    "#create-from-sql",
-                    "#create-insert_data",
-                    "#create-skip_if_exists",
-                    "#create-drop_if_exists",
-                    "#create-table-submit",
-                    "#create-table-notice",
-                )
-                for selector in selectors:
-                    try:
-                        control = screen.query_one(selector)
-                    except NoMatches:
-                        details["missing_controls"].append(selector)
-                        continue
-                    if not control.is_mounted:
-                        details["unmounted_controls"].append(selector)
-                if details["missing_controls"] or details["unmounted_controls"]:
-                    return details
-                values = screen.values()
-                conditions["required_controls"] = all(
-                    field.is_mounted
-                    for field in screen.query(".create-column-name, .create-column-type")
-                )
-                if scene == "create-table-invalid":
-                    details["incomplete_rows"] = [
-                        index
-                        for index, (name, kind) in enumerate(values["rows"])
-                        if not name or not kind
-                    ][:32]
-                    notice = screen.query_one("#create-table-notice", Static)
-                    # Static.render() returns a visual wrapper in Textual 0.73.
-                    # renderable exposes the original str/Text as plain text.
-                    content = notice.renderable
-                    if isinstance(content, Text):
-                        text = content.plain
-                    elif isinstance(content, str):
-                        text = content
-                    else:
-                        raise TypeError(
-                            "Validation notice must contain plain text"
-                        )
-                    details["notice_text"] = text[:512]
-                    conditions["incomplete_rows"] = bool(details["incomplete_rows"])
-                    conditions["validation_feedback"] = "Each column needs" in text
-            return details
+            if self.screen_stack:
+                screen = self.screen
+                details["screen_class"] = type(screen).__name__
+                conditions["screen_available"] = True
+                conditions["screen_mounted"] = bool(screen.is_mounted)
+                if screen.is_mounted:
+                    details["focus_id"] = getattr(self.focused, "id", None)
+                    _scene_control_readiness(self, screen, details)
         except (NoMatches, ScreenStackError):
             conditions["lifecycle_stable"] = False
-            return details
+        return details
 
     def _selector_readiness_snapshot(self) -> dict[str, Any]:
         """Collect failure evidence independently of production readiness."""
@@ -647,6 +572,117 @@ class VisualConnectionsPickerApp(ConnectionsPickerApp):
 
     def _refresh_visual_evidence(self) -> None:
         _refresh_evidence_if_mounted(self, self.scene_id, self.evidence_path, self.manifest_path)
+
+
+def _scene_control_readiness(app: Any, screen: Any, details: dict[str, Any]) -> None:
+    scene = app.visual_scene_id
+    if scene in {"save-changes", "save-changes-cancel"}:
+        _save_readiness(app, screen, details)
+    elif scene.startswith("create-table"):
+        _creation_readiness(screen, scene, details)
+    elif scene.startswith("completion"):
+        _completion_readiness(app, details)
+
+
+def _save_readiness(app: Any, screen: Any, details: dict[str, Any]) -> None:
+    conditions = details["conditions"]
+    conditions["expected_modal"] = isinstance(screen, SaveChangesScreen)
+    if not conditions["expected_modal"]:
+        return
+    choice = "cancel" if app.visual_scene_id == "save-changes-cancel" else "save"
+    conditions["document_identity"] = screen.title == app.active_workspace.file_label
+    selector = f"#save-changes-{choice}"
+    conditions["required_controls"] = False
+    try:
+        button = screen.query_one(selector, Button)
+    except NoMatches:
+        details["missing_controls"].append(selector)
+        return
+    conditions["required_controls"] = bool(button.is_mounted)
+    if not button.is_mounted:
+        details["unmounted_controls"].append(selector)
+    conditions["requested_focus"] = app.focused is button
+
+
+def _creation_readiness(screen: Any, scene: str, details: dict[str, Any]) -> None:
+    conditions = details["conditions"]
+    conditions["expected_modal"] = isinstance(screen, CreateTableScreen)
+    if not conditions["expected_modal"]:
+        return
+    conditions["required_controls"] = False
+    selectors = (
+        "#create-table-name",
+        "#create-table-source",
+        "#create-from-sql",
+        "#create-insert_data",
+        "#create-skip_if_exists",
+        "#create-drop_if_exists",
+        "#create-table-submit",
+        "#create-table-notice",
+    )
+    for selector in selectors:
+        _required_control(screen, selector, details)
+    if details["missing_controls"] or details["unmounted_controls"]:
+        return
+    values = screen.values()
+    conditions["required_controls"] = all(
+        field.is_mounted for field in screen.query(".create-column-name, .create-column-type")
+    )
+    if scene == "create-table-invalid":
+        details["incomplete_rows"] = [
+            index for index, (name, kind) in enumerate(values["rows"]) if not name or not kind
+        ][:32]
+        content = screen.query_one("#create-table-notice", Static).renderable
+        if isinstance(content, Text):
+            text = content.plain
+        elif isinstance(content, str):
+            text = content
+        else:
+            message = "Validation notice must contain plain text"
+            raise TypeError(message)
+        details["notice_text"] = text[:512]
+        conditions["incomplete_rows"] = bool(details["incomplete_rows"])
+        conditions["validation_feedback"] = "Each column needs" in text
+
+
+def _required_control(screen: Any, selector: str, details: dict[str, Any]) -> None:
+    try:
+        control = screen.query_one(selector)
+    except NoMatches:
+        details["missing_controls"].append(selector)
+    else:
+        if not control.is_mounted:
+            details["unmounted_controls"].append(selector)
+
+
+def _completion_readiness(app: Any, details: dict[str, Any]) -> None:
+    workspace = app.active_workspace
+    editor, menu = workspace.editor, workspace.completion_menu
+    conditions = details["conditions"]
+    conditions["popup_open"] = menu.is_open
+    conditions["popup_mounted"] = menu.is_mounted
+    conditions["popup_visible"] = menu.display and menu.visible
+    viewport = editor.scrollable_content_region
+    screen = app.screen.content_region
+    popup = menu.region
+    _, cursor_y = editor.wrapped_document.location_to_offset(editor.cursor_location)
+    row = viewport.y + cursor_y - int(editor.scroll_y)
+    conditions["cursor_visible"] = viewport.y <= row < viewport.bottom
+    conditions["popup_positioned"] = (
+        popup.width > 0
+        and popup.height >= 3
+        and screen.x <= popup.x < popup.right <= screen.right
+        and viewport.y <= popup.y < popup.bottom <= viewport.bottom
+        and (popup.y > row or popup.bottom <= row)
+    )
+    composed = app.screen._compositor.render_strips()  # noqa: SLF001
+    text = "".join(
+        strip.crop(popup.x, popup.right).text
+        for strip in composed[max(0, popup.y) : max(0, popup.bottom)]
+    )
+    conditions["popup_composed"] = bool(menu.suggestions) and all(
+        suggestion in text for suggestion in menu.suggestions[: min(3, len(menu.suggestions))]
+    )
 
 
 def _manifest_scene(manifest_path: Path, scene_id: str) -> dict[str, Any]:
@@ -813,7 +849,9 @@ def _button_color_assertions(app: App[Any]) -> dict[str, bool]:
         if identity is None:
             classes = ".".join(sorted(button.classes))
             identity = f"{type(button).__name__}.{classes}[{index}]"
-        assertions[f"button_focus_color:{identity}"] = button.styles.background == Color.parse(color)
+        assertions[f"button_focus_color:{identity}"] = (
+            button.styles.background == Color.parse(color)
+        )
     return assertions
 
 

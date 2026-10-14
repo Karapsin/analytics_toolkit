@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from tests.agent_tools._support.mcp import (
     Path,
     _write_minimal_repo_files,
     mcp_server,
     pytest,
 )
+
+
+@pytest.fixture(autouse=True)
+def reviewed_preparation(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Existing orchestration tests isolate readiness/validation from PR I/O.
+    monkeypatch.setattr(mcp_server, "_prepare_release", lambda *args: {"status": "prepared"})
+    monkeypatch.setattr(
+        mcp_server,
+        "_release_preparation_module",
+        lambda: SimpleNamespace(verify=lambda *args, **kwargs: {"promotion_sha": "candidate"}),
+    )
 
 
 def test_release_publish_requires_current_release_check(
@@ -26,6 +39,7 @@ def test_release_publish_requires_current_release_check(
 
     monkeypatch.setattr(mcp_server, "_release_readiness", fake_readiness)
 
+    monkeypatch.setattr(mcp_server, "_merge_dev_for_release", lambda *args: {"ok": True})
     result = mcp_server.release_workflow("publish", root=str(root))
 
     assert result["ok"] is False
@@ -61,7 +75,10 @@ def test_release_readiness_blocks_when_main_lacks_origin_dev(
             "blockers": [
                 {
                     "phase": "remote_dev",
-                    "message": "Local HEAD does not contain origin/dev; pull, rebase, or merge before continuing.",
+                    "message": (
+                        "Local HEAD does not contain origin/dev; "
+                        "pull, rebase, or merge before continuing."
+                    ),
                 }
             ],
         },
@@ -226,7 +243,7 @@ def test_release_workflow_merge_dev_fast_forwards_main(
         "git fetch origin dev",
         "git switch main",
         "git pull --ff-only origin main",
-        "git merge --ff-only origin/dev",
+        "git merge --ff-only candidate",
         "git push origin main",
     ]
 
@@ -260,6 +277,7 @@ def test_release_workflow_publish_delegates_to_release_script(
 
     monkeypatch.setattr(mcp_server, "_run_command", fake_run_command)
 
+    monkeypatch.setattr(mcp_server, "_merge_dev_for_release", lambda *args: {"ok": True})
     result = mcp_server.release_workflow("publish", root=str(root))
 
     assert result["ok"] is True

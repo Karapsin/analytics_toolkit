@@ -12,6 +12,25 @@ Generated from package version bumps and recent commit history.
 - Fix Greenplum restart fault timing and batch retry coverage; correct regression imports for fast CI.
 - Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
 
+- Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
+- Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
+- Recover reviewed releases after deleted preparation branches or newer dev changes, preserve publication safeguards, and restore current-dev offline helpers and regressions.
+- Recover interrupted TestPyPI pushes from journaled commits and verified legacy refs before reviewed release replacement, with fast restart and conflict regressions.
+- Preserve reviewed release-only version preparation and recovery, restore current-dev repair evidence and fast regressions, and correct strict lint/format findings without weakening quality gates.
+- Reserve version bumps and note rollover for explicit reviewed PyPI release preparation; restore this feature's version markers and keep pending notes Unreleased.
+- Reserve version bumps for reviewed PyPI releases and recover interrupted preparation PR publication without repushing stale heads or duplicating candidates.
+- Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
+
+- Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
+- Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
+- Recover reviewed releases after deleted preparation branches or newer dev changes, preserve publication safeguards, and restore current-dev offline helpers and regressions.
+- Recover interrupted TestPyPI pushes from journaled commits and verified legacy refs before reviewed release replacement, with fast restart and conflict regressions.
+- Preserve reviewed release-only version preparation and recovery, restore current-dev repair evidence and fast regressions, and correct strict lint/format findings without weakening quality gates.
+- Reserve version bumps and note rollover for explicit reviewed PyPI release preparation; restore this feature's version markers and keep pending notes Unreleased.
+- Reserve version bumps for reviewed PyPI releases and recover interrupted preparation PR publication without repushing stale heads or duplicating candidates.
+- Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
+- Reconcile user-approval labels automatically without clearing genuine holds or stale-head safeguards
+
 ## 1.3.12.5 - 2026-10-14
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
