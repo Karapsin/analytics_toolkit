@@ -6,8 +6,6 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
-## 1.3.12.5 - 2026-10-13
-
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
 - Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.

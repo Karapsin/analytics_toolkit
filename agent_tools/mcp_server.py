@@ -3731,9 +3731,7 @@ def _missing_mandatory_actions(
         if version_requirement["missing"]:
             missing.append(_version_bump_message(version_requirement["missing"]))
         if not metadata["ok"]:
-            missing.append(
-                "Run version_bump(...) to record the required changelog entry."
-            )
+            missing.append("Run version_bump(...) to record the required changelog entry.")
         if not _verify_precommit_success(root)["ok"]:
             missing.append(
                 "Run run_checks(level='precommit') before git_workflow(action='commit')."

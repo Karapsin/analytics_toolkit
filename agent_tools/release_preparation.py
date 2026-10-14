@@ -329,7 +329,9 @@ def _recover_preparation_handoff(
     _verify_preparation_handoff(state, sessions.handoff(work), pr["number"])
 
 
-def _verify_preparation_handoff(state: dict[str, Any], receipt: dict[str, Any], number: int) -> None:
+def _verify_preparation_handoff(
+    state: dict[str, Any], receipt: dict[str, Any], number: int
+) -> None:
     if any(
         receipt.get(key) != expected
         for key, expected in (

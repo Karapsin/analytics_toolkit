@@ -1,132 +1,16 @@
 from __future__ import annotations
 
-import json
-from types import SimpleNamespace
-
 import pytest
-from release_routines.lib import release_candidate as candidate
 
 from agent_tools import release_preparation as preparation
 from agent_tools import sessions, task_context
-from tests.agent_tools._support.mcp import Path, _write_minimal_repo_files, mcp_server
+from tests.agent_tools._support.mcp import Path, mcp_server
+from tests.agent_tools._support.preparation_publication import make_publication
 
 
 @pytest.fixture
 def publication(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    root = _write_minimal_repo_files(tmp_path / "project")
-    work = tmp_path / "workspace"
-    work.mkdir()
-    (work / ".git").mkdir()
-    monkeypatch.setattr(preparation, "state_path", lambda root: root / preparation.STATE)
-    monkeypatch.setattr(sessions, "state_path", lambda root: root / ".git" / sessions.STATE)
-
-    def directory(root):
-        path = root / "tasks"
-        path.mkdir(exist_ok=True)
-        return path
-
-    monkeypatch.setattr(task_context, "directory", directory)
-    task_context.record(work, "Prepare a PyPI release.")
-    context = task_context.read(work)
-    proto = task_context.protocol()
-    version, files, fragments = preparation._metadata_files(root, "Release notes")
-    state = {
-        "task_id": context["task_id"],
-        "task_digest": proto.digest(proto.public_context(context)),
-        "workspace": str(work),
-        "branch": "codex/release",
-        "source_sha": "source",
-        "candidate_sha": "author",
-        "candidate_tree": "author-tree",
-        "version": version,
-        "files": files,
-        "fragments": fragments,
-        "pr": None,
-        "stages": {"validation": "author"},
-    }
-    preparation.save(root, state)
-    sessions.save(
-        work,
-        {"phase": "feature", "branch": state["branch"], "publication_sha": "author"},
-    )
-    pr = {
-        "number": 12,
-        "url": "https://example/pr/12",
-        "state": "OPEN",
-        "mergedAt": None,
-        "headRefName": state["branch"],
-        "baseRefName": "dev",
-        "headRefOid": "corrected",
-        "body": proto.render(context),
-        "statusCheckRollup": [
-            {"name": name, "conclusion": "SUCCESS"}
-            for name in ("fast-checks", "agent-review")
-        ],
-    }
-    calls = []
-    signatures = []
-    faults = {"discovery": None, "ancestry": False, "sync": False}
-    matches = [{"number": 12}]
-
-    def run(root, *args):
-        calls.append(args)
-        if args[:3] == ("gh", "pr", "list"):
-            assert "--state" in args and args[args.index("--state") + 1] == "all"
-            if faults["discovery"]:
-                raise RuntimeError(faults["discovery"])
-            return json.dumps(matches)
-        if args[:3] == ("gh", "pr", "view"):
-            assert args[3] == "12"
-            return json.dumps(pr)
-        if args[:2] in {("git", "fetch"), ("git", "ls-remote"), ("git", "tag")}:
-            return ""
-        if args == ("git", "branch", "--show-current"):
-            return "codex/release"
-        if args[:2] == ("git", "log"):
-            assert args[-1] == "author"
-            return "Prepare release" + proto.trailers(context)
-        if args[:3] == ("git", "merge-base", "--is-ancestor"):
-            assert args[3:] == ("author", "corrected")
-            if faults["ancestry"]:
-                message = "unrelated ancestry"
-                raise RuntimeError(message)
-            return ""
-        if args[:2] == ("git", "show"):
-            return files[args[2].split(":", 1)[1]].strip()
-        if args[:2] == ("git", "ls-tree"):
-            return ""
-        pytest.fail("Unexpected write or command: " + repr(args))
-
-    def synchronize(root):
-        if faults["sync"]:
-            message = "refresh interrupted"
-            raise RuntimeError(message)
-        receipt = sessions.load(root)
-        receipt.update(phase="planning", branch="dev")
-        receipt.pop("pr", None)
-        receipt.pop("publication_sha", None)
-        sessions.save(root, receipt)
-        return {"status": "synchronized"}
-
-    monkeypatch.setattr(sessions, "run", run)
-    monkeypatch.setattr(sessions, "clean", lambda root: None)
-    monkeypatch.setattr(sessions, "synchronize", synchronize)
-    monkeypatch.setattr(sessions, "verify_signature", lambda root, sha: signatures.append(sha))
-    monkeypatch.setattr(sessions, "push", lambda root: pytest.fail("republished existing PR"))
-    monkeypatch.setattr(preparation, "_tree", lambda root, sha: "corrected-tree")
-    monkeypatch.setattr(candidate, "index_files", lambda *args: {})
-    monkeypatch.setattr(candidate, "_runs", lambda *args: [])
-    return SimpleNamespace(
-        root=root,
-        work=work,
-        state=state,
-        pr=pr,
-        calls=calls,
-        signatures=signatures,
-        faults=faults,
-        matches=matches,
-        version=version,
-    )
+    return make_publication(monkeypatch, tmp_path)
 
 
 @pytest.mark.parametrize("merged", [False, True])
@@ -266,7 +150,7 @@ def test_invalid_discovery_never_republishes_or_records_release_pr(publication, 
     elif problem == "ancestry":
         item.faults["ancestry"] = True
     with pytest.raises(
-        (RuntimeError, ValueError, TypeError),
+        (RuntimeError, TypeError, ValueError),
         match=r"task|attachment|closed|Ambiguous|failed|indices|ancestry",
     ):
         preparation.prepare(item.root)
@@ -291,11 +175,11 @@ def test_conflicting_session_journal_blocks_recovery(publication, problem: str):
                     "task_digest": item.state["task_digest"],
                     "sha": "author" if problem == "identifiers" else "unrelated",
                     "owner": "pi",
-                }
+                },
             ],
         )
     sessions.save(item.work, session)
-    with pytest.raises(RuntimeError, match="conflicts|Conflicting"):
+    with pytest.raises(RuntimeError, match=r"conflicts|Conflicting"):
         preparation.prepare(item.root)
     assert preparation.load(item.root)["pr"] is None
     assert sessions.load(item.work)["phase"] == "feature"
@@ -323,3 +207,17 @@ def test_confirmed_absence_uses_existing_publication_once(
     assert pushes == [item.work]
     assert preparation.prepare(item.root) == result
     assert pushes == [item.work]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ("git", "push", "origin", "codex/release"),
+        ("gh", "pr", "create"),
+        ("git", "branch", "--delete", "codex/release"),
+        ("git", "merge-base", "author", "corrected"),
+    ],
+)
+def test_publication_fake_rejects_unexpected_commands(publication, command):
+    with pytest.raises(pytest.fail.Exception, match="Unexpected write or command"):
+        sessions.run(publication.work, *command)
