@@ -1,1 +1,0 @@
-- Retry the original OAuth initiation URL after browser navigation timeouts in the disposable authentication harness, with fast service-free regression coverage for recovery and exhausted retries.
