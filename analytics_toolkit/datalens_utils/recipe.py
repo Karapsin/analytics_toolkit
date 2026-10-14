@@ -34,6 +34,7 @@ _FIELDS = {
     "workbook": {"id", "name", "parent", "description"},
     "html_page": {"id", "name", "description", "content_file"},
     "dataset": {
+        "copy_from",
         "id",
         "name",
         "description",
@@ -52,6 +53,7 @@ _FIELDS = {
     "relation": {"left", "right", "type", "conditions", "drop_duplicates", "id"},
     "condition": {"left", "right", "operator"},
     "field": {
+        "ui_settings",
         "source",
         "column",
         "guid",
@@ -68,6 +70,7 @@ _FIELDS = {
     "cache_formula": {"formula", "guid_formula"},
     "cache_filter": {"key", "field", "operation", "values"},
     "dashboard": {
+        "copy_from",
         "id",
         "description",
         "hide_tabs",
@@ -78,6 +81,7 @@ _FIELDS = {
         "access_description",
     },
     "chart": {
+        "copy_from",
         "key",
         "id",
         "family",
@@ -99,12 +103,14 @@ _FIELDS = {
         "show_title",
         "description",
         "axis_titles",
+        "chart_title",
         "labels",
         "labels_position",
         "formats",
         "totals",
         "query_file",
         "scripts",
+        "meta_links_mode",
         "links",
         "params",
         "columns",

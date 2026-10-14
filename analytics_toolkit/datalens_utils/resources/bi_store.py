@@ -304,6 +304,11 @@ class BIResourceStore(ResourceStore):
                 raise DataLensUtilsError(msg)
             if not matches:
                 return None
+            resource = self.registry.resources["dashboard:main" if key == "dashboard" else key]
+            if resource.definition.get("copy_from"):
+                raise DataLensUtilsError(
+                    key + " copy destination name already exists; adoption refused."
+                )
             identifier = matches[0].id
             entity = getter(by_id=identifier)
         self.verify_identity(entity, identifier)
@@ -362,6 +367,12 @@ class BIResourceStore(ResourceStore):
 
     def persisted(self, key: Any, entity: Any, getter: Any, *, branch: Any = "published") -> Any:
         self.checkpoint(key, entity, mutation=True)
+        from analytics_toolkit.datalens_utils.dataset_identity import (  # noqa: PLC0415 - Resource lifecycle boundary.
+            check_components,
+        )
+
+        if key.startswith("dataset:"):
+            check_components(entity, key, "persist " + branch)
         kind = "dashboard" if key == "dashboard" else key.split(":", 1)[0]
         identifier = entity.id
         entity = getter(
@@ -373,4 +384,6 @@ class BIResourceStore(ResourceStore):
         self.verify_identity(entity, identifier)
         if kind not in {"collection", "workbook"}:
             self.verify_location(entity)
+        if kind == "dataset":
+            check_components(entity, key, "fetch " + branch)
         return entity
