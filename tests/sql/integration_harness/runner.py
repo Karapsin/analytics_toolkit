@@ -121,7 +121,7 @@ def test_resource_cleanup_waits_for_a_restarted_backend(
     assert attempts == 6
 
 
-def test_browser_oauth_reloads_until_keycloak_login_is_visible() -> None:
+def test_browser_oauth_reopens_initiation_until_keycloak_login_is_visible() -> None:
     class Login:
         attempts = 0
 
@@ -134,13 +134,11 @@ def test_browser_oauth_reloads_until_keycloak_login_is_visible() -> None:
         def __init__(self) -> None:
             self.login = Login()
             self.goto_calls = 0
-            self.reload_calls = 0
 
-        def goto(self, *_args, **_kwargs) -> None:
+        def goto(self, url: str, **kwargs) -> None:
+            assert url == "https://oauth"
+            assert kwargs == {"wait_until": "domcontentloaded"}
             self.goto_calls += 1
-
-        def reload(self, **_kwargs) -> None:
-            self.reload_calls += 1
 
         def locator(self, selector: str) -> Login:
             assert selector == "#username"
@@ -151,8 +149,7 @@ def test_browser_oauth_reloads_until_keycloak_login_is_visible() -> None:
     login = integration_auth_negative._open_keycloak_login(page, "https://oauth", TimeoutError)
 
     assert login is page.login
-    assert page.goto_calls == 1
-    assert page.reload_calls == 2
+    assert page.goto_calls == 3
 
 
 def test_airflow_plain_http_trino_route_never_uses_basic_auth_password() -> None:
@@ -322,3 +319,56 @@ def test_greenplum_tls_readiness_requires_three_consecutive_connections(
     report = json.loads((tmp_path.parent / "greenplum-tls-readiness.json").read_text())
     assert report["ready"] is True
     assert len(report["attempts"]) == 4
+
+
+@pytest.mark.parametrize("recover", [True, False])
+def test_browser_oauth_retries_original_url_after_navigation_timeout(recover: bool) -> None:
+    failures = [TimeoutError("first navigation"), TimeoutError("second navigation")]
+    final_error = TimeoutError("last navigation")
+
+    class Login:
+        visible = False
+
+        def wait_for(self, **kwargs) -> None:
+            assert kwargs == {"state": "visible", "timeout": 15_000}
+            self.visible = True
+
+    class Page:
+        def __init__(self) -> None:
+            self.login = Login()
+            self.calls = 0
+            self.url = "about:blank"
+
+        def goto(self, url: str, **kwargs) -> None:
+            assert url == "https://oauth/initiate"
+            assert kwargs == {"wait_until": "domcontentloaded"}
+            self.calls += 1
+            if self.calls <= len(failures):
+                raise failures[self.calls - 1]
+            if not recover:
+                raise final_error
+            self.url = "https://keycloak/login"
+
+        def reload(self, **_kwargs) -> None:
+            pytest.fail("a failed navigation must retry the original initiation URL")
+
+        def locator(self, selector: str) -> Login:
+            assert self.url == "https://keycloak/login"
+            assert selector == "#username"
+            return self.login
+
+    page = Page()
+    if recover:
+        login = integration_auth_negative._open_keycloak_login(
+            page, "https://oauth/initiate", TimeoutError
+        )
+        assert login is page.login
+        assert login.visible
+    else:
+        with pytest.raises(TimeoutError) as exc_info:
+            integration_auth_negative._open_keycloak_login(
+                page, "https://oauth/initiate", TimeoutError
+            )
+        assert exc_info.value is final_error
+        assert not page.login.visible
+    assert page.calls == 3
