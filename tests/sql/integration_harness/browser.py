@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import types
 from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.sql.integration.auth import negative
+from tests.sql.integration_harness._support.browser import make_browser
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,7 +34,7 @@ def test_browser_failure_retains_complete_redacted_diagnostics_and_closes(
     tmp_path: Path,
     failure: tuple[str | None, bool, str],
 ) -> None:
-    failed_step, close_fails, phase = failure
+    failed_step, close_fails, _phase = failure
     monkeypatch.setenv("SQL_INTEGRATION_ARTIFACT_DIR", str(tmp_path))
     monkeypatch.setenv("SQL_INTEGRATION_TEST_ID", "exchange")
     url = (
@@ -51,56 +51,7 @@ def test_browser_failure_retains_complete_redacted_diagnostics_and_closes(
         "-----END PRIVATE KEY-----\nfinal diagnostic line"
     )
     error = RuntimeError(message)
-    close_error = RuntimeError("secondary close failure")
-    calls: list[str] = []
-
-    def step(name: str):
-        calls.append(name)
-        if name == failed_step:
-            raise error
-        if name == "close" and close_fails:
-            raise close_error
-
-    def click(**kwargs) -> None:
-        assert kwargs == {"no_wait_after": True}
-        step("submit")
-
-    def locator(selector: str):
-        name = {"#username": "username", "#password": "password", "#kc-login": "submit"}[selector]
-        return types.SimpleNamespace(
-            wait_for=lambda **_kwargs: step("visibility"),
-            fill=lambda _value: step(name),
-            click=click,
-        )
-
-    def goto(attempted_url: str, **kwargs) -> None:
-        assert attempted_url == url
-        assert kwargs == {"wait_until": "domcontentloaded"}
-        step("goto")
-
-    def wait_for_url(pattern: str, **kwargs) -> None:
-        assert pattern == "**/oauth2/**"
-        assert kwargs == {"timeout": 10_000}
-        step("wait-callback")
-
-    page = types.SimpleNamespace(
-        goto=goto,
-        locator=locator,
-        wait_for_url=wait_for_url,
-    )
-
-    def new_page():
-        step("new-page")
-        return page
-
-    browser = types.SimpleNamespace(new_page=new_page, close=lambda: step("close"))
-
-    def launch():
-        step("launch")
-        return browser
-
-    def before_callback() -> None:
-        step("before-callback")
+    launch, before_callback, calls = make_browser(failed_step, close_fails, url, error)
 
     if failed_step is None:
         negative._run_browser_oauth(launch, url, password, before_callback, TimeoutError)
@@ -108,15 +59,33 @@ def test_browser_failure_retains_complete_redacted_diagnostics_and_closes(
         with pytest.raises(RuntimeError) as exc_info:
             negative._run_browser_oauth(launch, url, password, before_callback, TimeoutError)
         assert exc_info.value is error
-    assert calls.count("close") == (0 if failed_step == "launch" else 1)
-    if failed_step in {"launch", "new-page", "goto", "visibility", "username", "password", "submit"}:
-        assert "before-callback" not in calls
-    else:
-        assert calls.index("submit") < calls.index("before-callback")
+    _assert_operation_order(calls, failed_step)
     records = [
         json.loads(line)
         for line in (tmp_path / "oauth-browser.log").read_text(encoding="utf-8").splitlines()
     ]
+    _assert_diagnostics(records, password, failure)
+    _assert_appended_history(monkeypatch, tmp_path, url, password, records)
+
+
+def _assert_operation_order(calls: list[str], failed_step: str | None) -> None:
+    assert calls.count("close") == (0 if failed_step == "launch" else 1)
+    if failed_step in {
+        "launch",
+        "new-page",
+        "goto",
+        "visibility",
+        "username",
+        "password",
+        "submit",
+    }:
+        assert "before-callback" not in calls
+    else:
+        assert calls.index("submit") < calls.index("before-callback")
+
+
+def _assert_diagnostics(records, password: str, failure: tuple[str | None, bool, str]) -> None:
+    failed_step, close_fails, phase = failure
     assert records[0]["phase"] == phase
     assert records[0]["scenario_id"] == "exchange"
     rendered = json.dumps(records)
@@ -140,6 +109,14 @@ def test_browser_failure_retains_complete_redacted_diagnostics_and_closes(
         assert records[1]["phase"] == "close"
         assert "secondary close failure" in records[1]["exception"]
 
+
+def _assert_appended_history(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    url: str,
+    password: str,
+    records,
+) -> None:
     monkeypatch.setenv("SQL_INTEGRATION_TEST_ID", "later")
     negative._browser_diagnostic("complete", url, password)
     retained = (tmp_path / "oauth-browser.log").read_text(encoding="utf-8").splitlines()

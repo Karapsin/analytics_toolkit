@@ -110,6 +110,11 @@ client secrets, token values, URL credentials, query strings, and OAuth state pa
 are redacted. Browser cleanup runs after navigation, login, callback, and wait
 failures and preserves the primary exception if closing also fails. Generic
 browser failures are not retried.
+The service-free browser regression matrix in
+`tests/sql/integration_harness/browser.py` retains all 12 failure/success cases.
+Its `_support/browser.py` factory records operations while focused assertions
+check callback ordering, close counts, primary-error identity, complete redacted
+diagnostics, secondary-close failures, and appended scenario history.
 
 Every scenario uses a profile run ID and test ID in table, stage, object, and
 query-label names. The per-test registry cancels labelled queries, drops tables,

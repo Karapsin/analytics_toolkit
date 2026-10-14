@@ -157,6 +157,7 @@ def _install_browser_oauth(
     def redirect(url: str) -> None:
         callbacks.append(url)
         with sync_playwright() as playwright:
+
             def launch():
                 return playwright.chromium.launch(
                     headless=True,
@@ -231,7 +232,7 @@ def _run_browser_oauth(launch, url: str, password: str, before_callback, timeout
             before_callback()
         phase = "wait-callback"
         page.wait_for_url("**/oauth2/**", timeout=10_000)
-    except BaseException as exc:  # noqa: BLE001 - log and preserve the original browser failure.
+    except BaseException as exc:  # Log and preserve the original browser failure.
         error = exc
         _browser_diagnostic(phase, url, password, exc)
         raise
@@ -239,7 +240,7 @@ def _run_browser_oauth(launch, url: str, password: str, before_callback, timeout
         if browser is not None:
             try:
                 browser.close()
-            except BaseException as exc:  # noqa: BLE001 - close must not mask a primary failure.
+            except BaseException as exc:  # Close must not mask a primary failure.
                 _browser_diagnostic("close", url, password, exc)
                 if error is None:
                     raise
