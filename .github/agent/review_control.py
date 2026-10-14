@@ -127,6 +127,35 @@ def approved(repository: str, number: int, head: str) -> bool:
                           (repository, number, head)).fetchone() is not None
 
 
+def reconcile_label(gh: Any, pr: dict[str, Any], *, approval_required: bool) -> bool:
+    """Repair the UI label from authority and private holds; never clear a hold."""
+    number, head = pr["number"], pr["head"]["sha"]
+    current = gh.pull(number)
+    if current["state"] != "open" or current["head"]["sha"] != head:
+        return False
+    required = approval_required or paused(gh, current) or bool(veto(gh.repository, number, head))
+    # paused() may itself accept an authenticated resume and remove the label.
+    present = any(label["name"] == PAUSED for label in gh.api(f"issues/{number}/labels"))
+    if required and not present:
+        gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
+    elif not required and present:
+        gh.api(f"issues/{number}/labels/{PAUSED}", "DELETE")
+    latest = gh.pull(number)
+    if latest["state"] != "open" or latest["head"]["sha"] != head:
+        if latest["state"] == "open":
+            # A concurrent push cannot inherit the old head's authorization.
+            gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
+        return False
+    # A new question/veto may have arrived while the GitHub request was in flight.
+    if not required and (paused(gh, latest) or veto(gh.repository, number, head)):
+        gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
+        latest = gh.pull(number)
+        if latest["state"] != "open" or latest["head"]["sha"] != head:
+            return False
+    pr["labels"] = latest.get("labels", [])
+    return True
+
+
 def veto(repository: str, number: int, head: str) -> float:
     if not os.environ.get("AGENT_STATE_DIR"):
         return 0
@@ -269,6 +298,7 @@ def callback(gh: Any, query: dict[str, Any], owner_id: int, chat_id: int) -> str
               value["changes"])
     else:
         clear_owner_decline(gh, pr["number"], value["head"])
+        reconcile_label(gh, pr, approval_required=False)
     return "Approved; separate review and fast CI still apply." if action == "approve" else "Disapproved; PR paused."
 
 
