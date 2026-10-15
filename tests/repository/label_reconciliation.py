@@ -286,9 +286,7 @@ def test_scoped_merge_ignores_continuous_unrelated_work_and_protects_cleanup(
         controller,
         "trusted_module",
         lambda name: (
-            SimpleNamespace(cleanup=cleanup)
-            if name == "branch_cleanup"
-            else original(name)
+            SimpleNamespace(cleanup=cleanup) if name == "branch_cleanup" else original(name)
         ),
     )
     monkeypatch.setattr(controller, "monitor", lambda gh: (1, {"candidates": {}}))
