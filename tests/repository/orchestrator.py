@@ -26,7 +26,7 @@ def test_orchestrator_preserves_owner_request_and_valid_signed_context() -> None
         (
             "Either repository: an open PR in analytics_toolkit or self_host should "
             "trigger the 30-minute maintenance orchestrator.\n\nForwarded by Codex from "
-            "the owner’s actual chat answer, “Either repository (Recommended)”.\n\n"
+            "the owner\u2019s actual chat answer, “Either repository (Recommended)”.\n\n"
             "Question: Should an open PR in either analytics_toolkit or self_host "
             "trigger the 30-minute orchestrator, or only an open analytics_toolkit PR?\n"
             "Answer: Either repository (Recommended)."
@@ -36,7 +36,8 @@ def test_orchestrator_preserves_owner_request_and_valid_signed_context() -> None
             "only if it affects github agents functionality”. An open analytics_toolkit "
             "PR qualifies; an open self_host PR qualifies only when it affects GitHub "
             "agent functionality. Preserve one orchestrator globally and the 30-minute "
-            "cadence.\n\nTransparently forwarded by Codex from the owner’s actual latest "
+            "cadence.\n\nTransparently forwarded by Codex from "
+            "the owner\u2019s actual latest "
             "chat message. This refines the earlier “Either repository (Recommended)” "
             "answer. It does not grant protected exact-head policy approval. For the "
             "remaining routine implementation options, use the previously requested "
