@@ -156,6 +156,16 @@ approval. Later corrections retain precedence. The worker adds evidence only to
 the new publication context, preserving the original signed record and user
 answers; it never invents another approval.
 
+Reference validation excludes only the recovered plan's exact sentence beginning
+“Before handoff, flag unresolved references such as” and ending “of the missing
+requirement.” from its correction-message scan. That sentence documents quoted
+plan/image marker examples. Stored chronology, signed bytes and rendered evidence
+remain unchanged. Other references, including quoted or backticked image markers,
+still require actual evidence or an authenticated replacement; actual plan
+approval requests still require their chronological approval binding. This reader
+repair requires independent review, GitHub checks and owner exact-head protected
+approval before controller activation; it does not release existing holds itself.
+
 The worker allows ten concurrent jobs. A separate read-only plan resolver checks
 recommended implementation choices against the complete original request and
 corrections. It approves only aligned choices and records the automated decision
