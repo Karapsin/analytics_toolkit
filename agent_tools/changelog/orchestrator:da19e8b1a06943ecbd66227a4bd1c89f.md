@@ -1,1 +1,0 @@
-- Remove misleading label and cancellation question requirements from coordinator-notice regressions; document the complete companion delivery and activation gate while preserving private holds and approval boundaries.
