@@ -56,6 +56,16 @@ no evidence fingerprint, no blocked/no-change outcome and no notification.
 Authentication, malformed evidence and provenance failures still fail closed;
 errors outside the inventory call are not covered by this recovery.
 
+The controller's `merge_selected` entrypoint lets the worker merge reviewed,
+unowned PRs while unrelated jobs continue. Its explicit PR selection never grants
+merge authority: current signatures, task provenance, review/base, fast CI,
+private holds and exact-head protected approval still apply. An empty selection
+merges nothing. Post-merge cleanup also receives the worker's live and unpublished
+request branches, retaining its existing unknown-branch and exact-head guards.
+The existing `merge(...)` entrypoint remains compatible for idle callers.
+This source capability needs independent review, GitHub checks and the owner's
+exact-head protected decision before controller activation.
+
 ## Enrolled machines and policy changes
 
 Automatic PR handling accepts only the repository owner's PRs with an enrolled

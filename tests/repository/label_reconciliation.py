@@ -259,6 +259,120 @@ def test_unready_policy_candidate_is_not_mislabelled_as_waiting_for_user(
     assert gh.pr["state"] == "open"
 
 
+def test_scoped_merge_ignores_continuous_unrelated_work_and_protects_cleanup(
+    merge_environment: Any, monkeypatch: Any, tmp_path: Path
+) -> None:
+    gh = GitHub()
+    gh.owner_approval()
+    pull = gh.pull
+    pulled: list[int] = []
+    cleanup_calls: list[dict[str, Any]] = []
+    dispatches: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(gh, "pulls", lambda: [{"number": 25}, {"number": 1}])
+
+    def selected_pull(number: int) -> dict[str, Any]:
+        assert number == 1  # The continuously owned PR is never inspected or mutated.
+        pulled.append(number)
+        return pull(number)
+
+    def cleanup(actual_gh: Any, work: Path, **kwargs: Any) -> None:
+        assert actual_gh is gh
+        assert work == tmp_path
+        cleanup_calls.append(kwargs)
+
+    original = controller.trusted_module
+    monkeypatch.setattr(gh, "pull", selected_pull)
+    monkeypatch.setattr(
+        controller,
+        "trusted_module",
+        lambda name: (
+            SimpleNamespace(cleanup=cleanup) if name == "branch_cleanup" else original(name)
+        ),
+    )
+    monkeypatch.setattr(controller, "monitor", lambda gh: (1, {"candidates": {}}))
+    monkeypatch.setattr(controller, "dispatch", lambda *args: dispatches.append(args))
+    active = {"codex/correction-unpublished", "codex/live-writer"}
+    # Match the worker's scoped call while unrelated admissions/retries continue.
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers={1}, active_branches=active)
+    assert gh.pr["state"] == "closed"
+    assert set(pulled) == {1}
+    assert cleanup_calls == [{"active_branches": active, "force": True}]
+    assert active == {"codex/correction-unpublished", "codex/live-writer"}
+    assert dispatches == [(gh, "integration", {"candidate": "a" * 40, "number": 1})]
+    assert [path for path, method in gh.mutations if method == "PUT"] == ["pulls/1/merge"]
+
+
+def test_empty_scoped_selection_never_means_merge_all(
+    merge_environment: Any, monkeypatch: Any, tmp_path: Path
+) -> None:
+    gh = GitHub()
+    gh.owner_approval()
+
+    def unexpected_pull(number: int) -> dict[str, Any]:
+        pytest.fail("An empty selection must not inspect or mutate a PR")
+
+    monkeypatch.setattr(gh, "pull", unexpected_pull)
+    monkeypatch.setattr(gh, "pulls", lambda: [{"number": 1}])
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers=set())
+    assert not gh.mutations
+
+
+@pytest.mark.parametrize(
+    "gate",
+    [
+        "ci",
+        "review",
+        "writer",
+        "mergeability",
+        "policy",
+        "question",
+        "signature",
+        "base",
+    ],
+)
+def test_scoped_selection_cannot_bypass_merge_authority(
+    merge_environment: Any, monkeypatch: Any, tmp_path: Path, gate: str
+) -> None:
+    gh = GitHub()
+    if gate != "policy":
+        gh.owner_approval()
+    if gate == "ci":
+        gh.fast[1]["conclusion"] = "failure"
+    elif gate == "review":
+        gh.fast[0]["external_id"] = "old-base"
+    elif gate == "writer":
+        gh.pr["labels"].append({"name": "agent:writing"})
+    elif gate == "mergeability":
+        gh.pr["mergeable"] = False
+    elif gate == "question":
+        insert_hold(merge_environment)
+    elif gate == "signature":
+        monkeypatch.setattr(controller, "signed_head", lambda *args: False)
+    elif gate == "base":
+        bases = iter(["base", "new-base"])
+        monkeypatch.setattr(gh, "base", lambda: next(bases))
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers={1})
+    assert gh.pr["state"] == "open"
+    assert not any(path.endswith("/merge") for path, method in gh.mutations)
+
+
+def test_scoped_merge_rejects_invalid_task_provenance(
+    merge_environment: Any, monkeypatch: Any, tmp_path: Path
+) -> None:
+    gh = GitHub()
+    gh.owner_approval()
+
+    def invalid_metadata(*args: Any) -> Any:
+        message = "Signed task context changed"
+        raise ValueError(message)
+
+    monkeypatch.setattr(controller, "task_metadata", invalid_metadata)
+    with pytest.raises(ValueError, match="Signed task context changed"):
+        controller.merge_selected(gh, 17, tmp_path, pr_numbers={1})
+    assert gh.pr["state"] == "open"
+    assert not any(path.endswith("/merge") for path, method in gh.mutations)
+
+
 def test_rejected_bot_repair_is_paused_until_owner_resumes(
     monkeypatch: Any, tmp_path: Path
 ) -> None:

@@ -888,7 +888,19 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
 
 
 def merge(gh: GitHub, app_id: int, work: Path) -> None:
+    merge_selected(gh, app_id, work, pr_numbers=None)
+
+
+def merge_selected(
+    gh: GitHub, app_id: int, work: Path, *,
+    pr_numbers: set[int] | None, active_branches: set[str] | None = None,
+) -> None:
+    """Apply every merge gate to only the supervisor-selected, unowned PRs."""
+    selected = None if pr_numbers is None else set(pr_numbers)
+    protected_branches = set(active_branches or ())
     for item in gh.pulls():
+        if selected is not None and item["number"] not in selected:
+            continue
         pr = gh.pull(item["number"])
         if not trusted(pr, gh.repository):
             continue
@@ -922,7 +934,8 @@ def merge(gh: GitHub, app_id: int, work: Path) -> None:
         # GitHub protection also enforces fast checks; expected head rejects races.
         result = gh.api(f"pulls/{pr['number']}/merge", "PUT", {"sha": head, "merge_method": "squash"})
         if result.get("merged"):
-            trusted_module("branch_cleanup").cleanup(gh, work, force=True)
+            trusted_module("branch_cleanup").cleanup(
+                gh, work, active_branches=protected_branches, force=True)
 
 
 def cleanup_branches(gh: GitHub, *, active_branches: set[str] | None = None) -> dict[str, Any]:
