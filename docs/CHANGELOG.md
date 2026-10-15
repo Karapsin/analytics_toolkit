@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Direct host-owned task-context mismatch notices to coordinator verification with an explicit companion rendering status, preserving provenance holds and owner approval gates.
+
 - Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
 - Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
 - Avoid false missing-image and plan holds from the recovered plan's exact reference-validation example while preserving signed history and genuine evidence requirements.

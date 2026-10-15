@@ -92,7 +92,14 @@ Fresh independent PR review follows every changed head. This cycle continues unt
 approved, without an arbitrary retry cap. Rejection alerts have no buttons and
 require no resume command. Genuine questions wait for authenticated owner answers;
 owner vetoes/cancellation and invalid provenance stop work. Invalid task context
-also fails closed. Older trusted
+also fails closed. The exact host-owned task-context mismatch blocker directs the
+coordinator to restore and verify authenticated context, instead of asking the
+owner for a new answer or a resume command. Its private pause and conservative
+`agent:needs-user` display remain enforced; this guidance does not grant recovery
+or approval. The outbox explicitly marks this status with `coordinator_blocked`;
+the compatible companion renderer displays awaiting coordinator verification,
+without claiming automatic corrections were queued. Activate that reviewed renderer
+before the controller payload change. Other pause reasons retain their owner-input guidance. Older trusted
 App repairs can inherit the standing integration-repair task, bound to their
 immutable signed head; owner-authored PRs must attach their task.
 

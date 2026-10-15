@@ -77,16 +77,33 @@ def pause(gh: Any, pr: dict[str, Any], reason: str, changes: str) -> None:
     marker = f"<!-- agent-rejection-{head} -->"
     comments = gh.pages(f"issues/{number}/comments?per_page=100")
     owner = gh.repository.split("/")[0]
+    context_blocked = reason == "Feature context does not match the host-owned request."
+    coordinator_guidance = (
+        "Coordinator must restore and verify the matching authenticated task context. "
+        "The provenance hold remains active; no new owner answer or approval is inferred."
+    )
     if not any(marker in item["body"] for item in comments):
-        gh.comment(number, marker + f"\n@{owner} This PR requires user input.\n\n"
+        introduction = ("Automatic processing is blocked by a task-context mismatch."
+                        if context_blocked else f"@{owner} This PR requires user input.")
+        guidance = (coordinator_guidance if context_blocked else
+                    "Automatic corrections are paused. To resume, post exactly:\n"
+                    + f"`/agent resume {head}`")
+        gh.comment(number, marker + "\n" + introduction + "\n\n"
                    + "What changed: " + changes + "\n\nWhy rejected:\n" + reason
-                   + "\n\nAutomatic corrections are paused. To resume, post exactly:\n"
-                   + f"`/agent resume {head}`")
+                   + "\n\n" + guidance)
+    if context_blocked:
+        recovery_command = coordinator_guidance
+    elif pr["head"].get("ref", "").startswith("codex/telegram-feature-"):
+        request_id = pr["head"]["ref"][len("codex/telegram-feature-"):].split("-", 1)[0]
+        recovery_command = "/reply_agent " + request_id + " <correction>"
+    else:
+        recovery_command = "/agent resume " + head
     enqueue(f"reject:{gh.repository}:{number}:{head}", "rejection",
             {"repository": gh.repository, "number": number, "head": head,
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
-             "title": pr.get("title", "PR " + str(number)), "changes": changes, "reason": reason, "command": ("/reply_agent " + pr["head"]["ref"][len("codex/telegram-feature-"):].split("-", 1)[0] + " <correction>"
-                if pr["head"].get("ref", "").startswith("codex/telegram-feature-") else "/agent resume " + head)})
+             "title": pr.get("title", "PR " + str(number)), "changes": changes,
+             "reason": reason, "command": recovery_command,
+             "coordinator_blocked": context_blocked})
 
 
 def paused(gh: Any, pr: dict[str, Any]) -> bool:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -119,6 +120,53 @@ def telegram_approval(control: Any, gh: GitHub) -> dict[str, Any]:
     }
 
 
+@pytest.mark.parametrize("branch", ["codex/orchestrator-task", "codex/telegram-feature-task"])
+def test_context_mismatch_notice_preserves_hold_without_requesting_owner_answer(
+    control: Any,
+    branch: str,
+) -> None:
+    gh = GitHub()
+    gh.pr["head"]["ref"] = branch
+    reason = "Feature context does not match the host-owned request."
+    control.pause(gh, gh.pr, reason, "Publication enrollment mismatch")
+    control.pause(gh, gh.pr, reason, "Publication enrollment mismatch")
+    assert len(gh.comments) == 1
+    body = gh.comments[0]["body"]
+    assert reason in body
+    assert "Coordinator must restore and verify" in body
+    assert "requires user input" not in body
+    assert "/agent resume" not in body
+    events = control.pending()
+    assert len(events) == 1
+    event = events[0]
+    payload = json.loads(event["payload"])
+    assert payload["reason"] == reason
+    assert payload["coordinator_blocked"] is True
+    assert "Coordinator must restore and verify" in payload["command"]
+    assert "/reply_agent" not in payload["command"]
+    assert "/agent resume" not in payload["command"]
+    assert event["token"] is None
+    assert control.paused(gh, gh.pull(1))
+    assert not control.approved(gh.repository, 1, gh.pr["head"]["sha"])
+    with control.connect() as db:
+        held = dict(db.execute("SELECT * FROM pauses").fetchone())
+    assert held["reason"] == reason
+    assert held["head"] == gh.pr["head"]["sha"]
+    assert {item["name"] for item in gh.pr["labels"]} == {"agent:needs-user", "feature"}
+
+
+@pytest.mark.parametrize("reason", ["Owner cancelled the request.", "Supply the original image."])
+def test_other_pause_notices_still_request_owner_input(control: Any, reason: str) -> None:
+    gh = GitHub()
+    control.pause(gh, gh.pr, reason, "Correction requires input")
+    assert "@owner This PR requires user input." in gh.comments[0]["body"]
+    assert "/agent resume " + gh.pr["head"]["sha"] in gh.comments[0]["body"]
+    payload = json.loads(control.pending()[0]["payload"])
+    assert payload["command"] == "/agent resume " + gh.pr["head"]["sha"]
+    assert payload["coordinator_blocked"] is False
+    assert control.paused(gh, gh.pull(1))
+
+
 def test_normal_telegram_approval_clears_only_stale_label(control: Any) -> None:
     gh = GitHub()
     query = telegram_approval(control, gh)
@@ -175,12 +223,20 @@ def test_other_heads_or_actors_cannot_clear_the_label(
     assert gh.pr["state"] == "open"
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Correction agent requires owner input.",
+        "Feature context does not match the host-owned request.",
+    ],
+)
 def test_approved_policy_does_not_clear_a_genuine_question_hold(
     merge_environment: Any,
     tmp_path: Path,
+    reason: str,
 ) -> None:
     gh = GitHub()
-    insert_hold(merge_environment)
+    insert_hold(merge_environment, reason)
     merge_environment.callback(gh, telegram_approval(merge_environment, gh), 22, -1001)
     controller.merge(gh, 17, tmp_path)
     assert merge_environment.paused(gh, gh.pull(1))
