@@ -286,4 +286,14 @@ IDs and exact-commit GitHub checks. Missing or invalid evidence cannot be replac
 by an author's claim. Protected approval notices use an independent concrete change
 assessment for the current head and task digest, never the starting prompt alone.
 
+
+Orchestrator correction publication enrolls each independently reviewed revised
+context while retaining the original digest. Recovery of the specific
+host-context enrollment mismatch requires the companion's durable artifact,
+original signed-head and exact plan checks, followed by final-head metadata
+verification. The controller compare-deletes only that exact head/reason with
+the supplied enrolled digest and no current veto; it leaves labels to normal
+reconciliation and grants no protected approval. Deploy compatible reviewed
+controller readers before the companion, with separate isolated rehearsal.
+
 [Documentation overview](README.md)

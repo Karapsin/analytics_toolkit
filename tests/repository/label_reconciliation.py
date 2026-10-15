@@ -324,3 +324,59 @@ def test_rejected_bot_repair_is_paused_until_owner_resumes(
     gh.pages = lambda path, key=None: [] if "/comments?" in path else original_pages(path, key)
     assert controller.discover(gh, 17)["include"] == []
     assert pr["labels"] == [{"name": "agent:needs-user"}]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "valid",
+        "missing-digest",
+        "wrong-digest",
+        "wrong-head",
+        "owner-hold",
+        "cancelled",
+        "veto",
+        "closed",
+        "other-branch",
+    ],
+)
+def test_orchestrator_publication_recovers_only_enrolled_exact_head(
+    control: Any,
+    case: str,
+) -> None:
+    gh = GitHub()
+    gh.pr["head"]["ref"] = "codex/orchestrator-task"
+    gh.pr["labels"] = []
+    digest = "a" * 64
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], digest)
+    reason = "Feature context does not match the host-owned request."
+    if case == "owner-hold":
+        reason = "Owner changed the request; renewed planning is required."
+    elif case == "cancelled":
+        reason = "Owner cancelled the request."
+    control.pause(gh, gh.pr, reason, "Publication enrollment mismatch")
+    if case == "wrong-head":
+        gh.pr["head"]["sha"] = "b" * 40
+    elif case == "veto":
+        with control.connect() as db:
+            db.execute(
+                "INSERT INTO vetoes VALUES (?,?,?,?)",
+                (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], 1.0),
+            )
+    elif case == "closed":
+        gh.pr["state"] = "closed"
+    elif case == "other-branch":
+        gh.pr["head"]["ref"] = "codex/owner-task"
+    if case == "wrong-digest":
+        digest = "b" * 64
+    control.recover_feature_publication(
+        gh,
+        gh.pr,
+        task_digest=None if case == "missing-digest" else digest,
+    )
+    with control.connect() as db:
+        held = db.execute("SELECT reason FROM pauses").fetchone()
+    assert (held is None) == (case == "valid")
+    # Reconciliation separately owns displayed labels and protected approval.
+    assert gh.pr["labels"] == [{"name": control.PAUSED}]
+    assert not control.approved(gh.repository, gh.pr["number"], gh.pr["head"]["sha"])

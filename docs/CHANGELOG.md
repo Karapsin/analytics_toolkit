@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Repair orchestrator correction enrollment and routine-question routing while preserving verified publication recovery and genuine owner/security holds.
+
 - Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
 - Fix the Greenplum first-batch restart integration checkpoint and retry budget; add a service-free regression that checks exact rows, rollback, and fresh-connection recovery.
 - Preserve DataLens copy imports, encoding and parameter fidelity, managed Editor relocation, inferred dataset recovery and component diagnostics; restore Wizard configuration and change guards, explicit internal-title ownership, unsupported-encoding zero-write regressions and complete changelog history.
