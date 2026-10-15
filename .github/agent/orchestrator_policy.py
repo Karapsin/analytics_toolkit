@@ -16,6 +16,31 @@ REQUEST = (
 )
 
 
+# Authenticated eligibility answers, in order; the later clarification takes precedence.
+CORRECTIONS = (
+    (
+        "Either repository: an open PR in analytics_toolkit or self_host should "
+        "trigger the 30-minute maintenance orchestrator.\n\nForwarded by Codex from "
+        "the owner’s actual chat answer, “Either repository (Recommended)”.\n\n"
+        "Question: Should an open PR in either analytics_toolkit or self_host "
+        "trigger the 30-minute orchestrator, or only an open analytics_toolkit PR?\n"
+        "Answer: Either repository (Recommended)."
+    ),
+    (
+        "Scope clarification from the owner: “PR in self_host is considered relevant "
+        "only if it affects github agents functionality”. An open analytics_toolkit "
+        "PR qualifies; an open self_host PR qualifies only when it affects GitHub "
+        "agent functionality. Preserve one orchestrator globally and the 30-minute "
+        "cadence.\n\nTransparently forwarded by Codex from the owner’s actual latest "
+        "chat message. This refines the earlier “Either repository (Recommended)” "
+        "answer. It does not grant protected exact-head policy approval. For the "
+        "remaining routine implementation options, use the previously requested "
+        "independent plan resolver to check alignment with this scope.\n\nContext: "
+        "https://github.com/Karapsin/analytics_toolkit/pull/26#issuecomment-6190878523"
+    ),
+)
+
+
 def context(identity: str) -> dict[str, Any]:
     if re.fullmatch(r"[0-9a-f]{32}", identity) is None:
         raise ValueError("Invalid maintenance task identity")
@@ -25,5 +50,5 @@ def context(identity: str) -> dict[str, Any]:
         "producer_id": "orchestrator:" + identity,
         "source": "user",
         "starting_prompt": REQUEST,
-        "corrections": [],
+        "corrections": list(CORRECTIONS),
     }
