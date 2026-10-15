@@ -105,6 +105,72 @@ def test_reader_requires_actual_plan_and_image_records_before_author_publication
     assert proto.parse(proto.render(value)) == value
 
 
+@pytest.mark.parametrize("version", [1, 2])
+def test_recovered_plan_reference_example_preserves_history_without_a_false_hold(version):
+    proto = protocol()
+    value = context(proto)
+    value["starting_prompt"] = (
+        "check RPI agents, their, especially those who waiting for user approval"
+    )
+    example = (
+        "Before handoff, flag unresolved references such as "
+        "\u201cImplement the plan\u201d or `[Image #1]`. "
+        "Require attached evidence or an explicit user replacement of the missing requirement."
+    )
+    restored = "# Preserve approved plans and image evidence for agent review\n\n- " + example
+    value["corrections"].append("Exact recovered approved plan follows:\n\n" + restored)
+    value["replacements"] = []
+    value["plans"] = [{"id": proto.plan_id(restored), "text": restored, "approval_index": 0}]
+    if version == 1:
+        # A quoted example alone must not manufacture a requirement in legacy history.
+        value = proto.legacy(value)
+        value["corrections"] = [value["corrections"][-1]]
+    original = proto.canonical(value)
+    signed = "Feature" + proto.trailers(value)
+    proto.require_resolved(value)
+    assert proto.canonical(value) == original
+    assert proto.parse(proto.render(value)) == value
+    assert proto.verify_commit(value, signed) == "fixture-machine"
+    if version == 2:
+        # The actual earlier approval request still requires its real binding.
+        value["plans"] = []
+        with pytest.raises(ValueError, match="exact approved plan"):
+            proto.require_resolved(value)
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "Use [Image #1] to implement the feature.",
+        "Use `[Image #1]` to implement the feature.",
+        'Use "[Image #1]" to implement the feature.',
+        "Before handoff, flag unresolved references such as [Image #1].",
+    ],
+)
+def test_reference_example_does_not_hide_genuine_missing_images(reference):
+    proto = protocol()
+    value = context(proto)
+    example = (
+        "Before handoff, flag unresolved references such as "
+        "\u201cImplement the plan\u201d or `[Image #1]`. "
+        "Require attached evidence or an explicit user replacement of the missing requirement."
+    )
+    value["starting_prompt"] = "Maintain agents."
+    value["corrections"].extend([example, reference])
+    value["replacements"] = []
+    signed = "Feature" + proto.trailers(value)
+    with pytest.raises(ValueError, match="Missing image"):
+        proto.require_resolved(value)
+    # Genuine replacement authority must still point to an actual correction.
+    value["replacements"] = [{"reference": "[Image #1]", "user_index": 999}]
+    with pytest.raises(ValueError, match="exact chronological user correction"):
+        proto.require_resolved(value)
+    value["replacements"] = [{"reference": "[Image #1]", "user_index": 1}]
+    proto.require_resolved(value)
+    with pytest.raises(ValueError, match="signed head"):
+        proto.verify_commit(value, signed)
+
+
 def test_reader_rejects_question_answers_outside_authenticated_chronology():
     proto = protocol()
     value = context(proto)
