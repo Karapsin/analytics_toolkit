@@ -131,43 +131,77 @@ branches; dirty worktrees, backups and private task/audit records are retained.
 ## Updating trusted automation
 
 The companion worker dependency is staged, not active, at
-[self_host commit 0ae2ffc5ce5892bedd4a37f627dc9b190958e27b](https://github.com/Karapsin/self_host/commit/0ae2ffc5ce5892bedd4a37f627dc9b190958e27b),
-with successful [exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38411193449/job/115343656791).
-The immutable `self_host-task-evidence-0ae2ffc5ce58/` source/test snapshot and
-its manifest hashes must accompany controller review. It supersedes ancestor
-`51acbc647dbcef6612b4c3ee806d6bd1abfcce0d`; toolkit does not duplicate worker code
-or remove any companion features.
+[self_host commit 0c1f1abea3f70955f63d6fbca7b06e4cc3386dde](https://github.com/Karapsin/self_host/commit/0c1f1abea3f70955f63d6fbca7b06e4cc3386dde).
+Require successful exact-commit Repository Checks, immutable source/test evidence,
+a fresh independent review and the isolated worker rollout rehearsal before host
+activation. It includes the complete checkpoint, question/answer, label, capacity,
+notification and evidence fixes from `40707720a5e1b4ac8c03ec6a6d96546a5ebc10e4`;
+no companion features or private task records may be discarded.
 
-The dependency hashes the full logical key for non-request job directories.
-Execution and both status paths share `job_runtime.directory`, avoiding the
-255-byte filesystem basename limit without changing logical job identities or
-SQLite records. Request directories keep their existing layout. Setup runs
-inside cleanup, and failure-report writes cannot skip claim completion or writer
-release attempts. The pinned
-`test_task_evidence.py::test_full_length_job_identity_and_setup_failure_release_claim`
-covers production-length keys and setup failure. Keep legacy directories and
-private checkpoints; drain active work before changing directory conventions.
+The activation includes the backward-compatible task-context reader from PR #15
+before the worker starts. Legacy signed tasks remain valid; new plan/image evidence
+uses its own signed digest, and questions remain visible beside owner answers.
+Missing actual plan/image bindings still require authenticated evidence; reader
+compatibility does not fabricate them. Long v2 records use a lossless compressed
+hidden payload while retaining all visible messages, plans, questions and answers.
+The decoder bounds output to 512 KiB and rejects malformed, truncated, trailing or
+duplicate records; canonical signed digests remain unchanged.
+PR #15 retains its entire saved checkpoint
+and remaining implementation scope.
 
-PR #13 publishes the toolkit correction through its controller-owned flow,
-preserving its signed provenance, task attachment and coding checkpoint.
-Require final-head GitHub validation, fresh independent `agent-review` against
-the current dev base and task digest, and authenticated owner exact-head
-`/agent approve-policy <sha>` approval before protected controller activation.
-Changelog folding or rebasing changes the head and requires renewed checks,
-review and approval. Models cannot post that approval. Older toolkit successes
-do not validate this correction. A changed companion commit requires new immutable
-evidence, exact-commit checks and independent review.
+Supervisor-restored historical approvals live in hash-bound private evidence.
+The manifest can index them by task ID for future corrections, but reuse requires
+the same original task, prompt and complete correction prefix through that exact
+approval. Later corrections retain precedence. The worker adds evidence only to
+the new publication context, preserving the original signed record and user
+answers; it never invents another approval.
 
-Full companion activation belongs to the separately authorized PR #15 coordination
-task and requires its fresh independent review and protected-controller approval.
-PR #13 must not activate an unreviewed companion bundle. The coordinator performs
-activation only after these gates permit it, records rollback revisions and
-preserves databases, checkpoints, credentials, the VPN wrapper and schedules.
+The worker allows ten concurrent jobs. A separate read-only plan resolver checks
+recommended implementation choices against the complete original request and
+corrections. It approves only aligned choices and records the automated decision
+separately from owner answers. Missing evidence, genuine unanswered questions,
+owner vetoes, credentials and protected policy decisions keep their actual owner
+answer path. Both questions and answers remain visible in task/PR evidence.
+
+While at least one tracked PR is open, one maintenance orchestrator can start
+at most every thirty minutes. Its inherited process lease prevents duplicates
+across supervisor restarts and long-running jobs. It may edit private source
+checkouts of analytics_toolkit and self_host, preserves complete failed patches
+and evidence, and exits when no concrete issue exists. It runs no tests, builds,
+installs, services or visual scenes on the Pi. A fresh read-only reviewer assesses
+both patches; GitHub supplies validation. Companion proposals require scoped App
+access to self_host, independent review and all required exact-head workflows.
+Source merge never directly updates the installed worker.
+
+Protected controller activation still requires successful final-head checks,
+fresh independent review and the authenticated owner's exact-head
+`/agent approve-policy <sha>` decision. Models cannot post that decision. After
+initial activation, the idle trusted supervisor projects only allowlisted
+newly merged automation paths to main. It reconstructs the merge tree from the approved head and the actual previous
+dev, validates the recorded squash/merge tree and current-dev ancestry, and rechecks owner authorization
+and signed task binding immediately before a non-force main push, and retains
+failed activation for retry. Independently changed main files block projection.
+Package code stays on dev until an explicit release; historical merges are not
+replayed. The private activation ledger is included in orchestrator evidence.
+
+Initial controller bootstrap must include the complete reviewed runtime from the
+approved head: controller.py, task_context.py, automation_promotion.py,
+orchestrator_policy.py, prompts/orchestrator.md, and the repair_evidence.py,
+repair.schema.json and prompts/repair.md dependencies under `.github/agent/`.
+The old main snapshot predates those repair dependencies. Initial approval and
+independent review must cover this complete bootstrap; package, release and
+unrelated policy paths are not part of that copy. Subsequent automatic updates
+retain their conservative main-file comparison.
+
+Initial deployment records rollback revisions and preserves databases,
+checkpoints, questions/answers, credentials, the VPN wrapper and schedules.
+After the orchestrator starts, its supervising operator monitors its actions,
+intervenes only on malfunction, and stops once all PRs have merged.
 
 ### Recovery acceptance for the documented worker
 
 Inventory every active and queued analytics_toolkit review and correction on
-`kardinal@ssh.karapsin.com:2228`, including PR #13 and all other current PRs.
+`kardinal@ssh.karapsin.com:2228` before initial deployment.
 Before activation, record service/socket status, deployed revisions, open PR heads,
 queued/running jobs, request stages and revisions, retry deadlines and writer
 ownership. Use trusted operational tooling to repair evidence-access failures;
@@ -244,7 +278,7 @@ All heavy checks run on GitHub; the final PR receives another fresh independent
 reviewer. Original prompts and answers are attached automatically with credential
 redaction, bound to signed commit trailers. Request state and notifications survive
 worker restarts. The subscription worker retains its VPN wrapper, model configuration,
-Airflow schedules and five-worker limit.
+Airflow schedules and ten-worker limit.
 
 Reviewers can inspect a host-owned immutable evidence snapshot for companion worker
 and bot changes. Its manifest binds source/test files to hashes, repository commit

@@ -69,6 +69,22 @@ def test_browser_failure_retains_complete_redacted_diagnostics_and_closes(
 
 
 def _assert_operation_order(calls: list[str], failed_step: str | None) -> None:
+    operations = [
+        "launch",
+        "new-page",
+        "goto",
+        "visibility",
+        "username",
+        "password",
+        "submit",
+        "before-callback",
+        "wait-callback",
+        "close",
+    ]
+    expected = operations if failed_step is None else operations[: operations.index(failed_step) + 1]
+    if failed_step is not None and failed_step not in {"launch", "close"}:
+        expected = [*expected, "close"]
+    assert calls == expected
     assert calls.count("close") == (0 if failed_step == "launch" else 1)
     if failed_step in {
         "launch",
@@ -123,3 +139,23 @@ def _assert_appended_history(
     assert len(retained) == len(records) + 1
     assert json.loads(retained[0]) == records[0]
     assert json.loads(retained[-1])["scenario_id"] == "later"
+
+
+@pytest.mark.parametrize("failed_step", [None, "close"])
+def test_browser_fake_records_close_before_raising_stable_error(failed_step: str | None) -> None:
+    error = RuntimeError("primary close failure")
+    launch, _before_callback, calls = make_browser(failed_step, True, "https://localhost", error)
+    browser = launch()
+
+    with pytest.raises(RuntimeError) as first:
+        browser.close()
+    assert calls == ["launch", "close"]
+    with pytest.raises(RuntimeError) as second:
+        browser.close()
+    assert calls == ["launch", "close", "close"]
+    assert second.value is first.value
+    if failed_step == "close":
+        assert first.value is error
+    else:
+        assert first.value is not error
+        assert str(first.value) == "secondary close failure"

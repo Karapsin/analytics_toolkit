@@ -3,9 +3,8 @@ from __future__ import annotations
 import types
 
 
-def make_browser(failed_step: str | None, close_fails: bool, url: str, error: RuntimeError):
+def _make_step(failed_step: str | None, close_fails: bool, error: RuntimeError, calls: list[str]):
     close_error = RuntimeError("secondary close failure")
-    calls: list[str] = []
 
     def step(name: str):
         calls.append(name)
@@ -13,6 +12,13 @@ def make_browser(failed_step: str | None, close_fails: bool, url: str, error: Ru
             raise error
         if name == "close" and close_fails:
             raise close_error
+
+    return step
+
+
+def make_browser(failed_step: str | None, close_fails: bool, url: str, error: RuntimeError):
+    calls: list[str] = []
+    step = _make_step(failed_step, close_fails, error, calls)
 
     def click(**kwargs) -> None:
         assert kwargs == {"no_wait_after": True}

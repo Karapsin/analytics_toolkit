@@ -118,10 +118,22 @@ The private subscription worker is maintained in self_hosting's
 `self_host/services/github_agent`. Airflow calls its Unix socket every minute
 and updates the underlying Codex executable Sunday at 04:00 Europe/Moscow.
 The Pi performs bounded source operations only; GitHub runs tests and renders
-visual scenes. Up to five jobs run concurrently with serialized merge decisions.
+visual scenes. Up to ten jobs run concurrently with serialized merge decisions.
 Fast checks and the App's exact-head/base review gate merges. Integration runs
 are monitored after merge and repaired through reviewed PRs until matching
 scenario groups and transports are green. No OpenAI API key is used.
+
+Recommended implementation choices go to a separate read-only plan resolver,
+which approves them only when they align with the complete user request. Genuine
+questions and protected exact-head owner decisions retain their authenticated
+answer path. A singleton maintenance orchestrator starts at most every thirty
+minutes while PRs are open, preserves failed patches and task evidence, and
+may propose source repairs in analytics_toolkit and self_host. Independent
+review and GitHub validation gate publication and merge; the Pi runs no checks.
+An idle trusted supervisor activates newly merged, owner-approved automation
+paths on main only after verifying their merge identity, signatures, task
+binding, fresh authorization and exact-head/base checks. Package code remains
+on dev until an explicit release.
 
 `change-impact` is a read-only preflight for implementation work. For SQL public
 symbols it reports the live signature, exact integration-manifest JSON pointers,

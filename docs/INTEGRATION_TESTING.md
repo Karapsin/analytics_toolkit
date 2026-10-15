@@ -112,9 +112,12 @@ failures and preserves the primary exception if closing also fails. Generic
 browser failures are not retried.
 The service-free browser regression matrix in
 `tests/sql/integration_harness/browser.py` retains all 12 failure/success cases.
-Its `_support/browser.py` factory records operations while focused assertions
-check callback ordering, close counts, primary-error identity, complete redacted
-diagnostics, secondary-close failures, and appended scenario history.
+Its `_support/browser.py` factory delegates call recording and failure injection
+to a private step factory. Focused assertions check the complete operation order,
+close counts, primary-error identity, complete redacted diagnostics, secondary-close
+failures, and appended scenario history. Additional fake-only cases verify that
+close calls are recorded before raising, repeated closes retain exception identity,
+and an injected primary close error takes precedence over a secondary close error.
 
 Every scenario uses a profile run ID and test ID in table, stage, object, and
 query-label names. The per-test registry cancels labelled queries, drops tables,
