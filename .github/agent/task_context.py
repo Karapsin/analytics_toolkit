@@ -128,7 +128,18 @@ def validate_evidence(value: dict[str, Any]) -> None:
 def require_resolved(value: dict[str, Any]) -> None:
     """Author-side publication gate; do not invalidate legacy signed PR records."""
     validate(value)
-    prompts = [value["starting_prompt"], *value["corrections"]]
+    # This recovered-plan sentence documents validation syntax; its quoted
+    # markers are examples, not owner references. Do not exempt arbitrary quotes
+    # or code spans, which can still contain genuine image requirements.
+    example = (
+        "Before handoff, flag unresolved references such as "
+        "\u201cImplement the plan\u201d or `[Image #1]`. "
+        "Require attached evidence or an explicit user replacement of the missing requirement."
+    )
+    prompts = [
+        value["starting_prompt"],
+        *[prompt.replace(example, "") for prompt in value["corrections"]],
+    ]
     replacements = {item["reference"] for item in value.get("replacements", [])}
     images = {item["reference"] for item in value.get("images", [])}
     missing = {reference for prompt in prompts for reference in re.findall(r"\[Image\s+#?\d+\]", prompt, re.I)
