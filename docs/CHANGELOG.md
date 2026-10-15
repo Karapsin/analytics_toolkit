@@ -28,6 +28,7 @@ Generated from package version bumps and recent commit history.
 - Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 - Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
 - Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
+- Preserve chronological maintenance eligibility answers in generated orchestrator context and document verified companion publication recovery separately from pending cross-repository trigger discovery.
 
 ## 1.3.12.5 - 2026-10-14
 
