@@ -6,7 +6,7 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
-- Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, delivery evidence and request history.
+- Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
 
 - Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
 - Fix the Greenplum first-batch restart integration checkpoint and retry budget; add a service-free regression that checks exact rows, rollback, and fresh-connection recovery.

@@ -62,7 +62,7 @@ def pending() -> list[dict[str, Any]]:
         for row in rows:
             payload = json.loads(row["payload"])
             if (row["kind"] == "request" and payload.get("telegram_feature") is False
-                    and not row["key"].endswith(":waiting")):
+                    and not row["key"].endswith((":waiting", ":context-blocked"))):
                 # Retain the original payload and receipts, but do not deliver
                 # local-worker status retries (including already queued rows).
                 db.execute("UPDATE notifications SET sent=-1 WHERE key=? AND sent=0", (row["key"],))
