@@ -150,6 +150,31 @@ the immutable source map; do not reconstruct the active worker from an older
 whole-source snapshot. Preserve subsequent runtime changes, all companion features
 and private task records.
 
+Controller pause, routine rejection and policy-approval producers add
+`notification_category` (`paused`, `coordinator_blocked`, `review_rejection` or
+`owner_approval`) and `request_origin` to the existing serialized payload.
+`request_origin.branch` is the exact PR branch, or null when unavailable;
+`request_origin.task_digest` is the event's task digest when available, otherwise
+null. A pause does not borrow the current enrollment digest: its task context
+may be the very binding in dispute. Existing repository, PR number and head
+fields identify the event. These fields are lookup hints, not authenticated
+Telegram origin, an owner-question classification, or permission to deliver.
+In particular, `paused` includes cancellation and security holds; it does not
+declare that an owner question exists.
+
+The companion must resolve request identity and revision from trusted host
+records, verifying repository, branch, task digest and PR/head bindings against
+the authenticated request. Branch prefixes, payload assertions and model output
+cannot prove Telegram origin. A coordinator hold for a verified Telegram feature
+may qualify as feature status while retaining coordinator wording and all holds.
+Legacy queued events must be reconciled against that trusted state before
+rendering, stale-event retry handling or network calls. Missing or conflicting
+bindings remain durably held for coordinator reconciliation, never delivered by
+default. Confirmed suppressed maintenance events retain their original event and
+deduplication key, with an atomic terminal audit disposition and reason, no
+delivery receipt, and no retries across restart or duplicate enqueue. Eligible
+events retain durable chunk progress, retry and deduplication.
+
 ATK source preparation is permitted after independent plan review. ATK merge,
 controller activation and paired-repair completion remain blocked until the
 orchestrator supplies evidence for the complete companion contract:
@@ -166,10 +191,16 @@ orchestrator supplies evidence for the complete companion contract:
   neither outbound eligibility nor delivery or activation.
 - Correct companion tests/docs that prescribe misleading public labels. Preserve
   provenance holds, cancellation/veto, genuine owner questions and exact-head gates.
-- Route workspace-capability and coordinator evidence-access deficits through the
-  existing question-policy/intake/native-planning path to coordinator tooling work,
-  retaining the full task and checkpoints. Genuine missing owner facts, credentials
-  and protected approvals retain their owner path; never fabricate access or answers.
+- Route verified workspace-capability and coordinator evidence-access deficits
+  through the existing question-policy/intake/native-planning path to coordinator
+  tooling work. Retain every original question verbatim and record routing for each
+  question and factual clause, including mixed clauses within a single string.
+  Preserve the full task, checkpoints and genuine owner questions in mixed batches.
+  Unknown factual clauses stay unresolved. Resume tooling-blocked work only after
+  coordinator verification of repaired access, preserving all unrelated holds.
+  Credentials, owner facts, original evidence, veto/cancellation and protected
+  approvals retain their authenticated handling; routing cannot supply answers,
+  approve a plan, fabricate access or bypass independent recommendation review.
 - Obtain fresh independent source review, successful exact-commit Repository Checks,
   isolated rollout rehearsal and verified activation of the complete contract,
   recording deployed revision/file hashes and preservation of private state.

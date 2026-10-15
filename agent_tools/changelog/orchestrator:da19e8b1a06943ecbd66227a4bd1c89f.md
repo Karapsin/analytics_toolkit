@@ -1,0 +1,1 @@
+- Add controller notification category and request-binding lookup metadata with fast producer regressions; retain coordinator notices, private holds and the complete companion delivery/routing activation gate.

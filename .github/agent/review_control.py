@@ -68,6 +68,19 @@ def delivery(key: str, *, message_id: int | None = None, delay: float = 0) -> No
             db.execute("UPDATE notifications SET retry=? WHERE key=?", (time.time() + delay, key))
 
 
+def _notification_metadata(
+    pr: dict[str, Any], category: str, task_digest: str | None = None,
+) -> dict[str, Any]:
+    """Lookup hints only: the companion must verify authenticated request bindings."""
+    return {
+        "notification_category": category,
+        "request_origin": {
+            "branch": pr["head"].get("ref"),
+            "task_digest": task_digest,
+        },
+    }
+
+
 def pause(gh: Any, pr: dict[str, Any], reason: str, changes: str) -> None:
     head, number = pr["head"]["sha"], pr["number"]
     with connect() as db:
@@ -103,7 +116,8 @@ def pause(gh: Any, pr: dict[str, Any], reason: str, changes: str) -> None:
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
              "title": pr.get("title", "PR " + str(number)), "changes": changes,
              "reason": reason, "command": recovery_command,
-             "coordinator_blocked": context_blocked})
+             "coordinator_blocked": context_blocked,
+             **_notification_metadata(pr, "coordinator_blocked" if context_blocked else "paused")})
 
 
 def paused(gh: Any, pr: dict[str, Any]) -> bool:
@@ -220,7 +234,8 @@ def reject(gh: Any, pr: dict[str, Any], task: dict[str, Any], reason: str, chang
             {"repository": gh.repository, "number": number, "head": head,
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
              "title": pr.get("title", "PR " + str(number)), "changes": changes,
-             "reason": reason, "command": "A separate RPi5 correction agent is queued; no resume command is needed."})
+             "reason": reason, "command": "A separate RPi5 correction agent is queued; no resume command is needed.",
+             **_notification_metadata(pr, "review_rejection", task["task_digest"])})
 
 
 def correction(repository: str, number: int, head: str, digest: str) -> dict[str, Any] | None:
@@ -272,7 +287,8 @@ def approval_notice(gh: Any, pr: dict[str, Any], paths: list[str], task: dict[st
              "reason": "These files govern the reviewer/controller, its trusted prompts or "
              "security and merge permissions. Your retained policy requires owner approval "
              "for this exact head, in addition to separate review and fast CI.",
-             "command": "/agent approve-policy " + head}, buttons=True)
+             "command": "/agent approve-policy " + head,
+             **_notification_metadata(pr, "owner_approval", digest)}, buttons=True)
 
 
 def callback(gh: Any, query: dict[str, Any], owner_id: int, chat_id: int) -> str:
