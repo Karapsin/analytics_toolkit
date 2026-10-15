@@ -42,6 +42,7 @@ Generated from package version bumps and recent commit history.
 - Escape Unicode apostrophes in orchestrator correction expectations to satisfy lint while preserving authenticated context text.
 - Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
 - Remove misleading label and cancellation question requirements from coordinator-notice regressions; document the complete companion delivery and activation gate while preserving private holds and approval boundaries.
+- Add controller notification category and request-binding lookup metadata with fast producer regressions; retain coordinator notices, private holds and the complete companion delivery/routing activation gate.
 
 ## 1.3.12.5 - 2026-10-14
 
