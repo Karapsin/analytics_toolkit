@@ -28,6 +28,7 @@ Generated from package version bumps and recent commit history.
 - Fixed disposable authentication fault cleanup restarting Keycloak again after explicit recovery and readiness checks. Retained scenario fault history and full redacted OAuth browser failure diagnostics with guaranteed browser cleanup and fast service-free regression coverage.
 - Refactor service-free OAuth browser regressions and correct lint/format findings while preserving all failure phases, cleanup, redaction, and scenario history.
 - Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
+- Preserve OAuth diagnostics, fault recovery and fast service-free regressions; extract the browser fake step factory to remove new complexity debt, reconcile Unreleased notes and retain current-dev automation files.
 
 ## 1.3.12.5 - 2026-10-14
 
