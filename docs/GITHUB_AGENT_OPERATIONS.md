@@ -85,23 +85,27 @@ failed label update retries without losing the approval. A concurrent new head
 retains the label until its own decision. Label cleanup preserves unrelated
 labels and never clears a question, veto, signature, review or CI gate.
 
-Rejection posts what changed, why it was rejected and the required corrections,
-mentions the owner and sends a plain Telegram alert. A fresh Pi correction agent
-plans the correction, a separate agent reviews that plan, and another agent edits.
-Fresh independent PR review follows every changed head. This cycle continues until
-approved, without an arbitrary retry cap. Rejection alerts have no buttons and
-require no resume command. Genuine questions wait for authenticated owner answers;
+Rejection posts what changed, why it was rejected and the required corrections.
+Outbound Telegram eligibility follows the companion dependency below; coordinator-only
+maintenance notices must be suppressed. A fresh Pi correction agent plans the
+correction, a separate agent reviews that plan, and another agent edits. Fresh
+independent PR review follows every changed head. This cycle continues until
+approved, without an arbitrary retry cap. Eligible routine rejection alerts have
+no buttons and require no resume command. Genuine questions wait for authenticated owner answers;
 owner vetoes/cancellation and invalid provenance stop work. Invalid task context
 also fails closed. The exact host-owned task-context mismatch blocker directs the
 coordinator to restore and verify authenticated context, instead of asking the
-owner for a new answer or a resume command. Its private pause and conservative
-`agent:needs-user` display remain enforced; this guidance does not grant recovery
-or approval. The outbox explicitly marks this status with `coordinator_blocked`;
-the compatible companion renderer displays awaiting coordinator verification,
-without claiming automatic corrections were queued. Activate that reviewed renderer
-before the controller payload change. Other pause reasons retain their owner-input guidance. Older trusted
-App repairs can inherit the standing integration-repair task, bound to their
-immutable signed head; owner-authored PRs must attach their task.
+owner for a new answer or a resume command. Its private provenance pause remains
+enforced; this guidance grants neither recovery nor approval. This notice repair
+does not settle the broader public label mapping, which remains pending. The
+outbox additively marks this status with `coordinator_blocked`; the compatible
+companion renderer displays awaiting coordinator verification without claiming
+automatic corrections were queued. Missing or false values retain legacy rendering.
+Rendering does not establish outbound eligibility or delivery. Genuine missing
+owner input retains its answer path. Cancellation and veto are owner decisions
+that stop work, not unanswered questions; do not resume or infer consent from them.
+Older trusted App repairs can inherit the standing integration-repair task, bound
+to their immutable signed head; owner-authored PRs must attach their task.
 
 Telegram sends brief change descriptions and links for PR merges into dev, dev
 promotions into main and successful production PyPI release workflows. TestPyPI
@@ -137,17 +141,47 @@ branches; dirty worktrees, backups and private task/audit records are retained.
 
 ## Updating trusted automation
 
-The companion worker dependency is staged, not active, at
-[self_host commit 0c1f1abea3f70955f63d6fbca7b06e4cc3386dde](https://github.com/Karapsin/self_host/commit/0c1f1abea3f70955f63d6fbca7b06e4cc3386dde).
-Require successful exact-commit Repository Checks, immutable source/test evidence,
-a fresh independent review and the isolated worker rollout rehearsal before host
-activation. It includes the complete checkpoint, question/answer, label, capacity,
-notification and evidence fixes from `40707720a5e1b4ac8c03ec6a6d96546a5ebc10e4`;
-no companion features or private task records may be discarded.
+Companion PR #15 merged as `d0a34f3512de338d6d641568e9a95e1a7a863ca1`.
+Worker `4e0db77e720d4df36dd1d0ed60a432402f266c0e` is deployed with compatible
+coordinator-blocked rendering and lossless prompt paging. Exact-commit Repository
+Checks run `38796620548` and the private activation receipt establish that scope
+only. The receipt `operator/worker-prompt-paging-4e0db77e720d-active.json` indexes
+the immutable source map; do not reconstruct the active worker from an older
+whole-source snapshot. Preserve subsequent runtime changes, all companion features
+and private task records.
 
-The activation includes the backward-compatible task-context reader from PR #15
-before the worker starts. Legacy signed tasks remain valid; new plan/image evidence
-uses its own signed digest, and questions remain visible beside owner answers.
+ATK source preparation is permitted after independent plan review. ATK merge,
+controller activation and paired-repair completion remain blocked until the
+orchestrator supplies evidence for the complete companion contract:
+
+- Enforce outbound eligibility separately in companion `telegram.py`: permit owner
+  approvals/questions, Telegram-requested feature implementation status, merges
+  with dev/main and releases; suppress coordinator-only maintenance alerts.
+- Preserve durable audit records and eligible-event retry, restart and deduplication.
+  Suppression must be terminal, with no Telegram calls or recurring retries.
+- Test the actual controller producer through serialized outbox, renderer and
+  delivery for maintenance and Telegram-feature branches using mocked transport.
+  Bind producer fixtures to an immutable controller commit and content hash and
+  verify that they match the paired ATK implementation. Renderer tests alone prove
+  neither outbound eligibility nor delivery or activation.
+- Correct companion tests/docs that prescribe misleading public labels. Preserve
+  provenance holds, cancellation/veto, genuine owner questions and exact-head gates.
+- Route workspace-capability and coordinator evidence-access deficits through the
+  existing question-policy/intake/native-planning path to coordinator tooling work,
+  retaining the full task and checkpoints. Genuine missing owner facts, credentials
+  and protected approvals retain their owner path; never fabricate access or answers.
+- Obtain fresh independent source review, successful exact-commit Repository Checks,
+  isolated rollout rehearsal and verified activation of the complete contract,
+  recording deployed revision/file hashes and preservation of private state.
+
+Final-head ATK `fast-checks`, fresh independent review and authenticated owner
+exact-head protected approval remain required. Existing renderer/paging activation
+is insufficient to clear this dependency. Broader truthful label mapping and
+complete PR discovery remain separately tracked unresolved work.
+
+The merged companion includes the backward-compatible task-context reader from
+PR #15. Legacy signed tasks remain valid; new plan/image evidence uses its own
+signed digest, and questions remain visible beside owner answers.
 Missing actual plan/image bindings still require authenticated evidence; reader
 compatibility does not fabricate them. Long v2 records use a lossless compressed
 hidden payload while retaining all visible messages, plans, questions and answers.
