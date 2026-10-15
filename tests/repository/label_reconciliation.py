@@ -316,7 +316,17 @@ def test_empty_scoped_selection_never_means_merge_all(
 
 
 @pytest.mark.parametrize(
-    "gate", ["ci", "review", "writer", "mergeability", "policy", "question", "signature", "base"]
+    "gate",
+    [
+        "ci",
+        "review",
+        "writer",
+        "mergeability",
+        "policy",
+        "question",
+        "signature",
+        "base",
+    ],
 )
 def test_scoped_selection_cannot_bypass_merge_authority(
     merge_environment: Any, monkeypatch: Any, tmp_path: Path, gate: str
