@@ -432,8 +432,29 @@ def hold_feature(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> None:
         gh.api(f"pulls/{pr['number']}", "PATCH", {"state": "closed"})
 
 
-def recover_feature_publication(gh: Any, pr: dict[str, Any]) -> None:
-    """Clear only a known interrupted body-update hold after signed-head recovery."""
+def recover_feature_publication(
+    gh: Any,
+    pr: dict[str, Any],
+    *,
+    task_digest: str | None = None,
+) -> None:
+    """Recover derived publication holds after caller verifies signed-head metadata."""
+    branch = pr["head"].get("ref", "")
+    if (task_digest is not None and pr["state"] == "open"
+            and branch.startswith("codex/orchestrator-")
+            and enrolled_feature(gh.repository, branch, task_digest)
+            and not veto(gh.repository, pr["number"], pr["head"]["sha"])):
+        # The caller verified this exact durable artifact, original context and
+        # independent plan before enrollment, then verified final-head metadata.
+        # Compare-and-delete cannot erase a replacement owner/security hold.
+        with connect() as db:
+            db.execute(
+                "DELETE FROM pauses WHERE repository=? AND number=? AND head=? AND reason=?",
+                (gh.repository, pr["number"], pr["head"]["sha"],
+                 "Feature context does not match the host-owned request."),
+            )
+        # Normal reconciliation owns labels and protected approval readiness.
+
     with connect() as db:
         row = db.execute("SELECT reason FROM pauses WHERE repository=? AND number=?",
                          (gh.repository, pr["number"])).fetchone()

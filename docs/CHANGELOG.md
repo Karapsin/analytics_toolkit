@@ -6,7 +6,10 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
 - Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
+- Repair orchestrator correction enrollment and routine-question routing while preserving verified publication recovery and genuine owner/security holds.
+
 - Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
 - Fix the Greenplum first-batch restart integration checkpoint and retry budget; add a service-free regression that checks exact rows, rollback, and fresh-connection recovery.
 - Preserve DataLens copy imports, encoding and parameter fidelity, managed Editor relocation, inferred dataset recovery and component diagnostics; restore Wizard configuration and change guards, explicit internal-title ownership, unsupported-encoding zero-write regressions and complete changelog history.
@@ -31,6 +34,8 @@ Generated from package version bumps and recent commit history.
 - Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
 - Preserve OAuth diagnostics, fault recovery and fast service-free regressions; extract the browser fake step factory to remove new complexity debt, reconcile Unreleased notes and retain current-dev automation files.
 - Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
+- Preserve chronological maintenance eligibility answers in generated orchestrator context and document verified companion publication recovery separately from pending cross-repository trigger discovery.
+- Escape Unicode apostrophes in orchestrator correction expectations to satisfy lint while preserving authenticated context text.
 
 ## 1.3.12.5 - 2026-10-14
 

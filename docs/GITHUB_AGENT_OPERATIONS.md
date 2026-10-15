@@ -163,15 +163,40 @@ separately from owner answers. Missing evidence, genuine unanswered questions,
 owner vetoes, credentials and protected policy decisions keep their actual owner
 answer path. Both questions and answers remain visible in task/PR evidence.
 
-While at least one tracked PR is open, one maintenance orchestrator can start
-at most every thirty minutes. Its inherited process lease prevents duplicates
-across supervisor restarts and long-running jobs. It may edit private source
-checkouts of analytics_toolkit and self_host, preserves complete failed patches
-and evidence, and exits when no concrete issue exists. It runs no tests, builds,
-installs, services or visual scenes on the Pi. A fresh read-only reviewer assesses
-both patches; GitHub supplies validation. Companion proposals require scoped App
-access to self_host, independent review and all required exact-head workflows.
+The owner-requested eligibility rule is: any open analytics_toolkit PR qualifies;
+an open self_host PR qualifies only when it affects GitHub agent functionality.
+This includes human-created and untracked PRs. Review complete current-head
+changed files, including rename origins: direct agent service/deployment changes
+qualify; shared tooling, dependencies, workflows, tests and documentation need
+source evidence of agent impact. Titles and authorship do not establish relevance.
+Bind classification to repository, head and inspected comparison; invalidate changed
+comparisons and retry incomplete evidence. Confirmed eligibility in either
+repository permits maintenance even when evidence elsewhere is unavailable.
+Generated maintenance context retains the original request and both chronological
+eligibility answers, so the later self_host clarification takes precedence.
+
+One global maintenance orchestrator starts on the first eligible tick, then no
+sooner than 1,800 seconds after its persisted previous start. Its inherited process
+lease prevents duplicates across supervisor restarts and long-running jobs.
+Pause controls and worker capacity still apply; busy ticks create no catch-up
+backlog. It may edit private source checkouts of analytics_toolkit and self_host,
+preserves complete failed patches and evidence, and exits immediately when no
+concrete issue exists, releasing the lease. It runs no tests, builds, installs,
+services or visual scenes on the Pi. A fresh read-only reviewer assesses both
+patches; GitHub supplies validation. Companion proposals require scoped App access
+to self_host, independent review and all required exact-head workflows.
 Source merge never directly updates the installed worker.
+
+Companion trigger discovery remains a coordinator-owned dependency in the existing
+self_host writable assignment. Locally tracked companion proposals do not provide
+a complete inventory of eligible self_host PRs. Keep this dependency unresolved
+in publication and review evidence until immutable implementation source/tests,
+commit identity, independent review and exact-commit Repository Checks are
+available. Actual daemon-tick regressions must cover repository-qualified
+inventories, human-created PRs, rename origins, shared-file impact, comparison
+changes, incomplete evidence and singleton/cadence behavior. Operational acceptance
+also requires trusted deployed-revision metadata and the isolated GitHub rollout
+rehearsal. This ATK context change does not establish that trigger implementation.
 
 Protected controller activation still requires successful final-head checks,
 fresh independent review and the authenticated owner's exact-head
@@ -285,5 +310,26 @@ and bot changes. Its manifest binds source/test files to hashes, repository comm
 IDs and exact-commit GitHub checks. Missing or invalid evidence cannot be replaced
 by an author's claim. Protected approval notices use an independent concrete change
 assessment for the current head and task digest, never the starting prompt alone.
+
+
+Orchestrator correction publication enrolls each independently reviewed revised
+context while retaining the original digest. Recovery of the specific
+host-context enrollment mismatch requires the companion's durable artifact,
+original signed-head and exact plan checks, followed by final-head metadata
+verification. The controller compare-deletes only that exact head/reason with
+the supplied enrolled digest and no current veto; it leaves labels to normal
+reconciliation and grants no protected approval. Compatible companion publication
+recovery is implemented in self_host
+`14f3db8820e9ec353e1cf831932ed52da05cc164` and subsequent runtime commits.
+The immutable recovery evidence records independent review and successful
+[exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38727228122),
+including an isolated rollout rehearsal. Actual-controller fixtures cover deployed
+`fb62e04558ad3d5cdaf8a9ff1eeb5527238d21f3` and proposed
+`becefe94f16691e5132f7239dad7f2763133d3b5`; capability-gated digest passing
+preserves the older controller contract. This completed recovery dependency is
+separate from pending companion trigger discovery. Deploy compatible reviewed
+controller readers with separate isolated rehearsal; protected controller
+activation still requires the owner's exact-head approval. Neither resolver
+decisions nor companion recovery evidence releases PR #25's provenance hold.
 
 [Documentation overview](README.md)

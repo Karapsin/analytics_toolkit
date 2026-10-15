@@ -82,9 +82,7 @@ def _assert_operation_order(calls: list[str], failed_step: str | None) -> None:
         "close",
     ]
     expected = (
-        operations
-        if failed_step is None
-        else operations[: operations.index(failed_step) + 1]
+        operations if failed_step is None else operations[: operations.index(failed_step) + 1]
     )
     if failed_step is not None and failed_step not in {"launch", "close"}:
         expected = [*expected, "close"]
