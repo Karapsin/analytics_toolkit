@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
+- Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
 - Avoid false missing-image and plan holds from the recovered plan's exact reference-validation example while preserving signed history and genuine evidence requirements.
 
 - Repair orchestrator correction enrollment and routine-question routing while preserving verified publication recovery and genuine owner/security holds.
@@ -29,9 +31,14 @@ Generated from package version bumps and recent commit history.
 - Route malformed changelog fragments to fresh correction plans instead of repeating metadata failures
 - Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 - Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
+- Fixed disposable authentication fault cleanup restarting Keycloak again after explicit recovery and readiness checks. Retained scenario fault history and full redacted OAuth browser failure diagnostics with guaranteed browser cleanup and fast service-free regression coverage.
+- Refactor service-free OAuth browser regressions and correct lint/format findings while preserving all failure phases, cleanup, redaction, and scenario history.
 - Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
+- Preserve OAuth diagnostics, fault recovery and fast service-free regressions; extract the browser fake step factory to remove new complexity debt, reconcile Unreleased notes and retain current-dev automation files.
+- Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
 - Preserve chronological maintenance eligibility answers in generated orchestrator context and document verified companion publication recovery separately from pending cross-repository trigger discovery.
 - Escape Unicode apostrophes in orchestrator correction expectations to satisfy lint while preserving authenticated context text.
+- Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
 
 ## 1.3.12.5 - 2026-10-14
 

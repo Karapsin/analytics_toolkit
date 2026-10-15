@@ -78,3 +78,98 @@ def test_fault_fixture_uses_startup_profiles_for_guard_actions_and_restore(
         ("healthy", service, True),
         ("restart", service, True),
     ]
+
+
+@pytest.mark.parametrize("restart_fails", [False, True])
+def test_explicit_restart_satisfies_only_successful_pending_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    restart_fails: bool,
+) -> None:
+    actions: list[tuple[str, ...]] = []
+    restarts = 0
+
+    def run(command, **_kwargs) -> subprocess.CompletedProcess[str]:
+        nonlocal restarts
+        args = tuple(command[command.index("auth") + 1 :])
+        if args == ("config", "--services"):
+            return subprocess.CompletedProcess(command, 0, "keycloak trino minio", "")
+        actions.append(args)
+        if args == ("restart", "keycloak"):
+            restarts += 1
+            if restart_fails and restarts == 1:
+                return subprocess.CompletedProcess(command, 1, "", "restart failed")
+        return subprocess.CompletedProcess(command, 0, '{"Health":"healthy"}', "")
+
+    monkeypatch.setattr(integration_faults.subprocess, "run", run)
+    controller = integration_faults.FaultController(
+        root=tmp_path, project="disposable", artifact_dir=tmp_path
+    )
+    controller.stop("keycloak")
+    controller.stop("trino")
+    controller.pause("minio")
+    if restart_fails:
+        with pytest.raises(RuntimeError, match="restart failed"):
+            controller.restart("keycloak")
+        assert ("restart", "keycloak") in controller.restore_actions
+    else:
+        controller.restart("keycloak")
+        controller.wait_healthy("keycloak")
+        assert ("restart", "keycloak") not in controller.restore_actions
+    controller.restore()
+
+    assert restarts == (2 if restart_fails else 1)
+    expected_restore = [("unpause", "minio"), ("restart", "trino")]
+    if restart_fails:
+        expected_restore.append(("restart", "keycloak"))
+    assert actions[-len(expected_restore) :] == expected_restore
+    assert controller.restore_actions == []
+
+
+def test_fault_timeline_retains_scenarios_without_repeating_events(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    for scenario in ("discovery", "exchange", "empty"):
+        monkeypatch.setenv("SQL_INTEGRATION_TEST_ID", scenario)
+        controller = integration_faults.FaultController(
+            root=tmp_path, project="disposable", artifact_dir=tmp_path
+        )
+        if scenario != "empty":
+            controller._record("restart", "keycloak", True)
+            controller.write_timeline()
+            controller._record("healthy", "keycloak", True)
+            controller.write_timeline()
+        controller.restore()
+        controller.write_timeline()
+
+    timeline = json.loads((tmp_path / "fault-timeline.json").read_text(encoding="utf-8"))
+    assert [(event["scenario_id"], event["action"]) for event in timeline] == [
+        ("discovery", "restart"),
+        ("discovery", "healthy"),
+        ("exchange", "restart"),
+        ("exchange", "healthy"),
+    ]
+
+
+def test_restore_attempts_every_action_after_recovery_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    actions: list[tuple[str, str]] = []
+
+    def act(action: str, service: str) -> None:
+        actions.append((action, service))
+        if service == "keycloak":
+            message = "restart failed"
+            raise RuntimeError(message)
+
+    controller = integration_faults.FaultController(
+        root=tmp_path, project="disposable", artifact_dir=tmp_path
+    )
+    controller.restore_actions = [("restart", "trino"), ("restart", "keycloak")]
+    monkeypatch.setattr(controller, "_act", act)
+    with pytest.raises(RuntimeError, match="restart failed"):
+        controller.restore()
+    assert actions == [("restart", "keycloak"), ("restart", "trino")]
+    assert controller.restore_actions == []

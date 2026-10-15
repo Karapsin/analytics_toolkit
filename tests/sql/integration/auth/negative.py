@@ -5,10 +5,13 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 from analytics_toolkit import sql
@@ -154,23 +157,95 @@ def _install_browser_oauth(
     def redirect(url: str) -> None:
         callbacks.append(url)
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(
-                headless=True,
-                args=[f"--ignore-certificate-errors-spki-list={spki_pin}"],
-            )
-            page = browser.new_page()
-            username = _open_keycloak_login(page, url, PlaywrightTimeoutError)
-            username.fill("integration")
-            page.locator("#password").fill(password)
-            page.locator("#kc-login").click(no_wait_after=before_callback is not None)
-            if before_callback is not None:
-                before_callback()
-            page.wait_for_url("**/oauth2/**", timeout=10_000)
-            browser.close()
+
+            def launch():
+                return playwright.chromium.launch(
+                    headless=True,
+                    args=[f"--ignore-certificate-errors-spki-list={spki_pin}"],
+                )
+
+            _run_browser_oauth(launch, url, password, before_callback, PlaywrightTimeoutError)
 
     authentication = real_oauth(redirect)
     monkeypatch.setattr(trino.auth, "OAuth2Authentication", lambda: authentication)
     return callbacks, alias
+
+
+def _redact_browser_text(text: str, password: str) -> str:
+    def redact_url(match: re.Match[str]) -> str:
+        parsed = urlsplit(match.group())
+        # OAuth state, codes and tokens can occur in either query strings or paths.
+        path = re.sub(r"(/oauth2/token/[^/]+)(/.*)?$", r"\1/<redacted>", parsed.path)
+        return urlunsplit((parsed.scheme, parsed.netloc.rsplit("@", 1)[-1], path, "", ""))
+
+    text = re.sub(r"https?://[^\s\"'<>]+", redact_url, text)
+    for secret in (password, "invalid-integration-oauth-secret", "integration-oauth-secret"):
+        if secret:
+            text = text.replace(secret, "<redacted>")
+    text = re.sub(r"(?i)\bBearer\s+[^\s\"']+", "Bearer <redacted>", text)
+    text = re.sub(
+        r"(?i)((?:password|client_secret|access_token|refresh_token|id_token|authorization)"
+        r"[\"']?\s*[:=]\s*[\"']?)[^\s\"',;]+",
+        r"\1<redacted>",
+        text,
+    )
+    return re.sub(
+        r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----",
+        "<redacted>",
+        text,
+        flags=re.DOTALL,
+    )
+
+
+def _browser_diagnostic(phase: str, url: str, password: str, error=None) -> None:
+    artifact_dir = Path(os.environ["SQL_INTEGRATION_ARTIFACT_DIR"])
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    record = {
+        "scenario_id": os.environ.get("SQL_INTEGRATION_TEST_ID", "unknown"),
+        "phase": phase,
+        "url": _redact_browser_text(url, password),
+        "exception_type": type(error).__name__ if error is not None else None,
+        "exception": _redact_browser_text(str(error), password) if error is not None else None,
+    }
+    with (artifact_dir / "oauth-browser.log").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record) + "\n")
+
+
+def _run_browser_oauth(launch, url: str, password: str, before_callback, timeout_error) -> None:
+    browser = None
+    error: BaseException | None = None
+    phase = "launch"
+    try:
+        browser = launch()
+        phase = "new-page"
+        page = browser.new_page()
+        phase = "open-login"
+        username = _open_keycloak_login(page, url, timeout_error)
+        phase = "username"
+        username.fill("integration")
+        phase = "password"
+        page.locator("#password").fill(password)
+        phase = "submit-login"
+        page.locator("#kc-login").click(no_wait_after=before_callback is not None)
+        if before_callback is not None:
+            phase = "before-callback"
+            before_callback()
+        phase = "wait-callback"
+        page.wait_for_url("**/oauth2/**", timeout=10_000)
+    except BaseException as exc:  # Log and preserve the original browser failure.
+        error = exc
+        _browser_diagnostic(phase, url, password, exc)
+        raise
+    finally:
+        if browser is not None:
+            try:
+                browser.close()
+            except BaseException as exc:  # Close must not mask a primary failure.
+                _browser_diagnostic("close", url, password, exc)
+                if error is None:
+                    raise
+        if error is None:
+            _browser_diagnostic("complete", url, password)
 
 
 def _open_keycloak_login(page, url: str, timeout_error: type[BaseException]):
