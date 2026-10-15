@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -324,3 +325,82 @@ def test_rejected_bot_repair_is_paused_until_owner_resumes(
     gh.pages = lambda path, key=None: [] if "/comments?" in path else original_pages(path, key)
     assert controller.discover(gh, 17)["include"] == []
     assert pr["labels"] == [{"name": "agent:needs-user"}]
+
+
+def test_revision_retry_backlog_is_suppressed_without_losing_originals(control: Any) -> None:
+    payload = {
+        "text": "Worker deferred this phase; private logs retained. Retry is queued.",
+        "request_id": "69db3ccc1579",
+        "telegram_feature": False,
+        "turn_revision": 30,
+        "render_version": 1,
+        "rendered_parts": ["previously rendered status"],
+        "next_part": 1,
+    }
+    # Reproduce the observed distinct keys, including pre-existing queued rows
+    # that bypass any future enqueue-time filter.
+    with control.connect() as db:
+        for revision in range(30, 116):
+            db.execute(
+                "INSERT INTO notifications(key,kind,payload,message_id) VALUES (?,?,?,?)",
+                (
+                    f"request:69db3ccc1579:{revision}:plan:deferred",
+                    "request",
+                    json.dumps(payload),
+                    724,
+                ),
+            )
+    control.enqueue("approval:current", "approval", {"head": "a" * 40}, buttons=True)
+    events = control.pending()
+    assert [event["key"] for event in events] == ["approval:current"]
+    assert events[0]["token"]
+    with control.connect() as db:
+        rows = db.execute("SELECT * FROM notifications WHERE kind='request'").fetchall()
+    assert len(rows) == 86
+    assert all(row["sent"] == -1 and row["message_id"] == 724 for row in rows)
+    assert all(json.loads(row["payload"]) == payload for row in rows)
+    control.delivery("approval:current", delay=30)
+    assert control.pending() == []
+
+
+@pytest.mark.parametrize(
+    ("key", "kind", "payload"),
+    [
+        ("request:local:31:waiting", "request", {"telegram_feature": False}),
+        ("request:telegram:31:plan:deferred", "request", {"telegram_feature": True}),
+        ("legacy-request", "request", {"text": "Origin not established"}),
+        ("confirm:answer", "request-auth", {"telegram_feature": False}),
+        ("approval:head", "approval", {}),
+        ("merged:dev", "merged", {}),
+        ("main:promotion", "main", {}),
+        ("release:version", "release", {}),
+    ],
+)
+def test_filter_preserves_questions_and_existing_delivery_retry_contract(
+    control: Any, key: str, kind: str, payload: dict[str, Any]
+) -> None:
+    control.enqueue(key, kind, payload)
+    event = control.pending()[0]
+    assert event["key"] == key
+    assert json.loads(event["payload"]) == payload
+    control.delivery(key, delay=30)
+    assert control.pending() == []
+    control.delivery(key, message_id=99)
+    assert control.pending() == []
+
+
+def test_scan_and_delivery_batches_stay_bounded(control: Any) -> None:
+    for revision in range(205):
+        control.enqueue(
+            f"request:local:{revision}:plan:deferred",
+            "request",
+            {"telegram_feature": False},
+        )
+    for number in range(25):
+        control.enqueue(f"approval:{number}", "approval", {})
+    assert control.pending() == []
+    events = control.pending()
+    assert len(events) == 20
+    for event in events:
+        control.delivery(event["key"], message_id=1)
+    assert len(control.pending()) == 5
