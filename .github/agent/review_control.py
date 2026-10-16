@@ -187,6 +187,30 @@ def assess(repository: str, number: int, head: str, digest: str, changes: str) -
                    (repository, number, head, digest, changes))
 
 
+def correction_snapshot(repository: str, number: int) -> dict[str, Any] | None:
+    with connect() as db:
+        row = db.execute("SELECT * FROM corrections WHERE repository=? AND number=?",
+                         (repository, number)).fetchone()
+    return dict(row) if row else None
+
+
+def require_correction(repository: str, number: int, head: str, digest: str,
+                       reason: str, changes: str, *, expected: dict[str, Any] | None) -> bool:
+    """Queue planning only if the observed scope has not changed; retain findings."""
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM corrections WHERE repository=? AND number=?",
+                         (repository, number)).fetchone()
+        current = dict(row) if row else None
+        if current and current["head"] == head and current["digest"] == digest:
+            return True
+        if current != expected:
+            return False
+        db.execute("INSERT OR REPLACE INTO corrections VALUES (?,?,?,?,?,?,?)",
+                   (repository, number, head, digest, reason, changes, time.time()))
+    return True
+
+
 def reject(gh: Any, pr: dict[str, Any], task: dict[str, Any], reason: str, changes: str) -> None:
     """Routine reviewer/CI rejection queues a new author, never an owner resume."""
     number, head = pr["number"], pr["head"]["sha"]
