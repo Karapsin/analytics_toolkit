@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render deterministic SQL Explorer scenes for headless current-host visual review."""
 
-# ruff: noqa: EM102, FLY002, PLR0915, PLR2004, TRY003
+# ruff: noqa: EM102, FLY002, PLR2004, TRY003
 
 from __future__ import annotations
 

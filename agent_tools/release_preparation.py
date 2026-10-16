@@ -83,9 +83,13 @@ def _pr(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     return pr
 
 
-def _context(state: dict[str, Any], pr: dict[str, Any]) -> None:
+def _context(state: dict[str, Any], pr: dict[str, Any], *, root: Path | None = None) -> None:
     proto = task_context.protocol()
-    attached = proto.parse(pr["body"])
+    attached = (
+        task_context.parse_attachment(root, pr["body"])
+        if root is not None
+        else proto.parse(pr["body"])
+    )
     if (
         attached["task_id"] != state["task_id"]
         or proto.digest(attached) != state["task_digest"]
@@ -98,7 +102,7 @@ def _context(state: dict[str, Any], pr: dict[str, Any]) -> None:
 
 def _reviewed(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     pr = _pr(root, state)
-    _context(state, pr)
+    _context(state, pr, root=root)
     if not pr.get("mergedAt"):
         message = "Release preparation PR must be independently reviewed and merged."
         raise RuntimeError(message)
@@ -305,7 +309,7 @@ def _published_preparation(
     if pr["number"] != number:
         message = "Discovered release preparation PR identifier does not match."
         raise RuntimeError(message)
-    _context(state, pr)
+    _context(state, pr, root=root)
     if pr["state"] != "OPEN" and not pr.get("mergedAt"):
         message = "Release preparation PR was closed without merging."
         raise RuntimeError(message)
@@ -499,7 +503,7 @@ def _prepare(  # noqa: C901, PLR0912 - journaled release generations.
     if not state.get("pr"):
         _publish_preparation(root, state)
     pr = _pr(root, state)
-    _context(state, pr)
+    _context(state, pr, root=root)
     if not pr.get("mergedAt"):
         if pr["state"] == "CLOSED":
             message = "Release preparation PR was closed without merging."

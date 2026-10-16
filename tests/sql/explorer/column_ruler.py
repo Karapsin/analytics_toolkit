@@ -8,8 +8,9 @@ from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.editor import SqlEditor
 from analytics_toolkit.sql_explorer.movement import move_command
 from analytics_toolkit.sql_explorer.ruler import ColumnRuler, column_numbers, ruler_labels
-from tests.sql._support.explorer import FakeSession
 from textual.document._document import Selection
+
+from tests.sql._support.explorer import FakeSession
 
 
 def test_column_numbers_align_tabs_wide_and_combining_characters() -> None:

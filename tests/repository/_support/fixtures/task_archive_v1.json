@@ -1,0 +1,31 @@
+{
+  "context": {
+    "version": 1,
+    "task_id": "archive-v1",
+    "producer_id": "local:archive-v1",
+    "source": "user",
+    "starting_prompt": "Preserve the complete original task.",
+    "corrections": [
+      "Original question: Which scope?",
+      "Preserve every requested feature."
+    ]
+  },
+  "manifest": {
+    "version": 1,
+    "sha256": "b7e0394454a0245c117c62285803eaeda4e1b7b26b74d4460410dc476332a418",
+    "bytes": 228,
+    "parts": [
+      {
+        "oid": "2e9a19704a4f3e962c30ed027a1aa6cc0d23b4e1",
+        "sha256": "b7e0394454a0245c117c62285803eaeda4e1b7b26b74d4460410dc476332a418",
+        "bytes": 228
+      }
+    ],
+    "commit": "92f9af507d4795116fc1c48c0c943255dd1bed10"
+  },
+  "files": {
+    "history-000000.md": "[Task archive index](README.md)\n\n<a id=\"task-message-0\"></a>\n## Starting user prompt\n\n<pre>Preserve the complete original task.</pre>\n\n<a id=\"task-message-1\"></a>\n## User correction 1\n\n<pre>Original question: Which scope?</pre>\n\n<a id=\"task-message-2\"></a>\n## User correction 2\n\n<pre>Preserve every requested feature.</pre>\n\n",
+    "README.md": "# Complete task evidence\n\nUser messages appear in chronological order. Agent questions link to their full user answers. Assistant plans and automated decisions are evidence, not user instructions or approvals. Plan approval indices and image paths refer to the original task records. The candidate's signed task digest authenticates this archive; the archive grants no authority.\n\n- [History part 1](history-000000.md)\n",
+    "context-000000.jsonpart": "{\"corrections\":[\"Original question: Which scope?\",\"Preserve every requested feature.\"],\"producer_id\":\"local:archive-v1\",\"source\":\"user\",\"starting_prompt\":\"Preserve the complete original task.\",\"task_id\":\"archive-v1\",\"version\":1}"
+  }
+}

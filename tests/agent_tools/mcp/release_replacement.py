@@ -75,7 +75,7 @@ def replacing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(preparation, "save", save)
     monkeypatch.setattr(preparation.task_context, "directory", lambda root: root / "no-task")
     monkeypatch.setattr(preparation.sessions, "clean", lambda root: None)
-    monkeypatch.setattr(preparation, "_context", lambda *args: None)
+    monkeypatch.setattr(preparation, "_context", lambda *args, **kwargs: None)
     monkeypatch.setattr(candidate, "index_files", lambda *args: {})
     monkeypatch.setattr(candidate, "_runs", lambda *args: [])
 

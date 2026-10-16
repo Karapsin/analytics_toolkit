@@ -9,6 +9,13 @@ Generated from package version bumps and recent commit history.
 - Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
 - Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
 - SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
+- Add the worker-compatible scoped merge entrypoint so unrelated live jobs do not starve ready PRs; preserve every merge gate and protect unpublished branches during cleanup.
+
+- Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
+- Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
+- Avoid false missing-image and plan holds from the recovered plan's exact reference-validation example while preserving signed history and genuine evidence requirements.
+
+- Repair orchestrator correction enrollment and routine-question routing while preserving verified publication recovery and genuine owner/security holds.
 
 - Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
 - Fix the Greenplum first-batch restart integration checkpoint and retry budget; add a service-free regression that checks exact rows, rollback, and fresh-connection recovery.
@@ -30,6 +37,16 @@ Generated from package version bumps and recent commit history.
 - Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 - Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
 - Preserve SQL Explorer multicursor selection, clipboard spreading and readable thin carets; stabilize armed-directory scene setup and semantic readiness, correct quality and scrollbar typing failures, retain CODE6 fixes and changelog history, and add focused service-free regressions.
+- Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
+- Fixed disposable authentication fault cleanup restarting Keycloak again after explicit recovery and readiness checks. Retained scenario fault history and full redacted OAuth browser failure diagnostics with guaranteed browser cleanup and fast service-free regression coverage.
+- Refactor service-free OAuth browser regressions and correct lint/format findings while preserving all failure phases, cleanup, redaction, and scenario history.
+- Preserve OAuth diagnostics, fault recovery and fast service-free regressions; extract the browser fake step factory to remove new complexity debt, reconcile Unreleased notes and retain current-dev automation files.
+- Preserve chronological maintenance eligibility answers in generated orchestrator context and document verified companion publication recovery separately from pending cross-repository trigger discovery.
+- Escape Unicode apostrophes in orchestrator correction expectations to satisfy lint while preserving authenticated context text.
+- Apply Ruff's canonical layout to the scoped-merge regression parameters, preserving all assertions and merge-authority coverage.
+- Apply Ruff's canonical multiline layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
+- Apply Ruff's canonical layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
+- Preserve oversized signed agent task histories in immutable chunk archives with retry-safe publication
 
 ## 1.3.12.5 - 2026-10-14
 

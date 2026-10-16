@@ -18,7 +18,7 @@ from analytics_toolkit.sql_explorer.widgets import (
     FileNavigationScreen,
 )
 from textual.color import Color
-from textual.widgets import Button, Collapsible, Input, Static
+from textual.widgets import Button, Collapsible, Input
 
 from tests.sql._support.explorer import FakeSession
 
@@ -66,8 +66,8 @@ async def _hover_button(pilot: Any, button: Button) -> None:
     assert target is button
 
 
-class DisabledColorReference(Static):
-    """Resolve the expected CSS contract beside the subject, independently."""
+class DisabledColorReference(Button):
+    """Render the expected contract with the same disabled Button treatment."""
 
     DEFAULT_CSS = """
     DisabledColorReference {
@@ -82,8 +82,10 @@ class DisabledColorReference(Static):
 
 def _assert_disabled_color(button: Button, reference: DisabledColorReference) -> None:
     assert button.styles.color == reference.styles.color
+    assert button.styles.background == reference.styles.background
     assert button.styles.auto_color == reference.styles.auto_color
     assert button.rich_style.color == reference.rich_style.color
+    assert button.rich_style.bgcolor == reference.rich_style.bgcolor
 
 
 async def _exercise_create_button(
@@ -131,13 +133,18 @@ async def _exercise_disabled_button(
     assert button.styles.background == neutral
     await _hover_button(pilot, button)
     assert button.styles.background == neutral
-    reference = DisabledColorReference()
+    reference = DisabledColorReference("x", disabled=True)
+    reference.styles.color = Color.parse(palette["text-disabled"])
+    reference.styles.background = neutral
+    reference.styles.text_style = "none"
+    reference.styles.tint = "transparent"
     parent = button.parent
     assert parent is not None
     await parent.mount(reference, after=button)
     try:
         await pilot.pause()
         assert reference.parent is button.parent
+        assert reference.disabled is button.disabled
         _assert_disabled_color(button, reference)
         # An independent, incorrect foreground must still fail the strict contract.
         reference.styles.color = "#ff0000"
@@ -212,15 +219,18 @@ def test_create_table_buttons_keep_individual_focus_and_hover_colors(advanced: b
     asyncio.run(exercise())
 
 
-def test_disabled_color_comparison_rejects_only_rendered_foreground_mismatch() -> None:
+@pytest.mark.parametrize("component", ["color", "bgcolor"])
+def test_disabled_color_comparison_rejects_rendered_mismatch(component: str) -> None:
     # Matching CSS tokens alone cannot establish the rendered color contract.
     button: Any = SimpleNamespace(
-        styles=SimpleNamespace(color="disabled", auto_color=True),
-        rich_style=SimpleNamespace(color="#707274"),
+        styles=SimpleNamespace(color="disabled", background="surface", auto_color=True),
+        rich_style=SimpleNamespace(color="#707274", bgcolor="#20252a"),
     )
     reference: Any = SimpleNamespace(
-        styles=SimpleNamespace(color="disabled", auto_color=True),
-        rich_style=SimpleNamespace(color="#6f7172"),
+        styles=SimpleNamespace(color="disabled", background="surface", auto_color=True),
+        rich_style=SimpleNamespace(color="#707274", bgcolor="#20252a"),
     )
+    _assert_disabled_color(button, reference)
+    setattr(reference.rich_style, component, "#ff0000")
     with pytest.raises(AssertionError):
         _assert_disabled_color(button, reference)

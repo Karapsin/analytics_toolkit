@@ -82,6 +82,25 @@ The PR workflow attaches redacted context and a signed-commit digest. Private
 originals never appear in tool receipts. MCP-supplied text relies on the enrolled
 machine trust boundary; it is not independent proof of human authorship.
 
+Oversized attachments retain the complete task in a content-addressed Git archive
+instead of truncating messages or repeating hidden payloads in the PR body.
+The compact attachment links to readable history pages containing the original
+prompt, chronological corrections, agent questions and their complete user
+answers, plans, decisions and image records. Bounded canonical JSON chunks retain
+the exact signed task bytes. Readers verify chunk sizes and SHA-256 hashes,
+canonical task identity, the immutable archive layout and the candidate's existing
+signed trailers. Legacy inline v1/v2 attachments remain readable.
+
+Archive refs use `refs/tags/agent-task-evidence/v1/<task-digest>` and contain only
+task data, outside the candidate tree and its visual receipt. Archives grant no
+approval and do not promote package code. Publication preflights the complete PR
+body and all archive bounds before mutations, confirms the immutable archive
+before the feature push, and rechecks current authority after archive I/O.
+An interrupted archive create is recovered by its exact identity; conflicting
+refs are never replaced. Keep archive refs for the task's audit history.
+The v1 archive layout is a frozen transport contract covered by a historical
+fixture; a future layout needs a new version and a retained v1 reader.
+
 Controller code/prompts, security configuration, dispatch/capture/publishing
 workflows and the required-check manifest require exact-head owner approval.
 Ordinary policies, tools and integration/test workflow repairs are reviewed
@@ -118,10 +137,22 @@ The private subscription worker is maintained in self_hosting's
 `self_host/services/github_agent`. Airflow calls its Unix socket every minute
 and updates the underlying Codex executable Sunday at 04:00 Europe/Moscow.
 The Pi performs bounded source operations only; GitHub runs tests and renders
-visual scenes. Up to five jobs run concurrently with serialized merge decisions.
+visual scenes. Up to ten jobs run concurrently with serialized merge decisions.
 Fast checks and the App's exact-head/base review gate merges. Integration runs
 are monitored after merge and repaired through reviewed PRs until matching
 scenario groups and transports are green. No OpenAI API key is used.
+
+Recommended implementation choices go to a separate read-only plan resolver,
+which approves them only when they align with the complete user request. Genuine
+questions and protected exact-head owner decisions retain their authenticated
+answer path. A singleton maintenance orchestrator starts at most every thirty
+minutes while PRs are open, preserves failed patches and task evidence, and
+may propose source repairs in analytics_toolkit and self_host. Independent
+review and GitHub validation gate publication and merge; the Pi runs no checks.
+An idle trusted supervisor activates newly merged, owner-approved automation
+paths on main only after verifying their merge identity, signatures, task
+binding, fresh authorization and exact-head/base checks. Package code remains
+on dev until an explicit release.
 
 `change-impact` is a read-only preflight for implementation work. For SQL public
 symbols it reports the live signature, exact integration-manifest JSON pointers,
@@ -212,9 +243,10 @@ Controls without IDs use their widget class, sorted CSS classes and query index
 button is checked separately. Modal buttons use the surface color when neutral
 or disabled, the shared hover color under the pointer, and amber for enabled
 keyboard focus, including focus with hover. Disabled-color regressions resolve an
-independent reference with explicit expected CSS beside each tested button under
-the same parent, preserving the ancestor background and contrast context. They
-compare CSS color, automatic contrast and rendered foreground exactly, and reject
+independent disabled Button reference with explicit expected palette values beside
+each tested button under the same parent, preserving Button opacity, ancestor
+background and contrast context. They compare CSS foreground/background, automatic
+contrast and rendered foreground/background exactly, and reject
 an intentionally incorrect reference foreground.
 
 For database-picker, find-replace, column-ruler-scrolled, create-table-advanced,
@@ -225,6 +257,51 @@ truncated layers explicitly report incompleteness. The PNG and diagnostic hashes
 come from one export; atomic evidence replacement protects that frame from later
 timer refreshes. These diagnostics do not replace geometry checks or individual
 review of every full PNG.
+
+Database-picker geometry also retains versioned `export_input_evidence` outside
+the 512 KiB parsed-diagnostic reducer. Its raw and framed SVG `content` strings
+are the actual export and PNG renderer inputs. Decode JSON, encode each string
+as UTF-8 without normalization, then verify its byte length and SHA256; verify
+`png_sha256` against the same frame. Combined SVG bytes are limited to 4 MiB.
+Above that limit both contents are omitted, lengths/hashes remain, and
+`complete=false` explicitly blocks the diagnostic prerequisite. No content is
+silently truncated. The geometry and parsed-layer completeness verdicts remain
+independent and must still pass.
+
+Rendering context includes Python, Textual, Rich and resvg-py package versions,
+requested SVG font families, and bounded fontconfig inventory/match probes.
+Missing commands, timeout, errors and output limits are explicit. System matches
+do not establish resvg font selection, which is marked unobservable. These probes
+run only in the capture job and do not change fonts, framing or rasterization.
+Picker geometry additionally includes versioned `rasterization_comparisons`
+outside the parsed reducer: `raw_original`, `framed_original`, `raw_dejavu` and
+`framed_dejavu`. All four reuse the single final screenshot export. The framed
+original reuses the ordinary PNG bytes; the other variants call the same resvg API
+directly with only `svg_string`. Raw inputs keep native sizing. Diagnostic font
+variants replace only the generated terminal matrix font-family declaration with
+DejaVu Sans Mono; title fonts, text, positions, clips and framing stay intact.
+An exact, nontruncated fontconfig family/file observation must confirm that family
+is installed. This observation does not prove the renderer selected that font.
+
+Each variant retains the exact UTF-8 SVG and base64 PNG, byte lengths, SHA256,
+actual PNG dimensions, font/framing identity and renderer arguments; package
+versions and the font probe accompany the comparison. Decode SVG strings without
+normalization and base64 PNG content without transformation, then verify both
+lengths and hashes. Combined comparison SVG bytes and decoded PNG bytes each have
+a separate 4 MiB limit (including the reused ordinary variant). Exceeding either
+limit omits all content of that type while retaining available lengths/hashes.
+Oversized SVG inputs are not rendered. Missing fonts, ambiguous declarations,
+render failures and omissions have explicit per-variant reasons and
+`complete=false`; successful ordinary capture or parsed diagnostics cannot
+override incomplete comparisons. Ordinary production rendering and scene PNGs
+remain unchanged; probes and comparison rendering execute only on GitHub.
+Readiness and final geometry must pass before export or comparison rendering;
+regressions verify that stale successful comparisons cannot qualify a rejected frame.
+
+The coordinator must bind and independently inspect all four resulting SVG/PNG
+comparisons before selecting a picker repair. Incomplete evidence establishes no
+cause. Collecting diagnostics is no visual-review pass; a subsequent repair needs
+its own reviewed plan, regression and fresh full-scene review.
 
 The schema, invalid and SQL creation scenes also record scoped source-selector
 children: `SelectCurrent`, its `Static#label`, and the active arrow, with the

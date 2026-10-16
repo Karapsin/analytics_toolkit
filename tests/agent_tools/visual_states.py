@@ -12,13 +12,13 @@ from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
 from analytics_toolkit.sql_explorer.widgets import ConfirmMutationScreen, FileNavigationScreen
 from rich.text import Text
-from tests._support.paths import REPO_ROOT
-from tests.agent_tools._support import wait_for_scene
 from textual.css.query import NoMatches
 from textual.widgets import Button, Input, Static
 
 from agent_tools import sql_explorer_visual, sql_explorer_visual_capture
 from agent_tools import sql_explorer_visual_scene as scenes
+from tests._support.paths import REPO_ROOT
+from tests.agent_tools._support import wait_for_scene
 
 if TYPE_CHECKING:
     from pathlib import Path

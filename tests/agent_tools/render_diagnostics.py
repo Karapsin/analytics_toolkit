@@ -14,6 +14,7 @@ from textual.strip import Strip
 from textual.widgets import Checkbox
 
 from agent_tools import sql_explorer_render_diagnostics as diagnostics
+from agent_tools import sql_explorer_svg_evidence as svg_evidence
 from agent_tools import sql_explorer_visual, sql_explorer_visual_capture, sql_explorer_visual_scene
 from tests._support.paths import REPO_ROOT
 from tests.agent_tools._support import wait_for_scene
@@ -197,6 +198,8 @@ def test_target_scenes_collect_only_bounded_widget_and_composed_regions(
 def test_final_capture_exports_once_hashes_same_frame_and_survives_geometry_refresh(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setattr(svg_evidence, "_font_probe", lambda _args: {"status": "unavailable"})
+    monkeypatch.setattr(svg_evidence, "_render_svg", lambda _svg: b"png")
     exports = []
     selector = {"visibility_ok": False, "findings": ["source-label:empty_content_region"]}
     terminal = _terminal()
@@ -217,9 +220,12 @@ def test_final_capture_exports_once_hashes_same_frame_and_survives_geometry_refr
     def write_evidence(*_args: Any) -> None:
         evidence.write_text(json.dumps(geometry), encoding="utf-8")
 
+    framed_input = []
+
     def write_png(svg: str, path: Path, *, framed_svg: str | None = None) -> None:
         assert svg == exports[0]
         assert framed_svg == sql_explorer_visual_capture._frame_svg(exports[0])
+        framed_input.append(framed_svg)
         path.write_bytes(b"same-frame-png")
 
     monkeypatch.setattr(sql_explorer_visual_capture, "_write_evidence", write_evidence)
@@ -236,6 +242,10 @@ def test_final_capture_exports_once_hashes_same_frame_and_survives_geometry_refr
     assert saved["selector_readiness"]["selector"] == selector
     assert saved["selector_readiness"]["selector"]["visibility_ok"] is False
     assert saved["render_diagnostics"]["terminal"]["source_selector"] == selector
+    inputs = saved["export_input_evidence"]
+    assert inputs["complete"] is True
+    assert inputs["inputs"]["raw_svg"]["content"] == exports[0]
+    assert inputs["inputs"]["framed_svg"]["content"] == framed_input[0]
     assert saved["schema_version"] == 1
     assert saved["ok"] is True
     assert saved["assertions"] == geometry["assertions"]
@@ -257,6 +267,8 @@ def test_final_capture_exports_once_hashes_same_frame_and_survives_geometry_refr
 def test_failed_atomic_replace_preserves_legacy_geometry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setattr(svg_evidence, "_font_probe", lambda _args: {"status": "unavailable"})
+    monkeypatch.setattr(svg_evidence, "_render_svg", lambda _svg: b"png")
     geometry = {"schema_version": 1, "ok": True, "assertions": {"kept": True}}
     evidence, screenshot = tmp_path / "geometry.json", tmp_path / "scene.png"
     app: Any = SimpleNamespace(
