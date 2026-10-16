@@ -88,6 +88,11 @@ class SqlEditor(TextArea):
         if not self.soft_wrap:
             self._refresh_size()
 
+    def load_text(self, text: str) -> None:
+        """Release cursor snapshots when Textual resets the document history."""
+        self._cursor_edits.clear()
+        super().load_text(text)
+
     def _sync_horizontal_scrollbar(self) -> None:
         """TextArea scrolling must also update the scrollbar's numeric model."""
         if not self.is_mounted:
@@ -103,6 +108,7 @@ class SqlEditor(TextArea):
 
     def on_idle(self, event: events.Idle | None = None) -> None:
         del event
+        self._prune_cursor_history()
         if not self.is_mounted:
             return
         # Layout and document changes can update extents without a scroll event.
@@ -306,8 +312,7 @@ class SqlEditor(TextArea):
                 reconciled.append((start, end, value, caret, active))
         edits = reconciled
         self.history.checkpoint()
-        old_batches = self.history.undo_stack
-        previous_edit = old_batches[-1][-1] if old_batches else None
+        previous_edit = self._latest_undo_edit()
         ordered = sorted(edits)
         first, last = ordered[0][0], ordered[-1][1]
         chunks: list[str] = []
@@ -341,19 +346,44 @@ class SqlEditor(TextArea):
             next(point for active, point in positions if active),
             [point for active, point in positions if not active],
         )
+        self._record_cursor_edit(previous_edit, before, before_preferences)
+
+    def _latest_undo_edit(self) -> object | None:
         batches = self.history.undo_stack
-        retained = {id(edit) for batch in (*batches, *self.history.redo_stack) for edit in batch}
+        return batches[-1][-1] if batches and batches[-1] else None
+
+    def _prune_cursor_history(self) -> None:
+        """Keep snapshots only while their exact edits remain undoable or redoable."""
+        retained = {
+            id(edit)
+            for batch in (*self.history.undo_stack, *self.history.redo_stack)
+            for edit in batch
+        }
         self._cursor_edits = [entry for entry in self._cursor_edits if id(entry[0]) in retained]
-        if batches and batches[-1][-1] is not previous_edit:
-            self._cursor_edits.append(
-                (
-                    batches[-1][-1],
-                    before,
-                    (self.selection, *self._secondary_selections),
-                    before_preferences,
-                    dict(self._cursor_preferences),
-                )
+
+    def _record_cursor_edit(
+        self,
+        previous_edit: object | None,
+        before: tuple[Selection, ...],
+        before_preferences: dict[Selection, int],
+    ) -> None:
+        self._prune_cursor_history()
+        edit = self._latest_undo_edit()
+        if (
+            edit is None
+            or edit is previous_edit
+            or any(recorded[0] is edit for recorded in self._cursor_edits)
+        ):
+            return
+        self._cursor_edits.append(
+            (
+                edit,
+                before,
+                (self.selection, *self._secondary_selections),
+                before_preferences,
+                dict(self._cursor_preferences),
             )
+        )
 
     def _history_cursors(self, edit: object, *, redo: bool) -> None:
         for recorded, before, after, before_preferences, after_preferences in reversed(
@@ -370,16 +400,19 @@ class SqlEditor(TextArea):
         self.collapse_to_active()
 
     def action_undo(self) -> None:
-        batches = self.history.undo_stack
+        edit = self._latest_undo_edit()
         super().action_undo()
-        if batches:
-            self._history_cursors(batches[-1][-1], redo=False)
+        if edit is not None:
+            self._history_cursors(edit, redo=False)
+        self._prune_cursor_history()
 
     def action_redo(self) -> None:
         batches = self.history.redo_stack
+        edit = batches[-1][-1] if batches and batches[-1] else None
         super().action_redo()
-        if batches:
-            self._history_cursors(batches[-1][-1], redo=True)
+        if edit is not None:
+            self._history_cursors(edit, redo=True)
+        self._prune_cursor_history()
 
     @property
     def logical_column(self) -> int:
@@ -902,6 +935,7 @@ class SqlEditor(TextArea):
             else:
                 amounts[row] = len(_INDENT)
         if not any(amounts.values()):
+            self._prune_cursor_history()
             return
         first, last = min(rows), max(rows)
         original = Document(self.text)
@@ -910,6 +944,7 @@ class SqlEditor(TextArea):
             amount = amounts.get(row, 0)
             lines[index] = _INDENT + lines[index] if amount > 0 else lines[index][-amount:]
         self.history.checkpoint()
+        previous_edit = self._latest_undo_edit()
         self.replace(
             "\n".join(lines),
             (first, 0),
@@ -934,12 +969,4 @@ class SqlEditor(TextArea):
             for old, new in zip(before, after)
         }
         self._set_selections(after[0], list(after[1:]), preferences=preferences)
-        self._cursor_edits.append(
-            (
-                self.history.undo_stack[-1][-1],
-                before,
-                (self.selection, *self._secondary_selections),
-                before_preferences,
-                dict(self._cursor_preferences),
-            )
-        )
+        self._record_cursor_edit(previous_edit, before, before_preferences)

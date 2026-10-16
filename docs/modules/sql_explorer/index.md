@@ -575,9 +575,11 @@ collapses each selection toward that direction. Short lines clamp the visible
 caret while preserving each cursor's intended column for vertical movement.
 Overlapping selections merge while retaining the primary cursor and direction.
 Typing, pasting, deleting, and indentation form one undoable transaction;
-undo/redo restores every cursor and its intended column. The active line gutter
-and
-row/column status values follow only the main cursor, using the focus accent.
+undo/redo restores every cursor and its intended column. Cursor snapshots follow
+the retained undo/redo history: discarded redo branches and evicted edits release
+their snapshots, and loading replacement text clears them with the edit history.
+The active line gutter and row/column status values follow only the main cursor,
+using the focus accent.
 Carets use thin underlines on occupied cells and vertical bars on blank/end cells,
 so SQL characters and find highlights remain readable without shifting columns.
 
