@@ -288,12 +288,11 @@ def test_failed_atomic_replace_preserves_legacy_geometry(
         message = "simulated atomic replacement failure"
         raise OSError(message)
 
+    def write_png(_svg: str, path: Path, **_kwargs: Any) -> None:
+        path.write_bytes(b"png")
+
     monkeypatch.setattr(sql_explorer_visual_capture, "_write_evidence", write_evidence)
-    monkeypatch.setattr(
-        sql_explorer_visual_capture,
-        "_write_png",
-        lambda _svg, path, **_kwargs: path.write_bytes(b"png"),
-    )
+    monkeypatch.setattr(sql_explorer_visual_capture, "_write_png", write_png)
     monkeypatch.setattr(
         sql_explorer_visual_capture, "terminal_diagnostics", lambda *_args: _terminal()
     )

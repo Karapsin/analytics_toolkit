@@ -216,7 +216,7 @@ def test_four_variants_preserve_inputs_hashes_and_ordinary_png(
     assert result["schema_version"] == 1
     assert result["complete"] is True
     assert result["missing"] == []
-    assert comparison_renderer[:3] == [COMPARISON_SVG, raw_font, framed_font]
+    assert comparison_renderer[:4] == [COMPARISON_SVG, raw_font, framed, framed_font]
     expected = {
         "raw_original": COMPARISON_SVG,
         "raw_dejavu": raw_font,
@@ -227,7 +227,7 @@ def test_four_variants_preserve_inputs_hashes_and_ordinary_png(
         identity: evidence._framing_control(COMPARISON_SVG, framed, identity)
         for identity in ("raw_xml_native", "framed_preserved_target", "framed_xml_native")
     }
-    assert comparison_renderer[3:] == list(controls.values())
+    assert comparison_renderer[4:] == list(controls.values())
     expected.update(controls)
     assert set(result["variants"]) == set(expected)
     assert result["combined_svg_byte_length"] == sum(
@@ -246,7 +246,7 @@ def test_four_variants_preserve_inputs_hashes_and_ordinary_png(
         assert record["png"]["byte_length"] == len(png)
         assert record["png"]["sha256"] == evidence.digest(png)
         assert record["png"]["dimensions"] == [1, 1]
-        assert record["png"]["reused_ordinary_png"] is (identity == "framed_original")
+        assert record["png"]["reused_ordinary_png"] is False
         assert record["renderer_arguments"] == {"input": "svg.content", "other_arguments": {}}
     assert result["ordinary_png_sha256"] == evidence.digest(PNG)
     assert result["versions"]["python"]
@@ -286,7 +286,7 @@ def test_ambiguous_font_inputs_are_explicitly_incomplete(
         assert reason in record["reason"]
         assert "svg" not in record
     assert comparison_renderer[0] == svg
-    assert len(comparison_renderer) == 3
+    assert len(comparison_renderer) == 4
     assert result["variants"]["framed_xml_native"]["status"] == "omitted"
 
 
@@ -327,7 +327,7 @@ def test_font_availability_requires_exact_nontruncated_installed_family(
     assert result["complete"] is available
     if not available:
         assert comparison_renderer[0] == COMPARISON_SVG
-        assert len(comparison_renderer) == 4
+        assert len(comparison_renderer) == 5
         assert result["variants"]["raw_dejavu"]["reason"] == "comparison_font_unavailable"
 
 
@@ -380,8 +380,9 @@ def test_renderer_failure_retains_other_variants_and_marks_incomplete(
 
 @pytest.mark.parametrize("png", [b"bad", b"x" * 24, PNG[:16] + struct.pack(">II", 0, 1)])
 def test_invalid_png_dimensions_cannot_complete_comparisons(
-    png: bytes, comparison_renderer: list[str]
+    monkeypatch: pytest.MonkeyPatch, png: bytes, comparison_renderer: list[str]
 ) -> None:
+    monkeypatch.setattr(evidence, "_render_svg", lambda _svg: png)
     result = evidence.rasterization_comparisons(
         COMPARISON_SVG, capture._frame_svg(COMPARISON_SVG), png
     )
@@ -400,7 +401,8 @@ def test_output_dimensions_are_observed_instead_of_assumed(
         COMPARISON_SVG, capture._frame_svg(COMPARISON_SVG), frame_png
     )
     assert result["variants"]["raw_original"]["png"]["dimensions"] == [2556, 1197]
-    assert result["variants"]["framed_original"]["png"]["dimensions"] == [1280, 800]
+    assert result["variants"]["framed_original"]["png"]["dimensions"] == [2556, 1197]
+    assert result["ordinary_png_sha256"] == evidence.digest(frame_png)
 
 
 def test_renderer_wrapper_passes_only_exact_svg(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -425,8 +427,15 @@ def test_comparisons_are_picker_only_and_published_atomically(
         exports.append(COMPARISON_SVG)
         return COMPARISON_SVG
 
-    def compare(raw: str, framed: str, png: bytes) -> dict[str, Any]:
+    rasterization_metadata = {"pipeline": "supersampled"}
+
+    def write_png(_svg: str, path: Path, **_kwargs: Any) -> dict[str, Any]:
+        path.write_bytes(PNG)
+        return rasterization_metadata
+
+    def compare(raw: str, framed: str, png: bytes, *, rasterization: Any) -> dict[str, Any]:
         assert json.loads(geometry.read_text(encoding="utf-8")) == {"ok": True}
+        assert rasterization is rasterization_metadata
         calls.append((raw, framed, png))
         return incomplete
 
@@ -440,7 +449,7 @@ def test_comparisons_are_picker_only_and_published_atomically(
     monkeypatch.setattr(capture, "render_diagnostics", lambda *_args: {"complete": False})
     monkeypatch.setattr(capture, "export_input_evidence", lambda *_args: {"unchanged": True})
     monkeypatch.setattr(capture, "rasterization_comparisons", compare)
-    monkeypatch.setattr(capture, "_write_png", lambda _svg, path, **_kwargs: path.write_bytes(PNG))
+    monkeypatch.setattr(capture, "_write_png", write_png)
     capture._capture_frame(
         SimpleNamespace(export_screenshot=export),
         scene,

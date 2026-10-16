@@ -72,8 +72,8 @@ def test_controls_separate_serialization_from_scaling_and_preserve_layout(
     assert target[1].get("preserveAspectRatio") == "xMidYMid meet"
     assert ordinary_before == (capture._frame_svg(original).encode("utf-8"), PNG)
     assert result["variants"]["framed_original"]["svg"]["content"] == framed
-    assert result["variants"]["framed_original"]["png"]["reused_ordinary_png"]
-    assert len(comparison_renderer) == 6
+    assert not result["variants"]["framed_original"]["png"]["reused_ordinary_png"]
+    assert len(comparison_renderer) == 7
 
 
 @pytest.mark.parametrize(

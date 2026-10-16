@@ -10,6 +10,7 @@ import shutil
 import struct
 import subprocess
 from importlib.metadata import PackageNotFoundError, version
+from io import BytesIO
 from tempfile import TemporaryFile
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -24,6 +25,8 @@ MAX_FONT_REQUESTS = 8
 _VIEWBOX_COMPONENTS = 4
 MAX_FONT_FAMILY_LENGTH = 512
 PROBE_TIMEOUT = 3
+RASTER_VIEWPORT = (1280, 800)
+SUPERSAMPLE_FACTOR = 2
 
 
 def _version(package: str) -> str:
@@ -203,6 +206,57 @@ def _png_dimensions(png: bytes) -> list[int]:
     return [width, height]
 
 
+def supersampling_svg(framed_svg: str) -> str:
+    """Scale the complete, unchanged target frame through one outer viewport."""
+    width, height = RASTER_VIEWPORT
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg"'
+        f' width="{width * SUPERSAMPLE_FACTOR}" height="{height * SUPERSAMPLE_FACTOR}"'
+        f' viewBox="0 0 {width} {height}">' + framed_svg + "</svg>"
+    )
+
+
+def rasterize_framed_svg(framed_svg: str) -> tuple[bytes, dict[str, Any]]:
+    """Render at twice the target size, then perform exactly one Lanczos reduction."""
+    from PIL import Image  # noqa: PLC0415 - optional agent capture dependency.
+
+    svg = supersampling_svg(framed_svg)
+    intermediate = _render_svg(svg)
+    dimensions = _png_dimensions(intermediate)
+    expected = [size * SUPERSAMPLE_FACTOR for size in RASTER_VIEWPORT]
+    if dimensions != expected:
+        message = f"unexpected_supersampling_dimensions: {dimensions}"
+        raise ValueError(message)
+    with Image.open(BytesIO(intermediate)) as image:
+        reduced = image.resize(RASTER_VIEWPORT, resample=Image.Resampling.LANCZOS)
+        with reduced, BytesIO() as output:
+            reduced.save(output, format="PNG")
+            png = output.getvalue()
+    final_dimensions = _png_dimensions(png)
+    if final_dimensions != list(RASTER_VIEWPORT):
+        message = f"unexpected_final_dimensions: {final_dimensions}"
+        raise ValueError(message)
+    encoded = svg.encode("utf-8")
+    return png, {
+        "svg": {
+            "encoding": "UTF-8",
+            "byte_length": len(encoded),
+            "sha256": digest(encoded),
+            "content": svg,
+        },
+        "renderer": "resvg_py.svg_to_bytes",
+        "renderer_arguments": {"input": "svg.content", "other_arguments": {}},
+        "processing": {
+            "scale_factor": SUPERSAMPLE_FACTOR,
+            "intermediate": {"dimensions": dimensions, "sha256": digest(intermediate)},
+            "final": {"dimensions": final_dimensions, "sha256": digest(png)},
+            "pillow_version": _version("Pillow"),
+            "reduction_filter": "Image.Resampling.LANCZOS",
+            "reductions": 1,
+        },
+    }
+
+
 def _comparison_inputs(svg: str, framed_svg: str, font: dict[str, Any]) -> dict[str, Any]:
     variants: dict[str, Any] = {}
     for framing, original in (("raw", svg), ("framed", framed_svg)):
@@ -272,10 +326,7 @@ def _preserved_frame(svg: str, width: str, height: str) -> str:
             tag = tag[:-1] + f' {name}="{value}">'
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
-        '<rect width="100%" height="100%" fill="#0d1117"/>'
-        + tag
-        + svg[opening.end() :]
-        + "</svg>"
+        '<rect width="100%" height="100%" fill="#0d1117"/>' + tag + svg[opening.end() :] + "</svg>"
     )
 
 
@@ -336,7 +387,7 @@ def _comparison_pngs(variants: dict[str, Any], ordinary_png: bytes) -> int:
         try:
             png = (
                 ordinary_png
-                if identity == "framed_original"
+                if identity == "framed_supersampled"
                 else _render_svg(record["svg"]["content"])
             )
             dimensions = _png_dimensions(png)
@@ -349,18 +400,33 @@ def _comparison_pngs(variants: dict[str, Any], ordinary_png: bytes) -> int:
             "byte_length": len(png),
             "sha256": digest(png),
             "dimensions": dimensions,
-            "reused_ordinary_png": identity == "framed_original",
+            "reused_ordinary_png": identity == "framed_supersampled",
             "content": base64.b64encode(png).decode("ascii"),
         }
         record["status"] = "ok"
     return total
 
 
-def rasterization_comparisons(svg: str, framed_svg: str, png: bytes) -> dict[str, Any]:
+def rasterization_comparisons(
+    svg: str,
+    framed_svg: str,
+    png: bytes,
+    *,
+    rasterization: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Bound lossless comparisons; incompleteness never establishes a cause."""
     font = _comparison_font()
     variants = _comparison_inputs(svg, framed_svg, font)
     _add_framing_controls(variants, svg, framed_svg)
+    if rasterization is not None:
+        variants["framed_supersampled"] = {
+            **rasterization,
+            "svg": dict(rasterization["svg"]),
+            "framing": "unchanged target frame in doubled outer viewport",
+            "font": "original declarations",
+            "sizing": "2560x1600 render; one Lanczos reduction to 1280x800",
+            "status": "pending",
+        }
     svg_total = sum(record.get("svg", {}).get("byte_length", 0) for record in variants.values())
     missing = []
     png_total = 0

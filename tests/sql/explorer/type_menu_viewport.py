@@ -24,8 +24,12 @@ def test_type_menu_disappears_when_focused_field_scrolls_out_of_view() -> None:
             )
             await app.push_screen(screen)
             screen.query_one(Collapsible).collapsed = False
+            await pilot.pause()
             field = screen.query(".create-column-type").first(Input)
             field.focus()
+            await pilot.pause()
+            field.scroll_visible(animate=False)
+            await pilot.pause()
             field.value = "B"
             await pilot.pause()
             screen._position_types()
@@ -33,6 +37,8 @@ def test_type_menu_disappears_when_focused_field_scrolls_out_of_view() -> None:
             menu = screen.query_one("#create-type-options", OptionList)
             fields = screen.query_one("#create-table-fields")
             initial = menu_snapshot(app, screen, field, menu, fields)
+            assert fields.content_region.contains_region(field.region), initial
+            assert field.region.bottom < fields.content_region.bottom, initial
             assert menu.display, initial
             assert menu.region.x == field.region.x, initial
             assert menu.region.y == field.region.bottom, initial

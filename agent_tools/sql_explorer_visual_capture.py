@@ -17,7 +17,11 @@ from agent_tools.sql_explorer_render_diagnostics import (
     selector_readiness_snapshot,
     terminal_diagnostics,
 )
-from agent_tools.sql_explorer_svg_evidence import export_input_evidence, rasterization_comparisons
+from agent_tools.sql_explorer_svg_evidence import (
+    export_input_evidence,
+    rasterization_comparisons,
+    rasterize_framed_svg,
+)
 from agent_tools.sql_explorer_visual import TERMINAL_COLUMNS, TERMINAL_ROWS, VIEWPORT
 from agent_tools.sql_explorer_visual_scene import (
     VisualExplorerApp,
@@ -47,13 +51,13 @@ def _frame_svg(svg: str) -> str:
     return ET.tostring(frame, encoding="unicode")
 
 
-def _write_png(svg: str, destination: Path, *, framed_svg: str | None = None) -> None:
-    import resvg_py  # noqa: PLC0415 - optional agent capture dependency.
-
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(
-        resvg_py.svg_to_bytes(svg_string=framed_svg if framed_svg is not None else _frame_svg(svg))
+def _write_png(svg: str, destination: Path, *, framed_svg: str | None = None) -> dict[str, Any]:
+    png, rasterization = rasterize_framed_svg(
+        framed_svg if framed_svg is not None else _frame_svg(svg)
     )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(png)
+    return rasterization
 
 
 def _geometry_ready(evidence: Path) -> bool:
@@ -86,12 +90,14 @@ def _capture_frame(
         _write_png(svg, screenshot)
         return
     framed_svg = _frame_svg(svg)
-    _write_png(svg, screenshot, framed_svg=framed_svg)
+    rasterization = _write_png(svg, screenshot, framed_svg=framed_svg)
     png = screenshot.read_bytes()
     geometry["render_diagnostics"] = render_diagnostics(app, scene, svg, framed_svg, png, terminal)
     if scene == "database-picker":
         geometry["export_input_evidence"] = export_input_evidence(svg, framed_svg, png)
-        geometry["rasterization_comparisons"] = rasterization_comparisons(svg, framed_svg, png)
+        geometry["rasterization_comparisons"] = rasterization_comparisons(
+            svg, framed_svg, png, rasterization=rasterization
+        )
     temporary = evidence.with_suffix(".tmp")
     temporary.write_text(json.dumps(geometry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(evidence)

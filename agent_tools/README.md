@@ -174,7 +174,10 @@ visual receipt created by `visual-workflow`. The capture runs headlessly on the
 current Linux, macOS, or Windows host, using the checkout's Python environment.
 It starts each scene in a separate process with Textual's headless driver and
 fake database fixtures, exports the complete application screen, and rasterizes
-it to a 1280x800 PNG with `resvg-py`. The terminal grid is 208x47 cells. A host
+it with `resvg-py` at 2560x1600, then reduces once with Pillow's
+`Image.Resampling.LANCZOS` to the full 1280x800 PNG. An outer SVG viewport scales
+the unchanged framed SVG; intermediate and final dimensions are validated, and
+rendering errors propagate. The terminal grid is 208x47 cells. A host
 monospace font must be installed (for example Menlo, Consolas, or Liberation
 Mono). No VM, OS image download, desktop session, or VNC server is needed.
 
@@ -282,7 +285,8 @@ remain required; this diagnostic checkpoint supplies no repair or visual verdict
 
 Database-picker geometry also retains versioned `export_input_evidence` outside
 the 512 KiB parsed-diagnostic reducer. Its raw and framed SVG `content` strings
-are the actual export and PNG renderer inputs. Decode JSON, encode each string
+are the actual export and target frame inputs. The supersampling input is retained
+separately in `rasterization_comparisons`. Decode JSON, encode each string
 as UTF-8 without normalization, then verify its byte length and SHA256; verify
 `png_sha256` against the same frame. Combined SVG bytes are limited to 4 MiB.
 Above that limit both contents are omitted, lengths/hashes remain, and
@@ -298,8 +302,8 @@ run only in the capture job and do not change fonts, framing or rasterization.
 Picker geometry additionally includes versioned `rasterization_comparisons`
 outside the parsed reducer: `raw_original`, `framed_original`, `raw_dejavu` and
 `framed_dejavu`. All four reuse the single final screenshot export. The framed
-original reuses the ordinary PNG bytes; the other variants call the same resvg API
-directly with only `svg_string`. Raw inputs keep native sizing. Diagnostic font
+original is rendered independently; all seven direct controls call the same resvg
+API with only `svg_string`. Raw inputs keep native sizing. Diagnostic font
 variants replace only the generated terminal matrix font-family declaration with
 DejaVu Sans Mono; title fonts, text, positions, clips and framing stay intact.
 An exact, nontruncated fontconfig family/file observation must confirm that family
@@ -316,8 +320,8 @@ Oversized SVG inputs are not rendered. Missing fonts, ambiguous declarations,
 render failures and omissions have explicit per-variant reasons and
 `complete=false`. Service-free regressions cover both runtime and operating-system
 renderer errors while retaining the successful variants. Successful ordinary capture
-or parsed diagnostics cannot override incomplete comparisons. Ordinary production rendering and scene PNGs
-remain unchanged; probes and comparison rendering execute only on GitHub.
+or parsed diagnostics cannot override incomplete comparisons. Production UI remains
+unchanged; probes and comparison rendering execute only on GitHub.
 Readiness and final geometry must pass before export or comparison rendering;
 regressions verify that stale successful comparisons cannot qualify a rejected frame.
 
@@ -327,13 +331,20 @@ Three additional controls separate serialization from scaling:
 byte intact; `framed_xml_native` uses the existing XML frame at the original
 viewBox dimensions. They retain original font declarations and share both 4 MiB
 comparison budgets with the original four variants. Invalid or missing native
-sizing and failed controls explicitly make the comparison incomplete. The ordinary
-production frame and PNG remain unchanged.
+sizing and failed controls explicitly make the comparison incomplete. The target
+frame remains unchanged.
 
-The coordinator must bind and independently inspect all seven resulting SVG/PNG
-comparisons before selecting a picker repair. Incomplete evidence establishes no
-cause. Collecting diagnostics is no visual-review pass; a subsequent repair needs
-its own reviewed plan, regression and fresh full-scene review.
+The additional `framed_supersampled` variant retains the exact outer SVG, renderer
+arguments, scale factor, intermediate dimensions/hash, final dimensions/hash,
+Pillow version and reduction filter. It alone reuses the ordinary final PNG;
+`framed_original` remains a direct-render control. All eight variants share the
+existing separate 4 MiB SVG and decoded-PNG budgets and explicit omission rules.
+
+The coordinator must bind and independently inspect the supersampled picker and
+all comparisons, then all 46 full scenes. Supersampling is accepted only when the
+actual heading is readable and every geometry check and individual PNG verdict
+passes. Incomplete evidence or a successful capture alone supplies no visual
+approval.
 
 The type-menu viewport regression attaches an observational JSON snapshot before
 its initial visibility assertion, after scrolling, and after positioning. It records
@@ -342,7 +353,10 @@ scroll offsets, field/menu/viewport geometry, advanced-panel state and dependenc
 versions. Queue sizes and pending layout/refresh flags are read only when available;
 unavailable probes and omissions are explicit. Snapshots are limited to 8 KiB and
 attach the original observation to failures without retries, event draining,
-refocusing or recollection. Existing assertions and their order remain intact.
+refocusing or recollection. Before the assertion sequence, the fixture settles the
+expanded layout, focuses and scrolls the field into view without animation, then
+checks that its full region is visible with space below. Existing menu visibility,
+placement and scroll-out assertions remain intact; production positioning is unchanged.
 
 The quality job always attempts to upload generated `coverage.json` under a unique
 run/attempt/head-bound artifact name, including when the coverage ratchet fails.

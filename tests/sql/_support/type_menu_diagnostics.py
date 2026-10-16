@@ -97,6 +97,14 @@ def _bounded_json(snapshot: dict[str, Any]) -> str:
             return bounded
 
 
+def _package_version(package: str, unavailable: list[str]) -> str:
+    try:
+        return version(package)
+    except PackageNotFoundError:
+        unavailable.append("versions." + package)
+        return "unavailable"
+
+
 def menu_snapshot(app: Any, screen: Any, field: Any, menu: Any, fields: Any) -> str:
     """Observe without awaiting, dispatching, focusing, scrolling or refreshing."""
     unavailable: list[str] = []
@@ -126,11 +134,7 @@ def menu_snapshot(app: Any, screen: Any, field: Any, menu: Any, fields: Any) -> 
         snapshot[path] = _widget(widget, path, unavailable, omissions)
     versions = {"python": platform.python_version()}
     for package in ("textual", "rich"):
-        try:
-            versions[package] = version(package)
-        except PackageNotFoundError:
-            versions[package] = "unavailable"
-            unavailable.append("versions." + package)
+        versions[package] = _package_version(package, unavailable)
     snapshot.update(
         versions=versions, unavailable=unavailable, omissions=omissions, complete=not omissions
     )
