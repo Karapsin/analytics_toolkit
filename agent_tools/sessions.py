@@ -218,6 +218,7 @@ def writable(root: Path) -> dict[str, Any]:
 def push(root: Path) -> dict[str, Any]:
     state = writable(root)
     clean(root)
+    task_context.preflight(root)
     prefix = (
         "Implemented in an isolated Codex session. The Pi owns independent "
         "review, corrections, GitHub checks and merging."

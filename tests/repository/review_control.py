@@ -33,8 +33,7 @@ def test_rejection_is_durable_head_changes_do_not_resume_and_alert_has_no_button
     gh.pr["head"]["sha"] = "b" * 40
     assert control.paused(gh, gh.pr)
     events = control.pending()
-    assert len(events) == 1
-    assert events[0]["token"] is None
+    assert events == []  # Rejection remains durable on GitHub, without Telegram noise.
     gh.comments.append(
         {
             "body": "/agent resume " + "b" * 40,
@@ -82,17 +81,6 @@ def test_callback_requires_owner_channel_message_and_current_head(control: Any) 
     control.callback(gh, query, 22, -1001)
     assert not control.approved(gh.repository, 1, "a" * 40)
     assert control.paused(gh, gh.pr)
-
-
-def test_retry_outbox_deduplicates_event_and_keeps_actionable_explanation(control: Any) -> None:
-    control.enqueue("one", "rejection", {"changes": "Expanded scope", "reason": "Not requested"})
-    control.enqueue("one", "rejection", {"changes": "Duplicate"})
-    event = control.pending()[0]
-    assert json.loads(event["payload"])["reason"] == "Not requested"
-    control.delivery("one", delay=30)
-    assert not control.pending()
-    control.delivery("one", message_id=10)
-    assert not control.pending()
 
 
 @pytest.mark.parametrize(

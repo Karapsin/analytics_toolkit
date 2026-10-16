@@ -1511,7 +1511,10 @@ def _reused_stage_count(stage_reports: list[dict[str, Any]]) -> int:
 
 
 def task_context(
-    action: str = "status", user_prompt: str | None = None, root: str = "."
+    action: str = "status",
+    user_prompt: str | None = None,
+    root: str = ".",
+    evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Record exact user corrections without exposing private originals in receipts."""
     user_tasks = importlib.import_module(
@@ -1520,7 +1523,15 @@ def task_context(
 
     try:
         path = _resolve_root(root)
-        result = user_tasks.receipt(path, action, user_prompt)
+        result = (
+            user_tasks.review_record(path)
+            if action == "review-record"
+            else (
+                user_tasks.evidence(path, action, evidence)
+                if evidence is not None
+                else user_tasks.receipt(path, action, user_prompt)
+            )
+        )
         return _tool_output(
             "task_context",
             {"action": action, "root": root},
@@ -1542,6 +1553,7 @@ def _feature_commit_context(root: Path) -> tuple[list[str], str]:
     user_tasks = importlib.import_module(
         f"{__package__}.task_context" if __package__ else "task_context"
     )
+    user_tasks.protocol().require_resolved(user_tasks.read(root))
     return sessions.commit_options(root), user_tasks.commit_trailers(root)
 
 
@@ -2294,14 +2306,32 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     )
 
     task_parser = subparsers.add_parser("task-context")
-    task_parser.add_argument("--action", choices=["status", "append"], default="status")
+    task_parser.add_argument(
+        "--action",
+        choices=[
+            "status",
+            "append",
+            "plan",
+            "approve-plan",
+            "question",
+            "answer-question",
+            "image",
+            "replace-missing",
+            "review-record",
+        ],
+        default="status",
+    )
     task_parser.add_argument("--user-prompt-file")
+    task_parser.add_argument("--evidence-file")
     task_parser.add_argument("--root", default=".")
     task_parser.set_defaults(
         handler=lambda args: task_context(
             action=args.action,
             root=args.root,
             user_prompt=Path(args.user_prompt_file).read_text() if args.user_prompt_file else None,
+            evidence=json.loads(Path(args.evidence_file).read_text())
+            if args.evidence_file
+            else None,
         )
     )
 

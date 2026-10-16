@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "source": "assistant-provenance-amendment",
+  "task_id": "33ad72f4abee49ca97e6d058e9f81a52",
+  "original_published_v1": {
+    "path": "history/published-v1.json",
+    "digest": "82394e7a1b09b41255565aac080c2c00b34592c085d3c07b05a5ac869ea3a933",
+    "head": "5d5aa0242ddcb7f80a05fcffcf8e1556d6434f1d"
+  },
+  "retained_v2_projection": "history/context-before-provenance-amendment.json",
+  "native_proof": {
+    "path": "operator/pr15-original-plan-and-authenticated-approval.json",
+    "sha256": "6933cf387e9eee617841ac3b9142150b42d4608351b0ea52be7f64b9af206262",
+    "plan_id": "88852a9c0686faeb3176b615ed69e8e626963dbaa1f358eed5ac06b2001c1dae",
+    "approval_index": 0
+  },
+  "correction_11": "Historical citation and actual answer, not a second approval or image replacement.",
+  "unavailable_image": "The original PR #12 image remains unavailable; comparison stays deferred.",
+  "automated_clarification": "Preserved in decisions, never promoted to a human answer or structured owner replacement.",
+  "new_human_answer": false,
+  "new_policy_approval": false
+}

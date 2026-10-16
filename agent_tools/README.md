@@ -82,6 +82,65 @@ The PR workflow attaches redacted context and a signed-commit digest. Private
 originals never appear in tool receipts. MCP-supplied text relies on the enrolled
 machine trust boundary; it is not independent proof of human authorship.
 
+Task context v2 preserves exact assistant plans, approval indices into chronological
+user corrections, content-addressed image evidence and explicit replacements for
+missing evidence. Assistant plans and automated recommended choices are labelled
+as evidence; neither is presented as a user message. Existing v1 attachments and
+signed digests remain readable without migration.
+
+Use `task-context --action plan --evidence-file FILE` with `{"text": "exact plan"}`.
+Use `approve-plan` with `plan_id`, the exact `user_prompt`, and optionally an
+existing `correction_index`. MCP exposes the same actions through its `evidence`
+argument. Approval binds an existing plan, never an agent summary.
+If the immutable starting prompt itself approves the plan, use `approve-plan`
+with `message_source: "starting_prompt"`, the existing `plan_id`, and `user_prompt`
+exactly matching that starting prompt. Do not include `correction_index`.
+The optional boolean `starting_prompt_approval` records this binding without
+appending a duplicate correction; absent bindings default to false and old
+records retain their original digests. Readers also retain the earlier optional
+`approval_starting_prompt` spelling without rewriting it; conflicting bindings
+are rejected. Deploy these readers before enabling the new writer field.
+A correction approval does not resolve
+a starting-prompt plan reference, and this binding does not resolve later
+corrections. Publication checks both the starting prompt and every correction.
+An explicit later owner replacement using `replace-missing` can resolve the
+missing plan instead. Parsing and signature verification of legacy signed PR
+records remain unchanged.
+
+Record each exact assistant question and its full offered options using the
+`question` action and `{"text": "exact question and options"}`. Bind the actual
+user answer with `answer-question`, `question_id`, `user_prompt`, and optionally
+an existing `correction_index`. Questions and answers appear together as readable
+labelled blocks in the PR and are included in the signed evidence digest.
+Unanswered questions remain explicit. Repeated questions retain distinct answer
+records; retrying an unanswered question does not duplicate it. Assistant text
+must never be stored as a user correction.
+
+For `image`, supply `path`, `reference` (for example `[Image #1]`), `description`
+and the exact `user_prompt` approving publication of the reviewed sanitized image.
+Images must already be non-interlaced PNGs without text/EXIF metadata, at most 512 KiB and 4096
+pixels per dimension. The tool inspects but never edits images. It writes a
+content-addressed file under `agent_tools/task_evidence/<task_id>/`; explicitly
+include that file in the checked commit. The signed task record binds its hash,
+and both publication and the controller verify the committed bytes. Do not
+publish private pixels merely because metadata was removed.
+
+Use `replace-missing` with `reference` and an exact user replacement message when
+an original cannot be recovered. The reference `Implement the plan` replaces a
+missing plan; image references must match the prompt. Never invent missing
+contents. Publication blocks unresolved image/plan references. Large task records
+use the bounded archive transport without truncation.
+
+The transport retains the exact v1 record and its original signature trailer,
+with a separately signed v2 evidence supplement. Old readers continue to verify
+v1; new readers require the matching supplement and reject its removal. Use
+`task-context --action review-record` to materialize redacted context in the signed
+source tree for bootstrap review. Roll out the compatible controller reader and
+image-capable companion before relying on v2 evidence enforcement. No historic
+signed task is rewritten. New native Telegram plans are included in task context
+without fictitious user approval, alongside the separate host-owned independent
+plan-review receipt.
+
 Oversized attachments retain the complete task in a content-addressed Git archive
 instead of truncating messages or repeating hidden payloads in the PR body.
 The compact attachment links to readable history pages containing the original
@@ -100,6 +159,21 @@ An interrupted archive create is recovered by its exact identity; conflicting
 refs are never replaced. Keep archive refs for the task's audit history.
 The v1 archive layout is a frozen transport contract covered by a historical
 fixture; a future layout needs a new version and a retained v1 reader.
+
+Historical recovery retains the original signed v1 record, the saved v2
+projection and an auditable amendment. Bind only actual approval messages to the
+exact recovered plan; later citations do not become additional approvals or image
+replacements. Automated clarifications stay in decision evidence, separate from
+human answers and protected approval. A citation reproducing the complete exact
+approved plan can quote its earlier bound approval; other quoted requirements
+still require their own evidence.
+
+Canonical quality checks retain complete tool streams and source-bound indexes
+in always-uploaded `quality-diagnostics-<run>-<attempt>` artifacts. The coordinator
+makes these artifacts available to correction workers; concise gate summaries,
+baseline enforcement and exit codes are unchanged. See
+[operations](../docs/GITHUB_AGENT_OPERATIONS.md#visual-routing-and-complete-quality-diagnostics)
+for the artifact and rollout contracts.
 
 Controller code/prompts, security configuration, dispatch/capture/publishing
 workflows and the required-check manifest require exact-head owner approval.

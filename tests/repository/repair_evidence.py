@@ -117,31 +117,68 @@ def test_blocked_repair_retries_only_after_identity_changes(
     assert controller._integration_tasks(object(), state, "b" * 40, [])
 
 
+@pytest.mark.parametrize("outcome_type", ["blocked", "no_change"])
 def test_no_patch_outcome_is_not_published_or_repeated(
+    outcome_type: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path / "state"))
     task = {"kind": "repair", "number": 0, "base": "a" * 40, "runs": [7], "evidence_key": "e"}
+    task["user_task"] = controller.trusted_module("task_context").repair_context(
+        task["base"], "standing-repair:" + task["base"]
+    )
     (tmp_path / "task.json").write_text(json.dumps(task))
     (tmp_path / "fix.patch").write_bytes(b"")
     (tmp_path / "verdict.json").write_text(
         json.dumps(
             {
-                "outcome": "blocked",
+                "outcome": outcome_type,
                 "reason": "need diagnostics",
                 "required_evidence": ["startup.log"],
             }
         )
     )
+    git = Mock()
+    monkeypatch.setattr(controller, "command", git)
     gh = Mock(repository="owner/repo")
     gh.base.return_value = task["base"]
     monkeypatch.setattr(controller, "monitor", lambda gh: (1, {"runs": {}}))
     for _ in range(2):
         assert controller.publish(gh, task, tmp_path, tmp_path) == {"status": "blocked"}
     assert gh.comment.call_count == 1
-    assert len(controller.trusted_module("review_control").pending()) == 1
+    controls = controller.trusted_module("review_control")
+    assert controls.pending() == []
+    with controls.connect() as db:
+        notifications = db.execute("SELECT key,kind,payload,sent FROM notifications").fetchall()
+    assert len(notifications) == 1
+    notification = notifications[0]
+    assert notification["key"] == "repair-blocked:" + evidence.identity(task)
+    assert notification["kind"] == "repair-blocked"
+    assert notification["sent"] == -1
+    assert "startup.log" in json.loads(notification["payload"])["reason"]
+    assert "need diagnostics" in gh.comment.call_args.args[1]
+    db = evidence.connection()
+    try:
+        outcomes = db.execute("SELECT identity,value FROM outcomes").fetchall()
+    finally:
+        db.close()
+    assert outcomes == [
+        (
+            evidence.identity(task),
+            json.dumps(
+                {
+                    "outcome": outcome_type,
+                    "reason": "need diagnostics",
+                    "required_evidence": ["startup.log"],
+                }
+            ),
+        )
+    ]
+    assert evidence.blocked(task)
+    assert not evidence.blocked({**task, "evidence_key": "new-evidence"})
     gh.api.assert_not_called()
+    git.assert_not_called()
 
 
 def test_expired_step_logs_do_not_hide_artifact_manifest(

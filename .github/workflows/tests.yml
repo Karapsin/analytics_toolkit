@@ -79,8 +79,22 @@ jobs:
       - name: Compile package and tests
         run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
 
+      - name: Guard merged MinIO build configuration without services
+        if: matrix.env_name == 'py311-latest'
+        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/repository/integration_images.py
+
       - name: Run tests
         run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q
+
+      - name: Retain complete failed scene geometry
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: visual-geometry-failures-${{ matrix.env_name }}
+          path: .rag_index/visual-failures/*.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Freeze environment
         if: always()
@@ -120,4 +134,26 @@ jobs:
         run: python -m pip install --upgrade "tox>=4,<5"
 
       - name: Run lint, type, coverage, and artifact gates
+        env:
+          ATK_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: tox -e lint,type,coverage,artifacts
+
+      - name: Retain complete quality tool diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: quality-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .rag_index/quality-diagnostics/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Retain complete failed scene geometry
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: visual-geometry-failures-quality
+          path: .rag_index/visual-failures/*.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14

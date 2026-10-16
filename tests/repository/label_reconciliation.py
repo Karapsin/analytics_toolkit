@@ -504,12 +504,17 @@ def test_filter_preserves_questions_and_existing_delivery_retry_contract(
 
 
 def test_scan_and_delivery_batches_stay_bounded(control: Any) -> None:
-    for revision in range(205):
-        control.enqueue(
-            f"request:local:{revision}:plan:deferred",
-            "request",
-            {"telegram_feature": False},
-        )
+    # Seed the legacy backlog; new suppressed events never enter the scan.
+    with control.connect() as db:
+        for revision in range(205):
+            db.execute(
+                "INSERT INTO notifications(key,kind,payload) VALUES (?,?,?)",
+                (
+                    f"request:local:{revision}:plan:deferred",
+                    "request",
+                    json.dumps({"telegram_feature": False}),
+                ),
+            )
     for number in range(25):
         control.enqueue(f"approval:{number}", "approval", {})
     assert control.pending() == []

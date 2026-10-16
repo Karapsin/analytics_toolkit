@@ -32,7 +32,9 @@ the corresponding source is available at the pinned upstream commits.
 Fast Python guards in `tests/repository/integration_images.py` inspect Compose
 and the Dockerfile without Docker or network access. They reject upstream MinIO
 image pulls, including auth/fault overrides, and verify the release pins and
-runtime commands. GitHub integration validates the actual builds and services.
+runtime commands, health probes and bucket setup. The GitHub Python 3.11 job also
+runs these guards explicitly before the normal suite. GitHub integration validates
+the actual builds and services.
 Data uses temporary filesystems or anonymous Compose state and is removed after
 every run.
 

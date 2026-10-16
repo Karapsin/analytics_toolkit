@@ -49,8 +49,15 @@ def connect() -> sqlite3.Connection:
 
 def enqueue(key: str, kind: str, payload: dict[str, Any], *, buttons: bool = False) -> None:
     with connect() as db:
-        db.execute("INSERT OR IGNORE INTO notifications(key,kind,payload,token) VALUES (?,?,?,?)",
-                   (key, kind, json.dumps(payload), secrets.token_urlsafe(18) if buttons else None))
+        db.execute("INSERT OR IGNORE INTO notifications(key,kind,payload,token,sent) VALUES (?,?,?,?,?)",
+                   (key, kind, json.dumps(payload), secrets.token_urlsafe(18) if buttons else None,
+                    0 if notify(kind, payload, key=key) else -1))
+
+
+def notify(kind: str, payload: dict[str, Any], *, key: str = "") -> bool:
+    return (kind in {"approval", "request-auth", "merged", "main", "release"}
+            or kind == "request" and (payload.get("telegram_feature") is not False
+                                      or key.endswith((":waiting", ":context-blocked"))))
 
 
 def pending() -> list[dict[str, Any]]:
@@ -61,8 +68,7 @@ def pending() -> list[dict[str, Any]]:
             (time.time(),)).fetchall()
         for row in rows:
             payload = json.loads(row["payload"])
-            if (row["kind"] == "request" and payload.get("telegram_feature") is False
-                    and not row["key"].endswith((":waiting", ":context-blocked"))):
+            if not notify(row["kind"], payload, key=row["key"]):
                 # Retain the original payload and receipts, but do not deliver
                 # local-worker status retries (including already queued rows).
                 db.execute("UPDATE notifications SET sent=-1 WHERE key=? AND sent=0", (row["key"],))
