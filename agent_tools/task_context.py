@@ -97,6 +97,68 @@ def attachment(root: Path) -> str:
     return protocol().render(read(root))
 
 
+def repository_identity(root: Path) -> str:
+    environment = dict(os.environ)
+    environment.pop("GH_REPO", None)
+    result = subprocess.run(
+        ["gh", "repo", "view", "--json", "nameWithOwner"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=environment,
+    )
+    if result.returncode:
+        message = "Task archive repository identity is unavailable."
+        raise RuntimeError(message)
+    return str(json.loads(result.stdout)["nameWithOwner"])
+
+
+def github_api(
+    root: Path, path: str, method: str = "GET", data: Any = None, *, repository: str | None = None
+) -> Any:
+    """Repository-scoped metadata I/O; task payloads use stdin, never argv."""
+    repository = repository or repository_identity(root)
+    command = ["gh", "api", "repos/" + repository + "/" + path, "--method", method]
+    if data is not None:
+        command.extend(["--input", "-"])
+    result = subprocess.run(
+        command,
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+        input=json.dumps(data) if data is not None else None,
+    )
+    if result.returncode:
+        message = "Task archive GitHub request failed: " + result.stderr[:1000]
+        raise RuntimeError(message)
+    return json.loads(result.stdout) if result.stdout else None
+
+
+def publish_attachment(root: Path, *, prefix: str = "") -> str:
+    proto = protocol()
+    context = read(root)
+    planned = proto.publication(context, prefix=prefix)
+    if planned["archive"] is None:
+        return planned["body"]
+    repository = repository_identity(root)
+    return proto.publish(
+        context,
+        api=lambda *args: github_api(root, *args, repository=repository),
+        repository=repository,
+        prefix=prefix,
+    )
+
+
+def parse_attachment(root: Path, body: str) -> dict[str, Any]:
+    proto = protocol()
+    if proto.ARCHIVE_MARKER not in body:
+        return proto.parse(body)
+    repository = repository_identity(root)
+    return proto.parse(body, api=lambda *args: github_api(root, *args, repository=repository))
+
+
 def commit_trailers(root: Path) -> str:
     return protocol().trailers(read(root))
 

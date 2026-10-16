@@ -82,6 +82,25 @@ The PR workflow attaches redacted context and a signed-commit digest. Private
 originals never appear in tool receipts. MCP-supplied text relies on the enrolled
 machine trust boundary; it is not independent proof of human authorship.
 
+Oversized attachments retain the complete task in a content-addressed Git archive
+instead of truncating messages or repeating hidden payloads in the PR body.
+The compact attachment links to readable history pages containing the original
+prompt, chronological corrections, agent questions and their complete user
+answers, plans, decisions and image records. Bounded canonical JSON chunks retain
+the exact signed task bytes. Readers verify chunk sizes and SHA-256 hashes,
+canonical task identity, the immutable archive layout and the candidate's existing
+signed trailers. Legacy inline v1/v2 attachments remain readable.
+
+Archive refs use `refs/tags/agent-task-evidence/v1/<task-digest>` and contain only
+task data, outside the candidate tree and its visual receipt. Archives grant no
+approval and do not promote package code. Publication preflights the complete PR
+body and all archive bounds before mutations, confirms the immutable archive
+before the feature push, and rechecks current authority after archive I/O.
+An interrupted archive create is recovered by its exact identity; conflicting
+refs are never replaced. Keep archive refs for the task's audit history.
+The v1 archive layout is a frozen transport contract covered by a historical
+fixture; a future layout needs a new version and a retained v1 reader.
+
 Controller code/prompts, security configuration, dispatch/capture/publishing
 workflows and the required-check manifest require exact-head owner approval.
 Ordinary policies, tools and integration/test workflow repairs are reviewed
