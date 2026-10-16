@@ -55,9 +55,22 @@ def enqueue(key: str, kind: str, payload: dict[str, Any], *, buttons: bool = Fal
 
 def pending() -> list[dict[str, Any]]:
     with connect() as db:
-        return [dict(row) for row in db.execute(
-            "SELECT * FROM notifications WHERE sent=0 AND retry<=? ORDER BY rowid LIMIT 20",
-            (time.time(),))]
+        events = []
+        rows = db.execute(
+            "SELECT * FROM notifications WHERE sent=0 AND retry<=? ORDER BY rowid LIMIT 200",
+            (time.time(),)).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload"])
+            if (row["kind"] == "request" and payload.get("telegram_feature") is False
+                    and not row["key"].endswith((":waiting", ":context-blocked"))):
+                # Retain the original payload and receipts, but do not deliver
+                # local-worker status retries (including already queued rows).
+                db.execute("UPDATE notifications SET sent=-1 WHERE key=? AND sent=0", (row["key"],))
+                continue
+            events.append(dict(row))
+            if len(events) == 20:
+                break
+        return events
 
 
 def delivery(key: str, *, message_id: int | None = None, delay: float = 0) -> None:
