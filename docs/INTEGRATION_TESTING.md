@@ -101,17 +101,57 @@ Variable routing. Negative cases use wrong credentials and trust roots and
 assert that diagnostic output contains no password, private-key, token, or
 client-secret material. The OAuth scenarios require the Playwright Chromium
 browser installed by the auth job; injected bearer tokens are not accepted.
+The browser login helper retries the original OAuth initiation URL up to three
+times after a navigation or login-visibility timeout. Reloading the current page
+can strand recovery on a blank or failed redirect page after a Keycloak outage.
+Service-free harness tests cover both timeout phases and preserve the final
+navigation error when all attempts fail. Every negative/fault OAuth browser attempt
+appends a scenario-tagged record to `oauth-browser.log`, including its operation
+phase, sanitized initiation URL, and the complete exception on failure. Passwords,
+client secrets, token values, URL credentials, query strings, and OAuth state paths
+are redacted. Browser cleanup runs after navigation, login, callback, and wait
+failures and preserves the primary exception if closing also fails. Generic
+browser failures are not retried.
+The service-free browser regression matrix in
+`tests/sql/integration_harness/browser.py` retains all 12 failure/success cases.
+Its `_support/browser.py` factory delegates call recording and failure injection
+to a private step factory. Focused assertions check the complete operation order,
+close counts, primary-error identity, complete redacted diagnostics, secondary-close
+failures, and appended scenario history. Additional fake-only cases verify that
+close calls are recorded before raising, repeated closes retain exception identity,
+and an injected primary close error takes precedence over a secondary close error.
 
 Every scenario uses a profile run ID and test ID in table, stage, object, and
 query-label names. The per-test registry cancels labelled queries, drops tables,
 removes MinIO objects, and restores paused services before it scans for leaks.
+The first-batch database restart scenario holds Greenplum's driver failure inside
+the batch retry operation, restores the service, then allows rollback and a fresh
+connection retry. It configures two batch attempts: append transfers do not use
+the full-transfer retry count. Trino and ClickHouse retain the ambiguous-stage
+checkpoint and original-target assertions. A service-free simulation exercises
+the scenario with the real batch retry loop and verifies exact rows, a single
+failed insert, rollback, and connection replacement.
+
+Fault actions use the same enabled Compose profiles as startup, including `gp`
+when Greenplum is enabled; the project-service guard remains active. Before
+registry cleanup and leak scans, the fixture reactivates the loopback connection
+file to invalidate cached aliases and source settings changed by auth scenarios.
+Service-free Python harness tests cover profiled service stop/restore, rejection
+of services outside the enabled project, and cleanup after an Airflow source swap.
+Cleanup coverage includes both HTTP and native ClickHouse transports, with and
+without leaked tables, while preserving cleanup order and leak-report assertions.
 
 The workflow writes `compose.log`, `service-health.json`, `pytest.xml`,
 `collected-scenarios.json`, `leaks.json`, `minio-objects.json`,
 `active-queries.json`, and `failed-query-details.json` below
 `.integration-artifacts/<profile>/<http|native>/`. A profile-level
 `transport-parity.json` records the collection comparison. Fault runs also write
-`fault-timeline.json`; auth runs preserve browser and authentication logs.
+`fault-timeline.json`; events retain their scenario IDs across controllers, and
+later empty scenarios preserve earlier history. Successful explicit service
+restarts discharge their pending fixture recovery action, so cleanup does not
+restart a service again after readiness checks. Failed explicit restarts retain
+fallback recovery, and other services still restore in reverse order.
+Auth runs preserve browser and authentication logs.
 Operation/retry and connection-identity reports, orchestration timelines, and
 type-normalization mismatch reports are also always present. Stress runs add
 memory samples, connection-pressure results, lock timelines, and concurrent

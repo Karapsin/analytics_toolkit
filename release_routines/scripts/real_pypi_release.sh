@@ -23,19 +23,6 @@ assert_clean_worktree() {
   fi
 }
 
-assert_job_conclusion() {
-  local run_id="$1"
-  local job_name="$2"
-  local expected_conclusion="$3"
-  local conclusion
-
-  conclusion="$(gh run view "${run_id}" --json jobs --jq ".jobs[] | select(.name == \"${job_name}\") | .conclusion")"
-  if [ "${conclusion}" != "${expected_conclusion}" ]; then
-    printf 'Unexpected GitHub Actions job conclusion for "%s": expected %s, got %s\n' "${job_name}" "${expected_conclusion}" "${conclusion:-<missing>}" >&2
-    exit 1
-  fi
-}
-
 verify_pypi_artifact() {
   local version="$1"
 
@@ -95,6 +82,7 @@ require_command python
 
 gh auth status >/dev/null
 assert_clean_worktree
+python -m release_routines.lib.release_candidate guard --stage pypi
 
 current_branch="$(git branch --show-current)"
 if [ "${current_branch}" != "main" ]; then
@@ -121,38 +109,8 @@ if [ "${head_commit}" != "${origin_main_commit}" ]; then
   exit 1
 fi
 
-tag_name="v${version}"
-if git rev-parse "${tag_name}" >/dev/null 2>&1; then
-  tag_commit="$(git rev-list -n 1 "${tag_name}")"
-  if [ "${tag_commit}" != "${head_commit}" ]; then
-    printf 'Tag %s already exists at %s, not current HEAD %s\n' "${tag_name}" "${tag_commit}" "${head_commit}" >&2
-    exit 1
-  fi
-else
-  git tag "${tag_name}"
-fi
-
-git push origin "${tag_name}"
-
-if gh release view "${tag_name}" >/dev/null 2>&1; then
-  printf 'GitHub release %s already exists; refusing to recreate a production publish event.\n' "${tag_name}" >&2
-  exit 1
-fi
-
-gh release create "${tag_name}" --title "${tag_name}" --notes "Release ${version}"
-sleep 5
-
-run_id="$(gh run list --workflow publish.yml --event release --limit 10 --json databaseId,headSha --jq ".[] | select(.headSha == \"${head_commit}\") | .databaseId" | head -n 1)"
-if [ -z "${run_id}" ] || [ "${run_id}" = "null" ]; then
-  printf 'Could not find release workflow run for tag %s\n' "${tag_name}" >&2
-  exit 1
-fi
-
-gh run watch "${run_id}" --exit-status
-assert_job_conclusion "${run_id}" "build distribution" "success"
-assert_job_conclusion "${run_id}" "publish to TestPyPI" "skipped"
-assert_job_conclusion "${run_id}" "publish to PyPI" "success"
-
+python -m release_routines.lib.release_candidate prepare-stage --stage pypi >/dev/null
 verify_pypi_artifact "${version}"
+python -m release_routines.lib.release_candidate verified --stage pypi
 delete_testpypi_branches
 printf 'PyPI release verified for version %s\n' "${version}"

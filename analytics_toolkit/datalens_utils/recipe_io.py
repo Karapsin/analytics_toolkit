@@ -16,7 +16,7 @@ from .session import current_session
 def serialized(relative: str, value: Any) -> bytes:
     return (
         json.dumps(value, ensure_ascii=False, indent=2) + "\n"
-        if relative.endswith(".json")
+        if relative.endswith(".json") and not isinstance(value, str)
         else value
     ).encode("utf-8")
 

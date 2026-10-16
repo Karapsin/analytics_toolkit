@@ -20,8 +20,9 @@ Charts can set an explicit `tab` business key; without it the family key
 (`wizard`, `ql`, `editor`) remains the default. Multiple business tabs can use
 the same chart family. `UI/chart_groups.json` defines ordered charts within a
 single widget: set each member's `key`, `title`, optional `params`, and exactly
-one `default: true`; position the group key in layout. Every chart is placed
-once, either directly or inside a group. `show_title: false` hides the internal
+one `default: true`; position the group key in layout. Version-1 charts are placed
+once, either directly or inside a group. Version 2 supports repeated references
+through named widgets and group members with separate stable placement keys. `show_title: false` hides the internal
 Wizard title while retaining its text during import.
 
 Runtime defaults to sibling `.local/<project-name-without-spaces>/`, overridden

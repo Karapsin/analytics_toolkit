@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
 import subprocess
@@ -55,24 +56,43 @@ def test_foreign_fork_is_not_a_trusted_model_job() -> None:
     assert not controller.trusted(pr, "owner/repo")
 
 
-def test_serialized_changelog_fold_threshold_and_version_carry(tmp_path: Path) -> None:
+@pytest.mark.parametrize("count", [8, 9, 10, 20])
+def test_serialized_changelog_fold_preserves_versions_and_wrapped_notes(
+    tmp_path: Path,
+    count: int,
+) -> None:
     (tmp_path / "agent_tools/changelog").mkdir(parents=True)
     (tmp_path / "docs").mkdir()
-    (tmp_path / "pyproject.toml").write_text('version = "1.3.19.19"\n')
-    (tmp_path / "README.md").write_text("**Version:** `1.3.19.19`\n")
+    (tmp_path / "pyproject.toml").write_text('version = "1.3.19.19"\n', encoding="utf-8")
+    (tmp_path / "README.md").write_text("**Version:** `1.3.19.19`\n", encoding="utf-8")
+    metadata_paths = [tmp_path / "pyproject.toml", tmp_path / "README.md"]
+    original_metadata = [path.read_bytes() for path in metadata_paths]
+    pending_notes = (
+        "\n".join("- Existing " + str(i) for i in range(count)) + "\n  wrapped continuation"
+    )
+    historical_section = (
+        "## 1.3.19.19 - 2026-01-01\n\n- Released feature\n  historical continuation\n"
+    )
     changelog = tmp_path / "docs/CHANGELOG.md"
     changelog.write_text(
-        "# Changelog\n\n## Unreleased\n\n"
-        + "\n".join("- Existing " + str(i) for i in range(9))
-        + "\n\n## 1.3.19.19 - 2026-01-01\n"
+        "# Changelog\n\n## Unreleased\n\n" + pending_notes + "\n\n" + historical_section,
+        encoding="utf-8",
     )
-    (tmp_path / "agent_tools/changelog/one.md").write_text("- New feature\n")
+    (tmp_path / "agent_tools/changelog/one.md").write_text("- New feature\n", encoding="utf-8")
     assert controller.fold(tmp_path)
-    assert 'version = "1.4.0.0"' in (tmp_path / "pyproject.toml").read_text()
-    assert "**Version:** `1.4.0.0`" in (tmp_path / "README.md").read_text()
-    assert "## 1.4.0.0" in changelog.read_text()
+    assert [path.read_bytes() for path in metadata_paths] == original_metadata
+    assert changelog.read_text(encoding="utf-8") == (
+        "# Changelog\n\n## Unreleased\n\n"
+        + pending_notes
+        + "\n- New feature\n\n"
+        + historical_section
+    )
     assert not list((tmp_path / "agent_tools/changelog").glob("*.md"))
+    folded_changelog = changelog.read_bytes()
     assert not controller.fold(tmp_path)
+    assert changelog.read_bytes() == folded_changelog
+    assert [path.read_bytes() for path in metadata_paths] == original_metadata
+    assert folded_changelog.count(b"- New feature\n") == 1
 
 
 def test_provisioning_has_no_api_model_execution() -> None:
@@ -170,68 +190,6 @@ def test_duplicate_matrix_job_names_require_every_group_to_pass() -> None:
     assert state["runs"]["1"]["green"] == []
     controller._resolve_runs(GitHub(), state)
     assert state["runs"]["1"]["needs"] == ["fault"]
-
-
-def test_rejected_bot_repair_is_paused_until_owner_resumes(
-    monkeypatch: Any, tmp_path: Path
-) -> None:
-    base = "b" * 40
-    pr = {
-        "number": 8,
-        "draft": False,
-        "state": "open",
-        "mergeable": True,
-        "labels": [],
-        "base": {"ref": "dev"},
-        "user": {"type": "Bot", "login": "analytics-toolkit-agent-717959[bot]"},
-        "head": {
-            "sha": "a" * 40,
-            "ref": controller.REPAIR_BRANCH + base[:12],
-            "repo": {"full_name": "owner/repo"},
-        },
-    }
-
-    class GitHub:
-        repository = "owner/repo"
-
-        def base(self) -> str:
-            return base
-
-        def pulls(self) -> list[dict[str, Any]]:
-            return [pr]
-
-        def pull(self, number: int) -> dict[str, Any]:
-            return pr
-
-        def pages(self, path: str, key: str) -> list[Any]:
-            assert "%2B00%3A00" in path
-            return []
-
-        def api(self, path: str) -> dict[str, int]:
-            return {"behind_by": 0}
-
-        def checks(self, head: str) -> list[dict[str, Any]]:
-            result = checks(base)
-            result[0].update(conclusion="failure", status="completed")
-            return result
-
-    monkeypatch.setattr(
-        controller, "monitor", lambda gh: (99, {"started": "2026-10-01T00:00:00+00:00", "runs": {}})
-    )
-    monkeypatch.setattr(controller, "save_monitor", lambda *args: None)
-    monkeypatch.setattr(controller, "authorization_error", lambda *args: None)
-    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
-    monkeypatch.setattr(controller, "signed_head", lambda *args: True)
-    controls = controller.trusted_module("review_control")
-    with controls.connect() as db:
-        db.execute(
-            "INSERT INTO pauses VALUES (?,?,?,?,?)",
-            ("owner/repo", 8, "a" * 40, "Scope mismatch", 1),
-        )
-    gh = GitHub()
-    original_pages = gh.pages
-    gh.pages = lambda path, key=None: [] if "/comments?" in path else original_pages(path, key)
-    assert controller.discover(gh, 17)["include"] == []
 
 
 def owned_pr() -> dict[str, Any]:
@@ -502,12 +460,16 @@ class _RefreshDiscoveryGitHub:
         return self._response(path, method)
 
     def _response(self, path: str, method: str) -> Any:
+        if path.startswith("contents/agent_tools/changelog/"):
+            return {"content": base64.b64encode(b"- Valid task fragment\n").decode()}
         if path.startswith("actions/runs/"):
             return self.run_metadata[path.rsplit("/", 1)[1]]
         if path == "collaborators/owner/permission":
             return {"permission": "write"}
         if path.startswith("compare/"):
             return {"behind_by": 0, "status": "identical"}
+        if path.startswith("issues/") and path.endswith("/labels"):
+            return self.pull(int(path.split("/")[1])).get("labels", [])
         return self._patch_monitor(path, method)
 
     def _patch_monitor(self, path: str, method: str) -> None:

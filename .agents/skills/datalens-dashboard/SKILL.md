@@ -61,7 +61,10 @@ managed aliases are described in [project structure](references/project-structur
 For version-2 recipes, YC/Enterprise, workbook targets or imports, read
 [BI projects](references/bi-projects.md). Use `import_dashboard` to discover a
 whole dashboard, or `import_tab` for one tab; preview the local merge and fidelity
-report before writing. Keep unsupported SDK and adapter operations explicit.
+report before writing. For explicit copying to a new target, use copy mode,
+separate destination runtime state and the public copy/recipe contracts linked
+from that reference. Inspect per-feature fidelity; deployment verification alone
+cannot prove parity with the source. Keep unsupported SDK and adapter operations explicit.
 
 If floating coordinates cannot be represented by the installed public SDK,
 round them automatically to the nearest integer, with halves rounded away from

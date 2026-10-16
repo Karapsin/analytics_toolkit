@@ -321,7 +321,28 @@ specific documentation update that would make future RAG retrieval unambiguous.
 
 - Prefer small, local changes that follow existing module patterns.
 - Do not alter packaging metadata or rewrite README/manual docs unless the task requires it.
-- After every non-documentation repository change, use `version_bump(...)` to update version metadata or the changelog. Feature sessions record one uniquely owned changelog fragment through `version_bump(...)`; the GitHub agent folds fragments during serialized integration. Bootstrap changes add one concise bullet under `## Unreleased` in `docs/CHANGELOG.md` until there are at least 10 unreleased bullets. While `## Unreleased` has fewer than 10 bullets, do not bump `pyproject.toml` or the root README version. Once `## Unreleased` reaches 10 or more bullets, use `version_bump(...)` to create a new versioned changelog section from all unreleased bullets, bump the package version in `pyproject.toml`, and update the root README version in the same change. Documentation-only changes must not bump the package version unless they are preparing a release artifact that needs a new version. Versions use four parts: `a.b.c.d`, and each component has a maximum value of `19`. For a normal repository change, increment `d`; for example, `1.3.6.6` -> `1.3.6.7`. If `d` is already `19`, increment `c` and reset `d` to `0`; for example, `1.3.6.19` -> `1.3.7.0`. Apply the same carry rule to higher components: `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`. Do not let any component exceed `19`.
+- After every non-documentation repository change, use `version_bump(...)` to record
+  a uniquely owned feature fragment or an entry under `## Unreleased`.
+  Ordinary changes and serialized fragment folding never change the package or
+  README version, regardless of the number of entries. Documentation-only work
+  retains its no-bump behavior.
+- An explicit PyPI release prepares one new version through a signed, independently
+  reviewed PR to `dev`, before validation or TestPyPI. Use
+  `release_workflow(action="merge-dev", summary=None)` and re-enter the same
+  action after the preparation PR merges. Supply a release summary when there
+  are no unreleased entries. Never commit release metadata directly to dev.
+  Status does not prepare versions. Failed publication retries reuse the same
+  reviewed candidate, version, and retained verified artifacts. Changed candidate
+  content invalidates validation and requires another preparation PR; changed
+  published artifacts require a new version. Keep historical release sections.
+- Versions retain four parts `a.b.c.d`, each from 0 through 19. Increment once
+  for release preparation, carrying at 19: `1.3.6.19` -> `1.3.7.0`,
+  `1.3.19.19` -> `1.4.0.0`, `1.19.19.19` -> `2.0.0.0`.
+- Isolated private controller coding workers edit source, tests, and documentation
+  only. They execute no programs, tests, installs, builds, services, integration,
+  or scenes; GitHub performs all validation after publication. Their task prompt
+  overrides interactive startup/check/commit instructions.
+
 - When changing dependency declarations in `pyproject.toml`, update the CRAN-style `Depends`, `Imports`, and `Suggests` dependency entries in `README.md`.
 - When changing public behavior, update the relevant module README and focused tests.
 - Do not run tests against external, shared, or production databases. Unit tests

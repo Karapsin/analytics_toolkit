@@ -7,6 +7,10 @@
 `DataLensDependencyError(message)` identifies unsupported Python or a missing or
 incompatible optional SDK. Public SDK exceptions retain their types and request IDs.
 
+`DataLensComponentError(resource, stage, identifier, diagnostics)` signals a
+persisted dataset component failure. Its `diagnostics` mapping exposes resource,
+stage, retained ID and component errors; preserve the checkpoint when recovering.
+
 ## Usage
 
 ```python

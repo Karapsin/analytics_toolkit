@@ -51,23 +51,32 @@ def enqueue(key: str, kind: str, payload: dict[str, Any], *, buttons: bool = Fal
     with connect() as db:
         db.execute("INSERT OR IGNORE INTO notifications(key,kind,payload,token,sent) VALUES (?,?,?,?,?)",
                    (key, kind, json.dumps(payload), secrets.token_urlsafe(18) if buttons else None,
-                    0 if notify(kind, payload) else -1))
+                    0 if notify(kind, payload, key=key) else -1))
 
 
-def notify(kind: str, payload: dict[str, Any]) -> bool:
+def notify(kind: str, payload: dict[str, Any], *, key: str = "") -> bool:
     return (kind in {"approval", "request-auth", "merged", "main", "release"}
-            or kind == "request" and (payload.get("telegram_feature") is True or payload.get("informational") is True))
+            or kind == "request" and (payload.get("telegram_feature") is not False
+                                      or key.endswith((":waiting", ":context-blocked"))))
 
 
 def pending() -> list[dict[str, Any]]:
     with connect() as db:
-        # Retire obsolete backlog too, including undelivered multipart alerts.
-        for row in db.execute("SELECT key,kind,payload FROM notifications WHERE sent=0").fetchall():
-            if not notify(row["kind"], json.loads(row["payload"])):
-                db.execute("UPDATE notifications SET sent=-1 WHERE key=?", (row["key"],))
-        return [dict(row) for row in db.execute(
-            "SELECT * FROM notifications WHERE sent=0 AND retry<=? ORDER BY rowid LIMIT 20",
-            (time.time(),))]
+        events = []
+        rows = db.execute(
+            "SELECT * FROM notifications WHERE sent=0 AND retry<=? ORDER BY rowid LIMIT 200",
+            (time.time(),)).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload"])
+            if not notify(row["kind"], payload, key=row["key"]):
+                # Retain the original payload and receipts, but do not deliver
+                # local-worker status retries (including already queued rows).
+                db.execute("UPDATE notifications SET sent=-1 WHERE key=? AND sent=0", (row["key"],))
+                continue
+            events.append(dict(row))
+            if len(events) == 20:
+                break
+        return events
 
 
 def delivery(key: str, *, message_id: int | None = None, delay: float = 0) -> None:
@@ -137,6 +146,35 @@ def approved(repository: str, number: int, head: str) -> bool:
                           (repository, number, head)).fetchone() is not None
 
 
+def reconcile_label(gh: Any, pr: dict[str, Any], *, approval_required: bool) -> bool:
+    """Repair the UI label from authority and private holds; never clear a hold."""
+    number, head = pr["number"], pr["head"]["sha"]
+    current = gh.pull(number)
+    if current["state"] != "open" or current["head"]["sha"] != head:
+        return False
+    required = approval_required or paused(gh, current) or bool(veto(gh.repository, number, head))
+    # paused() may itself accept an authenticated resume and remove the label.
+    present = any(label["name"] == PAUSED for label in gh.api(f"issues/{number}/labels"))
+    if required and not present:
+        gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
+    elif not required and present:
+        gh.api(f"issues/{number}/labels/{PAUSED}", "DELETE")
+    latest = gh.pull(number)
+    if latest["state"] != "open" or latest["head"]["sha"] != head:
+        if latest["state"] == "open":
+            # A concurrent push cannot inherit the old head's authorization.
+            gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
+        return False
+    # A new question/veto may have arrived while the GitHub request was in flight.
+    if not required and (paused(gh, latest) or veto(gh.repository, number, head)):
+        gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
+        latest = gh.pull(number)
+        if latest["state"] != "open" or latest["head"]["sha"] != head:
+            return False
+    pr["labels"] = latest.get("labels", [])
+    return True
+
+
 def veto(repository: str, number: int, head: str) -> float:
     if not os.environ.get("AGENT_STATE_DIR"):
         return 0
@@ -166,6 +204,30 @@ def assess(repository: str, number: int, head: str, digest: str, changes: str) -
     with connect() as db:
         db.execute("INSERT OR REPLACE INTO assessments VALUES (?,?,?,?,?)",
                    (repository, number, head, digest, changes))
+
+
+def correction_snapshot(repository: str, number: int) -> dict[str, Any] | None:
+    with connect() as db:
+        row = db.execute("SELECT * FROM corrections WHERE repository=? AND number=?",
+                         (repository, number)).fetchone()
+    return dict(row) if row else None
+
+
+def require_correction(repository: str, number: int, head: str, digest: str,
+                       reason: str, changes: str, *, expected: dict[str, Any] | None) -> bool:
+    """Queue planning only if the observed scope has not changed; retain findings."""
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM corrections WHERE repository=? AND number=?",
+                         (repository, number)).fetchone()
+        current = dict(row) if row else None
+        if current and current["head"] == head and current["digest"] == digest:
+            return True
+        if current != expected:
+            return False
+        db.execute("INSERT OR REPLACE INTO corrections VALUES (?,?,?,?,?,?,?)",
+                   (repository, number, head, digest, reason, changes, time.time()))
+    return True
 
 
 def reject(gh: Any, pr: dict[str, Any], task: dict[str, Any], reason: str, changes: str) -> None:
@@ -279,6 +341,7 @@ def callback(gh: Any, query: dict[str, Any], owner_id: int, chat_id: int) -> str
               value["changes"])
     else:
         clear_owner_decline(gh, pr["number"], value["head"])
+        reconcile_label(gh, pr, approval_required=False)
     return "Approved; separate review and fast CI still apply." if action == "approve" else "Disapproved; PR paused."
 
 
@@ -412,8 +475,29 @@ def hold_feature(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> None:
         gh.api(f"pulls/{pr['number']}", "PATCH", {"state": "closed"})
 
 
-def recover_feature_publication(gh: Any, pr: dict[str, Any]) -> None:
-    """Clear only a known interrupted body-update hold after signed-head recovery."""
+def recover_feature_publication(
+    gh: Any,
+    pr: dict[str, Any],
+    *,
+    task_digest: str | None = None,
+) -> None:
+    """Recover derived publication holds after caller verifies signed-head metadata."""
+    branch = pr["head"].get("ref", "")
+    if (task_digest is not None and pr["state"] == "open"
+            and branch.startswith("codex/orchestrator-")
+            and enrolled_feature(gh.repository, branch, task_digest)
+            and not veto(gh.repository, pr["number"], pr["head"]["sha"])):
+        # The caller verified this exact durable artifact, original context and
+        # independent plan before enrollment, then verified final-head metadata.
+        # Compare-and-delete cannot erase a replacement owner/security hold.
+        with connect() as db:
+            db.execute(
+                "DELETE FROM pauses WHERE repository=? AND number=? AND head=? AND reason=?",
+                (gh.repository, pr["number"], pr["head"]["sha"],
+                 "Feature context does not match the host-owned request."),
+            )
+        # Normal reconciliation owns labels and protected approval readiness.
+
     with connect() as db:
         row = db.execute("SELECT reason FROM pauses WHERE repository=? AND number=?",
                          (gh.repository, pr["number"])).fetchone()

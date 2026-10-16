@@ -15,7 +15,10 @@ INTEGRATION = REPO_ROOT / "integration"
     ("service", "target"),
     [("minio", "server"), ("minio-init", "client"), ("minio-client", "client")],
 )
-def test_s3_services_build_instead_of_pulling_upstream_images(service: str, target: str) -> None:
+def test_s3_services_build_instead_of_pulling_upstream_images(
+    service: str,
+    target: str,
+) -> None:
     compose = (INTEGRATION / "docker-compose.yml").read_text(encoding="utf-8")
     block = re.search(rf"(?ms)^  {service}:\n(.*?)(?=^  \S|\Z)", compose)
     assert block is not None
@@ -62,9 +65,15 @@ def test_s3_builds_preserve_release_commits_and_runtime_commands() -> None:
     [
         ("minio", "command: server /data --console-address :9001"),
         ("minio", 'test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]'),
-        ("minio-init", "mc alias set integration http://minio:9000 integration integration-secret"),
+        (
+            "minio-init",
+            "mc alias set integration http://minio:9000 integration integration-secret",
+        ),
         ("minio-init", "mc mb --ignore-existing integration/warehouse"),
-        ("minio-client", "mc alias set integration http://minio:9000 integration integration-secret"),
+        (
+            "minio-client",
+            "mc alias set integration http://minio:9000 integration integration-secret",
+        ),
         ("minio-client", "exec tail -f /dev/null"),
     ],
 )

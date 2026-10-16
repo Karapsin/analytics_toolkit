@@ -19,7 +19,12 @@ Resource keys use `connection:`, `dataset:`, `chart:`, `html_page:`, `collection
 `workbook:` and `dashboard:main`. Omitted scope selects the full project.
 Local changes propose update; remote changes propose pull; simultaneous changes
 produce conflicts. Remote drafts and successfully persisted interrupted writes
-are distinguished. Removed resources become reported orphans, never deletions.
+are distinguished. An interrupted owned dataset resumes from its retained ID and
+saved draft even when its published revision is missing or stale. Read-only
+preflight resolves inferred fields on a checkpoint copy. Reconciliation checkpoints
+actual source-qualified GUIDs, avoids duplicate datasets and inferred fields, and
+verifies the fetched managed draft before publication. Component failures retain
+IDs and expose diagnostics while stopping publication and dependent writes. Removed resources become reported orphans, never deletions.
 
 A pull keeps chart-group member routes and action flags. Changed direct
 placements become explicit widgets with the same item IDs, preserving remote
@@ -40,11 +45,15 @@ for a local merge after resolving blockers. CLI commands `import-dashboard` and
 conversion requires explicit `upgrade_recipe=True` or `--upgrade-recipe`.
 
 Import follows public resource metadata and retrieves available SQL/JS assets.
-It preserves IDs, fields, defaults, ordering and placement parameters. Duplicate
+Adopt mode preserves IDs and requires compatible locations. Explicit
+`mode="copy"` discovers dependencies across folders and writes local recipes for new
+owned resources, reusing read-only connections. Reconciliation creates those resources
+later. Copy import preserves fields, defaults, ordering and placement parameters.
+See the [copy walkthrough](copy-tab.md) and [recipe contract](recipe-contract.md). Duplicate
 persistent resources share one definition; direct placements and chart-group
 members keep separate identities. `group/member` wiring addresses one variant.
 Existing dataset source and field keys are retained during a merge.
-Unsupported item forms, unknown dependency bindings, incompatible resource
+Unsupported item forms, unknown dependency bindings, incompatible adopted resource
 locations and conflicting local definitions prevent writes. No dynamic Editor
 JavaScript is evaluated to discover dependencies.
 

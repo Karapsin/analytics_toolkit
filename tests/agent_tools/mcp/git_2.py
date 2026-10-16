@@ -3,7 +3,6 @@ from __future__ import annotations
 from tests.agent_tools._support.mcp import (
     Path,
     _command_result,
-    _init_git_repo,
     _write_minimal_repo_files,
     _write_unreleased_changelog,
     json,
@@ -12,43 +11,25 @@ from tests.agent_tools._support.mcp import (
 )
 
 
-def test_git_workflow_commit_requires_version_paths_at_unreleased_threshold(
+@pytest.mark.parametrize("count", [9, 10, 20])
+def test_commit_requires_only_changelog_at_any_entry_count(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    count: int,
 ) -> None:
     root = _write_minimal_repo_files(tmp_path / "project")
-    _write_unreleased_changelog(root, [f"Existing change {index}" for index in range(1, 10)])
-    (root / "agent_tools").mkdir()
-    (root / "agent_tools" / "mcp_server.py").write_text("# initial\n", encoding="utf-8")
-    _init_git_repo(root)
-    (root / "agent_tools" / "mcp_server.py").write_text("# changed\n", encoding="utf-8")
-    changelog = root / "docs" / "CHANGELOG.md"
-    changelog.write_text(
-        changelog.read_text(encoding="utf-8").replace(
-            "- Existing change 9.",
-            "- Existing change 9.\n- Tenth change.",
-        ),
-        encoding="utf-8",
-    )
+    _write_unreleased_changelog(root, [f"Change {index}" for index in range(count)])
     monkeypatch.setattr(
         mcp_server,
-        "_verify_precommit_success",
-        lambda root_path: {"ok": True, "message": "ok"},
+        "_changed_repo_paths",
+        lambda root: {"agent_tools/mcp_server.py", "docs/CHANGELOG.md"},
     )
-
-    result = mcp_server.git_workflow(
-        "commit",
-        message="Update workflow",
-        paths=["agent_tools/mcp_server.py", "docs/CHANGELOG.md"],
-        root=str(root),
+    requirement = mcp_server._version_bump_requirement(
+        root,
+        ["agent_tools/mcp_server.py", "docs/CHANGELOG.md"],
     )
-
-    assert result["ok"] is False
-    assert result["blockers"][0]["phase"] == "version_bump"
-    assert result["result"]["version_bump_requirement"]["missing"] == [
-        "README.md",
-        "pyproject.toml",
-    ]
+    assert requirement["required_paths"] == ["docs/CHANGELOG.md"]
+    assert requirement["missing"] == []
 
 
 def test_git_workflow_enforces_precommit_for_commit(tmp_path: Path) -> None:
@@ -207,8 +188,11 @@ def test_push_readiness_blocks_when_origin_dev_is_not_ancestor(
             "blockers": [
                 {
                     "phase": "remote_dev",
-                    "message": "Local HEAD does not contain origin/dev; pull, rebase, or merge before continuing.",
-                }
+                    "message": (
+                        "Local HEAD does not contain origin/dev; "
+                        "pull, rebase, or merge before continuing."
+                    ),
+                },
             ],
         },
     )

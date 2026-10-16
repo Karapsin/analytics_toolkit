@@ -253,7 +253,7 @@ def test_legacy_merge_still_inspects_every_pr(
     controller.merge(gh, 17, tmp_path)
     assert [call.args[0] for call in gh.pull.call_args_list] == [7, 11]
     gh.api.assert_called_once()
-    cleanup.cleanup.assert_called_once_with(gh, tmp_path, force=True, active_branches=None)
+    cleanup.cleanup.assert_called_once_with(gh, tmp_path, force=True, active_branches=set())
 
 
 @pytest.mark.parametrize("gate", ["provenance", "missing-policy", "stale-policy", "veto"])
@@ -416,6 +416,7 @@ def reference_publication(tmp_path: Path, monkeypatch: Any) -> Any:
     proto = controller.trusted_module("task_context")
     controls = Mock()
     controls.paused.return_value = False
+    monkeypatch.setattr(controller, "signed_head", Mock(return_value=True))
     original_module = controller.trusted_module
     monkeypatch.setattr(
         controller,
@@ -518,6 +519,9 @@ def test_resolved_references_publish_with_real_resolver(
     pushes = [call.args for call in git.call_args_list if call.args[1] == "push"]
     assert len(pushes) == 1
     head = "d" * 40 if mode == "recovered-feature" else "c" * 40
+    if mode == "recovered-feature":
+        controller.signing_options.assert_not_called()
+        controller.signed_head.assert_called_once_with(gh.repository, head)
     assert pushes[0][-1] == head + ":refs/heads/" + task["branch"]
     assert gh.api.call_args.args[:2] == (
         ("pulls", "POST") if not task["number"] else ("pulls/1", "PATCH")
@@ -596,3 +600,28 @@ def test_corrected_checkpoint_passes_check_and_retains_patch_bytes(
     assert command.call_args_list[1].args == ("git", "diff", "--cached", "--check")
     assert (output / "fix.patch").read_bytes() == patch
     assert json.loads((output / "task.json").read_text()) == task
+
+
+@pytest.mark.parametrize("failure", ["signature", "producer"])
+def test_recovered_feature_rejects_untrusted_head_before_any_publication(
+    tmp_path: Path, reference_publication: Any, monkeypatch: Any, failure: str
+) -> None:
+    context = publication_context("Preserve exports.", "starting", "absent")
+    gh, task, git = reference_publication(context, "recovered-feature")
+    if failure == "signature":
+        controller.signed_head.return_value = False
+    else:
+        original = git.side_effect
+        proto = controller.trusted_module("task_context")
+
+        def command(*args: str, **kwargs: Any) -> Any:
+            if args[1] == "log":
+                return "Another producer" + proto.trailers(context, "author:other")
+            return original(*args, **kwargs)
+
+        git.side_effect = command
+    with pytest.raises(RuntimeError, match="trusted signed head|another producer"):
+        controller.publish(gh, task, tmp_path, tmp_path)
+    assert not any(call.args[1] == "push" for call in git.call_args_list)
+    controller.signing_options.assert_not_called()
+    gh.api.assert_not_called()

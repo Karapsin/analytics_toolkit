@@ -15,6 +15,27 @@ class DataLensDependencyError(DataLensUtilsError):
     """The optional SDK runtime is missing or unsupported."""
 
 
+class DataLensComponentError(DataLensUtilsError):
+    """A persisted dataset contains backend component errors; its ID is recoverable."""
+
+    def __init__(self, resource: str, stage: str, identifier: str, diagnostics: Any) -> None:
+        self.diagnostics = {
+            "resource": resource,
+            "stage": stage,
+            "id": identifier,
+            "component_errors": diagnostics,
+        }
+        super().__init__(
+            resource
+            + " has dataset component errors after "
+            + stage
+            + "; retained ID "
+            + identifier
+            + ": "
+            + str(diagnostics)
+        )
+
+
 class DataLensConfigurationError(DataLensUtilsError):
     """Project paths or deployment configuration are invalid."""
 

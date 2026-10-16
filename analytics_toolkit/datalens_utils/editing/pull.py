@@ -40,7 +40,9 @@ def aggregated_source(value: Any, datasets: Any) -> Any:
     return matches[0].guid
 
 
-def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:  # noqa: C901, PLR0912, PLR0915
+def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
+    chart: Any, definition: Any, datasets: Any, context: Any, *, strict_fidelity: bool = False
+) -> Any:
     result, assets = copy.deepcopy(definition), {}
     result["name"] = chart.name
     if "description" in result or chart.description:
@@ -87,9 +89,14 @@ def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:
     names = field_names(datasets, chart)
     visualization = chart.data.get("visualization", {})
     settings = visualization.get("chartSettings", {})
-    if definition["type"] != "indicator" and "title" in settings:
-        result["title"] = settings["title"]
-        if "show_title" in result or settings.get("titleMode", "show") == "hide":
+    if definition["type"] != "indicator":
+        if "chart_title" in result:
+            result["chart_title"] = settings.get("title")
+        elif "title" in settings:
+            result["title"] = settings["title"]
+        if "title" in settings and (
+            "show_title" in result or settings.get("titleMode", "show") == "hide"
+        ):
             result["show_title"] = settings.get("titleMode", "show") != "hide"
     if definition["type"] in {"combined_chart", "geolayer"}:
         # Layer topology has no typed update in SDK 3.1. Never invent a recipe
@@ -119,7 +126,13 @@ def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:
         [name(value), value.get("direction", "ASC").lower()]
         for value in items(visualization, "sort")
     ]
-    formats = {}
+    from analytics_toolkit.datalens_utils.import_fidelity import (  # noqa: PLC0415
+        normalized_measure_format,
+        wizard_encodings,
+    )
+
+    formats: dict[str, Any] = {}
+    observed_formats: dict[str, Any] = {}
     aliases = []
     for slot in wizard.SLOTS | {"colors", "shapes", "tooltip"}:
         for value in items(visualization, slot):
@@ -142,17 +155,40 @@ def pull_chart(chart: Any, definition: Any, datasets: Any, context: Any) -> Any:
                     f"Formatting cannot be expressed through the recipe: {sorted(unsupported)}"
                 )
                 raise DataLensUtilsError(message)
+            measure_format = normalized_measure_format(formatting)
+            field_name = name(value) if strict_fidelity or measure_format else ""
+            if strict_fidelity:
+                if (
+                    field_name in observed_formats
+                    and observed_formats[field_name] != measure_format
+                ):
+                    message = "Conflicting per-slot field formats cannot be faithfully imported."
+                    raise DataLensUtilsError(message)
+                observed_formats[field_name] = measure_format
             if formatting:
-                measure_format = {
-                    "show_rank_delimiter" if key == "showRankDelimiter" else key: item
-                    for key, item in formatting.items()
-                    if key != "labelMode"
-                }
+                if strict_fidelity and "labelMode" in formatting:
+                    mode = {"mode": formatting["labelMode"]}
+                    previous = result.setdefault("settings", {}).get("label_mode")
+                    if slot != "labels" or (previous is not None and previous != mode):
+                        message = "Per-field label modes cannot be faithfully imported."
+                        raise DataLensUtilsError(message)
+                    result["settings"]["label_mode"] = mode
                 if measure_format:
-                    formats[name(value)] = measure_format
+                    formats[field_name] = measure_format
             if "fakeTitle" in value:
                 aliases.append({"field": name(value), "title": value["fakeTitle"]})
     result["formats"] = formats
+    types = {field.guid: field.type for dataset in datasets.values() for field in dataset.fields}
+    types.update(
+        {guid: value.get("type") for guid, value in wizard.registered_local_fields(chart).items()}
+    )
+    encodings = wizard_encodings(visualization, names, types)
+    # Encodings are a complete remote snapshot, including removed bindings/maps.
+    for prefix in ("color", "shape"):
+        for kind in ("dimension", "measure", "measure_name"):
+            result.setdefault("settings", {}).pop(prefix + "_by_" + kind, None)
+    result["settings"].pop("palette", None)
+    result["settings"].update(encodings)
     result.setdefault("settings", {}).pop("column_title", None)
     if aliases:
         result["settings"]["column_title"] = aliases

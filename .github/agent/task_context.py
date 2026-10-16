@@ -4,17 +4,22 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import importlib.util
 import json
 import re
-from pathlib import PurePosixPath
+import zlib
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 MARKER = "<!-- agent-task-context-v1\n"
+ARCHIVE_MARKER = "<!-- agent-task-archive-v1\n"
 EVIDENCE_MARKER = "<!-- agent-task-evidence-v2\n"
+COMPRESSED_EVIDENCE_MARKER = "<!-- agent-task-evidence-v2-zlib\n"
 TRAILER = "Agent-Task-Context"
 EVIDENCE_TRAILER = "Agent-Task-Evidence"
 PRODUCER = "Agent-Producer"
 MAX_BODY = 55000
+MAX_EVIDENCE_BYTES = 512 * 1024
 FIELDS = {"version", "task_id", "producer_id", "source", "starting_prompt", "corrections"}
 EVIDENCE_FIELDS = {"plans", "images", "replacements", "decisions", "questions"}
 IDENTITY = re.compile(r"[A-Za-z0-9:-]{1,160}")
@@ -125,7 +130,27 @@ def validate_evidence(value: dict[str, Any]) -> None:
 def require_resolved(value: dict[str, Any]) -> None:
     """Author-side publication gate; do not invalidate legacy signed PR records."""
     validate(value)
+    # This recovered-plan sentence documents validation syntax; its quoted
+    # markers are examples, not owner references. Do not exempt arbitrary quotes
+    # or code spans, which can still contain genuine image requirements.
+    example = (
+        "Before handoff, flag unresolved references such as "
+        "\u201cImplement the plan\u201d or `[Image #1]`. "
+        "Require attached evidence or an explicit user replacement of the missing requirement."
+    )
     prompts = [value["starting_prompt"], *value["corrections"]]
+    for sequence, prompt in enumerate(prompts):
+        # A later recovery message can quote the actual earlier approval while
+        # reproducing that same exact plan. Resolve only that bound quotation;
+        # other quoted requirements and later implementation requests still gate.
+        for plan in value.get("plans", []):
+            index = plan["approval_index"]
+            if index is None or index >= sequence - 1 or plan["text"].rstrip("\n") not in prompt:
+                continue
+            approval = value["corrections"][index]
+            for left, right in (('"', '"'), ("\u201c", "\u201d")):
+                prompt = prompt.replace(left + approval + right, "")
+        prompts[sequence] = prompt.replace(example, "")
     replacements = {item["reference"] for item in value.get("replacements", [])}
     images = {item["reference"] for item in value.get("images", [])}
     missing = {reference for prompt in prompts for reference in re.findall(r"\[Image\s+#?\d+\]", prompt, re.I)
@@ -181,7 +206,7 @@ def public_context(value: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def render(value: dict[str, Any]) -> str:
+def _render_inline(value: dict[str, Any]) -> str | None:
     value = public_context(value)
     prompts = [value["starting_prompt"], *value["corrections"]]
     visible = "\n\n".join(
@@ -212,13 +237,87 @@ def render(value: dict[str, Any]) -> str:
     body = ("## User task\n\nStarting prompt, followed by user corrections in order. "
             "Sensitive values are redacted.\n\n" + visible + "\n\n" + MARKER + encoded + "\n-->\n")
     if value["version"] == 2:
-        body += EVIDENCE_MARKER + base64.b64encode(canonical(value)).decode("ascii") + "\n-->\n"
+        payload = canonical(value)
+        if len(payload) > MAX_EVIDENCE_BYTES:
+            return None
+        suffix = EVIDENCE_MARKER + base64.b64encode(payload).decode("ascii") + "\n-->\n"
+        body += suffix
+        if len(body) > MAX_BODY:
+            # Keep every visible message/plan and every canonical evidence byte.
+            # Only the redundant hidden transport is compressed.
+            body = body[:-len(suffix)] + COMPRESSED_EVIDENCE_MARKER \
+                + base64.b64encode(zlib.compress(payload, 9)).decode("ascii") + "\n-->\n"
     if len(body) > MAX_BODY:
-        raise ValueError("Task context exceeds the PR limit; do not truncate or summarize it.")
+        return None
     return body
 
 
-def parse(body: str) -> dict[str, Any]:
+def archive_protocol() -> Any:
+    path = Path(__file__).with_name("task_archive.py")
+    spec = importlib.util.spec_from_file_location("trusted_task_archive", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Trusted task archive protocol is unavailable.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def publication(value: dict[str, Any], *, prefix: str = "", repository: str | None = None) -> dict[str, Any]:
+    """Plan the complete body and every archive byte before any privileged write."""
+    value = public_context(value)
+    payload = canonical(value)
+    archive = archive_protocol()
+    if len(payload) > archive.MAX_CONTEXT_BYTES:
+        raise ValueError("Task context exceeds its bounded archive transport limit.")
+    if any(marker in prefix for marker in (MARKER, EVIDENCE_MARKER,
+                                           COMPRESSED_EVIDENCE_MARKER, ARCHIVE_MARKER)):
+        raise ValueError("PR description contains an ambiguous task attachment.")
+    separator = "\n\n" if prefix else ""
+    attachment = _render_inline(value)
+    bundle = None
+    if attachment is None or len(prefix + separator + attachment) > MAX_BODY:
+        bundle = archive.build(value, payload)
+        attachment = archive.render(bundle, repository)
+    body = prefix + separator + attachment
+    if len(body) > MAX_BODY:
+        raise ValueError("PR description exceeds the publication limit; no content was discarded.")
+    return {"body": body, "archive": bundle, "context": value}
+
+
+def render(value: dict[str, Any]) -> str:
+    return publication(value)["body"]
+
+
+def publish(value: dict[str, Any], *, api: Any, repository: str, prefix: str = "") -> str:
+    planned = publication(value, prefix=prefix, repository=repository)
+    if planned["archive"] is not None:
+        archive_protocol().publish(planned["archive"], api)
+        attached = parse(planned["body"], api=api)
+        if canonical(attached) != canonical(planned["context"]):
+            raise ValueError("Published task archive differs from its signed context.")
+    return planned["body"]
+
+
+def parse(body: str, *, api: Any = None) -> dict[str, Any]:
+    if isinstance(body, str) and ARCHIVE_MARKER in body:
+        if (len(body) > 65000 or body.count(ARCHIVE_MARKER) != 1
+                or any(marker in body for marker in (MARKER, EVIDENCE_MARKER, COMPRESSED_EVIDENCE_MARKER))):
+            raise ValueError("PR must attach exactly one user task record.")
+        try:
+            encoded = body.split(ARCHIVE_MARKER, 1)[1].split("\n-->", 1)
+            if len(encoded) != 2:
+                raise ValueError("Incomplete task archive attachment.")
+            manifest = json.loads(base64.b64decode(encoded[0], validate=True))
+            archive = archive_protocol()
+            payload = archive.read(manifest, api)
+            value = validate(json.loads(payload))
+            bundle = archive.build(value, payload)
+            if canonical(value) != payload or bundle["manifest"] != manifest:
+                raise ValueError("Task archive does not match its canonical history.")
+            archive.verify_published(bundle, api)
+            return value
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("Invalid task archive attachment.") from exc
     if not isinstance(body, str) or len(body) > 65000 or body.count(MARKER) != 1:
         raise ValueError("PR must attach exactly one user task record.")
     encoded = body.split(MARKER, 1)[1].split("\n-->", 1)
@@ -226,18 +325,30 @@ def parse(body: str) -> dict[str, Any]:
         raise ValueError("Incomplete task attachment.")
     try:
         original = validate(json.loads(base64.b64decode(encoded[0], validate=True)))
-        if EVIDENCE_MARKER not in body:
+        markers = (EVIDENCE_MARKER, COMPRESSED_EVIDENCE_MARKER)
+        count = sum(body.count(marker) for marker in markers)
+        if count == 0:
             return original
-        if body.count(EVIDENCE_MARKER) != 1:
+        if count != 1:
             raise ValueError("Duplicate task evidence attachment.")
-        supplement = body.split(EVIDENCE_MARKER, 1)[1].split("\n-->", 1)
+        marker = next(marker for marker in markers if marker in body)
+        supplement = body.split(marker, 1)[1].split("\n-->", 1)
         if len(supplement) != 2:
             raise ValueError("Incomplete task evidence attachment.")
-        value = validate(json.loads(base64.b64decode(supplement[0], validate=True)))
+        payload = base64.b64decode(supplement[0], validate=True)
+        if marker == COMPRESSED_EVIDENCE_MARKER:
+            decoder = zlib.decompressobj()
+            payload = decoder.decompress(payload, MAX_EVIDENCE_BYTES + 1)
+            if (len(payload) > MAX_EVIDENCE_BYTES or decoder.unconsumed_tail
+                    or decoder.unused_data or not decoder.eof):
+                raise ValueError("Invalid or oversized compressed task evidence.")
+        if len(payload) > MAX_EVIDENCE_BYTES:
+            raise ValueError("Task evidence exceeds its bounded transport limit.")
+        value = validate(json.loads(payload))
         if value["version"] != 2 or legacy(value) != original:
             raise ValueError("Supplemental evidence changed the original task.")
         return value
-    except (ValueError, UnicodeError) as exc:
+    except (ValueError, UnicodeError, zlib.error) as exc:
         raise ValueError("Invalid task attachment.") from exc
 
 

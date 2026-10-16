@@ -45,6 +45,7 @@ def fault_controller() -> Iterator[FaultController]:
         root=REPO_ROOT,
         project=os.environ["SQL_INTEGRATION_COMPOSE_PROJECT"],
         artifact_dir=Path(os.environ["SQL_INTEGRATION_ARTIFACT_DIR"]),
+        include_greenplum=os.environ.get("SQL_INTEGRATION_GP") == "1",
     )
     try:
         yield controller
@@ -412,7 +413,8 @@ def assert_no_toolkit_leaks(  # noqa: C901, PLR0912, PLR0915
 ) -> Iterator[None]:
     del default_sql_connections
     yield
-    write_sql_connections(_integration_connections())
+    # Re-select the source to invalidate cached aliases changed by auth scenarios.
+    _activate_integration_connections(write_sql_connections)
     cleanup_errors = resource_registry.cleanup()
     leak_report = {
         "tables": [],

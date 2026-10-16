@@ -30,7 +30,9 @@ def test_notification_selection_filters_new_and_legacy_noise(control: Any) -> No
         control.enqueue(kind, kind, {})
     control.enqueue("telegram", "request", {"telegram_feature": True})
     control.enqueue("status", "request", {"informational": True})
-    control.enqueue("local", "request", {"request_id": "local-correction"})
+    control.enqueue(
+        "local", "request", {"request_id": "local-correction", "telegram_feature": False}
+    )
     control.enqueue("rejected", "rejection", {"reason": "Needs corrections"})
     with control.connect() as db:
         db.execute(

@@ -81,6 +81,9 @@ def _meta(source: Any) -> Any:
 def validate_definition(definition: Any) -> Any:
     """Check renderer tab support and local sources before any cloud writes."""
     renderer = _renderer(definition)
+    if definition.get("meta_links_mode", "authored") not in {"authored", "managed"}:
+        message = "Editor meta_links_mode must be authored or managed."
+        raise DataLensUtilsError(message)
     scripts = definition.get("scripts")
     if not isinstance(scripts, Mapping):
         message = "Editor chart definitions require a scripts object."
@@ -127,7 +130,11 @@ def _sources(datasets: Any, definition: Any) -> Any:
             raise DataLensUtilsError(message)
         links[alias] = datasets[role].id
     if "meta" in sources:
-        if links and _meta(sources["meta"])["links"] != links:
+        meta = _meta(sources["meta"])
+        if definition.get("meta_links_mode") == "managed":
+            meta["links"].update(links)
+            sources["meta"] = json.dumps(meta, ensure_ascii=False, indent=2) + "\n"
+        elif links and meta["links"] != links:
             message = "Explicit Editor Meta links differ from the configured dataset bindings."
             raise DataLensUtilsError(message)
     elif links:

@@ -74,14 +74,14 @@ def test_task_mcp_receipts_do_not_echo_private_prompts(root: Path) -> None:
     assert receipt["result"]["correction_count"] == 1
 
 
-def test_oversized_or_duplicate_attachment_fails_closed(root: Path) -> None:
+def test_duplicate_and_over_budget_attachment_fails_closed(root: Path) -> None:
     task_context.record(root, "Feature")
     proto = task_context.protocol()
     body = task_context.attachment(root)
     with pytest.raises(ValueError, match="exactly one"):
         proto.parse(body + body)
-    with pytest.raises(ValueError, match="do not truncate"):
-        task_context.record(root, "x" * 55000, append=True)
+    with pytest.raises(ValueError, match="bounded archive"):
+        task_context.record(root, "x" * (8 * 1024 * 1024 + 1), append=True)
     assert task_context.read(root)["corrections"] == []
 
 
@@ -453,3 +453,11 @@ def test_mcp_starting_prompt_approval_gates_handoff_without_duplicate_message(ro
     assert mcp_server.task_context("review-record", root=str(root))["ok"]
     assert task_context.read(root)["starting_prompt"] == prompt
     assert task_context.read(root)["corrections"] == []
+
+
+def test_long_user_message_is_preserved_for_archive_publication(root: Path) -> None:
+    task_context.record(root, "Feature")
+    correction = "Preserve the complete original question and answer. " * 2000
+    task_context.record(root, correction, append=True)
+    assert task_context.read(root)["corrections"] == [correction]
+    assert task_context.protocol().ARCHIVE_MARKER in task_context.attachment(root)

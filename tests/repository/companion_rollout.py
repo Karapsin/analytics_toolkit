@@ -1,4 +1,4 @@
-"""Keep every active rollout instruction bound to the same reviewed candidate."""
+"""Keep historical, active and proposed rollout evidence distinct."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import re
 
 from tests._support.paths import REPO_ROOT
 
-COMPANION = "8a153830751278c1a0d1ed54ef310d37c5b94932"
+COMPANION = "ab7f83cddb6981ee380d3ae76fbc51ba1a41c87a"
+ACTIVE_RECEIPT = "operator/worker-reference-replacements-ab7f83cddb69-active.json"
+HISTORICAL_RECEIPT = "operator/companion-0c1f1abea3f7-ci-review-and-source.json"
 
 
 def test_active_dependency_instructions_share_final_pin_and_ci_receipt() -> None:
@@ -17,11 +19,12 @@ def test_active_dependency_instructions_share_final_pin_and_ci_receipt() -> None
     rollout = operations.split("## Recovered evidence and staged rollout\n", 1)[1]
     assert re.findall(r"\[self_host commit ([0-9a-f]{40})\]", dependency) == [COMPANION]
     assert re.findall(r"dependency candidate is\n`([0-9a-f]{40})`", rollout) == [COMPANION]
-    receipt = "operator/companion-8a1538307512-ci.json"
-    assert receipt in dependency
-    assert receipt in rollout
-    assert "/actions/runs/38491515819/job/115617553053" in dependency
-    assert "run `38491515819`, job\n`115617553053`" in rollout
+    for section in (dependency, rollout):
+        assert ACTIVE_RECEIPT in section
+        assert HISTORICAL_RECEIPT in section
+        assert "38931069859" in section
     assert "source_files" in dependency
-    assert "source_blob_proofs" in dependency
     assert "ancestors are historical evidence" in dependency
+    assert "active runtime" in rollout
+    assert "PR #15 remains subject to its own fresh" in rollout
+    assert "protected approval" in rollout

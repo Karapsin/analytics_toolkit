@@ -104,11 +104,22 @@ def test_target_restart_after_first_transfer_batch_is_exact_or_contextually_ambi
         "analytics_toolkit.sql.dml.transfer.flow.staged_attempt"
     )
     gate = FaultGate(phase="second_stage_batch", trigger_call=2, timeout=90, hold_exception=True)
-    monkeypatch.setattr(
-        attempt_module,
-        "insert_rows_batch",
-        gate.wrap(attempt_module.insert_rows_batch),
-    )
+    # Hold Greenplum's driver failure before batch rollback/reconnect so recovery
+    # happens while the batch still has a retry available. Other backends must
+    # retain the ambiguous-stage outcome checkpoint.
+    if backend == "gp":
+        insert_module = importlib.import_module("analytics_toolkit.sql.dml.load.load_sql_table")
+        monkeypatch.setattr(
+            insert_module,
+            "_insert_rows_backend",
+            gate.wrap(insert_module._insert_rows_backend),
+        )
+    else:
+        monkeypatch.setattr(
+            attempt_module,
+            "insert_rows_batch",
+            gate.wrap(attempt_module.insert_rows_batch),
+        )
     transfer_options = dict(options)
     if backend != "gp":
         transfer_options["partition_by"] = ["event_date"]
@@ -124,7 +135,7 @@ def test_target_restart_after_first_transfer_batch_is_exact_or_contextually_ambi
                 table,
                 write_mode="append",
                 batch_size=1,
-                retry_cnt=1,
+                retry_cnt=2 if backend == "gp" else 1,
                 full_retry_cnt=2,
                 timeout_increment=1,
                 adaptive_batch_size=False,
@@ -143,7 +154,7 @@ def test_target_restart_after_first_transfer_batch_is_exact_or_contextually_ambi
     worker.join()
     result = sql.read(alias, f"SELECT row_id, value FROM {table} ORDER BY row_id")
     if worker.error is not None:
-        assert backend in {"trino", "ch"}
+        assert backend in {"trino", "ch"}, repr(worker.error)
         rendered = repr(worker.error).lower()
         assert "ambiguous" in rendered or "unsafe" in rendered
         assert result.to_dict("records") == [{"row_id": 100, "value": "original"}]

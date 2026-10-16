@@ -23,19 +23,6 @@ assert_clean_worktree() {
   fi
 }
 
-assert_job_conclusion() {
-  local run_id="$1"
-  local job_name="$2"
-  local expected_conclusion="$3"
-  local conclusion
-
-  conclusion="$(gh run view "${run_id}" --json jobs --jq ".jobs[] | select(.name == \"${job_name}\") | .conclusion")"
-  if [ "${conclusion}" != "${expected_conclusion}" ]; then
-    printf 'Unexpected GitHub Actions job conclusion for "%s": expected %s, got %s\n' "${job_name}" "${expected_conclusion}" "${conclusion:-<missing>}" >&2
-    exit 1
-  fi
-}
-
 verify_testpypi_artifact() {
   local version="$1"
 
@@ -84,6 +71,7 @@ require_command python
 
 gh auth status >/dev/null
 assert_clean_worktree
+python -m release_routines.lib.release_candidate guard --stage testpypi
 
 original_branch="$(git branch --show-current)"
 if [ -z "${original_branch}" ]; then
@@ -99,37 +87,7 @@ if [ "${project_name}" != "analytics-toolkit" ]; then
 fi
 "${script_dir}/check_package_metadata.sh"
 
-branch_name="testpypi-${version}"
-base_commit="$(git rev-parse HEAD)"
-
-restore_original_branch() {
-  git switch "${original_branch}" >/dev/null 2>&1 || true
-}
-trap restore_original_branch EXIT
-
-if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
-  git branch -D "${branch_name}"
-fi
-
-git switch -c "${branch_name}" "${base_commit}"
-python -m release_routines.lib.testpypi_metadata replace-project-name "karapsin-analytics-toolkit"
-git add pyproject.toml
-git commit -m "Use TestPyPI package name for ${version}"
-git push --force-with-lease origin "${branch_name}"
-
-gh workflow run publish.yml --ref "${branch_name}"
-sleep 5
-
-run_id="$(gh run list --workflow publish.yml --branch "${branch_name}" --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')"
-if [ -z "${run_id}" ] || [ "${run_id}" = "null" ]; then
-  printf 'Could not find workflow_dispatch run for branch %s\n' "${branch_name}" >&2
-  exit 1
-fi
-
-gh run watch "${run_id}" --exit-status
-assert_job_conclusion "${run_id}" "build distribution" "success"
-assert_job_conclusion "${run_id}" "publish to TestPyPI" "success"
-assert_job_conclusion "${run_id}" "publish to PyPI" "skipped"
-
+python -m release_routines.lib.release_candidate prepare-stage --stage testpypi >/dev/null
 verify_testpypi_artifact "${version}"
+python -m release_routines.lib.release_candidate verified --stage testpypi
 printf 'TestPyPI release verified for version %s\n' "${version}"

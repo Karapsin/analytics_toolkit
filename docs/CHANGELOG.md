@@ -6,25 +6,67 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Preserve plans, images and clarification context; recover Pi tooling, default recommended choices, filter alerts and support ten workers.
+
 - Validate approved PNG evidence in staged and recovered Git trees before publication, repair focused CI fixtures, and pin the corrected staged RPI companion.
 - Preserve merged MinIO builds and changelog history, retain publication regressions within strict lint gates, and align RPI rollout with the corrected companion pin.
 
-## 1.3.12.5 - 2026-10-13
+- Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
+
+- Add the worker-compatible scoped merge entrypoint so unrelated live jobs do not starve ready PRs; preserve every merge gate and protect unpublished branches during cleanup.
+
+- Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
+- Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
+- Avoid false missing-image and plan holds from the recovered plan's exact reference-validation example while preserving signed history and genuine evidence requirements.
+
+- Repair orchestrator correction enrollment and routine-question routing while preserving verified publication recovery and genuine owner/security holds.
+
+- Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
+- Fix the Greenplum first-batch restart integration checkpoint and retry budget; add a service-free regression that checks exact rows, rollback, and fresh-connection recovery.
+- Preserve DataLens copy imports, encoding and parameter fidelity, managed Editor relocation, inferred dataset recovery and component diagnostics; restore Wizard configuration and change guards, explicit internal-title ownership, unsupported-encoding zero-write regressions and complete changelog history.
+- Fix Greenplum restart fault timing and batch retry coverage; correct regression imports for fast CI.
+
+- Reserve version increments for reviewed PyPI release preparation and resume publication safely with the same verified candidate artifacts.
+- Prepare versions only for reviewed PyPI releases and preserve candidates across dispatch retries and preparation PR corrections.
+- Recover reviewed releases after deleted preparation branches or newer dev changes, preserve publication safeguards, and restore current-dev offline helpers and regressions.
+- Recover interrupted TestPyPI pushes from journaled commits and verified legacy refs before reviewed release replacement, with fast restart and conflict regressions.
+- Preserve reviewed release-only version preparation and recovery, restore current-dev repair evidence and fast regressions, and correct strict lint/format findings without weakening quality gates.
+- Reserve version bumps and note rollover for explicit reviewed PyPI release preparation; restore this feature's version markers and keep pending notes Unreleased.
+- Reserve version bumps for reviewed PyPI releases and recover interrupted preparation PR publication without repushing stale heads or duplicating candidates.
+- Correct release replacement and preparation publication import ordering while preserving reviewed release preparation and recovery behavior.
+- Retry the original OAuth initiation URL after browser navigation timeouts in the disposable authentication harness, with fast service-free regression coverage for recovery and exhausted retries.
+- Preserve OAuth timeout recovery and its service-free regressions while restoring current-dev version markers and retaining pending release notes under Unreleased.
+- Reconcile user-approval labels automatically without clearing genuine holds or stale-head safeguards
+- Route malformed changelog fragments to fresh correction plans instead of repeating metadata failures
+- Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
+- Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
+- Fixed disposable authentication fault cleanup restarting Keycloak again after explicit recovery and readiness checks. Retained scenario fault history and full redacted OAuth browser failure diagnostics with guaranteed browser cleanup and fast service-free regression coverage.
+- Refactor service-free OAuth browser regressions and correct lint/format findings while preserving all failure phases, cleanup, redaction, and scenario history.
+- Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
+- Preserve OAuth diagnostics, fault recovery and fast service-free regressions; extract the browser fake step factory to remove new complexity debt, reconcile Unreleased notes and retain current-dev automation files.
+- Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
+- Preserve chronological maintenance eligibility answers in generated orchestrator context and document verified companion publication recovery separately from pending cross-repository trigger discovery.
+- Escape Unicode apostrophes in orchestrator correction expectations to satisfy lint while preserving authenticated context text.
+- Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
+- Apply Ruff's canonical layout to the scoped-merge regression parameters, preserving all assertions and merge-authority coverage.
+- Apply Ruff's canonical multiline layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
+- Apply Ruff's canonical layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
+- Preserve oversized signed agent task histories in immutable chunk archives with retry-safe publication
+- Route nontrivial protected conflict publications to fresh correction planning while retaining sensitive-path denial and exact-head approval gates.
+- Preserve actionable context-blocked owner correction notices alongside waiting questions while suppressing local status retries and retaining delivery evidence.
+
+## 1.3.12.5 - 2026-10-14
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches
 - Reuse offline test factories, scripted SQL drivers and strict domain comparisons while preserving regression scenarios.
-- Preserve plans, images and clarification context; recover Pi tooling, default recommended choices, filter alerts and support ten workers.
 - Add release-activated GitHub wiki synchronization from main user documentation.
 - Use explicit UTF-8 reads in GitHub wiki synchronization regressions to satisfy the strict lint gate.
 - Stabilize suite-wide test boundaries and held-worker cap detection with paired real/bypassed limiter regressions, restore Parquet adapter forwarding contracts, fix evidenced lint/format findings with original-exception and interrupt cleanup regressions, and preserve startup-diagnostics guards and changelog entries.
 - Fix the SQL integration startup-diagnostics guard to allow separate policy jobs while preserving required suite and diagnostic checks, with service-free regression coverage.
-- Allow trusted scoped dev merges during unrelated agent work while preserving merge gates and unpublished branches; reconcile changelog history and pin isolated companion rollout evidence.
 - Recover inactive Pi reviews and corrections, supply bounded integration diagnostics, suppress unchanged no-patch repair retries, and isolate transient evidence inventory failures.
 - Keep Pi recovery discovery regressions within strict lint gates while preserving transient-failure and retry coverage.
-- Split scoped-merge gate regressions to satisfy strict lint, retain recovered task and dev repair history, and align staged companion rollout evidence.
-- Bind starting-prompt plan approvals without changing historical digests, retain suppressed blocked-repair diagnostics and retry fingerprints, and gate the corrected companion rollout on exact-candidate rehearsal and live acceptance.
-- Block worker publication and recovery for unresolved plan/image references, preserve historical task verification, and document the final companion dependency and rollout gates.
 - Build disposable integration MinIO services from the existing pinned upstream release commits to avoid denied container pulls; retain S3 setup and cleanup and add fast service-free configuration regression guards.
+- Fix SQL integration fault actions to include the enabled Greenplum Compose profile while retaining the project-service guard, and reactivate loopback connection settings before auth cleanup to invalidate cached Airflow aliases. Add service-free Python regressions for both failures.
 
 ## 1.3.12.4 - 2026-10-12
 

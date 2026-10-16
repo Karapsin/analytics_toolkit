@@ -109,6 +109,16 @@ fakes, configuration inspection, or a bounded simulation of the failure mode.
 
 ## Fresh-Agent Sequence
 
+For a follow-up under an ongoing objective, carry the exact existing parent
+objective and its authenticated source reference in the task context before
+publication. Generic repair wording alone does not establish scope. Restore
+available authenticated evidence rather than asking the owner to repeat an
+already recorded objective; preserve the immutable starting prompt, original
+signed context and chronological corrections. Keep source provenance outside the
+v1 task-context fields, retain the prior-head digest for publication verification,
+and bind the restored context to a fresh independently reviewed correction head.
+Restoring context does not transfer owner approval from the source PR.
+
 1. Launch bare `codex` from the canonical repository. The launcher prepares a
    separate clone on refreshed dev before entering native Plan mode.
 2. Call `prepare_start(...)` for role-aware context and read its routed files.

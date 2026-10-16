@@ -17,6 +17,7 @@ from agent_tools import (
     sql_explorer_visual_capture,
     sql_explorer_visual_scene,
 )
+from tests.agent_tools._support.geometry import assert_scene_geometry
 from tests.agent_tools._support.mcp import _init_git_repo, _write_minimal_repo_files
 
 
@@ -129,7 +130,7 @@ def test_visual_scene_publishes_complete_geometry(scene_id: str, tmp_path: Path)
 
     asyncio.run(exercise())
     geometry = json.loads(evidence.read_text(encoding="utf-8"))
-    assert geometry["ok"] is True, geometry["assertions"]
+    assert_scene_geometry(scene_id, geometry, mcp_server.REPO_ROOT / ".rag_index/visual-failures")
 
 
 def test_visual_evidence_refresh_ignores_screen_teardown(tmp_path: Path) -> None:
