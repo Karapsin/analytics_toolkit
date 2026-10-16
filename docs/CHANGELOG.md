@@ -56,6 +56,7 @@ Generated from package version bumps and recent commit history.
 - Preserve SQL Explorer multicursors, clipboard spreading and readable carets; reconcile dev changelog history, retain bounded checkbox and picker diagnostics, correct diagnostic lint/formatting, and extend service-free regressions.
 - Correct SQL Explorer diagnostic fixture context, preserve bounded region collection during lint cleanup, and normalize diagnostic regression formatting.
 - Preserve SQL Explorer multicursor changes while retaining bounded type-menu observations, serialization/scaling comparison controls, and canonical GitHub coverage JSON for evidence-led repairs.
+- Preserve SQL Explorer multicursor editing while supersampling visual captures, stabilizing the type-menu viewport regression, and covering editor lifecycle and clipped highlights.
 
 ## 1.3.12.5 - 2026-10-14
 
