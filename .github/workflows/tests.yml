@@ -121,3 +121,11 @@ jobs:
 
       - name: Run lint, type, coverage, and artifact gates
         run: tox -e lint,type,coverage,artifacts
+
+      - name: Retain canonical coverage JSON
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: coverage.json
+          if-no-files-found: warn

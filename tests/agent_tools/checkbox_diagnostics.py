@@ -58,9 +58,7 @@ def _app(monkeypatch: pytest.MonkeyPatch, state: tuple[bool, bool, bool, bool], 
         size=SimpleNamespace(width=208, height=47),
         screen=SimpleNamespace(
             query_one=lambda _query: SimpleNamespace(collapsed=not advanced),
-            _compositor=SimpleNamespace(
-                render_strips=lambda: [Strip([Segment(composed.ljust(32))])]
-            ),
+            _compositor=SimpleNamespace(render_strips=lambda: [Strip([Segment(composed.ljust(32))])]),
         ),
     )
     monkeypatch.setattr(diagnostics, "_targets", lambda *_args: [("insert_data", widget, 1)])
@@ -75,9 +73,7 @@ def test_checkbox_layers_preserve_intact_model_and_expose_text_loss(
     checked, disabled, focused, advanced = state
     app = _app(monkeypatch, state, broken)
     terminal = diagnostics.terminal_diagnostics(app, "create-table-advanced")
-    snapshot = diagnostics.checkbox_failure_snapshot(
-        app, "create-table-advanced", terminal=terminal
-    )
+    snapshot = diagnostics.checkbox_failure_snapshot(app, "create-table-advanced", terminal=terminal)
     assert snapshot["complete"]
     assert snapshot["versions"]["python"]
     assert snapshot["versions"]["textual"]
@@ -123,18 +119,14 @@ def test_checkbox_snapshot_bounds_report_omissions_without_mutating_original(
     terminal = diagnostics.terminal_diagnostics(app, "create-table-advanced")
     before = json.dumps(terminal, sort_keys=True)
     monkeypatch.setattr(diagnostics, "MAX_BYTES", 1024)
-    snapshot = diagnostics.checkbox_failure_snapshot(
-        app, "create-table-advanced", terminal=terminal
-    )
+    snapshot = diagnostics.checkbox_failure_snapshot(app, "create-table-advanced", terminal=terminal)
     assert not snapshot["complete"]
     assert "byte_limit" in snapshot["omissions"]
     assert len(json.dumps(snapshot, indent=4, sort_keys=True).encode()) <= 1024
     assert json.dumps(terminal, sort_keys=True) == before
 
 
-@pytest.mark.parametrize(
-    "observation", ["long_label", "long_render", "ancestors", "unsupported", "error"]
-)
+@pytest.mark.parametrize("observation", ["long_label", "long_render", "ancestors", "unsupported", "error"])
 def test_checkbox_missing_and_truncated_observations_are_explicit(
     monkeypatch: pytest.MonkeyPatch, observation: str
 ) -> None:
@@ -149,15 +141,14 @@ def test_checkbox_missing_and_truncated_observations_are_explicit(
     elif observation == "unsupported":
         widget.render = object
     else:
+
         def fail() -> Text:
             message = "direct render failed"
             raise RuntimeError(message)
 
         widget.render = fail
     terminal = diagnostics.terminal_diagnostics(app, "create-table-advanced")
-    snapshot = diagnostics.checkbox_failure_snapshot(
-        app, "create-table-advanced", terminal=terminal
-    )
+    snapshot = diagnostics.checkbox_failure_snapshot(app, "create-table-advanced", terminal=terminal)
     assert not snapshot["complete"]
     reasons = {
         "long_label": "insert_data:label_limit",

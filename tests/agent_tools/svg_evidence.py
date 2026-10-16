@@ -216,13 +216,19 @@ def test_four_variants_preserve_inputs_hashes_and_ordinary_png(
     assert result["schema_version"] == 1
     assert result["complete"] is True
     assert result["missing"] == []
-    assert comparison_renderer == [COMPARISON_SVG, raw_font, framed_font]
+    assert comparison_renderer[:3] == [COMPARISON_SVG, raw_font, framed_font]
     expected = {
         "raw_original": COMPARISON_SVG,
         "raw_dejavu": raw_font,
         "framed_original": framed,
         "framed_dejavu": framed_font,
     }
+    controls = {
+        identity: evidence._framing_control(COMPARISON_SVG, framed, identity)
+        for identity in ("raw_xml_native", "framed_preserved_target", "framed_xml_native")
+    }
+    assert comparison_renderer[3:] == list(controls.values())
+    expected.update(controls)
     assert set(result["variants"]) == set(expected)
     assert result["combined_svg_byte_length"] == sum(
         len(original.encode("utf-8")) for original in expected.values()
@@ -279,7 +285,9 @@ def test_ambiguous_font_inputs_are_explicitly_incomplete(
         assert record["status"] == "omitted"
         assert reason in record["reason"]
         assert "svg" not in record
-    assert comparison_renderer == [svg]
+    assert comparison_renderer[0] == svg
+    assert len(comparison_renderer) == 3
+    assert result["variants"]["framed_xml_native"]["status"] == "omitted"
 
 
 @pytest.mark.parametrize(
@@ -318,7 +326,8 @@ def test_font_availability_requires_exact_nontruncated_installed_family(
     assert result["comparison_font"]["available"] is available
     assert result["complete"] is available
     if not available:
-        assert comparison_renderer == [COMPARISON_SVG]
+        assert comparison_renderer[0] == COMPARISON_SVG
+        assert len(comparison_renderer) == 4
         assert result["variants"]["raw_dejavu"]["reason"] == "comparison_font_unavailable"
 
 

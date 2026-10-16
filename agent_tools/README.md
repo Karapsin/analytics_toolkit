@@ -321,10 +321,35 @@ remain unchanged; probes and comparison rendering execute only on GitHub.
 Readiness and final geometry must pass before export or comparison rendering;
 regressions verify that stale successful comparisons cannot qualify a rejected frame.
 
-The coordinator must bind and independently inspect all four resulting SVG/PNG
+Three additional controls separate serialization from scaling:
+`raw_xml_native` reserializes the raw SVG with native sizing;
+`framed_preserved_target` uses the target frame with every original SVG interior
+byte intact; `framed_xml_native` uses the existing XML frame at the original
+viewBox dimensions. They retain original font declarations and share both 4 MiB
+comparison budgets with the original four variants. Invalid or missing native
+sizing and failed controls explicitly make the comparison incomplete. The ordinary
+production frame and PNG remain unchanged.
+
+The coordinator must bind and independently inspect all seven resulting SVG/PNG
 comparisons before selecting a picker repair. Incomplete evidence establishes no
 cause. Collecting diagnostics is no visual-review pass; a subsequent repair needs
 its own reviewed plan, regression and fresh full-scene review.
+
+The type-menu viewport regression attaches an observational JSON snapshot before
+its initial visibility assertion, after scrolling, and after positioning. It records
+focus and tracked-input identities, matches/index/accepted type, mount/visibility,
+scroll offsets, field/menu/viewport geometry, advanced-panel state and dependency
+versions. Queue sizes and pending layout/refresh flags are read only when available;
+unavailable probes and omissions are explicit. Snapshots are limited to 8 KiB and
+attach the original observation to failures without retries, event draining,
+refocusing or recollection. Existing assertions and their order remain intact.
+
+The quality job always attempts to upload generated `coverage.json` under a unique
+run/attempt/head-bound artifact name, including when the coverage ratchet fails.
+The upload warns explicitly if no report exists and does not change the preceding
+command's exit status. Fresh GitHub reports supply actual missing arcs; historical
+coverage totals cannot reconstruct them. The 98.03% branch floor and all debt
+baselines remain unchanged.
 
 The schema, invalid and SQL creation scenes also record scoped source-selector
 children: `SelectCurrent`, its `Static#label`, and the active arrow, with the

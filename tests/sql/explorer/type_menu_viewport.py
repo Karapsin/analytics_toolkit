@@ -7,6 +7,7 @@ from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from textual.widgets import Collapsible, Input, OptionList
 
 from tests.sql._support.explorer import FakeSession
+from tests.sql._support.type_menu_diagnostics import menu_snapshot
 
 
 def test_type_menu_disappears_when_focused_field_scrolls_out_of_view() -> None:
@@ -31,18 +32,21 @@ def test_type_menu_disappears_when_focused_field_scrolls_out_of_view() -> None:
             await pilot.pause()
             menu = screen.query_one("#create-type-options", OptionList)
             fields = screen.query_one("#create-table-fields")
-            assert menu.display
-            assert menu.region.x == field.region.x
-            assert menu.region.y == field.region.bottom
+            initial = menu_snapshot(app, screen, field, menu, fields)
+            assert menu.display, initial
+            assert menu.region.x == field.region.x, initial
+            assert menu.region.y == field.region.bottom, initial
             fields.scroll_end(animate=False)
             await pilot.pause()
-            assert fields.scroll_y > 0
-            assert field.has_focus
-            assert field.region.y < fields.content_region.y
+            scrolled = menu_snapshot(app, screen, field, menu, fields)
+            assert fields.scroll_y > 0, scrolled
+            assert field.has_focus, scrolled
+            assert field.region.y < fields.content_region.y, scrolled
             screen._position_types()
-            assert not menu.display
-            assert field.value == "B"
-            assert screen.values()["rows"] == [("id", "B"), ("value", "NUMERIC")]
-            assert app.session.executed == []
+            positioned = menu_snapshot(app, screen, field, menu, fields)
+            assert not menu.display, positioned
+            assert field.value == "B", positioned
+            assert screen.values()["rows"] == [("id", "B"), ("value", "NUMERIC")], positioned
+            assert app.session.executed == [], positioned
 
     asyncio.run(exercise())

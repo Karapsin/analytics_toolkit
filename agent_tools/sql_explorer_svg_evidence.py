@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import math
 import platform
 import re
 import shutil
@@ -20,6 +21,7 @@ MAX_COMPARISON_PNG_BYTES = 4 * 1024 * 1024
 COMPARISON_FONT = "DejaVu Sans Mono"
 MAX_PROBE_BYTES = 16 * 1024
 MAX_FONT_REQUESTS = 8
+_VIEWBOX_COMPONENTS = 4
 MAX_FONT_FAMILY_LENGTH = 512
 PROBE_TIMEOUT = 3
 
@@ -232,6 +234,100 @@ def _comparison_inputs(svg: str, framed_svg: str, font: dict[str, Any]) -> dict[
     return variants
 
 
+def _native_dimensions(svg: str) -> tuple[str, str]:
+    root = ET.fromstring(svg)  # noqa: S314 - generated capture input.
+    values = root.get("viewBox", "").replace(",", " ").split()
+    if len(values) != _VIEWBOX_COMPONENTS:
+        message = "missing_or_invalid_native_viewbox"
+        raise ValueError(message)
+    if any(not math.isfinite(float(value)) for value in values) or any(
+        float(value) <= 0 for value in values[2:]
+    ):
+        message = "missing_or_invalid_native_viewbox"
+        raise ValueError(message)
+    return values[2], values[3]
+
+
+def _preserved_frame(svg: str, width: str, height: str) -> str:
+    """Alter the root sizing declaration only; retain every interior byte."""
+    opening = re.search(r"""<svg\b(?:[^>"']|"[^"]*"|'[^']*')*>""", svg)
+    if opening is None or opening[0].endswith("/>"):
+        message = "unsupported_original_svg_root"
+        raise ValueError(message)
+    # A declaration is legal before the root, never inside the enclosing frame.
+    prefix = re.sub(r"<\?xml\b.*?\?>", "", svg[: opening.start()], flags=re.DOTALL)
+    if prefix.strip():
+        message = "unsupported_original_svg_prolog"
+        raise ValueError(message)
+    attributes = {"width": width, "height": height, "preserveAspectRatio": "xMidYMid meet"}
+    tag = opening[0]
+    for name, value in attributes.items():
+        pattern = rf"""(\s{name}\s*=\s*)(["'])(.*?)\2"""
+        tag, count = re.subn(
+            pattern,
+            lambda match, replacement=value: match[1] + match[2] + replacement + match[2],
+            tag,
+        )
+        if not count:
+            tag = tag[:-1] + f' {name}="{value}">'
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
+        '<rect width="100%" height="100%" fill="#0d1117"/>'
+        + tag
+        + svg[opening.end() :]
+        + "</svg>"
+    )
+
+
+def _framing_control(svg: str, framed_svg: str, identity: str) -> str:
+    """Separate XML serialization from target scaling without changing capture."""
+    if identity == "raw_xml_native":
+        root = ET.fromstring(svg)  # noqa: S314 - generated capture input.
+        return ET.tostring(root, encoding="unicode")
+    if identity == "framed_preserved_target":
+        frame = ET.fromstring(framed_svg)  # noqa: S314 - generated capture input.
+        return _preserved_frame(svg, frame.attrib["width"], frame.attrib["height"])
+    width, height = _native_dimensions(svg)
+    frame = ET.fromstring(framed_svg)  # noqa: S314 - generated capture input.
+    screens = [child for child in frame if child.tag.rsplit("}", 1)[-1] == "svg"]
+    if len(screens) != 1:
+        message = "missing_or_ambiguous_framed_screen"
+        raise ValueError(message)
+    for root in (frame, screens[0]):
+        root.set("width", width)
+        root.set("height", height)
+    return ET.tostring(frame, encoding="unicode")
+
+
+def _add_framing_controls(variants: dict[str, Any], svg: str, framed_svg: str) -> None:
+    for identity, sizing in (
+        ("raw_xml_native", "original native SVG sizing; XML reserialization only"),
+        ("framed_preserved_target", "existing target frame sizing; original interior bytes"),
+        ("framed_xml_native", "XML frame at original viewBox dimensions"),
+    ):
+        record: dict[str, Any] = {
+            "framing": identity,
+            "font": "original declarations",
+            "renderer": "resvg_py.svg_to_bytes",
+            "renderer_arguments": {"input": "svg.content", "other_arguments": {}},
+            "sizing": sizing,
+            "status": "pending",
+        }
+        variants[identity] = record
+        try:
+            content = _framing_control(svg, framed_svg, identity)
+        except (ET.ParseError, KeyError, ValueError) as exc:
+            record.update(status="omitted", reason=type(exc).__name__ + ": " + str(exc)[:256])
+            continue
+        encoded = content.encode("utf-8")
+        record["svg"] = {
+            "encoding": "UTF-8",
+            "byte_length": len(encoded),
+            "sha256": digest(encoded),
+            "content": content,
+        }
+
+
 def _comparison_pngs(variants: dict[str, Any], ordinary_png: bytes) -> int:
     total = 0
     for identity, record in variants.items():
@@ -261,9 +357,10 @@ def _comparison_pngs(variants: dict[str, Any], ordinary_png: bytes) -> int:
 
 
 def rasterization_comparisons(svg: str, framed_svg: str, png: bytes) -> dict[str, Any]:
-    """Bound lossless four-way evidence; incompleteness never establishes a cause."""
+    """Bound lossless comparisons; incompleteness never establishes a cause."""
     font = _comparison_font()
     variants = _comparison_inputs(svg, framed_svg, font)
+    _add_framing_controls(variants, svg, framed_svg)
     svg_total = sum(record.get("svg", {}).get("byte_length", 0) for record in variants.values())
     missing = []
     png_total = 0
