@@ -39,7 +39,7 @@ def _font_probe(arguments: list[str]) -> dict[str, Any]:
         return {**result, "status": "unavailable"}
     with TemporaryFile() as stdout, TemporaryFile() as stderr:
         try:
-            completed = subprocess.run(  # noqa: S603 - fixed fontconfig probes, no shell.
+            completed = subprocess.run(
                 [executable, *arguments[1:]],
                 stdout=stdout,
                 stderr=stderr,
@@ -244,7 +244,7 @@ def _comparison_pngs(variants: dict[str, Any], ordinary_png: bytes) -> int:
                 else _render_svg(record["svg"]["content"])
             )
             dimensions = _png_dimensions(png)
-        except Exception as exc:  # Retain failed diagnostics, never approve them.
+        except Exception as exc:  # noqa: BLE001 - retain renderer failures as incomplete evidence.
             record.update(status="failed", reason=type(exc).__name__ + ": " + str(exc)[:256])
             continue
         total += len(png)

@@ -13,6 +13,7 @@ from xml.etree import ElementTree as ET
 from rich.cells import cell_len
 from rich.color import Color
 from rich.style import Style
+from rich.text import Text
 from textual.app import ScreenStackError
 from textual.css.query import NoMatches
 from textual.geometry import Region
@@ -356,11 +357,74 @@ def _widget_state(widget: Any) -> dict[str, Any]:
         "display": widget.display,
     }
     if hasattr(widget, "label"):
-        state["label"] = str(widget.label)
+        label = str(widget.label)
+        state["label"] = label[: MAX_CELLS * MAX_ROWS]
+        state["label_truncated"] = len(label) > MAX_CELLS * MAX_ROWS
     if hasattr(widget, "value") and isinstance(widget.value, bool):
         state["value"] = widget.value
         state["button_text"] = widget._render_button().plain  # noqa: SLF001
     return state
+
+
+def _checkbox_context(app: Any, result: dict[str, Any]) -> None:
+    try:
+        advanced = app.screen.query_one("#create-table-advanced")
+        result["checkbox_context"] = {"advanced_collapsed": bool(advanced.collapsed)}
+    except (NoMatches, ScreenStackError, AttributeError, RuntimeError) as error:
+        result["missing"].append(f"checkbox_context:{type(error).__name__}")
+
+
+def _checkbox_evidence(widget: Any, entry: dict[str, Any], result: dict[str, Any]) -> None:
+    """Observe model/direct output independently of cached and composed rows."""
+    name = entry["name"]
+    try:
+        geometry = _selector_child_state(widget)
+        entry["checkbox"] = {"geometry": geometry}
+        if geometry["ancestors_truncated"]:
+            result["omissions"].append(f"{name}:ancestor_limit")
+        if entry["state"]["label_truncated"]:
+            result["omissions"].append(f"{name}:label_limit")
+        rendered = widget.render()
+        if not isinstance(rendered, Text):
+            result["missing"].append(f"{name}:unsupported_direct_render")
+            return
+        limit = MAX_CELLS * MAX_ROWS
+        truncated = len(rendered.plain) > limit or len(rendered.spans) > MAX_SVG_ELEMENTS
+        entry["checkbox"]["direct_render"] = {
+            "text": rendered.plain[:limit],
+            "style": str(rendered.style),
+            "spans": [
+                {"start": span.start, "end": span.end, "style": str(span.style)}
+                for span in rendered.spans[:MAX_SVG_ELEMENTS]
+            ],
+            "truncated": truncated,
+        }
+        if truncated:
+            result["omissions"].append(f"{name}:direct_render_limit")
+    except (AttributeError, RuntimeError) as error:
+        result["missing"].append(f"{name}:checkbox:{type(error).__name__}")
+
+
+def checkbox_failure_snapshot(app: Any, scene: str, *, terminal: dict[str, Any]) -> dict[str, Any]:
+    """Bound the original failing observation; never refresh or recollect its rows."""
+    payload = bounded_payload(
+        {
+            "schema_version": 1,
+            "scene_id": scene,
+            "complete": not terminal["missing"] and not terminal["omissions"],
+            "missing": terminal["missing"][:],
+            "omissions": terminal["omissions"][:],
+            "versions": {
+                "python": platform.python_version(),
+                **{package: _package_version(package) for package in ("textual", "rich")},
+            },
+            "terminal_size": [app.size.width, app.size.height],
+            "terminal": {**terminal, "regions": terminal["regions"][:]},
+            "svg": {"elements": [], "omitted_elements": 0},
+        }
+    )
+    payload.pop("svg", None)
+    return payload
 
 
 def _collect_region_rows(
@@ -437,6 +501,8 @@ def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:  # noqa: C901
     """Separate the widget render cache from the screen compositor's actual strips."""
     result: dict[str, Any] = {"regions": [], "missing": [], "omissions": []}
     selector_targets = []
+    if scene.startswith("create-table"):
+        _checkbox_context(app, result)
     if scene in SELECTOR_SCENES:
         snapshot, selector_targets = _source_selector(app, scene)
         result["source_selector"] = snapshot
@@ -466,6 +532,8 @@ def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:  # noqa: C901
         if name == "heading":
             entry["state"]["renderable_text"] = str(widget.render())
         result["regions"].append(entry)
+        if isinstance(entry["state"].get("value"), bool):
+            _checkbox_evidence(widget, entry, result)
         if not widget.display or region.width <= 0 or region.height <= 0:
             if not name.startswith("source-"):
                 result["missing"].append(f"{name}:not_visible")

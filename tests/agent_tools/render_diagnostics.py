@@ -134,14 +134,18 @@ def _assert_scrollbar_scene(terminal: dict[str, Any]) -> None:
     assert model["scrollbar"]["window_size"] == model["viewport"]["width"]
 
 
-def _assert_form_scene(terminal: dict[str, Any]) -> None:
+def _assert_form_scene(terminal: dict[str, Any], app: Any, scene: str) -> None:
+    def failure() -> str:
+        snapshot = diagnostics.checkbox_failure_snapshot(app, scene, terminal=terminal)
+        return json.dumps(snapshot, indent=2, sort_keys=True)
+
     flags = terminal["regions"][:3]
-    assert all(region["state"]["value"] is False for region in flags)
-    assert all(region["state"]["button_text"] == "[ ]" for region in flags)
+    assert all(region["state"]["value"] is False for region in flags), failure()
+    assert all(region["state"]["button_text"] == "[ ]" for region in flags), failure()
     for region in flags:
         for layer in ("widget_rows", "composed_rows"):
-            assert region[layer][0]["text"].startswith("[ ] ")
-            assert region[layer][0]["text"].rstrip().endswith("False")
+            assert region[layer][0]["text"].startswith("[ ] "), failure()
+            assert region[layer][0]["text"].rstrip().endswith("False"), failure()
     for region in terminal["regions"][3:]:
         if not region["name"].startswith("remove-column-"):
             continue
@@ -185,7 +189,7 @@ def test_target_scenes_collect_only_bounded_widget_and_composed_regions(
             if scene == "column-ruler-scrolled":
                 _assert_scrollbar_scene(terminal)
             if scene.startswith("create-table"):
-                _assert_form_scene(terminal)
+                _assert_form_scene(terminal, app, scene)
             if scene in diagnostics.SELECTOR_SCENES:
                 snapshot = diagnostics.selector_readiness_snapshot(app, scene, terminal=terminal)
                 assert all(diagnostics.selector_readiness_assertions(snapshot).values()), snapshot

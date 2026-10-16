@@ -90,9 +90,7 @@ def test_font_probes_bound_output_and_record_failure(
 
     monkeypatch.setattr(evidence.subprocess, "run", run)
     result = evidence._font_probe(["fc-list"])
-    assert result["status"] == (
-        "unavailable" if outcome in {"timeout", "oserror"} else outcome
-    )
+    assert result["status"] == ("unavailable" if outcome in {"timeout", "oserror"} else outcome)
     assert result["stdout"]["truncated"] is True
     assert result["stdout"]["byte_length"] == evidence.MAX_PROBE_BYTES + 1
     assert len(result["stdout"]["text"]) == evidence.MAX_PROBE_BYTES
@@ -349,13 +347,14 @@ def test_combined_byte_limits_keep_exact_boundary_and_omit_without_truncation(
             assert comparison_renderer == []
 
 
+@pytest.mark.parametrize("error_type", [RuntimeError, OSError])
 def test_renderer_failure_retains_other_variants_and_marks_incomplete(
-    monkeypatch: pytest.MonkeyPatch, comparison_renderer: list[str]
+    monkeypatch: pytest.MonkeyPatch, comparison_renderer: list[str], error_type: type[Exception]
 ) -> None:
     def render(svg: str) -> bytes:
         if svg == COMPARISON_SVG:
             message = "simulated renderer failure"
-            raise RuntimeError(message)
+            raise error_type(message)
         return PNG
 
     monkeypatch.setattr(evidence, "_render_svg", render)
@@ -366,7 +365,7 @@ def test_renderer_failure_retains_other_variants_and_marks_incomplete(
     failed = result["variants"]["raw_original"]
     assert failed["status"] == "failed"
     assert failed["svg"]["content"] == COMPARISON_SVG
-    assert "simulated renderer failure" in failed["reason"]
+    assert failed["reason"] == error_type.__name__ + ": simulated renderer failure"
     assert result["variants"]["framed_original"]["status"] == "ok"
     assert result["variants"]["raw_dejavu"]["status"] == "ok"
 

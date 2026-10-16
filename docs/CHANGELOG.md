@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
+
 - Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
 - Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
 - SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
@@ -37,9 +39,9 @@ Generated from package version bumps and recent commit history.
 - Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 - Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
 - Preserve SQL Explorer multicursor selection, clipboard spreading and readable thin carets; stabilize armed-directory scene setup and semantic readiness, correct quality and scrollbar typing failures, retain CODE6 fixes and changelog history, and add focused service-free regressions.
-- Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
 - Fixed disposable authentication fault cleanup restarting Keycloak again after explicit recovery and readiness checks. Retained scenario fault history and full redacted OAuth browser failure diagnostics with guaranteed browser cleanup and fast service-free regression coverage.
 - Refactor service-free OAuth browser regressions and correct lint/format findings while preserving all failure phases, cleanup, redaction, and scenario history.
+- Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
 - Preserve OAuth diagnostics, fault recovery and fast service-free regressions; extract the browser fake step factory to remove new complexity debt, reconcile Unreleased notes and retain current-dev automation files.
 - Preserve chronological maintenance eligibility answers in generated orchestrator context and document verified companion publication recovery separately from pending cross-repository trigger discovery.
 - Escape Unicode apostrophes in orchestrator correction expectations to satisfy lint while preserving authenticated context text.
@@ -47,6 +49,8 @@ Generated from package version bumps and recent commit history.
 - Apply Ruff's canonical multiline layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
 - Apply Ruff's canonical layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
 - Preserve oversized signed agent task histories in immutable chunk archives with retry-safe publication
+- Route nontrivial protected conflict publications to fresh correction planning while retaining sensitive-path denial and exact-head approval gates.
+- Preserve actionable context-blocked owner correction notices alongside waiting questions while suppressing local status retries and retaining delivery evidence.
 - Improve SQL Explorer multicursors, clipboard spreading and readable carets; add bounded four-way picker rasterization evidence.
 - Correct SQL Explorer disabled-color regression CSS resolution and SVG evidence lint without changing diagnostic output or multicursor behavior.
 

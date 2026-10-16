@@ -55,9 +55,22 @@ def enqueue(key: str, kind: str, payload: dict[str, Any], *, buttons: bool = Fal
 
 def pending() -> list[dict[str, Any]]:
     with connect() as db:
-        return [dict(row) for row in db.execute(
-            "SELECT * FROM notifications WHERE sent=0 AND retry<=? ORDER BY rowid LIMIT 20",
-            (time.time(),))]
+        events = []
+        rows = db.execute(
+            "SELECT * FROM notifications WHERE sent=0 AND retry<=? ORDER BY rowid LIMIT 200",
+            (time.time(),)).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload"])
+            if (row["kind"] == "request" and payload.get("telegram_feature") is False
+                    and not row["key"].endswith((":waiting", ":context-blocked"))):
+                # Retain the original payload and receipts, but do not deliver
+                # local-worker status retries (including already queued rows).
+                db.execute("UPDATE notifications SET sent=-1 WHERE key=? AND sent=0", (row["key"],))
+                continue
+            events.append(dict(row))
+            if len(events) == 20:
+                break
+        return events
 
 
 def delivery(key: str, *, message_id: int | None = None, delay: float = 0) -> None:
@@ -185,6 +198,30 @@ def assess(repository: str, number: int, head: str, digest: str, changes: str) -
     with connect() as db:
         db.execute("INSERT OR REPLACE INTO assessments VALUES (?,?,?,?,?)",
                    (repository, number, head, digest, changes))
+
+
+def correction_snapshot(repository: str, number: int) -> dict[str, Any] | None:
+    with connect() as db:
+        row = db.execute("SELECT * FROM corrections WHERE repository=? AND number=?",
+                         (repository, number)).fetchone()
+    return dict(row) if row else None
+
+
+def require_correction(repository: str, number: int, head: str, digest: str,
+                       reason: str, changes: str, *, expected: dict[str, Any] | None) -> bool:
+    """Queue planning only if the observed scope has not changed; retain findings."""
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM corrections WHERE repository=? AND number=?",
+                         (repository, number)).fetchone()
+        current = dict(row) if row else None
+        if current and current["head"] == head and current["digest"] == digest:
+            return True
+        if current != expected:
+            return False
+        db.execute("INSERT OR REPLACE INTO corrections VALUES (?,?,?,?,?,?,?)",
+                   (repository, number, head, digest, reason, changes, time.time()))
+    return True
 
 
 def reject(gh: Any, pr: dict[str, Any], task: dict[str, Any], reason: str, changes: str) -> None:

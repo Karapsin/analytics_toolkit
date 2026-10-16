@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -438,6 +439,155 @@ def test_rejected_bot_repair_is_paused_until_owner_resumes(
     gh.pages = lambda path, key=None: [] if "/comments?" in path else original_pages(path, key)
     assert controller.discover(gh, 17)["include"] == []
     assert pr["labels"] == [{"name": "agent:needs-user"}]
+
+
+def test_revision_retry_backlog_is_suppressed_without_losing_originals(control: Any) -> None:
+    payload = {
+        "text": "Worker deferred this phase; private logs retained. Retry is queued.",
+        "request_id": "69db3ccc1579",
+        "telegram_feature": False,
+        "turn_revision": 30,
+        "render_version": 1,
+        "rendered_parts": ["previously rendered status"],
+        "next_part": 1,
+    }
+    # Reproduce the observed distinct keys, including pre-existing queued rows
+    # that bypass any future enqueue-time filter.
+    with control.connect() as db:
+        for revision in range(30, 116):
+            db.execute(
+                "INSERT INTO notifications(key,kind,payload,message_id) VALUES (?,?,?,?)",
+                (
+                    f"request:69db3ccc1579:{revision}:plan:deferred",
+                    "request",
+                    json.dumps(payload),
+                    724,
+                ),
+            )
+    control.enqueue("approval:current", "approval", {"head": "a" * 40}, buttons=True)
+    events = control.pending()
+    assert [event["key"] for event in events] == ["approval:current"]
+    assert events[0]["token"]
+    with control.connect() as db:
+        rows = db.execute("SELECT * FROM notifications WHERE kind='request'").fetchall()
+    assert len(rows) == 86
+    assert all(row["sent"] == -1 and row["message_id"] == 724 for row in rows)
+    assert all(json.loads(row["payload"]) == payload for row in rows)
+    control.delivery("approval:current", delay=30)
+    assert control.pending() == []
+
+
+@pytest.mark.parametrize(
+    ("key", "kind", "payload"),
+    [
+        ("request:local:31:waiting", "request", {"telegram_feature": False}),
+        ("request:telegram:31:plan:deferred", "request", {"telegram_feature": True}),
+        ("legacy-request", "request", {"text": "Origin not established"}),
+        ("confirm:answer", "request-auth", {"telegram_feature": False}),
+        ("approval:head", "approval", {}),
+        ("merged:dev", "merged", {}),
+        ("main:promotion", "main", {}),
+        ("release:version", "release", {}),
+    ],
+)
+def test_filter_preserves_questions_and_existing_delivery_retry_contract(
+    control: Any, key: str, kind: str, payload: dict[str, Any]
+) -> None:
+    control.enqueue(key, kind, payload)
+    event = control.pending()[0]
+    assert event["key"] == key
+    assert json.loads(event["payload"]) == payload
+    control.delivery(key, delay=30)
+    assert control.pending() == []
+    control.delivery(key, message_id=99)
+    assert control.pending() == []
+
+
+def test_scan_and_delivery_batches_stay_bounded(control: Any) -> None:
+    for revision in range(205):
+        control.enqueue(
+            f"request:local:{revision}:plan:deferred",
+            "request",
+            {"telegram_feature": False},
+        )
+    for number in range(25):
+        control.enqueue(f"approval:{number}", "approval", {})
+    assert control.pending() == []
+    events = control.pending()
+    assert len(events) == 20
+    for event in events:
+        control.delivery(event["key"], message_id=1)
+    assert len(control.pending()) == 5
+
+
+def test_historically_suppressed_owner_notice_is_left_untouched(control: Any) -> None:
+    with control.connect() as db:
+        db.execute(
+            "INSERT INTO notifications(key,kind,payload,sent,retry,token,message_id) "
+            "VALUES (?,?,?,-1,?,?,?)",
+            (
+                "request:local:30:context-blocked",
+                "request",
+                json.dumps({"telegram_feature": False, "text": "Send a correction."}),
+                123,
+                "retained-receipt",
+                724,
+            ),
+        )
+        original = dict(db.execute("SELECT * FROM notifications").fetchone())
+    assert control.pending() == []
+    with control.connect() as db:
+        assert dict(db.execute("SELECT * FROM notifications").fetchone()) == original
+
+
+@pytest.mark.parametrize("pre_existing", [False, True])
+def test_context_blocked_correction_notice_survives_status_suppression(
+    control: Any, monkeypatch: Any, pre_existing: bool
+) -> None:
+    monkeypatch.setattr(control.time, "time", lambda: 1000)
+    revision = 30
+    key = f"request:69db3ccc1579:{revision}:context-blocked"
+    # Intake completes the waiting turn before building this notice, incrementing
+    # turn_revision. No waiting_notice means no separate :waiting event is queued.
+    payload = {
+        "title": "Feature request 69db3ccc1579",
+        "text": "Task context exceeds the limit. Request paused; send a correction.",
+        "request_id": "69db3ccc1579",
+        "turn_revision": revision + 1,
+        "telegram_feature": False,
+    }
+    original = json.dumps(payload)
+    status_key = f"request:69db3ccc1579:{revision}:plan:deferred"
+    control.enqueue(status_key, "request", {"telegram_feature": False})
+    if pre_existing:
+        with control.connect() as db:
+            db.execute(
+                "INSERT INTO notifications(key,kind,payload,message_id) VALUES (?,?,?,?)",
+                (key, "request", original, 724),
+            )
+    else:
+        control.enqueue(key, "request", payload)
+    events = control.pending()
+    assert [event["key"] for event in events] == [key]
+    event = events[0]
+    assert event["payload"] == original
+    assert event["message_id"] == (724 if pre_existing else None)
+    with control.connect() as db:
+        status = db.execute("SELECT * FROM notifications WHERE key=?", (status_key,)).fetchone()
+        assert status["sent"] == -1
+
+    control.delivery(key, delay=30)
+    assert control.pending() == []
+    with control.connect() as db:
+        delayed = dict(db.execute("SELECT * FROM notifications WHERE key=?", (key,)).fetchone())
+    assert delayed == {**event, "retry": 1030}
+    monkeypatch.setattr(control.time, "time", lambda: 1030)
+    assert control.pending() == [delayed]
+    control.delivery(key, message_id=99)
+    assert control.pending() == []
+    with control.connect() as db:
+        delivered = dict(db.execute("SELECT * FROM notifications WHERE key=?", (key,)).fetchone())
+    assert delivered == {**delayed, "sent": 1, "message_id": 99}
 
 
 @pytest.mark.parametrize(

@@ -260,6 +260,26 @@ come from one export; atomic evidence replacement protects that frame from later
 timer refreshes. These diagnostics do not replace geometry checks or individual
 review of every full PNG.
 
+Create-table checkbox entries additionally retain bounded model label/value and
+enabled/focused state, direct Rich render text/styles/spans, computed geometry and
+styles, and ancestor clips. The terminal snapshot records whether Advanced is
+collapsed. Direct output remains separate from cached widget and compositor rows;
+text loss in either layer is an observation, not a collection failure or a pass.
+Missing probes and label, direct-render, ancestor or payload limits explicitly
+mark evidence incomplete. These additions share the existing region, row, cell,
+element and 512 KiB bounds.
+
+The strict checkbox indicator and complete-label assertions attach a JSON snapshot
+only when they fail, using the original collected rows before teardown or another
+refresh. The message retains Python, Textual and Rich versions and terminal size;
+it never recollects rows or changes readiness to wait for the disputed text.
+GitHub must reproduce the advanced scene on Python 3.14/Textual 0.89.1, then the
+canonical and minimum environments, and retain exact-head coverage JSON with
+missing statements/arcs and tool versions. The first failing checkbox layer and
+the four picker comparisons still need independent review before a production
+repair is selected. Assertions, coverage/debt baselines and full-scene review
+remain required; this diagnostic checkpoint supplies no repair or visual verdict.
+
 Database-picker geometry also retains versioned `export_input_evidence` outside
 the 512 KiB parsed-diagnostic reducer. Its raw and framed SVG `content` strings
 are the actual export and PNG renderer inputs. Decode JSON, encode each string
@@ -294,8 +314,9 @@ a separate 4 MiB limit (including the reused ordinary variant). Exceeding either
 limit omits all content of that type while retaining available lengths/hashes.
 Oversized SVG inputs are not rendered. Missing fonts, ambiguous declarations,
 render failures and omissions have explicit per-variant reasons and
-`complete=false`; successful ordinary capture or parsed diagnostics cannot
-override incomplete comparisons. Ordinary production rendering and scene PNGs
+`complete=false`. Service-free regressions cover both runtime and operating-system
+renderer errors while retaining the successful variants. Successful ordinary capture
+or parsed diagnostics cannot override incomplete comparisons. Ordinary production rendering and scene PNGs
 remain unchanged; probes and comparison rendering execute only on GitHub.
 Readiness and final geometry must pass before export or comparison rendering;
 regressions verify that stale successful comparisons cannot qualify a rejected frame.
