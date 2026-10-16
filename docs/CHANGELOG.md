@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
+
 - Add the worker-compatible scoped merge entrypoint so unrelated live jobs do not starve ready PRs; preserve every merge gate and protect unpublished branches during cleanup.
 
 - Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
@@ -46,6 +48,7 @@ Generated from package version bumps and recent commit history.
 - Apply Ruff's canonical layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
 - Preserve oversized signed agent task histories in immutable chunk archives with retry-safe publication
 - Route nontrivial protected conflict publications to fresh correction planning while retaining sensitive-path denial and exact-head approval gates.
+- Preserve actionable context-blocked owner correction notices alongside waiting questions while suppressing local status retries and retaining delivery evidence.
 
 ## 1.3.12.5 - 2026-10-14
 

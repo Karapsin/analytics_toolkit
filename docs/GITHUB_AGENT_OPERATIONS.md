@@ -126,6 +126,14 @@ Telegram sends brief change descriptions and links for PR merges into dev, dev
 promotions into main and successful production PyPI release workflows. TestPyPI
 and automation-only main mirrors are excluded. Notifications use a private,
 durable outbox, retry delivery failures and deduplicate successful events.
+The outbox suppresses non-question request status notices explicitly marked
+`telegram_feature=false`, including queued retries with different revision keys.
+Suppressed rows retain their original payloads and delivery receipts with `sent=-1`;
+no request, checkpoint or answer is removed. Owner questions (`:waiting`) and
+correction requests after task-context rendering fails (`:context-blocked`) remain
+deliverable even for local requests, without requiring a separate waiting notice.
+Authentication requests, approvals and Telegram feature updates remain deliverable.
+Each pass scans at most 200 ready rows and returns at most 20 delivery events.
 
 ## Merge and repair behavior
 
