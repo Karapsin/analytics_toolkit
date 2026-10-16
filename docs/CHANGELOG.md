@@ -57,6 +57,7 @@ Generated from package version bumps and recent commit history.
 - Correct SQL Explorer diagnostic fixture context, preserve bounded region collection during lint cleanup, and normalize diagnostic regression formatting.
 - Preserve SQL Explorer multicursor changes while retaining bounded type-menu observations, serialization/scaling comparison controls, and canonical GitHub coverage JSON for evidence-led repairs.
 - Preserve SQL Explorer multicursor editing while supersampling visual captures, stabilizing the type-menu viewport regression, and covering editor lifecycle and clipped highlights.
+- Declare Pillow in GitHub and tox test environments and format supersampling regressions without changing their assertions.
 
 ## 1.3.12.5 - 2026-10-14
 
