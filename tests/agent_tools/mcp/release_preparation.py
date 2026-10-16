@@ -150,7 +150,7 @@ def test_reentering_pending_preparation_reuses_pr_and_version(
     monkeypatch.setattr(preparation.sessions, "clean", lambda root: None)
     monkeypatch.setattr(preparation.task_context, "directory", lambda root: root / "no-task")
     monkeypatch.setattr(preparation.sessions, "run", lambda *args: "")
-    monkeypatch.setattr(preparation, "_context", lambda *args: None)
+    monkeypatch.setattr(preparation, "_context", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         preparation,
         "_pr",
@@ -177,7 +177,7 @@ def test_closed_pr_blocks_resume(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     monkeypatch.setattr(preparation, "load", lambda root: {"pr": 12})
     monkeypatch.setattr(preparation.sessions, "clean", lambda root: None)
     monkeypatch.setattr(preparation.sessions, "run", lambda *args: "")
-    monkeypatch.setattr(preparation, "_context", lambda *args: None)
+    monkeypatch.setattr(preparation, "_context", lambda *args, **kwargs: None)
     monkeypatch.setattr(preparation, "_pr", lambda *args: {"state": "CLOSED", "mergedAt": None})
     with pytest.raises(RuntimeError, match="closed without merging"):
         preparation.prepare(tmp_path)
@@ -213,7 +213,7 @@ def test_merged_pr_needs_successful_exact_candidate_checks(
     check: str,
 ) -> None:
     state = {"candidate_sha": "candidate"}
-    monkeypatch.setattr(preparation, "_context", lambda *args: None)
+    monkeypatch.setattr(preparation, "_context", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         preparation,
         "_pr",
@@ -329,7 +329,7 @@ def test_interrupted_signed_commit_recovers_without_incrementing_again(
         "_pr",
         lambda *args: {"number": 12, "url": "https://example/pr/12"},
     )
-    monkeypatch.setattr(preparation, "_context", lambda *args: None)
+    monkeypatch.setattr(preparation, "_context", lambda *args, **kwargs: None)
     with pytest.raises(RuntimeError, match="interrupted"):
         preparation._publish_preparation(tmp_path, state)
     preparation._publish_preparation(tmp_path, state)
@@ -399,7 +399,7 @@ def corrected_preparation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(preparation.sessions, "clean", lambda root: None)
     monkeypatch.setattr(preparation.sessions, "run", run)
     monkeypatch.setattr(preparation, "_tree", lambda *args: "corrected-tree")
-    monkeypatch.setattr(preparation, "_context", lambda *args: None)
+    monkeypatch.setattr(preparation, "_context", lambda *args, **kwargs: None)
     monkeypatch.setattr(preparation, "_pr", lambda *args: pr)
     monkeypatch.setattr(
         preparation,
@@ -484,7 +484,7 @@ def test_invalid_corrected_candidate_is_not_adopted(
         monkeypatch.setattr(replacement, "replace", request_replacement)
     elif problem == "task":
 
-        def invalid(*args):
+        def invalid(*args, **kwargs):
             message = "invalid task binding"
             raise RuntimeError(message)
 

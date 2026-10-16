@@ -4,13 +4,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import importlib.util
 import json
 import re
 import zlib
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 MARKER = "<!-- agent-task-context-v1\n"
+ARCHIVE_MARKER = "<!-- agent-task-archive-v1\n"
 EVIDENCE_MARKER = "<!-- agent-task-evidence-v2\n"
 COMPRESSED_EVIDENCE_MARKER = "<!-- agent-task-evidence-v2-zlib\n"
 TRAILER = "Agent-Task-Context"
@@ -128,7 +130,18 @@ def validate_evidence(value: dict[str, Any]) -> None:
 def require_resolved(value: dict[str, Any]) -> None:
     """Author-side publication gate; do not invalidate legacy signed PR records."""
     validate(value)
-    prompts = [value["starting_prompt"], *value["corrections"]]
+    # This recovered-plan sentence documents validation syntax; its quoted
+    # markers are examples, not owner references. Do not exempt arbitrary quotes
+    # or code spans, which can still contain genuine image requirements.
+    example = (
+        "Before handoff, flag unresolved references such as "
+        "\u201cImplement the plan\u201d or `[Image #1]`. "
+        "Require attached evidence or an explicit user replacement of the missing requirement."
+    )
+    prompts = [
+        value["starting_prompt"],
+        *[prompt.replace(example, "") for prompt in value["corrections"]],
+    ]
     replacements = {item["reference"] for item in value.get("replacements", [])}
     images = {item["reference"] for item in value.get("images", [])}
     missing = {reference for prompt in prompts for reference in re.findall(r"\[Image\s+#?\d+\]", prompt, re.I)
@@ -184,7 +197,7 @@ def public_context(value: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def render(value: dict[str, Any]) -> str:
+def _render_inline(value: dict[str, Any]) -> str | None:
     value = public_context(value)
     prompts = [value["starting_prompt"], *value["corrections"]]
     visible = "\n\n".join(
@@ -217,7 +230,7 @@ def render(value: dict[str, Any]) -> str:
     if value["version"] == 2:
         payload = canonical(value)
         if len(payload) > MAX_EVIDENCE_BYTES:
-            raise ValueError("Task evidence exceeds its bounded transport limit.")
+            return None
         suffix = EVIDENCE_MARKER + base64.b64encode(payload).decode("ascii") + "\n-->\n"
         body += suffix
         if len(body) > MAX_BODY:
@@ -226,11 +239,76 @@ def render(value: dict[str, Any]) -> str:
             body = body[:-len(suffix)] + COMPRESSED_EVIDENCE_MARKER \
                 + base64.b64encode(zlib.compress(payload, 9)).decode("ascii") + "\n-->\n"
     if len(body) > MAX_BODY:
-        raise ValueError("Task context exceeds the PR limit; do not truncate or summarize it.")
+        return None
     return body
 
 
-def parse(body: str) -> dict[str, Any]:
+def archive_protocol() -> Any:
+    path = Path(__file__).with_name("task_archive.py")
+    spec = importlib.util.spec_from_file_location("trusted_task_archive", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Trusted task archive protocol is unavailable.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def publication(value: dict[str, Any], *, prefix: str = "", repository: str | None = None) -> dict[str, Any]:
+    """Plan the complete body and every archive byte before any privileged write."""
+    value = public_context(value)
+    payload = canonical(value)
+    archive = archive_protocol()
+    if len(payload) > archive.MAX_CONTEXT_BYTES:
+        raise ValueError("Task context exceeds its bounded archive transport limit.")
+    if any(marker in prefix for marker in (MARKER, EVIDENCE_MARKER,
+                                           COMPRESSED_EVIDENCE_MARKER, ARCHIVE_MARKER)):
+        raise ValueError("PR description contains an ambiguous task attachment.")
+    separator = "\n\n" if prefix else ""
+    attachment = _render_inline(value)
+    bundle = None
+    if attachment is None or len(prefix + separator + attachment) > MAX_BODY:
+        bundle = archive.build(value, payload)
+        attachment = archive.render(bundle, repository)
+    body = prefix + separator + attachment
+    if len(body) > MAX_BODY:
+        raise ValueError("PR description exceeds the publication limit; no content was discarded.")
+    return {"body": body, "archive": bundle, "context": value}
+
+
+def render(value: dict[str, Any]) -> str:
+    return publication(value)["body"]
+
+
+def publish(value: dict[str, Any], *, api: Any, repository: str, prefix: str = "") -> str:
+    planned = publication(value, prefix=prefix, repository=repository)
+    if planned["archive"] is not None:
+        archive_protocol().publish(planned["archive"], api)
+        attached = parse(planned["body"], api=api)
+        if canonical(attached) != canonical(planned["context"]):
+            raise ValueError("Published task archive differs from its signed context.")
+    return planned["body"]
+
+
+def parse(body: str, *, api: Any = None) -> dict[str, Any]:
+    if isinstance(body, str) and ARCHIVE_MARKER in body:
+        if (len(body) > 65000 or body.count(ARCHIVE_MARKER) != 1
+                or any(marker in body for marker in (MARKER, EVIDENCE_MARKER, COMPRESSED_EVIDENCE_MARKER))):
+            raise ValueError("PR must attach exactly one user task record.")
+        try:
+            encoded = body.split(ARCHIVE_MARKER, 1)[1].split("\n-->", 1)
+            if len(encoded) != 2:
+                raise ValueError("Incomplete task archive attachment.")
+            manifest = json.loads(base64.b64decode(encoded[0], validate=True))
+            archive = archive_protocol()
+            payload = archive.read(manifest, api)
+            value = validate(json.loads(payload))
+            bundle = archive.build(value, payload)
+            if canonical(value) != payload or bundle["manifest"] != manifest:
+                raise ValueError("Task archive does not match its canonical history.")
+            archive.verify_published(bundle, api)
+            return value
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("Invalid task archive attachment.") from exc
     if not isinstance(body, str) or len(body) > 65000 or body.count(MARKER) != 1:
         raise ValueError("PR must attach exactly one user task record.")
     encoded = body.split(MARKER, 1)[1].split("\n-->", 1)

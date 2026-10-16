@@ -56,6 +56,16 @@ no evidence fingerprint, no blocked/no-change outcome and no notification.
 Authentication, malformed evidence and provenance failures still fail closed;
 errors outside the inventory call are not covered by this recovery.
 
+The controller's `merge_selected` entrypoint lets the worker merge reviewed,
+unowned PRs while unrelated jobs continue. Its explicit PR selection never grants
+merge authority: current signatures, task provenance, review/base, fast CI,
+private holds and exact-head protected approval still apply. An empty selection
+merges nothing. Post-merge cleanup also receives the worker's live and unpublished
+request branches, retaining its existing unknown-branch and exact-head guards.
+The existing `merge(...)` entrypoint remains compatible for idle callers.
+This source capability needs independent review, GitHub checks and the owner's
+exact-head protected decision before controller activation.
+
 ## Enrolled machines and policy changes
 
 Automatic PR handling accepts only the repository owner's PRs with an enrolled
@@ -68,6 +78,22 @@ Every feature PR attaches the starting user prompt and subsequent corrections,
 with credentials redacted. The digest is bound to its signed head. Every review
 uses a fresh read-only Codex session separate from its authors. The reviewer
 evaluates the complete diff against the task and existing quality requirements.
+
+Long histories use an immutable, content-addressed task archive linked from the
+PR. Its readable pages preserve every user message, agent question, full answer,
+plan and image record; canonical chunks preserve the complete signed task data.
+The reader checks each chunk and the archive's exact layout before verifying the
+existing head-bound task digest. Missing, changed, stale or mixed attachments
+fail closed. Earlier inline attachments keep their original signatures and
+remain supported.
+
+Archives live under `agent-task-evidence/v1/<task-digest>` tags and contain only
+task data. They neither change the candidate tree nor invalidate its visual
+receipt. They cannot grant approval, resolve owner questions or clear a hold.
+Publishers validate the final body and archive bounds before mutations, retain
+the exact patch on failure, confirm archives before feature pushes and reconcile
+interrupted writes without replacing refs. Keep these tags as audit evidence;
+normal merged-branch cleanup must not remove them.
 
 Owner approval is retained for controller code/prompts, its security configuration,
 dispatch/capture/publishing workflows and required-check classification. Ordinary
@@ -122,6 +148,16 @@ attachment; the Pi owns all later corrections, CI, approvals and merges. A durab
 handoff permits the local clone to refresh clean dev and begin another planned task
 while the previous PR remains pending. Offline machines refresh at their next start.
 
+An automatic conflict job may inherit a protected controller entry only when the
+PR left its ancestor unchanged and the staged entry exactly matches current dev.
+A protected merge that requires any other resolution records a private correction
+request bound to the original head and task digest. The next reconciliation sends
+it through fresh correction planning and independent plan review instead of
+retrying the same blocked conflict publication. Sensitive paths remain denied;
+owner/security holds, fresh implementation review, fast CI and protected exact-head
+approval still gate the correction. This routing records no owner answer or
+approval and sends no operational Telegram alert.
+
 Discovery reads each changed changelog fragment from the immutable PR head before
 queuing deterministic metadata folding. A malformed fragment starts a fresh
 correction plan with its exact path and formatting requirement, rather than
@@ -164,6 +200,16 @@ approval. Later corrections retain precedence. The worker adds evidence only to
 the new publication context, preserving the original signed record and user
 answers; it never invents another approval.
 
+Reference validation excludes only the recovered plan's exact sentence beginning
+“Before handoff, flag unresolved references such as” and ending “of the missing
+requirement.” from its correction-message scan. That sentence documents quoted
+plan/image marker examples. Stored chronology, signed bytes and rendered evidence
+remain unchanged. Other references, including quoted or backticked image markers,
+still require actual evidence or an authenticated replacement; actual plan
+approval requests still require their chronological approval binding. This reader
+repair requires independent review, GitHub checks and owner exact-head protected
+approval before controller activation; it does not release existing holds itself.
+
 The worker allows ten concurrent jobs. A separate read-only plan resolver checks
 recommended implementation choices against the complete original request and
 corrections. It approves only aligned choices and records the automated decision
@@ -171,15 +217,40 @@ separately from owner answers. Missing evidence, genuine unanswered questions,
 owner vetoes, credentials and protected policy decisions keep their actual owner
 answer path. Both questions and answers remain visible in task/PR evidence.
 
-While at least one tracked PR is open, one maintenance orchestrator can start
-at most every thirty minutes. Its inherited process lease prevents duplicates
-across supervisor restarts and long-running jobs. It may edit private source
-checkouts of analytics_toolkit and self_host, preserves complete failed patches
-and evidence, and exits when no concrete issue exists. It runs no tests, builds,
-installs, services or visual scenes on the Pi. A fresh read-only reviewer assesses
-both patches; GitHub supplies validation. Companion proposals require scoped App
-access to self_host, independent review and all required exact-head workflows.
+The owner-requested eligibility rule is: any open analytics_toolkit PR qualifies;
+an open self_host PR qualifies only when it affects GitHub agent functionality.
+This includes human-created and untracked PRs. Review complete current-head
+changed files, including rename origins: direct agent service/deployment changes
+qualify; shared tooling, dependencies, workflows, tests and documentation need
+source evidence of agent impact. Titles and authorship do not establish relevance.
+Bind classification to repository, head and inspected comparison; invalidate changed
+comparisons and retry incomplete evidence. Confirmed eligibility in either
+repository permits maintenance even when evidence elsewhere is unavailable.
+Generated maintenance context retains the original request and both chronological
+eligibility answers, so the later self_host clarification takes precedence.
+
+One global maintenance orchestrator starts on the first eligible tick, then no
+sooner than 1,800 seconds after its persisted previous start. Its inherited process
+lease prevents duplicates across supervisor restarts and long-running jobs.
+Pause controls and worker capacity still apply; busy ticks create no catch-up
+backlog. It may edit private source checkouts of analytics_toolkit and self_host,
+preserves complete failed patches and evidence, and exits immediately when no
+concrete issue exists, releasing the lease. It runs no tests, builds, installs,
+services or visual scenes on the Pi. A fresh read-only reviewer assesses both
+patches; GitHub supplies validation. Companion proposals require scoped App access
+to self_host, independent review and all required exact-head workflows.
 Source merge never directly updates the installed worker.
+
+Companion trigger discovery remains a coordinator-owned dependency in the existing
+self_host writable assignment. Locally tracked companion proposals do not provide
+a complete inventory of eligible self_host PRs. Keep this dependency unresolved
+in publication and review evidence until immutable implementation source/tests,
+commit identity, independent review and exact-commit Repository Checks are
+available. Actual daemon-tick regressions must cover repository-qualified
+inventories, human-created PRs, rename origins, shared-file impact, comparison
+changes, incomplete evidence and singleton/cadence behavior. Operational acceptance
+also requires trusted deployed-revision metadata and the isolated GitHub rollout
+rehearsal. This ATK context change does not establish that trigger implementation.
 
 Protected controller activation still requires successful final-head checks,
 fresh independent review and the authenticated owner's exact-head
@@ -293,5 +364,26 @@ and bot changes. Its manifest binds source/test files to hashes, repository comm
 IDs and exact-commit GitHub checks. Missing or invalid evidence cannot be replaced
 by an author's claim. Protected approval notices use an independent concrete change
 assessment for the current head and task digest, never the starting prompt alone.
+
+
+Orchestrator correction publication enrolls each independently reviewed revised
+context while retaining the original digest. Recovery of the specific
+host-context enrollment mismatch requires the companion's durable artifact,
+original signed-head and exact plan checks, followed by final-head metadata
+verification. The controller compare-deletes only that exact head/reason with
+the supplied enrolled digest and no current veto; it leaves labels to normal
+reconciliation and grants no protected approval. Compatible companion publication
+recovery is implemented in self_host
+`14f3db8820e9ec353e1cf831932ed52da05cc164` and subsequent runtime commits.
+The immutable recovery evidence records independent review and successful
+[exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38727228122),
+including an isolated rollout rehearsal. Actual-controller fixtures cover deployed
+`fb62e04558ad3d5cdaf8a9ff1eeb5527238d21f3` and proposed
+`becefe94f16691e5132f7239dad7f2763133d3b5`; capability-gated digest passing
+preserves the older controller contract. This completed recovery dependency is
+separate from pending companion trigger discovery. Deploy compatible reviewed
+controller readers with separate isolated rehearsal; protected controller
+activation still requires the owner's exact-head approval. Neither resolver
+decisions nor companion recovery evidence releases PR #25's provenance hold.
 
 [Documentation overview](README.md)

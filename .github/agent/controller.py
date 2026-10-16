@@ -55,13 +55,14 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
     proto = trusted_module("task_context")
     body = pr.get("body") or ""
     head = pr["head"]["sha"]
-    if proto.MARKER not in body and pr["user"].get("type") == "Bot":
+    if (proto.MARKER not in body and proto.ARCHIVE_MARKER not in body
+            and pr["user"].get("type") == "Bot"):
         # Older App repairs inherit the already-authorized standing repair task.
         # The immutable signed head is part of this legacy task identity.
         value = proto.repair_context(head, "legacy-repair:" + head)
         actor = value["producer_id"]
     else:
-        value = proto.parse(body)
+        value = proto.parse(body, api=gh.api)
         if value["source"] == "standing-integration-repair" and pr["user"].get("type") != "Bot":
             raise ValueError("Only the trusted App can inherit the standing repair authority.")
         directory = os.environ.get("AGENT_CONTROL_DIR")
@@ -740,6 +741,26 @@ def inherited_controller_path(task: dict[str, Any], work: Path, path: str) -> bo
     return original == head and base != original and staged == base
 
 
+def publication_authority(gh: GitHub, task: dict[str, Any]) -> dict[str, Any]:
+    """Recheck the original authority after potentially interrupted archive I/O."""
+    if gh.base() != task["base"]:
+        raise RuntimeError("Dev changed during execution; discard the stale decision.")
+    if not task["number"]:
+        return {}
+    pr = gh.pull(task["number"])
+    if not trusted(pr, gh.repository) or pr["head"]["sha"] != task["head"]:
+        raise RuntimeError("Stale model output; PR changed during execution.")
+    denial = authorization_error(gh, pr, False)
+    if denial:
+        raise RuntimeError(denial)
+    if trusted_module("review_control").paused(gh, pr):
+        raise RuntimeError("PR is awaiting user instructions.")
+    metadata = task_metadata(gh, pr)
+    if metadata["task_digest"] != task.get("previous_task_digest", task["task_digest"]):
+        raise RuntimeError("Task context changed while the reviewer was running.")
+    return pr
+
+
 def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dict[str, Any] | None:
     number = task["number"]
     try:
@@ -747,20 +768,9 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
             raise RuntimeError("Model job failed; inspect its Actions run before retrying.")
         if json.loads((artifact / "task.json").read_text()) != task:
             raise RuntimeError("Artifact task identity does not match the claimed job.")
-        if gh.base() != task["base"]:
-            raise RuntimeError("Dev changed during execution; discard the stale decision.")
-        if number:
-            pr = gh.pull(number)
-            if not trusted(pr, gh.repository) or pr["head"]["sha"] != task["head"]:
-                raise RuntimeError("Stale model output; PR changed during execution.")
-            denial = authorization_error(gh, pr, False)
-            if denial:
-                raise RuntimeError(denial)
-            if trusted_module("review_control").paused(gh, pr):
-                raise RuntimeError("PR is awaiting user instructions.")
-            metadata = task_metadata(gh, pr)
-            if metadata["task_digest"] != task.get("previous_task_digest", task["task_digest"]):
-                raise RuntimeError("Task context changed while the reviewer was running.")
+        correction_scope = (trusted_module("review_control").correction_snapshot(gh.repository, number)
+                            if number and task["kind"] == "conflict" else None)
+        pr = publication_authority(gh, task)
         if task["kind"] == "review":
             receipt = json.loads((artifact / "review-execution.json").read_text())
             verify_review_execution(task, receipt)
@@ -822,19 +832,45 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                     gh.comment(issue, message)
                     evidence.record(task, outcome)
                 return {"status": "blocked"}
+        proto = trusted_module("task_context")
+        prefix = ((pr.get("body") or "").split("## User task", 1)[0] if number else
+                  ("Owner-requested Telegram feature. " if task["kind"] == "feature" else
+                   "Automated integration repair. ")
+                  + "Includes a fast regression test; requires independent review and fast CI.")
+        # Preflight before patch/commit/push or archive writes. Metadata-only
+        # archives never change the candidate tree or its visual receipt.
+        proto.publication(task["user_task"], prefix=prefix, repository=gh.repository)
         if not patch.read_bytes().strip() and task["kind"] != "conflict":
             raise RuntimeError("No repair produced. Diagnose credentials/infrastructure explicitly.")
         if patch.read_bytes().strip():
             command("git", "apply", "--index", str(patch.resolve()), cwd=work)
         paths = command("git", "diff", "--cached", "--name-only", task["head"], cwd=work).splitlines()
+        protected_conflicts: list[str] = []
         for path in paths:
             sensitive = path.startswith(".git/") or path in {".connections", ".env"}
             protected = (path.startswith(".github/agent/")
                          or path == ".github/workflows/github-agent.yml")
-            if sensitive or (protected and task["kind"] not in {"feature", "correction"}
-                             and (task["kind"] != "conflict"
-                                  or not inherited_controller_path(task, work, path))):
+            if sensitive:
                 raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+            if protected and task["kind"] not in {"feature", "correction"}:
+                if task["kind"] != "conflict":
+                    raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+                if not inherited_controller_path(task, work, path):
+                    protected_conflicts.append(path)
+        if protected_conflicts:
+            if not number:
+                raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+            reason = ("Protected conflict resolution requires a fresh correction plan and independent review: "
+                      + ", ".join(protected_conflicts)
+                      + ". Preserve the existing PR changes and current dev; protected exact-head approval still applies.")
+            pr = publication_authority(gh, task)
+            queued = trusted_module("review_control").require_correction(
+                gh.repository, number, task["head"], task["task_digest"], reason,
+                pr.get("title", "PR changes"), expected=correction_scope)
+            if not queued:
+                raise RuntimeError("Correction findings changed during execution; preserve the newer request.")
+            raise RuntimeError("Repair modifies controller or sensitive files; fresh correction planning queued. "
+                               + reason)
         if task["kind"] == "repair" and not any(path.startswith("tests/") and path.endswith(".py")
                                                  for path in paths):
             raise RuntimeError("Integration repair must include a fast regression test.")
@@ -844,7 +880,6 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
         parents = ["-p", task["head"]]
         if task["kind"] in {"conflict", "repair", "feature", "correction"} and task["base"] != task["head"]:
             parents.extend(["-p", task["base"]])
-        proto = trusted_module("task_context")
         message = "GitHub agent: " + task["kind"] + proto.trailers(task["user_task"], task["producer_id"])
         commit = command("git", *signing_options(), "commit-tree", "-S", tree, *parents,
                          "-m", message, cwd=work)
@@ -857,19 +892,20 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                     raise RuntimeError("Existing feature branch differs; publication recovery requires owner correction.")
                 proto.verify_commit(task["user_task"], command("git", "log", "-1", "--format=%B", existing_head, cwd=work))
                 commit = existing_head
+        body = proto.publish(task["user_task"], api=gh.api, repository=gh.repository, prefix=prefix)
+        current = publication_authority(gh, task)
+        if number and current.get("body") != pr.get("body"):
+            raise RuntimeError("PR description changed during archive publication.")
         push = ["git", "push"]
         if number:
             push.append(f"--force-with-lease=refs/heads/{task['branch']}:{task['head']}")
         command(*push, "origin", f"{commit}:refs/heads/{task['branch']}", cwd=work)
         if number:
-            prefix = (pr.get("body") or "").split("## User task", 1)[0]
-            gh.api(f"pulls/{number}", "PATCH", {"body": prefix + "\n\n" + proto.render(task["user_task"])})
+            gh.api(f"pulls/{number}", "PATCH", {"body": body})
         if not number:
             existing_pr = next((item for item in gh.pulls() if item["head"]["ref"] == task["branch"]), None)
             pr = existing_pr or gh.api("pulls", "POST", {"title": task.get("title", "Repair post-merge integration failures"),
-                "head": task["branch"], "base": "dev", "body": ("Owner-requested Telegram feature. " if task["kind"] == "feature" else "Automated integration repair. ")
-                + "Includes a fast regression test; requires independent review and fast CI.\n\n"
-                + proto.render(task["user_task"])})
+                "head": task["branch"], "base": "dev", "body": body})
             if task["kind"] != "feature":
                 gh.comment(pr["number"], "Integration runs: " + ", ".join(str(x) for x in task["runs"]))
         if task["kind"] in {"feature", "correction"}:
@@ -888,7 +924,19 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
 
 
 def merge(gh: GitHub, app_id: int, work: Path) -> None:
+    merge_selected(gh, app_id, work, pr_numbers=None)
+
+
+def merge_selected(
+    gh: GitHub, app_id: int, work: Path, *,
+    pr_numbers: set[int] | None, active_branches: set[str] | None = None,
+) -> None:
+    """Apply every merge gate to only the supervisor-selected, unowned PRs."""
+    selected = None if pr_numbers is None else set(pr_numbers)
+    protected_branches = set(active_branches or ())
     for item in gh.pulls():
+        if selected is not None and item["number"] not in selected:
+            continue
         pr = gh.pull(item["number"])
         if not trusted(pr, gh.repository):
             continue
@@ -922,7 +970,8 @@ def merge(gh: GitHub, app_id: int, work: Path) -> None:
         # GitHub protection also enforces fast checks; expected head rejects races.
         result = gh.api(f"pulls/{pr['number']}/merge", "PUT", {"sha": head, "merge_method": "squash"})
         if result.get("merged"):
-            trusted_module("branch_cleanup").cleanup(gh, work, force=True)
+            trusted_module("branch_cleanup").cleanup(
+                gh, work, active_branches=protected_branches, force=True)
 
 
 def cleanup_branches(gh: GitHub, *, active_branches: set[str] | None = None) -> dict[str, Any]:

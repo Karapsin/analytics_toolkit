@@ -218,10 +218,32 @@ def writable(root: Path) -> dict[str, Any]:
 def push(root: Path) -> dict[str, Any]:
     state = writable(root)
     clean(root)
-    attachment = task_context.attachment(root)
+    prefix = (
+        "Implemented in an isolated Codex session. The Pi owns independent "
+        "review, corrections, GitHub checks and merging."
+    )
+    # Complete transport preflight precedes even the feature push. Archive refs
+    # contain only task data and do not change the reviewed candidate tree.
+    task_context.protocol().publication(task_context.read(root), prefix=prefix)
     head = run(root, "git", "rev-parse", "HEAD")
     task_context.protocol().verify_commit(
-        task_context.protocol().parse(attachment), run(root, "git", "log", "-1", "--format=%B")
+        task_context.protocol().public_context(task_context.read(root)),
+        run(root, "git", "log", "-1", "--format=%B"),
+    )
+    body_text = task_context.publish_attachment(root, prefix=prefix)
+    # Archive I/O can outlive a new hold or ownership change. Recheck the exact
+    # session/head and signed attachment before publishing the candidate.
+    if writable(root) != state or run(root, "git", "rev-parse", "HEAD") != head:
+        message = "Session or candidate changed during task archive publication."
+        raise RuntimeError(message)
+    clean(root)
+    task_context.protocol().verify_commit(
+        task_context.parse_attachment(root, body_text),
+        run(root, "git", "log", "-1", "--format=%B"),
+    )
+    task_context.protocol().verify_commit(
+        task_context.protocol().public_context(task_context.read(root)),
+        run(root, "git", "log", "-1", "--format=%B"),
     )
     run(root, "git", "push", "--set-upstream", "origin", f"HEAD:{state['branch']}")
     state["publication_sha"] = head
@@ -248,10 +270,7 @@ def push(root: Path) -> dict[str, Any]:
             state["pr"] = matches[0]["number"]
         else:
             body = state_path(root).with_name("atk-pr-body.md")
-            body.write_text(
-                "Implemented in an isolated Codex session. The Pi owns independent "
-                "review, corrections, GitHub checks and merging.\n\n" + attachment
-            )
+            body.write_text(body_text)
             run(
                 root,
                 "gh",
@@ -269,10 +288,7 @@ def push(root: Path) -> dict[str, Any]:
             state["pr"] = pr_info(root)["number"]
         save(root, state)
     body = state_path(root).with_name("atk-pr-body.md")
-    body.write_text(
-        "Implemented in an isolated Codex session. The Pi owns independent "
-        "review, corrections, GitHub checks and merging.\n\n" + attachment
-    )
+    body.write_text(body_text)
     run(root, "gh", "pr", "edit", str(state["pr"]), "--body-file", str(body))
     receipt = handoff(root)
     return {"sha": head, "push_target": f"origin/{state['branch']}", "pr": state["pr"], **receipt}
@@ -306,7 +322,7 @@ def handoff(root: Path) -> dict[str, Any]:
     if pr["state"] != "OPEN" and not pr["mergedAt"]:
         msg = "Published PR is closed without a merge; retain local ownership."
         raise RuntimeError(msg)
-    attached = proto.parse(pr["body"])
+    attached = task_context.parse_attachment(root, pr["body"])
     if proto.digest(attached) != proto.digest(proto.public_context(context)):
         msg = "Published PR task attachment does not match the signed local task."
         raise RuntimeError(msg)

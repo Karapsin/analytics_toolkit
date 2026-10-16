@@ -8,6 +8,14 @@ Generated from package version bumps and recent commit history.
 
 - Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
 
+- Add the worker-compatible scoped merge entrypoint so unrelated live jobs do not starve ready PRs; preserve every merge gate and protect unpublished branches during cleanup.
+
+- Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
+- Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
+- Avoid false missing-image and plan holds from the recovered plan's exact reference-validation example while preserving signed history and genuine evidence requirements.
+
+- Repair orchestrator correction enrollment and routine-question routing while preserving verified publication recovery and genuine owner/security holds.
+
 - Extract SQL integration cleanup regression setup to satisfy strict lint limits while preserving both transports, leak outcomes, cleanup ordering, and report assertions.
 - Fix the Greenplum first-batch restart integration checkpoint and retry budget; add a service-free regression that checks exact rows, rollback, and fresh-connection recovery.
 - Preserve DataLens copy imports, encoding and parameter fidelity, managed Editor relocation, inferred dataset recovery and component diagnostics; restore Wizard configuration and change guards, explicit internal-title ownership, unsupported-encoding zero-write regressions and complete changelog history.
@@ -27,7 +35,19 @@ Generated from package version bumps and recent commit history.
 - Route malformed changelog fragments to fresh correction plans instead of repeating metadata failures
 - Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 - Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
+- Fixed disposable authentication fault cleanup restarting Keycloak again after explicit recovery and readiness checks. Retained scenario fault history and full redacted OAuth browser failure diagnostics with guaranteed browser cleanup and fast service-free regression coverage.
+- Refactor service-free OAuth browser regressions and correct lint/format findings while preserving all failure phases, cleanup, redaction, and scenario history.
 - Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
+- Preserve OAuth diagnostics, fault recovery and fast service-free regressions; extract the browser fake step factory to remove new complexity debt, reconcile Unreleased notes and retain current-dev automation files.
+- Wrap the OAuth browser regression expectation to satisfy lint and formatting gates while preserving existing assertions and service-free coverage.
+- Preserve chronological maintenance eligibility answers in generated orchestrator context and document verified companion publication recovery separately from pending cross-repository trigger discovery.
+- Escape Unicode apostrophes in orchestrator correction expectations to satisfy lint while preserving authenticated context text.
+- Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
+- Apply Ruff's canonical layout to the scoped-merge regression parameters, preserving all assertions and merge-authority coverage.
+- Apply Ruff's canonical multiline layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
+- Apply Ruff's canonical layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
+- Preserve oversized signed agent task histories in immutable chunk archives with retry-safe publication
+- Route nontrivial protected conflict publications to fresh correction planning while retaining sensitive-path denial and exact-head approval gates.
 
 ## 1.3.12.5 - 2026-10-14
 
