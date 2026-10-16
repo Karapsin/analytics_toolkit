@@ -48,6 +48,7 @@ Generated from package version bumps and recent commit history.
 - Apply Ruff's canonical layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
 - Preserve oversized signed agent task histories in immutable chunk archives with retry-safe publication
 - Improve SQL Explorer multicursors, clipboard spreading and readable carets; add bounded four-way picker rasterization evidence.
+- Correct SQL Explorer disabled-color regression CSS resolution and SVG evidence lint without changing diagnostic output or multicursor behavior.
 
 ## 1.3.12.5 - 2026-10-14
 
