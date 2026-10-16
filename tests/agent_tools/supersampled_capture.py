@@ -162,9 +162,7 @@ def test_processed_comparison_reuses_only_final_png_and_shares_both_budgets(
     total = baseline[f"combined_{kind}_byte_length"]
     limit = "MAX_SVG_BYTES" if kind == "svg" else "MAX_COMPARISON_PNG_BYTES"
     monkeypatch.setattr(evidence, limit, total - extra)
-    result = evidence.rasterization_comparisons(
-        COMPARISON_SVG, framed, PNG, rasterization=metadata
-    )
+    result = evidence.rasterization_comparisons(COMPARISON_SVG, framed, PNG, rasterization=metadata)
     result = json.loads(json.dumps(result))
     assert result["complete"] is (extra == 0)
     assert result[f"combined_{kind}_byte_length"] == total

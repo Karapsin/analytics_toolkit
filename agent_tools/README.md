@@ -182,8 +182,12 @@ monospace font must be installed (for example Menlo, Consolas, or Liberation
 Mono). No VM, OS image download, desktop session, or VNC server is needed.
 
 Install `agent_tools/requirements-mcp.txt` in the agent environment for the PNG
-renderer. On Windows, the workflow finds `.venv/Scripts/python.exe`; on Linux
-and macOS it uses `.venv/bin/python`, falling back to the running interpreter.
+renderer. The GitHub latest/minimum test matrix and tox latest/minimum and
+coverage environments also install `Pillow>=10,<13` for the unconditional,
+service-free supersampling regressions.
+
+On Windows, the workflow finds `.venv/Scripts/python.exe`; on Linux and macOS it
+uses `.venv/bin/python`, falling back to the running interpreter.
 The shell-free CLI equivalent on every platform is:
 
 ```text
