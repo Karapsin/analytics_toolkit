@@ -50,9 +50,7 @@ def test_actual_publication_routes_both_rename_endpoints(
     publication: Any, monkeypatch: Any, path: str, direction: str
 ) -> None:
     work, git, commit, task, artifact, gh, pushed, _history = publication
-    source, target = (
-        ("docs/renamed.md", path) if direction == "in" else (path, "docs/renamed.md")
-    )
+    source, target = ("docs/renamed.md", path) if direction == "in" else (path, "docs/renamed.md")
     for name in (source, target):
         (work / name).parent.mkdir(parents=True, exist_ok=True)
     (work / source).write_text("Retained harness content.\n", encoding="utf-8")
@@ -114,6 +112,6 @@ def test_harness_routing_does_not_relax_capture_identity(tmp_path: Path) -> None
         target.write_text(json.dumps(changed), encoding="utf-8")
         with pytest.raises(
             RuntimeError,
-            match="Stale visual|Partial visual|Non-green visual|Incomplete visual",
+            match=r"Stale visual|Partial visual|Non-green visual|Incomplete visual",
         ):
             controller.verify_visual(tmp_path, patch, task)

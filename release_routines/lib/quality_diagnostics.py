@@ -30,13 +30,17 @@ def checkout_revision(root: Path) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _distribution_version(name: str) -> str | None:
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
+
+
 def toolchain() -> dict[str, str | None]:
     versions: dict[str, str | None] = {"python": platform.python_version()}
     for name in ("ruff", "mypy", "textual", "rich"):
-        try:
-            versions[name] = metadata.version(name)
-        except metadata.PackageNotFoundError:
-            versions[name] = None
+        versions[name] = _distribution_version(name)
     return versions
 
 

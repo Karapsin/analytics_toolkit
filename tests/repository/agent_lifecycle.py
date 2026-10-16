@@ -620,7 +620,7 @@ def test_recovered_feature_rejects_untrusted_head_before_any_publication(
             return original(*args, **kwargs)
 
         git.side_effect = command
-    with pytest.raises(RuntimeError, match="trusted signed head|another producer"):
+    with pytest.raises(RuntimeError, match=r"trusted signed head|another producer"):
         controller.publish(gh, task, tmp_path, tmp_path)
     assert not any(call.args[1] == "push" for call in git.call_args_list)
     controller.signing_options.assert_not_called()

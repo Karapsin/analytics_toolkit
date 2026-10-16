@@ -107,6 +107,38 @@ def test_failure_retains_complete_output_before_validation(
     assert (index.parent / "stderr.txt").read_text(encoding="utf-8") == stderr
 
 
+@pytest.mark.parametrize("missing_name", ["ruff", "mypy", "textual", "rich"])
+def test_toolchain_preserves_mixed_installed_and_missing_tools(
+    monkeypatch: Any, missing_name: str
+) -> None:
+    expected = {"ruff": "0.15.22", "mypy": "1.16.1", "textual": "0.73.0", "rich": "13.9.4"}
+
+    def version(name: str) -> str:
+        if name == missing_name:
+            raise quality_diagnostics.metadata.PackageNotFoundError(name)
+        return expected[name]
+
+    monkeypatch.setattr(quality_diagnostics.metadata, "version", version)
+    monkeypatch.setattr(quality_diagnostics.platform, "python_version", lambda: "3.11.17")
+    assert quality_diagnostics.toolchain() == {
+        "python": "3.11.17",
+        **expected,
+        missing_name: None,
+    }
+
+
+def test_toolchain_propagates_unrelated_metadata_errors(monkeypatch: Any) -> None:
+    error = RuntimeError("Invalid distribution metadata")
+
+    def broken(name: str) -> str:
+        raise error
+
+    monkeypatch.setattr(quality_diagnostics.metadata, "version", broken)
+    with pytest.raises(RuntimeError, match="Invalid distribution metadata") as caught:
+        quality_diagnostics.toolchain()
+    assert caught.value is error
+
+
 def test_metadata_records_missing_tools_and_checkout(tmp_path: Path, monkeypatch: Any) -> None:
     def missing(name: str) -> str:
         raise quality_diagnostics.metadata.PackageNotFoundError(name)

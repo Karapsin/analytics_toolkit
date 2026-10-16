@@ -641,7 +641,10 @@ The canonical quality wrapper retains complete Ruff lint/format and mypy stdout
 and stderr under `.rag_index/quality-diagnostics/<id>/` before parsing or debt
 comparison, including malformed output and nonzero exits. Each `index.json`
 binds the command, exit code, checkout revision, PR source head, workflow/run/attempt,
-toolchain versions, stream byte counts and SHA-256 hashes. The quality workflow
+toolchain versions, stream byte counts and SHA-256 hashes. Toolchain metadata
+retains the Python version and every Ruff, mypy, Textual and Rich field; an
+uninstalled distribution is recorded as `null`. Other metadata errors propagate
+instead of being reported as missing installations. The quality workflow
 always uploads `quality-diagnostics-<run>-<attempt>`; summaries print the index
 path. The coordinator exports the complete artifact and index to correction
 workers alongside exact-head check logs, without treating their content as owner
