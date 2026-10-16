@@ -263,16 +263,27 @@ def hold_correction(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> Non
     gh.api(f"issues/{pr['number']}/labels", "POST", {"labels": [PAUSED]})
 
 
+def _retire_derived_pause(gh: Any, pr: dict[str, Any], row: sqlite3.Row) -> None:
+    """Retire the observed pause without erasing later authority decisions."""
+    if pr["state"] != "open":
+        return
+    with connect() as db:
+        db.execute(
+            "DELETE FROM pauses WHERE repository=? AND number=? AND head=? AND reason=? AND created=? "
+            "AND NOT EXISTS (SELECT 1 FROM vetoes WHERE repository=? AND number=? AND head=?)",
+            (gh.repository, pr["number"], row["head"], row["reason"], row["created"],
+             gh.repository, pr["number"], pr["head"]["sha"]),
+        )
+    # Normal reconciliation owns labels and protected approval readiness.
+
+
 def resume_correction(gh: Any, pr: dict[str, Any]) -> None:
     with connect() as db:
-        row = db.execute("SELECT reason FROM pauses WHERE repository=? AND number=?",
+        row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
                          (gh.repository, pr["number"])).fetchone()
-        if not row or row["reason"] != "Correction agent requires user input.":
-            return
-        db.execute("DELETE FROM pauses WHERE repository=? AND number=?", (gh.repository, pr["number"]))
-    labels = gh.api(f"issues/{pr['number']}/labels")
-    if any(item["name"] == PAUSED for item in labels):
-        gh.api(f"issues/{pr['number']}/labels/{PAUSED}", "DELETE")
+    if row is None or row["reason"] != "Correction agent requires user input.":
+        return
+    _retire_derived_pause(gh, pr, row)
 
 
 def approval_notice(gh: Any, pr: dict[str, Any], paths: list[str], task: dict[str, Any]) -> None:
@@ -476,24 +487,21 @@ def recover_feature_publication(
     task_digest: str | None = None,
 ) -> None:
     """Recover derived publication holds after caller verifies signed-head metadata."""
-    branch = pr["head"].get("ref", "")
-    if (task_digest is not None and pr["state"] == "open"
-            and branch.startswith("codex/orchestrator-")
-            and enrolled_feature(gh.repository, branch, task_digest)
-            and not veto(gh.repository, pr["number"], pr["head"]["sha"])):
-        # The caller verified this exact durable artifact, original context and
-        # independent plan before enrollment, then verified final-head metadata.
-        # Compare-and-delete cannot erase a replacement owner/security hold.
-        with connect() as db:
-            db.execute(
-                "DELETE FROM pauses WHERE repository=? AND number=? AND head=? AND reason=?",
-                (gh.repository, pr["number"], pr["head"]["sha"],
-                 "Feature context does not match the host-owned request."),
-            )
-        # Normal reconciliation owns labels and protected approval readiness.
-
     with connect() as db:
-        row = db.execute("SELECT reason FROM pauses WHERE repository=? AND number=?",
+        row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
                          (gh.repository, pr["number"])).fetchone()
-    if row is not None and row[0] == "PR task context is not bound to its signed head commit.":
-        resume_feature(gh, pr)
+    if row is None or pr["state"] != "open":
+        return
+    branch = pr["head"].get("ref", "")
+    if row["reason"] == "PR task context is not bound to its signed head commit.":
+        if not enrolled_feature(gh.repository, branch):
+            raise ValueError("Feature is not host-enrolled.")
+    elif not (row["reason"] == "Feature context does not match the host-owned request."
+              and row["head"] == pr["head"]["sha"]
+              and task_digest is not None and branch.startswith("codex/orchestrator-")
+              and enrolled_feature(gh.repository, branch, task_digest)):
+        return
+    # The caller verified the artifact, context, plan and final signed metadata.
+    # A later authority hold, even with identical text/head, is a different row.
+    # Check vetoes in the same write so a decision arriving after verification wins.
+    _retire_derived_pause(gh, pr, row)

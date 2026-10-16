@@ -331,6 +331,14 @@ pointer.
 
 ### Telegram feature requests and planning
 
+Verified publication recovery and correction-question recovery share one atomic
+pause-retirement operation. It matches the observed repository, PR, head, reason
+and creation time. A replacement hold or a current-head owner veto prevents the
+deletion, including when it arrives during enrollment verification or after the
+correction pause is read. Evidence and cancellation holds survive restart recovery.
+Recovery leaves displayed labels to normal reconciliation and never records
+protected approval. Local signed-PR corrections do not need App feature enrollment.
+
 In GitHub Alerts, send `/prompt_agent <feature request>`. Anonymous channel
 commands and answers require the pinned owner's **Confirm request/answer** button;
 that authenticates the exact message and does not approve a feature or bypass review.
