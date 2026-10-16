@@ -289,3 +289,42 @@ def test_failed_push_preserves_feature_ownership(
     with pytest.raises(RuntimeError, match="Network"):
         sessions.push(root)
     assert sessions.load(root)["phase"] == "feature"
+
+
+@pytest.mark.parametrize("changed", ["hold", "writer", "closed", "head", "task", "session"])
+def test_archive_io_rechecks_authority_before_feature_push(
+    source: Path, tmp_path: Path, monkeypatch: Any, changed: str
+) -> None:
+    root, pr = submitted(source, tmp_path)
+    no_network(monkeypatch, pr)
+    publish = task_context.publish_attachment
+    real = sessions.run
+    writes = []
+
+    def record(root: Path, *args: str) -> str:
+        if args[:2] == ("git", "push") or args[:3] == ("gh", "pr", "edit"):
+            writes.append(args)
+        return real(root, *args)
+
+    def interrupted(root: Path, *, prefix: str = "") -> str:
+        body = publish(root, prefix=prefix)
+        if changed in {"hold", "writer"}:
+            pr["labels"] = [{"name": "agent:needs-user" if changed == "hold" else "agent:writing"}]
+        elif changed == "closed":
+            pr["state"] = "CLOSED"
+        elif changed == "head":
+            git(root, "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "New head")
+        elif changed == "task":
+            task_context.record(root, "A new user correction during archive I/O.", append=True)
+        else:
+            state = sessions.load(root)
+            state["phase"] = "handed_off"
+            sessions.save(root, state)
+        return body
+
+    monkeypatch.setattr(sessions, "run", record)
+    monkeypatch.setattr(task_context, "publish_attachment", interrupted)
+    with pytest.raises((RuntimeError, ValueError)):
+        sessions.push(root)
+    assert writes == []
+    assert (root / "feature").read_text() == "feature\n"

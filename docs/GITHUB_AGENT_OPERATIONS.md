@@ -79,6 +79,22 @@ with credentials redacted. The digest is bound to its signed head. Every review
 uses a fresh read-only Codex session separate from its authors. The reviewer
 evaluates the complete diff against the task and existing quality requirements.
 
+Long histories use an immutable, content-addressed task archive linked from the
+PR. Its readable pages preserve every user message, agent question, full answer,
+plan and image record; canonical chunks preserve the complete signed task data.
+The reader checks each chunk and the archive's exact layout before verifying the
+existing head-bound task digest. Missing, changed, stale or mixed attachments
+fail closed. Earlier inline attachments keep their original signatures and
+remain supported.
+
+Archives live under `agent-task-evidence/v1/<task-digest>` tags and contain only
+task data. They neither change the candidate tree nor invalidate its visual
+receipt. They cannot grant approval, resolve owner questions or clear a hold.
+Publishers validate the final body and archive bounds before mutations, retain
+the exact patch on failure, confirm archives before feature pushes and reconcile
+interrupted writes without replacing refs. Keep these tags as audit evidence;
+normal merged-branch cleanup must not remove them.
+
 Owner approval is retained for controller code/prompts, its security configuration,
 dispatch/capture/publishing workflows and required-check classification. Ordinary
 instructions, agent tools and integration/test workflow repairs can be approved

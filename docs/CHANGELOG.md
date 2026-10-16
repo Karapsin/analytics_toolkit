@@ -44,6 +44,7 @@ Generated from package version bumps and recent commit history.
 - Apply Ruff's canonical layout to the scoped-merge regression parameters, preserving all assertions and merge-authority coverage.
 - Apply Ruff's canonical multiline layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
 - Apply Ruff's canonical layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
+- Preserve oversized signed agent task histories in immutable chunk archives with retry-safe publication
 
 ## 1.3.12.5 - 2026-10-14
 
