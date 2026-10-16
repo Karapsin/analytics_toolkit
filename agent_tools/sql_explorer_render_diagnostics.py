@@ -497,7 +497,42 @@ def _editor_diagnostics(app: Any, scene: str, result: dict[str, Any]) -> None:
         }
 
 
-def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:  # noqa: C901
+def _collect_target_region(
+    target: tuple[str, Any, int],
+    composed: Any,
+    result: dict[str, Any],
+    row_budget: int,
+) -> int:
+    """Collect one target while preserving the shared scene row budget."""
+    name, widget, requested_rows = target
+    region = widget.region
+    entry: dict[str, Any] = {
+        "name": name,
+        "region": _region_record(region),
+        "state": _widget_state(widget),
+        "widget_rows": [],
+        "composed_rows": [],
+    }
+    if name == "heading":
+        entry["state"]["renderable_text"] = str(widget.render())
+    result["regions"].append(entry)
+    if isinstance(entry["state"].get("value"), bool):
+        _checkbox_evidence(widget, entry, result)
+    if not widget.display or region.width <= 0 or region.height <= 0:
+        if not name.startswith("source-"):
+            result["missing"].append(f"{name}:not_visible")
+        return row_budget
+    count = min(requested_rows, region.height, row_budget)
+    if count < requested_rows:
+        result["missing"].append(f"{name}:rows")
+    row_budget -= count
+    _collect_region_rows(widget, composed, entry, result, count)
+    if region.width > MAX_CELLS:
+        result["omissions"].append(f"{name}:cell_limit")
+    return row_budget
+
+
+def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:
     """Separate the widget render cache from the screen compositor's actual strips."""
     result: dict[str, Any] = {"regions": [], "missing": [], "omissions": []}
     selector_targets = []
@@ -520,31 +555,8 @@ def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:  # noqa: C901
         result["omissions"].append("region_limit")
         result["omissions"].extend(f"{name}:region_limit" for name, *_rest in targets[MAX_REGIONS:])
     row_budget = MAX_ROWS
-    for name, widget, requested_rows in targets[:MAX_REGIONS]:
-        region = widget.region
-        entry: dict[str, Any] = {
-            "name": name,
-            "region": _region_record(region),
-            "state": _widget_state(widget),
-            "widget_rows": [],
-            "composed_rows": [],
-        }
-        if name == "heading":
-            entry["state"]["renderable_text"] = str(widget.render())
-        result["regions"].append(entry)
-        if isinstance(entry["state"].get("value"), bool):
-            _checkbox_evidence(widget, entry, result)
-        if not widget.display or region.width <= 0 or region.height <= 0:
-            if not name.startswith("source-"):
-                result["missing"].append(f"{name}:not_visible")
-            continue
-        count = min(requested_rows, region.height, row_budget)
-        if count < requested_rows:
-            result["missing"].append(f"{name}:rows")
-        row_budget -= count
-        _collect_region_rows(widget, composed, entry, result, count)
-        if region.width > MAX_CELLS:
-            result["omissions"].append(f"{name}:cell_limit")
+    for target in targets[:MAX_REGIONS]:
+        row_budget = _collect_target_region(target, composed, result, row_budget)
     _editor_diagnostics(app, scene, result)
     if "source_selector" in result:
         _selector_visibility(result["source_selector"], result["regions"])

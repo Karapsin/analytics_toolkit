@@ -343,6 +343,11 @@ on the inner `SelectCurrent`, leaving the outer three-row allocation borderless
 and unpadded. Positive regressions require complete, visible selector evidence
 and passing readiness assertions for all three source scenes; failure regressions
 retain observational evidence without approving the frame.
+Selector-only create-table fixtures also mount the real `create-table-advanced`
+Collapsible and compare its collapsed state with the collected checkbox context;
+missing-panel negative controls continue to require explicit incomplete evidence.
+Per-region collection shares the scene row budget, including after invisible
+regions and contained row-collection failures.
 
 Diagnostic collection remains observational and available for failed frames.
 Timeout observations are retained in a sibling `*.timeout.json` file, including

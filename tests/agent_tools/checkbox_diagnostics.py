@@ -15,9 +15,7 @@ from agent_tools import sql_explorer_render_diagnostics as diagnostics
 from tests.agent_tools.render_diagnostics import _assert_form_scene
 
 
-def _app(
-    monkeypatch: pytest.MonkeyPatch, state: tuple[bool, bool, bool, bool], broken: str
-) -> Any:
+def _app(monkeypatch: pytest.MonkeyPatch, state: tuple[bool, bool, bool, bool], broken: str) -> Any:
     checked, disabled, focused, advanced = state
     label = f"insert_data: {checked}"
     indicator = "[x]" if checked else "[ ]"
@@ -151,7 +149,6 @@ def test_checkbox_missing_and_truncated_observations_are_explicit(
     elif observation == "unsupported":
         widget.render = object
     else:
-
         def fail() -> Text:
             message = "direct render failed"
             raise RuntimeError(message)

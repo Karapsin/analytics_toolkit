@@ -183,8 +183,7 @@ COMPARISON_SVG = (
 FONT_VALUE = "'DejaVu Sans Mono', monospace"
 # A complete, losslessly retained PNG; no renderer is needed by these unit tests.
 PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lE"
-    "QVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
 )
 
 

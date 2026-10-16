@@ -11,7 +11,7 @@ from rich.style import Style
 from textual.app import App
 from textual.css.query import NoMatches
 from textual.strip import Strip
-from textual.widgets import Select
+from textual.widgets import Collapsible, Select
 
 from agent_tools import sql_explorer_render_diagnostics as diagnostics
 from agent_tools import sql_explorer_visual, sql_explorer_visual_scene
@@ -186,6 +186,7 @@ def test_complete_child_content_rows_are_collected_beyond_outer_borders(
                 allow_blank=False,
                 id="create-table-source",
             )
+            yield Collapsible(id="create-table-advanced")
 
     monkeypatch.setattr(diagnostics, "_targets", lambda *_args: [])
 
@@ -196,6 +197,8 @@ def test_complete_child_content_rows_are_collected_beyond_outer_borders(
             result = diagnostics.terminal_diagnostics(app, "create-table-schema")
             assert not result["missing"]
             assert not result["omissions"]
+            advanced = app.screen.query_one("#create-table-advanced", Collapsible)
+            assert result["checkbox_context"]["advanced_collapsed"] is advanced.collapsed
             snapshot = result["source_selector"]
             assert snapshot["visibility_ok"] is True
             regions = {entry["name"]: entry for entry in result["regions"]}
