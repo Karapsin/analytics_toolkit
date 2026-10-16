@@ -768,6 +768,8 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
             raise RuntimeError("Model job failed; inspect its Actions run before retrying.")
         if json.loads((artifact / "task.json").read_text()) != task:
             raise RuntimeError("Artifact task identity does not match the claimed job.")
+        correction_scope = (trusted_module("review_control").correction_snapshot(gh.repository, number)
+                            if number and task["kind"] == "conflict" else None)
         pr = publication_authority(gh, task)
         if task["kind"] == "review":
             receipt = json.loads((artifact / "review-execution.json").read_text())
@@ -843,14 +845,32 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
         if patch.read_bytes().strip():
             command("git", "apply", "--index", str(patch.resolve()), cwd=work)
         paths = command("git", "diff", "--cached", "--name-only", task["head"], cwd=work).splitlines()
+        protected_conflicts: list[str] = []
         for path in paths:
             sensitive = path.startswith(".git/") or path in {".connections", ".env"}
             protected = (path.startswith(".github/agent/")
                          or path == ".github/workflows/github-agent.yml")
-            if sensitive or (protected and task["kind"] not in {"feature", "correction"}
-                             and (task["kind"] != "conflict"
-                                  or not inherited_controller_path(task, work, path))):
+            if sensitive:
                 raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+            if protected and task["kind"] not in {"feature", "correction"}:
+                if task["kind"] != "conflict":
+                    raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+                if not inherited_controller_path(task, work, path):
+                    protected_conflicts.append(path)
+        if protected_conflicts:
+            if not number:
+                raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+            reason = ("Protected conflict resolution requires a fresh correction plan and independent review: "
+                      + ", ".join(protected_conflicts)
+                      + ". Preserve the existing PR changes and current dev; protected exact-head approval still applies.")
+            pr = publication_authority(gh, task)
+            queued = trusted_module("review_control").require_correction(
+                gh.repository, number, task["head"], task["task_digest"], reason,
+                pr.get("title", "PR changes"), expected=correction_scope)
+            if not queued:
+                raise RuntimeError("Correction findings changed during execution; preserve the newer request.")
+            raise RuntimeError("Repair modifies controller or sensitive files; fresh correction planning queued. "
+                               + reason)
         if task["kind"] == "repair" and not any(path.startswith("tests/") and path.endswith(".py")
                                                  for path in paths):
             raise RuntimeError("Integration repair must include a fast regression test.")

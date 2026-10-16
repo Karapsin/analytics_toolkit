@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "parent_objective": "once orchestrator is started monitor only its actions. If it works fine - do nothing, otherwise make corrections. Stop when all merged",
+  "parent_signed_task": {
+    "repository": "Karapsin/analytics_toolkit",
+    "pr": 30,
+    "head": "c7cd561946018f0753d4c825aef9aeb2ad8b700d",
+    "task_id": "dc4c6898f7964b4e91290009f61d8f11",
+    "digest": "5a30047738e6bc13cd6cd9edc9ac919b3982392564bc0eec3721ea3d0f1789c0",
+    "producer": "author:2a5a18c23f744a8b82ebbadac9b4abfe",
+    "url": "https://github.com/Karapsin/analytics_toolkit/pull/30",
+    "signature_and_task_review_check": 116906892584
+  },
+  "follow_up_scope": "Repair the trusted publication handoff for nontrivial protected conflict resolutions; retain fresh planning, independent reviews, fast CI and exact-head policy approval.",
+  "new_policy_approval": false,
+  "new_owner_answer": false,
+  "observation": {
+    "pr": 25,
+    "kind": "conflict",
+    "head": "3b7cee455c2a26a001faf699a53a81ffffc72c88",
+    "dev_base": "0b26a608bba00ff1bf29bde578b436aa817eab14",
+    "ancestor": "c8a516c6c85efcd314aaeb1b3e2ebeeaa78362e4",
+    "worker_job_digest": "f8c46cd3ed3f13b0462c890b912273a51c36f478f28e168d833aca57d122ad85",
+    "observed_at": "2026-10-16T11:19:18Z",
+    "failure_phase": "publish",
+    "failure_type": "RuntimeError",
+    "independent_verdict": "approved/aligned; complete five-file final diff inspected",
+    "published_head_unchanged": true,
+    "protected_path": ".github/agent/review_control.py",
+    "blob_oids": {
+      "ancestor": "5a080e5f9484cd50dd0719ede656805b277d1d25",
+      "head": "2c07963cc29b2e6db3adc06f8b591ebd8ebadc04",
+      "dev": "a57391dd14980c13c4a1d2471d2b2c0fa30835dd",
+      "staged": "fa8904282b0dfe1d6e5f7f0c4923d261924c1fc0"
+    },
+    "stable_failure_receipt": true,
+    "operations": "Read-only worker metadata, verdicts and Git object identities; no candidate code, tests, renders or publication executed on the Pi."
+  }
+}

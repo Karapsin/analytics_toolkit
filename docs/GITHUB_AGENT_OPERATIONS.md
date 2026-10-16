@@ -140,6 +140,16 @@ attachment; the Pi owns all later corrections, CI, approvals and merges. A durab
 handoff permits the local clone to refresh clean dev and begin another planned task
 while the previous PR remains pending. Offline machines refresh at their next start.
 
+An automatic conflict job may inherit a protected controller entry only when the
+PR left its ancestor unchanged and the staged entry exactly matches current dev.
+A protected merge that requires any other resolution records a private correction
+request bound to the original head and task digest. The next reconciliation sends
+it through fresh correction planning and independent plan review instead of
+retrying the same blocked conflict publication. Sensitive paths remain denied;
+owner/security holds, fresh implementation review, fast CI and protected exact-head
+approval still gate the correction. This routing records no owner answer or
+approval and sends no operational Telegram alert.
+
 Discovery reads each changed changelog fragment from the immutable PR head before
 queuing deterministic metadata folding. A malformed fragment starts a fresh
 correction plan with its exact path and formatting requirement, rather than
