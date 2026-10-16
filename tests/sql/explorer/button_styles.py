@@ -134,7 +134,6 @@ async def _exercise_disabled_button(
     await _hover_button(pilot, button)
     assert button.styles.background == neutral
     reference = DisabledColorReference("x", disabled=True)
-    reference.styles.color = Color.parse(palette["text-disabled"])
     reference.styles.background = neutral
     reference.styles.text_style = "none"
     reference.styles.tint = "transparent"
@@ -217,6 +216,21 @@ def test_create_table_buttons_keep_individual_focus_and_hover_colors(advanced: b
                 await _exercise_create_button(pilot, screen, button, palette)
 
     asyncio.run(exercise())
+
+
+def test_disabled_color_comparison_rejects_automatic_color_mismatch() -> None:
+    button: Any = SimpleNamespace(
+        styles=SimpleNamespace(color="disabled", background="surface", auto_color=True),
+        rich_style=SimpleNamespace(color="#707274", bgcolor="#20252a"),
+    )
+    reference: Any = SimpleNamespace(
+        styles=SimpleNamespace(color="disabled", background="surface", auto_color=True),
+        rich_style=SimpleNamespace(color="#707274", bgcolor="#20252a"),
+    )
+    _assert_disabled_color(button, reference)
+    reference.styles.auto_color = False
+    with pytest.raises(AssertionError):
+        _assert_disabled_color(button, reference)
 
 
 @pytest.mark.parametrize("component", ["color", "bgcolor"])

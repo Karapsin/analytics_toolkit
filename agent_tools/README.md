@@ -243,8 +243,10 @@ Controls without IDs use their widget class, sorted CSS classes and query index
 button is checked separately. Modal buttons use the surface color when neutral
 or disabled, the shared hover color under the pointer, and amber for enabled
 keyboard focus, including focus with hover. Disabled-color regressions resolve an
-independent disabled Button reference with explicit expected palette values beside
-each tested button under the same parent, preserving Button opacity, ancestor
+independent disabled Button reference with `color: $text-disabled` resolved by
+Textual CSS after mounting beside each tested button under the same parent.
+Plain-color parsing cannot resolve automatic/percentage CSS values such as
+`auto 38%`. The reference preserves Button opacity, ancestor
 background and contrast context. They compare CSS foreground/background, automatic
 contrast and rendered foreground/background exactly, and reject
 an intentionally incorrect reference foreground.

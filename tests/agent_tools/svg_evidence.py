@@ -101,9 +101,11 @@ def test_font_probes_bound_output_and_record_failure(
 
 
 def test_font_requests_are_bounded_without_claiming_renderer_selection() -> None:
-    svg = "<svg>" + "".join(
-        f'<text font-family="family-{index}">x</text>' for index in range(20)
-    ) + "</svg>"
+    svg = (
+        "<svg>"
+        + "".join(f'<text font-family="family-{index}">x</text>' for index in range(20))
+        + "</svg>"
+    )
     result = evidence.export_input_evidence(svg, svg, b"png")["fonts"]
     assert result["requested_family_count"] == 20
     assert len(result["requested_families"]) == evidence.MAX_FONT_REQUESTS
@@ -139,12 +141,14 @@ def test_export_inputs_survive_incomplete_parsed_diagnostics(
     png = tmp_path / "scene.png"
     monkeypatch.setattr(capture, "_scene_ready", lambda _app: True)
     monkeypatch.setattr(
-        capture, "_write_evidence",
+        capture,
+        "_write_evidence",
         lambda *_args: geometry.write_text('{"ok": true, "assertions": {}}'),
     )
     monkeypatch.setattr(capture, "terminal_diagnostics", lambda *_args: {})
     monkeypatch.setattr(
-        capture, "render_diagnostics",
+        capture,
+        "render_diagnostics",
         lambda *_args: {"complete": False, "missing": ["payload_exceeds_byte_limit"]},
     )
     renderer_inputs = []
@@ -181,7 +185,8 @@ COMPARISON_SVG = (
 FONT_VALUE = "'DejaVu Sans Mono', monospace"
 # A complete, losslessly retained PNG; no renderer is needed by these unit tests.
 PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lE"
+    "QVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
 )
 
 
@@ -310,7 +315,9 @@ def test_font_availability_requires_exact_nontruncated_installed_family(
         return {"status": status, "stdout": {"text": text, "truncated": truncated}}
 
     monkeypatch.setattr(evidence, "_font_probe", probe)
-    result = evidence.rasterization_comparisons(COMPARISON_SVG, capture._frame_svg(COMPARISON_SVG), PNG)
+    result = evidence.rasterization_comparisons(
+        COMPARISON_SVG, capture._frame_svg(COMPARISON_SVG), PNG
+    )
     assert result["comparison_font"]["available"] is available
     assert result["complete"] is available
     if not available:
@@ -352,7 +359,9 @@ def test_renderer_failure_retains_other_variants_and_marks_incomplete(
         return PNG
 
     monkeypatch.setattr(evidence, "_render_svg", render)
-    result = evidence.rasterization_comparisons(COMPARISON_SVG, capture._frame_svg(COMPARISON_SVG), PNG)
+    result = evidence.rasterization_comparisons(
+        COMPARISON_SVG, capture._frame_svg(COMPARISON_SVG), PNG
+    )
     assert result["complete"] is False
     failed = result["variants"]["raw_original"]
     assert failed["status"] == "failed"
@@ -366,7 +375,9 @@ def test_renderer_failure_retains_other_variants_and_marks_incomplete(
 def test_invalid_png_dimensions_cannot_complete_comparisons(
     png: bytes, comparison_renderer: list[str]
 ) -> None:
-    result = evidence.rasterization_comparisons(COMPARISON_SVG, capture._frame_svg(COMPARISON_SVG), png)
+    result = evidence.rasterization_comparisons(
+        COMPARISON_SVG, capture._frame_svg(COMPARISON_SVG), png
+    )
     assert result["complete"] is False
     assert result["variants"]["framed_original"]["status"] == "failed"
 
@@ -424,7 +435,11 @@ def test_comparisons_are_picker_only_and_published_atomically(
     monkeypatch.setattr(capture, "rasterization_comparisons", compare)
     monkeypatch.setattr(capture, "_write_png", lambda _svg, path, **_kwargs: path.write_bytes(PNG))
     capture._capture_frame(
-        SimpleNamespace(export_screenshot=export), scene, geometry, tmp_path / "manifest", screenshot
+        SimpleNamespace(export_screenshot=export),
+        scene,
+        geometry,
+        tmp_path / "manifest",
+        screenshot,
     )
     saved = json.loads(geometry.read_text(encoding="utf-8"))
     assert exports == [COMPARISON_SVG]

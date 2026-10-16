@@ -20,6 +20,7 @@ MAX_COMPARISON_PNG_BYTES = 4 * 1024 * 1024
 COMPARISON_FONT = "DejaVu Sans Mono"
 MAX_PROBE_BYTES = 16 * 1024
 MAX_FONT_REQUESTS = 8
+MAX_FONT_FAMILY_LENGTH = 512
 PROBE_TIMEOUT = 3
 
 
@@ -77,18 +78,20 @@ def _font_context(svg: str) -> dict[str, Any]:
     families = sorted(value.strip() for value in requested)
     # Fontconfig results are system observations, not proof of resvg's chosen font.
     return {
-        "requested_families": [family[:512] for family in families[:MAX_FONT_REQUESTS]],
-        "family_names_truncated": any(len(family) > 512 for family in families),
+        "requested_families": [
+            family[:MAX_FONT_FAMILY_LENGTH] for family in families[:MAX_FONT_REQUESTS]
+        ],
+        "family_names_truncated": any(len(family) > MAX_FONT_FAMILY_LENGTH for family in families),
         "requested_family_count": len(families),
         "requests_truncated": len(families) > MAX_FONT_REQUESTS,
         "available_fonts": _font_probe(["fc-list", "--format=%{family}\t%{style}\t%{file}\n"]),
         "system_matches": [
             {
-                "requested_family": family[:512],
+                "requested_family": family[:MAX_FONT_FAMILY_LENGTH],
                 "probe": _font_probe(
                     ["fc-match", "--format=%{family}\t%{style}\t%{file}\n", "--", family]
                 )
-                if len(family) <= 512
+                if len(family) <= MAX_FONT_FAMILY_LENGTH
                 else {"status": "unavailable", "reason": "font_family_length_limit"},
             }
             for family in families[:MAX_FONT_REQUESTS]
@@ -154,10 +157,12 @@ def _comparison_font() -> dict[str, Any]:
 def _terminal_font_variant(svg: str) -> str:
     """Change one generated matrix declaration without XML reserialization."""
     candidates = []
-    for style in re.finditer(r"<(?:\w+:)?style\b[^>]*>(.*?)</(?:\w+:)?style\s*>", svg, re.S):
-        for block in re.finditer(r"([^{}]+)\{([^{}]*)\}", style[1]):
-            if re.search(r"\.terminal-[\w-]+-matrix\b", block[1]):
-                candidates.append((style, block))
+    for style in re.finditer(r"<(?:\w+:)?style\b[^>]*>(.*?)</(?:\w+:)?style\s*>", svg, re.DOTALL):
+        candidates.extend(
+            (style, block)
+            for block in re.finditer(r"([^{}]+)\{([^{}]*)\}", style[1])
+            if re.search(r"\.terminal-[\w-]+-matrix\b", block[1])
+        )
     if len(candidates) != 1:
         message = "missing_or_ambiguous_terminal_matrix"
         raise ValueError(message)
@@ -239,7 +244,7 @@ def _comparison_pngs(variants: dict[str, Any], ordinary_png: bytes) -> int:
                 else _render_svg(record["svg"]["content"])
             )
             dimensions = _png_dimensions(png)
-        except Exception as exc:  # noqa: BLE001 - retain failed diagnostics, never approve them.
+        except Exception as exc:  # Retain failed diagnostics, never approve them.
             record.update(status="failed", reason=type(exc).__name__ + ": " + str(exc)[:256])
             continue
         total += len(png)
