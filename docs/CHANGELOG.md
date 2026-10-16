@@ -55,6 +55,7 @@ Generated from package version bumps and recent commit history.
 - Correct SQL Explorer disabled-color regression CSS resolution and SVG evidence lint without changing diagnostic output or multicursor behavior.
 - Preserve SQL Explorer multicursors, clipboard spreading and readable carets; reconcile dev changelog history, retain bounded checkbox and picker diagnostics, correct diagnostic lint/formatting, and extend service-free regressions.
 - Correct SQL Explorer diagnostic fixture context, preserve bounded region collection during lint cleanup, and normalize diagnostic regression formatting.
+- Preserve SQL Explorer multicursor changes while retaining bounded type-menu observations, serialization/scaling comparison controls, and canonical GitHub coverage JSON for evidence-led repairs.
 
 ## 1.3.12.5 - 2026-10-14
 
