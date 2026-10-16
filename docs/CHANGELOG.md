@@ -55,6 +55,7 @@ Generated from package version bumps and recent commit history.
 - Route nontrivial protected conflict publications to fresh correction planning while retaining sensitive-path denial and exact-head approval gates.
 - Preserve actionable context-blocked owner correction notices alongside waiting questions while suppressing local status retries and retaining delivery evidence.
 - Reconcile signed task plans, questions, images and provenance with archived transport; retain RPI coordination, full visual routing and complete quality diagnostics without weakening approval or validation gates.
+- Fix diagnostic tool-version lookup lint and visual/publication regression regex formatting, preserving missing-tool metadata, error propagation and all validation gates.
 
 ## 1.3.12.5 - 2026-10-14
 
