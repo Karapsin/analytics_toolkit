@@ -1,1 +1,0 @@
-- Reconcile coordinator mismatch notices and notification lookup metadata with current controller authority, preserve hold regressions and require refreshed final-source companion delivery validation before merge or activation.
