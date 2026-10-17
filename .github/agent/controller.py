@@ -238,19 +238,22 @@ def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = T
         return None
     owner = gh.repository.split("/")[0].casefold()
     approval = "/agent approve-policy " + head
-    comments = gh.pages(f"issues/{pr['number']}/comments?per_page=100")
     controls = trusted_module("review_control")
-    declined = controls.veto(gh.repository, pr["number"], head)
-    if any(comment["user"].get("type") == "User"
-           and comment["user"]["login"].casefold() == owner
-           and comment["body"].strip() == approval
-           and (not declined or datetime.fromisoformat(comment.get("created_at", "1970-01-01T00:00:00Z")
-                 .replace("Z", "+00:00")).timestamp() > declined) for comment in comments):
-        if declined:
-            controls.clear_owner_decline(gh, pr["number"], head)
-        return None
+    snapshot = controls.authority_snapshot(gh.repository, pr["number"], head)
+    comments = gh.pages(f"issues/{pr['number']}/comments?per_page=100")
+    approvals = [
+        datetime.fromisoformat(comment.get("created_at", "1970-01-01T00:00:00Z")
+                               .replace("Z", "+00:00")).timestamp()
+        for comment in comments if comment["user"].get("type") == "User"
+        and comment["user"]["login"].casefold() == owner
+        and comment["body"].strip() == approval]
+    if approvals:
+        if controls.recover_policy_comment(
+                gh.repository, pr["number"], head, max(approvals), expected=snapshot):
+            return None
+        return "Policy approval recovery blocked by newer authority or an active hold."
     if (os.environ.get("AGENT_STATE_DIR")
-            and trusted_module("review_control").approved(gh.repository, pr["number"], head)):
+            and controls.approved(gh.repository, pr["number"], head)):
         return None
     return "Policy changes require the owner's exact-head approval comment: `" + approval + "`."
 
