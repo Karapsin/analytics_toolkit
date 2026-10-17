@@ -6,6 +6,29 @@ The GitHub App reviews feature PRs targeting `dev`. The subscription-backed
 Codex worker runs on the private Raspberry Pi; GitHub runs all repository tests
 and SQL Explorer scene captures. No OpenAI API key is used.
 
+## Failed visual capture artifacts
+
+The trusted `agent-visual` workflow exports a separate failed-capture artifact
+when capture fails. Its name binds the candidate SHA, workflow run and attempt.
+It retains the run-owned session and all available raw evidence, including
+geometry files written before a failing scene updates its session record.
+Candidate paths cannot select arbitrary files; unsafe, changed or oversized
+collections remain explicitly unavailable or incomplete. The capture job remains
+failed and these diagnostics grant no visual approval.
+
+`collection_complete` covers the available declared files. Older candidate
+harnesses do not retain complete child stdout/stderr; their
+`process_output_complete: null` means unknown output coverage. Complete child
+stream capture and UI scene corrections remain separate work in PR #37.
+This exporter does not change SQL Explorer or its visual harness. A new capture
+produces new evidence; it cannot recover missing artifacts from an earlier run.
+
+The separately reviewed companion consumer verifies the GitHub run, attempt,
+artifact identity and archive hashes before retaining private raw bytes and a
+redacted, paged model view. Publication, runtime activation and actual request
+assignment require their own verified gates; merging this exporter alone does
+not establish that a blocked agent has received the evidence.
+
 ## Scheduling and status
 
 Airflow owns `github_agent_reconcile` (every minute) and
