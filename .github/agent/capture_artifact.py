@@ -278,7 +278,8 @@ def export_failure(
         "kind": "failed-visual-capture-diagnostics",
         **identity,
         "capture_result": result,
-        "collection_complete": evidence is not None and session is not None and bool(records),
+        "collection_complete": session is not None
+        and any(name.startswith("raw/evidence/") for name, _data in records),
         "session_file": "raw/session.json" if session is not None else None,
         "raw_evidence_prefix": "raw/evidence/",
         "visual_approval": False,

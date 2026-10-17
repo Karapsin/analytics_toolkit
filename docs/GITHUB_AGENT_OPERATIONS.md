@@ -16,8 +16,12 @@ Candidate paths cannot select arbitrary files; unsafe, changed or oversized
 collections remain explicitly unavailable or incomplete. The capture job remains
 failed and these diagnostics grant no visual approval.
 
-`collection_complete` covers the available declared files. Older candidate
-harnesses do not retain complete child stdout/stderr; their
+`collection_complete` requires a retained session and at least one retained file
+under `raw/evidence/`. Empty evidence directories and `raw/session.json` alone
+remain incomplete, even when every available byte was safely exported. These
+session-only archives preserve the finalized session and its hashes for durable
+partial-diagnostic retention; they grant no model assignment or visual receipt.
+Older candidate harnesses do not retain complete child stdout/stderr; their
 `process_output_complete: null` means unknown output coverage. Complete child
 stream capture and UI scene corrections remain separate work in PR #37.
 This exporter does not change SQL Explorer or its visual harness. A new capture

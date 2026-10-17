@@ -231,6 +231,75 @@ def test_descriptor_publication_never_writes_through_replaced_destination(
     assert replaced is True
 
 
+@pytest.mark.parametrize("failure_stage", ["copy", "first-child"])
+def test_early_capture_failure_retains_session_as_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_stage: str
+) -> None:
+    review = "review-session-only"
+    evidence = tmp_path / visual.STATE_ROOT / review
+    session_file = visual.session_path(tmp_path, review)
+    session_file.parent.mkdir(parents=True)
+    session_file.write_text(
+        json.dumps(
+            {
+                "review_id": review,
+                "content_fingerprint": "pinned-dev-content",
+                "capture_mode": visual.CAPTURE_MODE,
+                "capture": {"status": "pending"},
+                "scenes": {"command-completion": {"capture": "pending", "geometry": ""}},
+            }
+        )
+    )
+    monkeypatch.setattr(visual, "content_fingerprint", lambda _root: "pinned-dev-content")
+    monkeypatch.setattr(visual, "_host_python", lambda _root: "unused-python")
+    monkeypatch.setattr(visual, "start_review", lambda *_args, **_kwargs: {"review_id": review})
+    calls: list[str] = []
+
+    def fail() -> None:
+        message = "failure before evidence: " + failure_stage
+        raise visual.VisualReviewError(message)
+
+    def copy_tree(_root: Path, _checkout: Path) -> None:
+        calls.append("copy")
+        if failure_stage == "copy":
+            fail()
+
+    def child(_command: list[str], **_kwargs: Any) -> None:
+        calls.append("first-child")
+        fail()
+
+    monkeypatch.setattr(visual, "_copy_review_tree", copy_tree)
+    monkeypatch.setattr(visual, "_run", child)
+    assert artifact.capture_artifact(tmp_path, IDENTITY) is False
+    assert calls == (["copy"] if failure_stage == "copy" else ["copy", "first-child"])
+    assert (evidence / "geometry").is_dir()
+    assert (evidence / "screenshots").is_dir()
+    assert not any(path.is_file() for path in evidence.rglob("*"))
+
+    output = tmp_path / "visual-diagnostics"
+    manifest = json.loads((output / "diagnostics.json").read_bytes())
+    raw = (output / "raw/session.json").read_bytes()
+    assert raw == session_file.read_bytes()
+    assert manifest["files"] == {
+        "raw/session.json": {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+    }
+    assert manifest["collection_complete"] is False
+    assert manifest["process_output_complete"] is None
+    assert manifest["visual_approval"] is False
+    assert manifest["session_file"] == "raw/session.json"
+    assert manifest["raw_evidence_prefix"] == "raw/evidence/"
+    assert manifest["capture_result"]["ok"] is False
+    assert manifest["capture_result"]["action"] == "capture"
+    assert all(manifest[key] == value for key, value in IDENTITY.items())
+    session = json.loads(raw)
+    assert session["capture"]["status"] == "failed"
+    assert session["capture"]["workspace_removed"] is True
+    assert session["capture"]["error"] == "failure before evidence: " + failure_stage
+    assert session["scenes"]["command-completion"]["capture"] == "pending"
+    assert not (tmp_path / "visual-artifact").exists()
+    assert not (tmp_path / visual.RECEIPT).exists()
+
+
 def test_pinned_legacy_capture_retains_available_geometry_with_unknown_stream_coverage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

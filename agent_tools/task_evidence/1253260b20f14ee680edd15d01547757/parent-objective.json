@@ -278,5 +278,17 @@
     },
     "independent_plan_review_sha256": "072c84388d036b551de01fe226440635bc1e06e125376b3924ec287972ddb732"
   },
+  "session_only_collection_correction": {
+    "dev_base": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+    "predecessor_head": "e0e560376b5756c7adba32982bed189206a9d257",
+    "approved_plan_sha256": "3fa9bdec840d1bddab4fdc5dec5e85de58a1c2c980612453fbbccecffc21abc1",
+    "exporter_sha256": "7a032cfbab17109dc41312d1565a75cca53910bcc68805000a8aba850ac9f89b",
+    "consumer_commit": "8b0191d3fea63770ddf4d18bfbd3a60b85802a55",
+    "paired_validation_status": "coordinator-owned-refresh-required",
+    "required_paired_regression": "Pack actual corrected producer output for both copy-tree and first-child failures before evidence exists; call pinned capture_archive.unpack(), then capture_diagnostics.retain(). Verify acceptance, durable original ZIP and binding retention, expected partial-diagnostics prerequisite and no model assignment reference. Preserve historical fixture bindings and bind refreshed proof to this exact exporter digest.",
+    "local_validation": "Not executed: isolated worker edits source only; GitHub runs checks.",
+    "remaining_obligations": "Fresh independent implementation review and final-head checks, paired proof, exact-head protected authorization, allowed workflow/helper activation together, separate consumer runtime provenance, fresh failed-run verification and coordinator monitoring/repairs until all relevant PRs merge into dev. self_host relevance remains limited to GitHub agents; PR9 visual and PR10 actual PR9 merge ancestry gates remain required.",
+    "authority": "Source correction and pending validation handoff only; no new approval, hold release, activation or parent-task completion."
+  },
   "authority": "Additive authenticated signed parent and independent plan provenance; no new owner fact, policy approval, source/plan/visual pass or hold release."
 }
