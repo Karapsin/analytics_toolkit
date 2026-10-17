@@ -111,14 +111,64 @@ failed label update retries without losing the approval. A concurrent new head
 retains the label until its own decision. Label cleanup preserves unrelated
 labels and never clears a question, veto, signature, review or CI gate.
 
-Rejection posts what changed, why it was rejected and the required corrections,
-mentions the owner and sends a plain Telegram alert. A fresh Pi correction agent
-plans the correction, a separate agent reviews that plan, and another agent edits.
-Fresh independent PR review follows every changed head. This cycle continues until
-approved, without an arbitrary retry cap. Rejection alerts have no buttons and
-require no resume command. Genuine questions wait for authenticated owner answers;
-owner vetoes/cancellation and invalid provenance stop work. Invalid task context
-also fails closed. Older trusted
+Rejection records what changed, why it was rejected and the required corrections.
+The companion suppresses routine rejection, retry and maintenance Telegram chatter.
+A fresh Pi correction agent plans the correction, a separate agent reviews that plan,
+and another agent edits. Fresh independent PR review follows every changed head.
+This cycle continues until approved, without an arbitrary retry cap or an owner
+resume for routine rejection. Genuine questions wait for authenticated owner answers;
+owner vetoes/cancellation and invalid provenance stop work. Authenticated feature
+answers retain unrelated private pauses, including their reason, head and timestamp;
+a factual reply cannot turn a provenance or cancellation hold into a recoverable
+replanning pause. An unheld feature receives the normal replanning pause. A newer
+amendment refreshes an existing replanning pause's head and timestamp atomically,
+so an intervening resume comment cannot clear the newer planning requirement.
+When an unrelated pause already exists, a separate durable amendment record retains
+that newer requirement without changing the original pause. After an authenticated
+resume or verified recovery clears the unrelated pause, the next pause check
+atomically transfers the amendment into the normal renewed-planning hold. A resume
+that predates the amendment cannot release it; discovery and merge remain blocked.
+Policy-comment recovery compares the complete inspected pause/veto snapshot and
+retains dev's authority protections. Successful retirement rechecks for a pending
+amendment before reporting the PR unpaused. A failed snapshot comparison ends that
+attempt: merge must not invoke label reconciliation to retry the same comment
+against refreshed rows or fall back to a private approval.
+The ordinary feature path still requires fresh planning, independent review and
+coding before retiring its derived hold. Linked publication keeps that hold active
+through checkout, archive writes and push. A host-only publisher argument binds to
+the exact private pause (including its timestamp); it permits only the enrolled
+feature's publication, never discovery, review, merge or policy approval. Intake
+persists this binding before the first attempt and retires only that same row
+after verifying the open PR's signed successor, task digest and producer. Failures
+before push and lost responses after accepted pushes retain the hold and artifact
+for restart. Replacement holds survive; legacy lost responses without a captured
+binding cannot retrospectively authorize a pause. Deploy the compatible trusted
+publisher before activating this companion path; an older publisher fails closed.
+Verified publication recovery also compares the inspected pause's head, reason and
+creation timestamp in its atomic deletion. It never calls the broad owner-resume
+operation: original-evidence, cancellation and newer same-reason holds installed
+between inspection and deletion survive recovery and restart. Correction-question
+recovery likewise uses the base's shared atomic retirement operation: it deletes
+only the full inspected row in the absence of a current-head veto, leaving labels
+to normal reconciliation. A coordinator workspace receipt cannot erase
+a concurrent cancellation or original-evidence requirement. Reconciliation owns labels.
+Coordinator dependency waits also persist a separate controller hold before intake
+releases worker ownership. It binds the request revision, complete task/question state,
+checkpoint bytes, stage and dev base. Green checks, owner resumes, protected decisions,
+amendment publication capabilities and derived-pause recovery cannot bypass it.
+Only the matching supervisor-verified dependency receipt can transfer that exact
+binding into the durable correction queue in one controller transaction. Merge
+checks that queue even when earlier review/CI are green and no worker is available.
+Fresh planning and independent review can proceed; failed publication leaves the
+old head gated, and a signed successor still needs final review/CI. Existing
+findings, concurrent replacement bindings and other requests remain held. Verification
+does not retire unrelated pauses, grant approvals or replace fresh planning/review.
+Legacy queued waits install the same gate during reconciliation. Activate compatible
+protected controller support before this companion path; older controllers retain
+a blocking compatibility pause rather than silently leaving a dependency ungated.
+Explicit cancellation retains its stop-and-close behavior. Coordinator evidence
+cannot replace the independent authority needed to resolve an existing hold.
+Invalid task context also fails closed. Older trusted
 App repairs can inherit the standing integration-repair task, bound to their
 immutable signed head; owner-authored PRs must attach their task.
 
@@ -168,7 +218,7 @@ Merges require current `fast-checks` and the App's `agent-review`, against the
 current `dev` base. Integration success is not a merge gate. The worker monitors
 integration after merges and creates repair PRs with fast regression coverage.
 
-Up to five Codex jobs can run concurrently. A PR has one writer and merges are
+The delivered companion admits up to ten Codex jobs concurrently. A PR has one writer and merges are
 serialized. Rebase and changelog folding precede final review and protected owner
 approval. Local agents finish after checked, signed PR publication and task-context
 attachment; the Pi owns all later corrections, CI, approvals and merges. A durable
@@ -268,16 +318,19 @@ patches; GitHub supplies validation. Companion proposals require scoped App acce
 to self_host, independent review and all required exact-head workflows.
 Source merge never directly updates the installed worker.
 
-Companion trigger discovery remains a coordinator-owned dependency in the existing
-self_host writable assignment. Locally tracked companion proposals do not provide
-a complete inventory of eligible self_host PRs. Keep this dependency unresolved
-in publication and review evidence until immutable implementation source/tests,
-commit identity, independent review and exact-commit Repository Checks are
-available. Actual daemon-tick regressions must cover repository-qualified
-inventories, human-created PRs, rename origins, shared-file impact, comparison
-changes, incomplete evidence and singleton/cadence behavior. Operational acceptance
-also requires trusted deployed-revision metadata and the isolated GitHub rollout
-rehearsal. This ATK context change does not establish that trigger implementation.
+Companion trigger discovery was delivered separately in self_host commit
+`df672554b3c7eb7163f4249c9095e96b98ab04dd`, with immutable source and tests in
+`operator/self-host-coordinator-df672554-complete-source-000.json`. The
+parent-objective evidence retains its independent review and successful
+[exact-commit Repository Checks](https://github.com/Karapsin/self_host/actions/runs/38991892068).
+Its daemon-tick regressions cover repository-qualified inventories, human-created
+PRs, rename origins, shared-file impact, comparison changes, incomplete evidence
+and singleton/cadence behavior. The later `a6e713dd` activation receipt records
+this delivered runtime chain separately from the `bde64ba6` fixture-only refresh.
+These records replace the earlier missing-source dependency; they do not activate
+this PR's protected controller support or establish all-relevant-PR completion.
+Operational acceptance still requires fresh deployed-revision evidence and the
+isolated rollback/recovery rehearsal through the guarded activation workflow.
 
 Protected controller activation still requires successful final-head checks,
 fresh independent review and the authenticated owner's exact-head
@@ -302,7 +355,144 @@ retain their conservative main-file comparison.
 Initial deployment records rollback revisions and preserves databases,
 checkpoints, questions/answers, credentials, the VPN wrapper and schedules.
 After the orchestrator starts, its supervising operator monitors its actions,
-intervenes only on malfunction, and stops once all PRs have merged.
+intervenes only on demonstrated malfunction, and stops only after verified successful
+merges drain all qualifying analytics_toolkit PRs, self_host PRs affecting GitHub
+agents, and resulting repairs. Closed, abandoned, published or green PRs do not
+satisfy completion. The thirty-minute singleton scheduler remains enabled for
+future qualifying PRs; an orchestrator exits immediately when it finds no fix.
+
+### Paired source and activation evidence
+
+The retained [parent-objective evidence](../agent_tools/task_evidence/29adce308110491580e26a80f16fbb4a/parent-objective.json)
+binds the complete companion source chain, independent reports and exact-commit
+Repository Checks through `a6e713ddf02c176babde546a69b6b954c3d0df36`.
+The coordinator's immutable manifest binds the ordered UTF-8 source bundles and
+`operator/worker-retained-gate-a6e713ddf02c-active.json` (SHA256
+`6f0b944c4072b94146d53fd50273892910752a1eb4a71c1f956ac137e6ef7024`).
+That receipt supersedes the observed active `087a24fe0131` worker and the
+historical, unactivated `ae8333b5` candidate. Its exact-commit successful
+[Repository Checks](https://github.com/Karapsin/self_host/actions/runs/39000272860)
+validate that worker revision only.
+
+Source delivery, CI validation and runtime activation are distinct records.
+The receipt explicitly reports that PR33 coordinator/renewal publisher APIs and
+PR35 owner-attention APIs remain unavailable on its bound `ceff9e7a` controller.
+This PR supplies the proposed PR33 controller support; it does not activate it or
+claim completion of the parent monitoring objective. PR35 retains separate ownership.
+
+The coordinator completed the companion fixture refresh in test-only commit
+`bde64ba6c7026e37991397e59dda3da67eb550c5`. Its immutable index is
+`operator/paired-fixtures-bde64ba6c702/index.json` (SHA256
+`f47dc39b22d51ba317886814ebbe319fd943d74ef0ca8bfd3b5f2a479c132d10`).
+The parent-objective record binds all five changed source hashes, the complete
+independent review in that index's `review.json`, the successful full prepush
+receipt and exact-commit
+[Repository Checks run 39002462254](https://github.com/Karapsin/self_host/actions/runs/39002462254).
+
+That historical producer/verified-renewal/restart/old-green-merge-refusal regression
+loads `controller_recovery_contracts.json:coordinator_checkpoint_candidate`.
+It binds checkpoint base `c125af22b47bff350686b5bd05ad226b7d307a8c`,
+request `40ee14810aba` coding revision 8 / waiting revision 9, and predecessor
+head `b822989acfd5bba65736ca55b4e5f7f9d1625f46`. Its controller SHA256 is
+`081f2f38beb3a9fd5c9de23d08bc272b38f88de6445afabae65a52febb38eb0f`;
+its review-control SHA256 is
+`a675e4f6c9b21b9b7a8d869c2fd0fe63d52125350cce92440c8430445d8b1790`.
+The final independent review binds the complete 56,891-byte checkpoint patch
+(SHA256 `01532ed8e03d0232291a54a7b09318830591499be55b3f4b004220027a3cca65`),
+superseding the earlier tracked-diff digest without changing those controller bytes.
+
+Historical fixture sections and failure-before-push, accepted-push/lost-response,
+legacy-binding, replacement-pause and producer/head regressions remain retained.
+This refresh validates the retained source checkpoint and caller compatibility;
+it requires no runtime deployment and does not change the observed active worker.
+Fixture validation does not depend on activating the APIs it validates. Any later
+controller source change requires refreshed immutable bindings, independent
+companion review and exact-commit Repository Checks.
+
+The coordinator subsequently delivered combined-source validation in self_host
+commit `d0f6d916c597052c596fdf17f7371ee302ca910f`. Its immutable index is
+`operator/pr33-combined-d0f6d916c597/index.json` (SHA256
+`235500d7342253137b4935888e965fb58df794e1bdccea06d432c76f5e7893d9`).
+The parent-objective record binds all three companion source hashes, independent
+review, published-source verification and successful exact-commit
+[Repository Checks run 39008919260](https://github.com/Karapsin/self_host/actions/runs/39008919260).
+This supersedes `bde64ba6` as validation for the combined controller; the earlier
+checkpoint records remain historical.
+
+The combined fixture `agent_tools/tests/fixtures/coordinator_combined_code7.json`
+binds controller SHA256
+`f80b33ac82a8e590bba98822e79cc9d1a25816bddcd98343ea631f8607208fb1`
+and review-control SHA256
+`2016e391ea758606ae1ae9eb63319168c69f57724dff6edddf66c32ebc02741c`.
+Its checkpoint identifies request `f7dc4258460e`, coding revision 7,
+publication revision 8, input head `055f2383` and target dev `98e4236a`.
+Both source hashes also match the later observed PR33 head `60fec897`.
+The combined checkpoint tests exercise the real producer, dependency verification,
+durable renewal, restart without a claimed worker and earlier-green-head merge
+refusal, plus legacy-controller denial and the actual worker's internal/mixed
+question attention caller. They exercise the existing attention APIs and fallback,
+not PR36's separately owned `status_transition` API. This fixture-only commit
+does not change the observed `a6e713dd` runtime or activate proposed support.
+
+Complete logs for toolkit head `60fec897`, run `39008903001`, diagnose the same
+owner-attention regression assertion in every Python job and quality coverage;
+lint and type passed. A failed policy-comment recovery intentionally ends the
+merge attempt before label reconciliation, retaining its existing labels. The
+service-free regression now distinguishes that path from an existing private
+approval, which permits hiding an internal display label while its pause still
+refuses merge. Both cases retain the exact pause and approval records. Dedicated
+later reconciliation can update display state; a hidden hint never authorizes
+recovery retries or a fallback after a failed authority comparison.
+
+Final toolkit review, exact-successor fast CI, real owner exact-head protected
+approval, compatible controller activation and verified operational acceptance
+remain separate gates. The coordinator provisions this evidence; the owner is not
+asked to retrieve source files or CI logs.
+
+The subsequent reconciliation targets dev
+`581d81b6f18950b91164eabe6dfa32500db106f4`. It retains exact-pause resume,
+pending amendments, dependency/renewal gates and dev's shared status transitions.
+A resume whose inspected pause was replaced ends that attempt; it cannot retry
+the same comment against a refreshed pause. After successful retirement, pending
+amendments are checked before reporting unpaused. Amendment recording preserves
+unrelated hold audit fields and vetoes while invalidating stale attention hints.
+Both producers use read-only attention display updates without policy recovery.
+
+The reconciled source hashes are controller
+`1a6edae97f531a08decab6c30c2bbef1db5d6fa295ea88c002440eb2063bb234`
+and review-control
+`ad016e0df9aac0424f6d6a85577d2d89d4effcc3d7e7879300cdc769b1e1a782`.
+The `d0f6d916` pair above remains historical validation for its recorded bytes;
+it does not validate this reconciliation. Before protected approval, the
+coordinator must supply refreshed immutable companion fixtures and selectors,
+independent review and successful exact-companion-commit Repository Checks.
+That refresh must exercise producer → verified renewal → restart → refusal to
+merge an earlier green head, plus the actual worker caller through the shared
+status-transition API. Source delivery does not establish deployment or successful
+dev merges of all relevant PRs. Local programs and tests were not run; GitHub
+must validate the final successor.
+
+The follow-up for head `05acf2d776c1a7aacaf2ca89ce9330063abb3694`
+keeps those controller bytes unchanged. Exact-head check records from run
+`39014018021` report twelve test-setup failures: the discovery authorization fake
+rejects `recover`, and status scenarios recreate production-initialized tables.
+The correction accepts the keyword-only argument, inserts scenario rows into the
+existing schema, and replaces only the test-local coordinator table for the
+malformed-schema case. Restart, authority-preservation and WAL single-snapshot
+assertions remain intact. That correction removed the duplicate recovery release
+note in its checkpoint, but metadata publication at `4d2b1637` appended it again.
+The replay/publication correction below removes that duplicate and makes exact
+Unreleased entry folding idempotent.
+
+The independently reviewed plan is
+`8cc97542e01126e9d41893ab4c5f91d7c42aad765eb8d502fd7e0f8cfff7d47c`,
+bound to the same pinned dev and head. This is source correction provenance,
+not successful successor validation. The supplied companion evidence still lacks
+a refreshed pair for these controller bytes; the coordinator owns that refresh
+and its immutable source, independent review and exact-commit CI records.
+GitHub must run the twelve focused cases and required fast checks on the final
+successor. Protected approval, activation and all-relevant-PR merge acceptance
+remain pending separate gates.
 
 ### Recovery acceptance for the documented worker
 
@@ -357,6 +547,28 @@ pointer.
 
 
 ### Telegram feature requests and planning
+
+Controlled lifecycle-label producers share the display-only `status_transition`
+boundary: attention creation/recovery, phase reconciliation and writer
+acquisition/release remove conflicting statuses before appending the current one.
+Per-PR host locks serialize controlled writers without a global worker lock.
+Each mutation rechecks the open/closed state, exact head, authoritative issue
+labels and private attention. A changed head aborts the old decision; a push by
+itself never creates `needs-user`. Ordinary renewed planning keeps its merge
+hold and displays its current phase without inventing an owner question.
+Writer release removes only writing, preserving a later non-writing phase.
+Closed cleanup preserves live Futures and stops on reopening. Visible owner
+attention suppresses a phase even while its existing Future finishes; without
+attention a live or unknown job retains its phase.
+
+Readiness observation uses the pure authorization projection; authenticated
+comment recovery remains an explicit separate workflow. Display updates do not
+grant approval, clear a veto, answer questions or release a Future. Persistent
+API errors and bounded lock/convergence failures retry through normal
+reconciliation. GitHub does not provide an atomic compare-and-swap across label
+requests, so the periodic reconciler remains recovery for interrupted operations
+and external writers. Paired companion source/tests and exact-commit checks must
+cover the final controller bytes before activation.
 
 Verified publication recovery and correction-question recovery share one atomic
 pause-retirement operation. It matches the observed repository, PR, head, reason
@@ -416,9 +628,193 @@ including an isolated rollout rehearsal. Actual-controller fixtures cover deploy
 `fb62e04558ad3d5cdaf8a9ff1eeb5527238d21f3` and proposed
 `becefe94f16691e5132f7239dad7f2763133d3b5`; capability-gated digest passing
 preserves the older controller contract. This completed recovery dependency is
-separate from pending companion trigger discovery. Deploy compatible reviewed
-controller readers with separate isolated rehearsal; protected controller
+separate from the delivered companion trigger discovery and the remaining
+protected controller activation. Deploy compatible reviewed controller readers
+with separate isolated rehearsal; protected controller
 activation still requires the owner's exact-head approval. Neither resolver
 decisions nor companion recovery evidence releases PR #25's provenance hold.
+
+`agent:needs-user` reports actual owner attention rather than every private merge
+hold. Coordinator dependencies and authenticated scope amendments awaiting renewed
+planning keep all authority gates while displaying their work phase. The host may
+classify an exact derived pause for display only after inspecting all current
+request states. Display hints cannot clear pauses, vetoes, coordinator gates or
+approvals; replacement pauses and new genuine questions invalidate old hints.
+Unknown/security holds and current-head policy decisions retain owner attention.
+
+The companion chooses phases from live ownership before durable waiting requests
+and current-head CI. An owner-attention label masks every phase while preserving
+private job ownership. Other labels are retained.
+
+| Label | Display condition |
+| --- | --- |
+| `agent:planning` | Live request validation or planning |
+| `agent:reviewing` | Live independent review, plan review or plan resolution |
+| `agent:writing` | Live code/publication or another recognized writer |
+| `agent:queued` | Internal waiting/queued requests or an idle candidate awaiting work |
+| `agent:testing` | Current GitHub fast-check aggregate or prerequisite jobs are unfinished |
+| `agent:ready` | Current candidate satisfies the existing readiness gates |
+
+Closed-PR cleanup removes obsolete phases only after live ownership ends, unless
+owner attention already masks that phase. Every mutation rechecks PR state and
+head; reopening returns the PR to normal reconciliation. API failures retry on a
+later pass. The companion `test_agent_labels.py` and `test_closed_labels.py`
+cover these transitions, CI, concurrent holds, failures and reopening; refreshed
+`test_owner_attention.py` covers the production classifier with actual SQLite
+requests and the paired controller candidate. These display checks grant no
+merge or protected approval authority.
+
+Both `paused()` and `authorization_error()` snapshot the complete PR pause and
+current-head veto, including absent records, before looking up owner policy
+comments. One shared helper compares that exact snapshot under `BEGIN IMMEDIATE`
+and clears only unchanged owner-disapproval authority when the exact-head approval
+is strictly newer than every observed decision. A later disapproval, veto,
+evidence request, cancellation, or replacement hold survives an older lookup.
+Changed snapshots block that attempt without retry or fallback to private approval,
+so merge authorization cannot bypass the pause guard. Evidence and cancellation
+holds remain intact. GitHub calls stay outside the transaction, and displayed
+labels are repaired by normal reconciliation. Authenticated Telegram callbacks
+retain their separate owner-decision clearing contract.
+
+The production companion label caller is self_host
+`8050fee15a67abc9f77450b181bea7d3304ed657`, retained in verified active worker
+`a6e713ddf02c176babde546a69b6b954c3d0df36`. It classifies durable requests,
+submits an exact-pause attention hint, reconciles owner attention, and then selects
+one exclusive phase. Older controllers retain conservative attention labels.
+The immutable evidence index `operator/paired-fixtures-bde64ba6c702/index.json`
+(SHA256 `f47dc39b22d51ba317886814ebbe319fd943d74ef0ca8bfd3b5f2a479c132d10`)
+binds refreshed actual-classifier/SQLite and hold-recovery tests to retained PR #35
+code6 and PR #33 code8 sources. Companion commit
+`bde64ba6c7026e37991397e59dda3da67eb550c5` passed
+[Repository Checks 39002462254](https://github.com/Karapsin/self_host/actions/runs/39002462254).
+Exact source, review, CI and activation references are retained in
+[the task evidence](../agent_tools/task_evidence/df10e10053314309b74455688916a621/parent-objective.json).
+This fixture-only refresh does not activate protected controller APIs. Final-head
+review, GitHub checks, exact-head owner policy approval, controlled activation and
+live label verification remain required. Changed bound controller bytes require
+refreshed paired evidence before acceptance; all relevant PRs and repairs still
+require successful dev merge.
+
+### Combined controller reconciliation against dev 98e4236
+
+The subsequent recorded resolution selected “Combine and revalidate” after
+independent plan-resolver review. PR #33 now preserves the coordinator and
+amendment gates together with the owner-attention APIs from pinned dev
+`98e4236a0431d9f94bd322691eb7c8b9de204d22`. The separately owned PR #35
+provenance and both historical implementations' evidence remain retained.
+The earlier source, validation and activation descriptions above are checkpoint
+records; they do not validate or activate this combined controller.
+
+Amendment recording invalidates display hints in the same transaction that
+preserves unrelated pauses and records a pending amendment. Displaying an
+internal dependency without an owner-attention label still blocks a green merge.
+Focused SQLite/fake-GitHub regressions cover both compositions, restart and veto
+preservation. Policy-recovery scenario helpers retain every caller/change case
+and assertion without increasing the lint baseline.
+
+The combined source hashes and plan-review receipt are appended in
+[the parent-objective evidence](../agent_tools/task_evidence/29adce308110491580e26a80f16fbb4a/parent-objective.json).
+The coordinator must refresh both companion controller fixtures and selectors to
+these bytes, including producer → verified renewal → restart → merge refusal and
+the actual owner-attention caller. The `bde64ba6` index and successful Repository
+Checks 39002462254 remain historical checkpoint evidence only. Refreshed immutable
+source bindings, independent companion review and exact-commit Repository Checks
+are still required before protected approval.
+
+This private correction worker executes no programs or checks. GitHub validates
+the final successor with lint, type, coverage, artifact and compatibility gates,
+including `fast-checks`. Fresh implementation review, real owner exact-head
+policy approval, guarded activation and deployed-revision evidence remain
+required. Operator monitoring ends only after successful dev merges drain every
+qualifying PR and repair; the scheduler remains available for future work.
+
+### Exact coordinator replay and publication recovery
+
+The reviewed correction for starting head `4d2b1637c10f20813d9c82f94b98a3c14e2e0209`
+and pinned dev `581d81b6f18950b91164eabe6dfa32500db106f4` changes both controller
+sources. A dependency installation consults retained renewals inside its transaction:
+an exact already-renewed binding cannot reinstall its hold after restart or intake
+advancement. Equal revisions with different complete bindings remain dependencies.
+A renewal retry succeeds only for the retained repository, PR, request, complete
+binding, head and digest, while the PR is open and has no current-head veto.
+It retires only a matching hold, preserving replacement and unrelated authority.
+The durable renewal continues to block an earlier green head.
+
+Changelog folding consumes all validated fragments and appends each distinct entry
+once. An exact complete single-line entry already under Unreleased is represented;
+wrapped entries and historical-release text do not suppress a new entry. No-fragment
+folding remains a no-op. The recovery bullet is retained once; the new task fragment
+describes replay and folding repairs rather than recreating that folded note.
+GitHub must verify the final metadata publication still contains exactly one copy.
+
+The historical pair is now explicitly available in the immutable source chain:
+`coordinator_shared_code6.json` and `test_coordinator_shared_checkpoint.py` from
+self_host `3c906ec350634316545e4e7229417e09ef9a490c`, with independent review
+`a82850c4d33aafdf410055d1e86eb628367ac8bb728437b3bbe891b2ba715d2a` and successful
+[Repository Checks 39013892714](https://github.com/Karapsin/self_host/actions/runs/39013892714).
+That pair covers the starting `1a6edae9` / `ad016e0d` controller sources.
+The older combined fixture/module and `d0f6d916` receipts remain historical.
+The pure shared-status caller in self_host `c211cc87` has separate source review
+and successful [Repository Checks 39016268860](https://github.com/Karapsin/self_host/actions/runs/39016268860).
+
+The supplied activation receipt
+`operator/worker-feedback-lock-retry-20261017-v1-active.json`
+(SHA256 `d3bdaa40c84cc616b44857ff4bf6b5130ba6bde1426e6a907f5a2cd8e89d4a16`)
+retains these complete sources, reviews and CI records. It records worker
+`f21c812a7292097892ec17761922d695b0b8e625` active with trusted controller
+`13f0043b89d805ac5267d25fc0f4fdec7250f083`; it does not activate PR #33.
+
+This patch's exact source hashes and historical evidence paths are appended to
+[the parent-objective evidence](../agent_tools/task_evidence/29adce308110491580e26a80f16fbb4a/parent-objective.json).
+The refresh-required record at this checkpoint remains historical. The following
+successor delivery supplies its paired validation; final publication still needs
+signed-context and fresh reviewer delivery verification.
+
+### Successor paired evidence delivery
+
+For published head `3a8f1dc5072c4638df02c2da600168251e522c00`, the assigned immutable
+successor sources now contain self_host `bfb4ba70ff85369292d347ab60a840d9bed133f6`,
+`coordinator_replay_code6.json` and `test_coordinator_replay_checkpoint.py`.
+The complete embedded controller sources equal the retained controller bytes:
+`4ad12163c313fa3d8a05682081954ebc03ddb01052a65765cc908558572f5e4e` and
+`d5ec1e6bcba4666eaa83171be5fbfd97ad16b297c348d98979c233bcf63be71f`.
+The fixture binds request `2eac395a9e9b`, coding revision 6, observed publication
+revision 7, the original task digest, checkpoint manifest and patch. Complete
+bindings, source inventories, independent source/checkpoint review reports and
+successful exact-commit [Repository Checks 39024553657](https://github.com/Karapsin/self_host/actions/runs/39024553657)
+are appended as `delivery_evidence.successor_evidence_delivery` in
+[the retained parent objective](../agent_tools/task_evidence/29adce308110491580e26a80f16fbb4a/parent-objective.json).
+Earlier questions, answers, plans, receipts and the refresh-required record remain intact.
+
+The companion regression uses actual intake to commit renewal and lose its response
+before request advancement, restarts with fresh readers, and retries successfully.
+It replays hold N after queued N+1 and asserts the dependency stays absent before
+another renewal. Replacement bindings, head/digest mismatches, veto/provenance holds,
+unchanged checkpoint/context and refusal to merge the earlier green head remain
+covered. Inherited producer tests select the same pair and exercise the actual pure
+shared status caller. The fast archival-evidence regression checks source, review,
+request and CI consistency without executing archived companion code. Its source
+manifest digest checks assert length and hexadecimal characters separately to
+satisfy Ruff PT018 while retaining both checks. This test-only correction leaves
+the paired controller bytes unchanged; GitHub must validate the final successor.
+
+The assigned activation receipt
+`operator/worker-replay-replan-20261017-v1-active.json`
+(SHA256 `4c6a65479122638575d31c4546a7c3c459c533d592edbcc6798d9b9d2e1b6a25`)
+records that companion worker active, preserving 107 checkpoints and the schedule.
+The trusted controller remains `13f0043b89d805ac5267d25fc0f4fdec7250f083`;
+PR #33's proposed controller pair has not been activated. Historical source-only
+review flags in the receipt remain historical, rather than new activation claims.
+
+Every required envelope and the complete source/review/CI receipt are present in
+this author assignment. The coordinator must attach the appended bindings to the
+signed successor context and verify precise source, test, review and CI delivery in
+the actual fresh reviewer assignment after publication. This assignment does not
+prove future delivery. Metadata publication changing controller bytes requires
+another paired refresh. Starting-head fast CI succeeded; the final successor still
+requires its own fast CI, complete independent implementation review, real owner
+exact-head protected approval and guarded controller activation. Dependency holds
+and the all-relevant-PR successful-dev-merge objective remain in force. No programs
+or tests were executed by this private worker.
 
 [Documentation overview](README.md)

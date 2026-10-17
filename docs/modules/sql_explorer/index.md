@@ -152,12 +152,13 @@ perform their actions. After executing a command,
 focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
 
 The editor uses steady thin carets, including secondary cursors: underlines on
-occupied cells and vertical bars on blank/end cells. SQL characters remain
+all in-document cells, including spaces and expanded tabs, and vertical bars only
+on end-of-line or empty-line padding. SQL characters remain
 readable and terminal columns stay aligned, including tabs, wide characters,
 horizontal scrolling, and empty lines. Carets and selections remain visible when
 the command or find input has focus; search matches keep their yellow background
-through caret overlays. Occupied-cell carets preserve the original SQL foreground
-and background, including selection and find colors. Blank-cell bars preserve the
+through caret overlays. In-document carets preserve the original foreground and
+background, including selection and find colors. End-padding bars preserve the
 existing cell background, including inherited backgrounds. Presentation padding
 never changes the SQL buffer.
 Text inputs retain steady non-blinking carets. The compact active tab uses a dark surface with amber text and always includes its database key.
@@ -581,8 +582,9 @@ their snapshots. Loading replacement text clears the edit history, secondary
 cursors, and remembered columns, leaving one cursor at the start of the new buffer.
 The active line gutter and row/column status values follow only the main cursor,
 using the focus accent.
-Carets use thin underlines on occupied cells and vertical bars on blank/end cells,
-so SQL characters and find highlights remain readable without shifting columns.
+Carets underline in-document characters, spaces, and every visible cell of expanded
+tabs. Vertical bars appear only on end-of-line or empty-line padding, so SQL text
+and find highlights remain readable without shifting columns.
 
 Up/Down in the command pane browses session history for that tab. Moving beyond
 the newest entry restores the draft and caret. When completion is open,

@@ -831,13 +831,21 @@ class SqlEditor(TextArea):
             row, column = selection.end
             cursor_x, cursor_y = self.wrapped_document.location_to_offset(selection.end)
             x = cursor_x - int(self.scroll_x) + self.gutter_width
-            if (
-                y == cursor_y - int(self.scroll_y)
-                and self.gutter_width <= x < self.scrollable_content_region.width
-            ):
-                if column < len(self.document[row]) and not self.document[row][column].isspace():
-                    next_x, next_y = self.wrapped_document.location_to_offset((row, column + 1))
-                    width = max(1, next_x - cursor_x) if next_y == cursor_y else 1
+            in_document = column < len(self.document[row])
+            width = 1
+            if in_document:
+                next_x, next_y = self.wrapped_document.location_to_offset((row, column + 1))
+                # When the next character wraps, this character fills the remaining
+                # visible cells. In particular, a tab must not shrink to one cell.
+                width = (
+                    max(1, next_x - cursor_x)
+                    if next_y == cursor_y
+                    else max(1, strip.cell_length - x)
+                )
+            left = max(self.gutter_width, x)
+            right = min(strip.cell_length, x + width)
+            if y == cursor_y - int(self.scroll_y) and left < right:
+                if in_document:
                     caret_style = Style(underline=True, bold=False, reverse=False)
                     caret = Strip(
                         Segment(
@@ -845,16 +853,15 @@ class SqlEditor(TextArea):
                             (segment.style or Style()) + caret_style,
                             segment.control,
                         )
-                        for segment in strip.crop(x, x + width)
+                        for segment in strip.crop(left, right)
                     )
                 else:
-                    width = 1
-                    cell = next(iter(strip.crop(x, x + 1)), Segment(""))
+                    cell = next(iter(strip.crop(left, right)), Segment(""))
                     caret_style = (cell.style or Style()) + style + Style(underline=False)
                     if any(start <= selection.end < end for start, end in self._search_matches):
                         caret_style += Style(color="#000000")
                     caret = Strip([Segment("│", caret_style)])
-                strip = Strip.join([strip.crop(0, x), caret, strip.crop(x + width)])
+                strip = Strip.join([strip.crop(0, left), caret, strip.crop(right)])
         return strip.adjust_cell_length(self.scrollable_content_region.width, self.rich_style)
 
     def _selection_style(self) -> Style:
@@ -881,10 +888,7 @@ class SqlEditor(TextArea):
             if selection.end[0] == line_index:
                 column = selection.end[1]
                 line.pad_right(max(0, column + 1 - len(line)))
-                if (
-                    column >= len(self.document[line_index])
-                    or self.document[line_index][column].isspace()
-                ):
+                if column >= len(self.document[line_index]):
                     line.stylize(
                         Style(color=self.app.get_css_variables()["accent"], bold=False),
                         column,

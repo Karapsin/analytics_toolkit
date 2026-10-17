@@ -6,6 +6,17 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Preserve a durable correction gate when verified coordinator dependencies return to planning, blocking earlier green heads through unavailable workers and restart; resolve restored controller conflicts without weakening pause retirement.
+
+- Include unstaged new source files in maintenance change inventories and paginated diffs, preserving source boundaries and the Git index; add offline repository regressions.
+
+- Gate coordinator dependency waits in the trusted controller, preserving exact request/evidence bindings through restart and green CI; add fast intake, stale-receipt and merge-refusal regressions.
+
+- Make correction-question recovery atomic and preserve concurrent replacement holds through restart, discovery and merge; add deterministic service-free regressions.
+
+- Retire only the exact inspected publication pause during verified recovery; preserve replacement evidence, cancellation and newer same-reason holds with fast restart regressions.
+
+- Preserve provenance and owner pauses when recording feature answers; retain overlapping amendments separately and keep the exact renewed-planning hold through failed publication, retiring it only after verifying the signed successor.
 - Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
 
 - Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
@@ -62,6 +73,16 @@ Generated from package version bumps and recent commit history.
 - Bound SQL Explorer cursor snapshots to live undo/redo history across editing, indentation, history eviction, and document resets, with focused lifecycle regressions.
 - Fix SQL Explorer document resets to clear obsolete multicursors, preferred columns and history; cover reset rendering and editing and complete history/idle test fixtures.
 - Fix detached SQL Explorer reset regressions to use an active Textual app while asserting editors remain unmounted and retaining cursor/history cleanup checks.
+- Preserve durable coordinator dependency and feature amendment holds through replanning and publication; bind separately delivered companion routing, source inventory and notification recovery evidence.
+- Display genuine owner attention separately from internal dependency and renewed-planning holds without weakening merge gates.
+- Preserve newer owner decisions during policy approval comment recovery in both pause and merge authorization checks.
+- Share exact-snapshot policy-comment recovery across pause and authorization checks, preserving newer owner decisions and active holds without private-approval fallback.
+- Bind reliable PR attention labels to exact companion source, paired regressions and CI evidence; retain policy-recovery documentation and authority gates.
+- Preserve coordinator dependency and amendment gates through recovery.
+- Converge controller and worker lifecycle labels at every producer while preserving private authority and current-head readiness.
+- Make exact coordinator renewal replays and Unreleased fragment folding idempotent.
+- Bind successor companion sources, review and exact-commit CI to retained orchestrator evidence.
+- Split paired-evidence digest assertions to satisfy Ruff PT018 while preserving both validation checks.
 
 ## 1.3.12.5 - 2026-10-14
 

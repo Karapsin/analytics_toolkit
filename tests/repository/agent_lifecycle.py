@@ -3,6 +3,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
@@ -13,6 +16,424 @@ from tests.repository.review_control import GitHub
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@pytest.fixture
+def control(tmp_path: Path, monkeypatch: Any) -> Any:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    return controller.trusted_module("review_control")
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Feature context does not match the host-owned request.",
+        "PR task context is not bound to its signed head commit.",
+        "Supply the original image.",
+        "Owner cancelled the request.",
+        "Owner disapproved the controller/security change via Telegram.",
+    ],
+)
+@pytest.mark.parametrize("changed_head", [False, True])
+def test_factual_answer_cannot_replace_existing_authority_hold(
+    control: Any,
+    reason: str,
+    changed_head: bool,
+) -> None:
+    gh = GitHub()
+    branch = gh.pr["head"]["ref"]
+    control.enroll_feature(gh.repository, branch, "original-digest")
+    with control.connect() as db:
+        db.execute(
+            "INSERT INTO pauses VALUES (?,?,?,?,?)",
+            (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], reason, 1),
+        )
+        original = tuple(db.execute("SELECT * FROM pauses").fetchone())
+    if changed_head:
+        gh.pr["head"]["sha"] = "b" * 40
+
+    # This is the real controller entrypoint used by authenticated Telegram
+    # replies, including factual answers to mixed coordinator/account questions.
+    control.hold_feature(gh, gh.pr)
+    restarted = controller.trusted_module("review_control")
+    restarted.hold_feature(gh, gh.pr)
+    assert restarted.paused(gh, gh.pr)
+    with restarted.connect() as db:
+        assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == original
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+    assert not restarted.pending()
+
+
+@pytest.mark.parametrize("orchestrator", [False, True])
+@pytest.mark.parametrize("replacement", [None, "image", "cancel", "same-reason", "new-head"])
+def test_publication_recovery_cannot_delete_a_replacement_pause(
+    control: Any,
+    monkeypatch: Any,
+    orchestrator: bool,
+    replacement: str | None,
+) -> None:
+    gh = GitHub()
+    gh.pr["head"]["ref"] = (
+        "codex/orchestrator-task" if orchestrator else "codex/telegram-feature-task"
+    )
+    digest = "a" * 64
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], digest)
+    reason = (
+        "Feature context does not match the host-owned request."
+        if orchestrator
+        else "PR task context is not bound to its signed head commit."
+    )
+    with control.connect() as db:
+        db.execute(
+            "INSERT INTO pauses VALUES (?,?,?,?,?)",
+            (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], reason, 1000),
+        )
+    enroll = control.enrolled_feature
+    expected: tuple[Any, ...] | None = None
+
+    def replace_during_verification(*args: Any) -> bool:
+        nonlocal expected
+        enrolled = enroll(*args)
+        if replacement is not None:
+            replacement_reason = {
+                "image": "Supply the original image.",
+                "cancel": "Owner cancelled the request.",
+            }.get(replacement, reason)
+            head = "b" * 40 if replacement == "new-head" else gh.pr["head"]["sha"]
+            with control.connect() as db:
+                db.execute(
+                    "UPDATE pauses SET head=?,reason=?,created=?",
+                    (head, replacement_reason, 2000),
+                )
+                expected = tuple(db.execute("SELECT * FROM pauses").fetchone())
+        return enrolled
+
+    # Deterministic interleaving after the pause read and before its deletion.
+    # No worker, sleeps, network or external services are needed.
+    monkeypatch.setattr(control, "enrolled_feature", replace_during_verification)
+    control.recover_feature_publication(gh, gh.pr, task_digest=digest if orchestrator else None)
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    restarted = controller.trusted_module("review_control")
+    with restarted.connect() as db:
+        row = db.execute("SELECT * FROM pauses").fetchone()
+        assert (tuple(row) if row is not None else None) == expected
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+    assert restarted.paused(gh, gh.pr) == (replacement is not None)
+    if replacement in {"image", "cancel"}:
+        restarted.recover_feature_publication(
+            gh, gh.pr, task_digest=digest if orchestrator else None
+        )
+        with restarted.connect() as db:
+            assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == expected
+
+
+def _discovery_client(gh: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    client = Mock(repository=gh.repository)
+    client.pull.side_effect = gh.pull
+    client.pulls.return_value = [gh.pr]
+    client.base.return_value = "base"
+    client.checks.return_value = []
+    client.pages.side_effect = lambda path, *args: gh.comments if "/comments?" in path else []
+    client.api.side_effect = lambda path, *args: (
+        {"permission": "admin"}
+        if path.endswith("/permission")
+        else {"behind_by": 0}
+        if path.startswith("compare/")
+        else gh.api(path, *args)
+    )
+    monkeypatch.setattr(controller, "monitor", lambda client: (None, {"started": "", "runs": {}}))
+    monkeypatch.setattr(controller, "save_monitor", lambda *args: None)
+    monkeypatch.setattr(controller, "_integration_tasks", lambda *args: [])
+    monkeypatch.setattr(controller, "signed_head", lambda *args: True)
+    metadata = Mock(return_value={"task_digest": "digest"})
+    monkeypatch.setattr(controller, "task_metadata", metadata)
+    monkeypatch.setattr(controller, "authorization_error", lambda *args, recover=True: None)
+    return client, metadata
+
+
+class _PauseReadConnection:
+    """Wrap only the pause read, leaving actual SQLite writes unchanged."""
+
+    def __init__(self, db: Any, cursor_type: Any) -> None:
+        self.db = db
+        self.cursor_type = cursor_type
+
+    def execute(self, sql: str, parameters: Any = ()) -> Any:
+        cursor = self.db.execute(sql, parameters)
+        if sql.startswith("SELECT") and "FROM pauses" in sql:
+            return self.cursor_type(cursor)
+        return cursor
+
+
+@pytest.mark.parametrize("replacement", ["image", "cancel", "same-reason", "new-head"])
+def test_correction_recovery_preserves_concurrent_hold_after_restart(
+    control: Any,
+    monkeypatch: Any,
+    tmp_path: Path,
+    replacement: str,
+) -> None:
+    gh = GitHub()
+    control.hold_correction(gh, gh.pr)
+    reason = {
+        "image": "Supply the original image.",
+        "cancel": "Owner cancelled the correction.",
+    }.get(replacement, "Correction agent requires user input.")
+    head = "b" * 40 if replacement == "new-head" else gh.pr["head"]["sha"]
+    expected = (gh.repository, gh.pr["number"], head, reason, 2000)
+    real_connect = control.connect
+    attempted = False
+    deferred = False
+
+    def replace_hold() -> None:
+        # A real second SQLite connection, with no wait or background worker.
+        writer = sqlite3.connect(tmp_path / "review_control.sqlite3", timeout=0)
+        try:
+            with writer:
+                writer.execute("INSERT OR REPLACE INTO pauses VALUES (?,?,?,?,?)", expected)
+        finally:
+            writer.close()
+
+    class Cursor:
+        def __init__(self, cursor: Any) -> None:
+            self.cursor = cursor
+
+        def fetchone(self) -> Any:
+            nonlocal attempted, deferred
+            row = self.cursor.fetchone()
+            self.cursor.fetchall()  # Exhaust the single-row read before the other writer.
+            if not attempted:
+                attempted = True
+                try:
+                    replace_hold()
+                except sqlite3.OperationalError as error:
+                    if "locked" not in str(error):
+                        raise
+                    # The protected transaction wins this ordering. The writer
+                    # retries immediately after commit, before label cleanup.
+                    deferred = True
+            return row
+
+    @contextmanager
+    def interleaved_connect() -> Any:
+        db = real_connect()
+        try:
+            with db:
+                yield _PauseReadConnection(db, Cursor)
+            if deferred:
+                replace_hold()
+        finally:
+            db.close()
+
+    # On the old implementation the writer succeeds after SELECT, then the
+    # broad DELETE erases its replacement. This hook fixes the interleaving
+    # without timing assumptions, threads, sleeps or external services.
+    with monkeypatch.context() as patch:
+        patch.setattr(control, "connect", interleaved_connect)
+        control.resume_correction(gh, gh.pr)
+    assert attempted
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    restarted = controller.trusted_module("review_control")
+    with restarted.connect() as db:
+        assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == expected
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+    assert restarted.paused(gh, gh.pr)
+    assert control.PAUSED in {label["name"] for label in gh.pr["labels"]}
+
+    client, metadata = _discovery_client(gh, monkeypatch)
+    assert controller.discover(client, 17) == {"include": []}
+    monkeypatch.setattr(controller, "ready", lambda *args: True)
+    controller.merge_selected(client, 17, tmp_path, pr_numbers={gh.pr["number"]})
+    metadata.assert_not_called()
+    assert not any(call.args[0].endswith("/merge") for call in client.api.call_args_list)
+
+
+@pytest.mark.parametrize(
+    "unrelated",
+    [None, "Supply the original image.", "Owner disapproved protected changes."],
+)
+@pytest.mark.parametrize("changed_head", [False, True])
+def test_new_amendment_rejects_stale_resume_after_restart_and_discovery(
+    control: Any,
+    monkeypatch: Any,
+    tmp_path: Path,
+    changed_head: bool,
+    unrelated: str | None,
+) -> None:
+    gh = GitHub()
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "original-digest")
+    monkeypatch.setattr(control.time, "time", lambda: 1000)
+    if unrelated is None:
+        control.hold_feature(gh, gh.pr)
+    else:
+        with control.connect() as db:
+            db.execute(
+                "INSERT INTO pauses VALUES (?,?,?,?,?)",
+                (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], unrelated, 1000),
+            )
+    if changed_head:
+        gh.pr["head"]["sha"] = "b" * 40
+    gh.comments.append(
+        {
+            "body": "/agent resume " + gh.pr["head"]["sha"],
+            "user": {"type": "User", "login": "owner"},
+            "created_at": datetime.fromtimestamp(2000, timezone.utc).isoformat(),
+        }
+    )
+    monkeypatch.setattr(control.time, "time", lambda: 3000)
+    control.hold_feature(gh, gh.pr)
+    if unrelated is not None:
+        with control.connect() as db:
+            row = dict(db.execute("SELECT * FROM pauses").fetchone())
+            assert (row["reason"], row["created"]) == (unrelated, 1000)
+            assert db.execute("SELECT created FROM feature_amendments").fetchone()[0] == 3000
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    restarted = controller.trusted_module("review_control")
+    assert restarted.paused(gh, gh.pr)
+    with restarted.connect() as db:
+        pause = dict(db.execute("SELECT * FROM pauses").fetchone())
+        assert pause["created"] == 3000
+        assert pause["head"] == gh.pr["head"]["sha"]
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+
+    # Exercise discovery with the real pause parser and label reconciliation.
+    # Only GitHub, signatures and unrelated integration bookkeeping are faked.
+    client, metadata = _discovery_client(gh, monkeypatch)
+    assert controller.discover(client, 17) == {"include": []}
+    metadata.assert_not_called()
+    assert restarted.paused(gh, gh.pr)
+    monkeypatch.setattr(controller, "ready", lambda *args: True)
+    controller.merge(client, 17, tmp_path)
+    metadata.assert_not_called()
+    assert not any(call.args[0].endswith("/merge") for call in client.api.call_args_list)
+
+    # A later authenticated exact-head resume still works; it grants no approval.
+    gh.comments.append(
+        {
+            **gh.comments[0],
+            "created_at": datetime.fromtimestamp(4000, timezone.utc).isoformat(),
+        }
+    )
+    assert not restarted.paused(gh, gh.pr)
+    assert controller.discover(client, 17)["include"][0]["kind"] == "review"
+    assert not restarted.approved(gh.repository, 1, gh.pr["head"]["sha"])
+
+
+def test_policy_decision_cannot_release_a_newer_pending_amendment(
+    control: Any, monkeypatch: Any
+) -> None:
+    gh = GitHub()
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "original-digest")
+    with control.connect() as db:
+        db.execute(
+            "INSERT INTO pauses VALUES (?,?,?,?,?)",
+            (
+                gh.repository,
+                gh.pr["number"],
+                gh.pr["head"]["sha"],
+                "Owner disapproved policy.",
+                1000,
+            ),
+        )
+    gh.comments.append(
+        {
+            "body": "/agent approve-policy " + gh.pr["head"]["sha"],
+            "user": {"type": "User", "login": "owner"},
+            "created_at": datetime.fromtimestamp(2000, timezone.utc).isoformat(),
+        }
+    )
+    monkeypatch.setattr(control.time, "time", lambda: 3000)
+    control.hold_feature(gh, gh.pr)
+    assert control.paused(gh, gh.pr)
+    with control.connect() as db:
+        assert db.execute("SELECT created FROM pauses").fetchone()[0] == 3000
+    assert not control.approved(gh.repository, gh.pr["number"], gh.pr["head"]["sha"])
+
+
+def test_unheld_answer_still_requires_replanning_and_cancel_still_closes(
+    control: Any,
+    monkeypatch: Any,
+) -> None:
+    gh = GitHub()
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "original-digest")
+    control.hold_feature(gh, gh.pr)
+    with control.connect() as db:
+        assert db.execute("SELECT reason FROM pauses").fetchone()[0] == (
+            "Owner changed the request; renewed planning is required."
+        )
+
+    api = Mock(wraps=gh.api)
+    monkeypatch.setattr(gh, "api", api)
+    control.hold_feature(gh, gh.pr, cancel=True)
+    api.assert_any_call(f"pulls/{gh.pr['number']}", "PATCH", {"state": "closed"})
+    control.hold_feature(gh, gh.pr)
+    with control.connect() as db:
+        assert (
+            db.execute("SELECT reason FROM pauses").fetchone()[0] == "Owner cancelled the request."
+        )
+    assert control.paused(gh, gh.pr)
+
+
+def test_unenrolled_answer_cannot_create_or_replace_a_hold(control: Any) -> None:
+    gh = GitHub()
+    with pytest.raises(ValueError, match="not host-enrolled"):
+        control.hold_feature(gh, gh.pr)
+    with control.connect() as db:
+        assert db.execute("SELECT count(*) FROM pauses").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("replacement", [None, "same-reason", "provenance", "veto", "review"])
+def test_publication_capability_retains_exact_amendment_for_discovery_and_merge(
+    control: Any,
+    monkeypatch: Any,
+    tmp_path: Path,
+    replacement: str | None,
+) -> None:
+    gh = GitHub()
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "new-digest")
+    control.hold_feature(gh, gh.pr)
+    with control.connect() as db:
+        snapshot = dict(db.execute("SELECT * FROM pauses").fetchone())
+    client, metadata = _discovery_client(gh, monkeypatch)
+    task = {
+        "kind": "feature",
+        "number": gh.pr["number"],
+        "head": gh.pr["head"]["sha"],
+        "base": "base",
+        "branch": gh.pr["head"]["ref"],
+        "task_digest": "new-digest",
+        "previous_task_digest": "digest",
+    }
+    with pytest.raises(RuntimeError, match="awaiting user instructions"):
+        controller.publication_authority(client, task)
+    assert controller.publication_authority(client, task, renewal_hold=snapshot) == gh.pr
+    # Publication permission never releases review/merge or supplies approval.
+    assert control.paused(client, gh.pr)
+    metadata.reset_mock()
+    assert controller.discover(client, 17) == {"include": []}
+    monkeypatch.setattr(controller, "ready", lambda *args: True)
+    controller.merge_selected(client, 17, tmp_path, pr_numbers={gh.pr["number"]})
+    metadata.assert_not_called()
+    assert not any(call.args[0].endswith("/merge") for call in client.api.call_args_list)
+    if replacement is None:
+        return
+    with control.connect() as db:
+        if replacement in {"same-reason", "provenance"}:
+            db.execute("UPDATE pauses SET created=created+1")
+            if replacement == "provenance":
+                db.execute("UPDATE pauses SET reason='Supply the original image.'")
+        elif replacement == "veto":
+            db.execute(
+                "INSERT INTO vetoes VALUES (?,?,?,?)",
+                (gh.repository, gh.pr["number"], task["head"], 1),
+            )
+        else:
+            task["kind"] = "review"
+        original = tuple(db.execute("SELECT * FROM pauses").fetchone())
+    with pytest.raises(RuntimeError, match="amendment authority changed"):
+        controller.publication_authority(client, task, renewal_hold=snapshot)
+    with control.connect() as db:
+        assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == original
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
 
 
 def test_rejection_queues_fresh_correction_without_user_resume(

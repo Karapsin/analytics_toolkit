@@ -1,0 +1,157 @@
+{
+  "kind": "agent-authored-scope-note",
+  "exact_user_messages": [
+    "check other labels and provide reliable fixes if needed",
+    "provide reliable fix so that does not occur again",
+    "and once you done - monitor PRs until completion, stop only when ALL of them are merged successfully with dev",
+    "implement it on your own if orchestator is not doing that"
+  ],
+  "parent_objective": "All relevant PRs and repairs must merge with dev; this leaf repair does not replace that objective.",
+  "scope": "Truthful owner-attention and exclusive work-phase labels, with every authority gate retained.",
+  "historical_companion_source": "self_host labels reconciliation follow-up to df672554b3c7eb7163f4249c9095e96b98ab04dd.",
+  "companion_source": {
+    "repository": "Karapsin/self_host",
+    "production_commit": "8050fee15a67abc9f77450b181bea7d3304ed657",
+    "production_source": {
+      "path": "self_host/services/github_agent/labels.py",
+      "sha256": "0cd77673c3811b3b682b87b58876f8b5457cc894ba5294878c1aed90b08518dc",
+      "evidence_file": "operator/self-host-coordinator-8050fee1-complete-source-000.json"
+    },
+    "classifier_source": {
+      "path": "self_host/services/github_agent/intake.py",
+      "commit": "a6e713ddf02c176babde546a69b6b954c3d0df36",
+      "sha256": "d2202a9cfdd17c1bbd0241b60ebe9358ac9c84f2636165e7522fdcf60bcaba65",
+      "evidence_file": "operator/self-host-retained-gate-a6e713dd-complete-source-000.json"
+    },
+    "production_review": {
+      "reviewer": "/root/review_owner_attention_pair",
+      "role": "fresh independent read-only paired source reviewer",
+      "verdict": "approve",
+      "initial_rejection_receipt": "/private/tmp/owner-attention-paired-source-review.initial-rejected.json",
+      "scope": "Complete candidate diffs and added source/test/documentation/evidence files in analytics_toolkit and self_host; no candidate programs, tests, service actions or Pi mutations executed.",
+      "bases": {
+        "analytics_toolkit": "8955054742d6df6c4700c6e9db815ff3cb9efc3b",
+        "self_host": "df672554b3c7eb7163f4249c9095e96b98ab04dd"
+      },
+      "files": {
+        "analytics_toolkit/.github/agent/review_control.py": "efba3307f57f860e6afd1021f911a4694cf8c431b332f0d66210505d1a000bf6",
+        "analytics_toolkit/.github/agent/controller.py": "0859c1913184a61e093ea8ebcd3dda19ba121ba5e84f219f2bd1831147505eee",
+        "analytics_toolkit/tests/repository/owner_attention.py": "d655483385c6645022258e58e461569ac63595ece6e6014e3afa5b46a9936261",
+        "analytics_toolkit/docs/GITHUB_AGENT_OPERATIONS.md": "fad37c871aac385ed9ea2c38a43e8d9c0c464c7176c9ce80d381266cba80b59b",
+        "analytics_toolkit/agent_tools/changelog/df10e10053314309b74455688916a621.md": "2e8961d1914a890fa717a938151f00652dc0981719832fe08aa9caf69892a5f3",
+        "analytics_toolkit/agent_tools/task_evidence/df10e10053314309b74455688916a621/parent-objective.json": "cce3b078568ae5e080d007eb5f1b246640719287f2fea0feca05f52c4838da00",
+        "self_host/self_host/services/github_agent/labels.py": "0cd77673c3811b3b682b87b58876f8b5457cc894ba5294878c1aed90b08518dc",
+        "self_host/self_host/services/github_agent/intake.py": "3f594ec02f06db27b4b2a62c1a53880759e9dedeafc19cb489fe03ce466be7ae",
+        "self_host/self_host/services/github_agent/README.md": "01a7fc7ac8c84a8715c5282cb7b33251e3c85823eae10e3a8286170279868de3",
+        "self_host/self_host/services/github_agent/companion_proposals.py": "ebbc2564cf16b35c9cb3bb184d69cff17cef7ee09d5708c57c4784e793d11f4c",
+        "self_host/agent_tools/tests/test_owner_attention.py": "dc77e354e73ef76f6fd3852359361d88d0b5bd00083102cb71ea249f6a934319",
+        "self_host/agent_tools/tests/fixtures/owner_attention_controller.json": "fb73583aed016b944237987b8e62770cfe823a9a731c08578e476a2bada4f787"
+      },
+      "findings": [],
+      "resolved_findings": [
+        {
+          "priority": "P2",
+          "status": "resolved in reviewed final source",
+          "resolution": "The shared classifier now recognizes only no-question/no-resolver-owner-input authority retries as coordinator work. Label rows retain coordinator_question separately, so a no-question retry cannot hide an unrelated generic correction pause. Sixteen paired cases cover both retry kinds, four pause states and presence/absence of an actual question; the actual shared classifier and controller are exercised. The final source retains all genuine question, unknown/security hold and current-head veto authority.",
+          "title": "Operational authority waits with no question are classified as owner attention",
+          "file": "self_host/services/github_agent/labels.py",
+          "lines": [
+            55,
+            59
+          ],
+          "trigger": "A linked request catches AuthorityLookupUnavailable in Intake.run and persists authority_lookup_retry=true, status=waiting, questions=[]; or wait_for_authority persists a no-question authority_wait. No actual owner question is created.",
+          "evidence": "Intake.question_notice_status returns eligible for any current waiting row lacking coordinator question routes, including these known operational states. labels.requests maps eligible to attention=true and attention_required turns that into needs-user when no pause exists or the retained pause is renewed planning. Intake.resume_recommendations explicitly handles these flags as automatic retries when no questions/resolver_owner_input remain.",
+          "impact": "The repair deterministically recreates the false needs-user label for a retry requiring no owner response, contrary to the requested separation of owner input from internal holds.",
+          "requested_change": "Recognize the existing verified no-question authority retry states without suppressing genuine questions, unknown waits, security/veto holds or protected approval. Add paired regression cases for authority_lookup_retry and authority_wait, plus each with a genuine question to prove owner input wins."
+        }
+      ],
+      "positive_assessments": [
+        "The added attention table and hint methods do not delete pause, veto, approval, coordinator dependency or request/job authority state.",
+        "Exact observed pause comparison and current-head checks reject replaced derived pauses; current-head veto and unknown/security pause reasons override display hints.",
+        "Old controllers lack the new API and retain their conservative needs-user behavior.",
+        "Actual normal model-question completions and production tick reconciliation share Agent.reconcile_lock; their speculative concurrent request-snapshot race was considered and not reported.",
+        "Live work phase remains derived from active Futures, including writing, and exclusive phase transitions retain existing API/head/hold rechecks.",
+        "The complete embedded companion controller fixture decodes to SHA256 efba3307f57f860e6afd1021f911a4694cf8c431b332f0d66210505d1a000bf6, identical to the reviewed ATK controller source."
+      ],
+      "validation_limit": "Source approval only. Author-reported focused and mandatory full checks were not executed by this reviewer; exact commit CI, protected approval and isolated activation rehearsal remain separate gates.",
+      "owner_answer": false,
+      "policy_approval": false,
+      "deployment_approval": false
+    },
+    "production_review_sha256": "7fc170f8e0b5077ac2bb543cd61ff938663b5975866788685b7dded677efd4b1",
+    "production_ci": {
+      "repository": "Karapsin/self_host",
+      "sha": "8050fee15a67abc9f77450b181bea7d3304ed657",
+      "branch": "dev",
+      "status": "success",
+      "started": 1792203616.953818,
+      "workflows": [
+        {
+          "name": "Repository Checks",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Karapsin/self_host/actions/runs/38994520147"
+        }
+      ]
+    },
+    "paired_fixtures": {
+      "commit": "bde64ba6c7026e37991397e59dda3da67eb550c5",
+      "index": "operator/paired-fixtures-bde64ba6c702/index.json",
+      "sha256": "f47dc39b22d51ba317886814ebbe319fd943d74ef0ca8bfd3b5f2a479c132d10",
+      "sources": {
+        "agent_tools/tests/fixtures/controller_recovery_contracts.json": "d93575fe4a92ef419cc06e57a0d1ab12544d2dd90b219fd0cccbb0d57be17f8a",
+        "agent_tools/tests/fixtures/owner_attention_controller.json": "be31bdf32aebb072526b5cabe5e4a51724f62aab069a8f9961e88725c11cfa47",
+        "agent_tools/tests/test_coordinator_holds.py": "29eb8612a9ae4622ecd5965110aa17d763dc1197c878acff7d048df921f1fe5b",
+        "agent_tools/tests/test_owner_attention.py": "8aa1b2eda0af8b1c19fb2179f93cf1b003f3173380080435e1d030cfb6d45d6f",
+        "self_host/services/github_agent/README.md": "3cb3cee1607a3582507c63b86fb896763a6346cf5e74948afdb7d64907a9194f"
+      },
+      "source_evidence": {
+        "agent_tools/tests/fixtures/controller_recovery_contracts.json": "operator/paired-fixtures-bde64ba6c702/s0.json",
+        "agent_tools/tests/fixtures/owner_attention_controller.json": "operator/paired-fixtures-bde64ba6c702/s1.json",
+        "agent_tools/tests/test_coordinator_holds.py": "operator/paired-fixtures-bde64ba6c702/s2.json",
+        "agent_tools/tests/test_owner_attention.py": "operator/paired-fixtures-bde64ba6c702/s3.json",
+        "self_host/services/github_agent/README.md": "operator/paired-fixtures-bde64ba6c702/s4.json"
+      },
+      "review": {
+        "path": "operator/paired-fixtures-bde64ba6c702/review.json",
+        "sha256": "676f83404042fe3b103226d85be9c12e9840b8c9cefead33e49b329aeadcb7c4"
+      },
+      "ci": {
+        "id": 39002462254,
+        "head_sha": "bde64ba6c7026e37991397e59dda3da67eb550c5",
+        "conclusion": "success",
+        "url": "https://github.com/Karapsin/self_host/actions/runs/39002462254"
+      }
+    },
+    "controller_binding": {
+      "checkpoint_base": "c125af22b47bff350686b5bd05ad226b7d307a8c",
+      "checkpoint_head": "1d970685226dce56e2aab0fcc5437829f4fbc8ac",
+      "candidate_id": "request:35:42e1c67033e4:6:code",
+      "review_control_sha256": "e2c6bd3ec9347ae3df3e955174823c8826ba88f0dce9b02175d0cd7d41420000",
+      "controller_sha256": "677bcb741a18d96e5264a26ecc99d75b4d1ca7b4e2e7075f5cae0b6541707279",
+      "status": "Retained checkpoint candidate; unchanged component bytes, not final-head review or activation approval."
+    },
+    "active_worker": {
+      "commit": "a6e713ddf02c176babde546a69b6b954c3d0df36",
+      "receipt": "operator/worker-retained-gate-a6e713ddf02c-active.json",
+      "sha256": "6f0b944c4072b94146d53fd50273892910752a1eb4a71c1f956ac137e6ef7024",
+      "ci": {
+        "id": 39000272860,
+        "head_sha": "a6e713ddf02c176babde546a69b6b954c3d0df36",
+        "conclusion": "success",
+        "url": "https://github.com/Karapsin/self_host/actions/runs/39000272860"
+      },
+      "status": "VERIFIED ACTIVE; protected attention APIs and live label acceptance remain pending."
+    },
+    "caller_path": "Intake.question_notice_status -> labels.requests -> reconcile_attention -> attention_hint -> reconcile_label -> transition. Internal-only current waits suppress display only; mixed, stale, running, replaced or unknown holds remain conservative.",
+    "validation_limits": "Companion fixture refresh and its CI are source compatibility evidence, not final published controller review, protected owner approval, deployment approval or all-PR completion. Changed controller bytes require coordinator-refreshed immutable fixtures and paired checks before acceptance.",
+    "owner_answer": false,
+    "policy_approval": false
+  },
+  "related_prs": [
+    33,
+    34
+  ],
+  "owner_answer": false,
+  "policy_approval": false
+}

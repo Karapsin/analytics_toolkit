@@ -146,7 +146,7 @@ def test_missing_theme_cursor_style_keeps_blank_and_end_carets_without_document_
     asyncio.run(exercise())
 
 
-def test_bar_on_a_blank_search_cell_preserves_the_complete_highlight() -> None:
+def test_underlined_search_space_preserves_the_complete_highlight() -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())
         async with app.run_test(size=(80, 30)) as pilot:
@@ -162,7 +162,8 @@ def test_bar_on_a_blank_search_cell_preserves_the_complete_highlight() -> None:
                 viewport.x + left, viewport.x + left + 3
             )
             for match in (editor.render_line(0).crop(left, left + 3), composed):
-                assert match.text == "x│x"
+                assert match.text == "x x"
+                assert all(segment.style.underline for segment in match.crop(1, 2))
                 assert all(
                     segment.style.bgcolor.get_truecolor().hex == "#ffff00" for segment in match
                 )
@@ -171,19 +172,25 @@ def test_bar_on_a_blank_search_cell_preserves_the_complete_highlight() -> None:
     asyncio.run(exercise())
 
 
+@pytest.mark.parametrize("text", ["SELECT", "S LECT", "S\tLECT"])
 @pytest.mark.parametrize("background", [None, "#123456"])
 def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
-    background: str | None, monkeypatch: pytest.MonkeyPatch
+    text: str, background: str | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())
         async with app.run_test(size=(80, 30)):
             editor = app.active_workspace.editor
-            editor.text = "SELECT"
-            editor._set_selections(Selection.cursor((0, 0)), [Selection.cursor((0, 2))])
+            editor.text = text
+            editor._set_selections(
+                Selection.cursor((0, 0)), [Selection.cursor((0, 1)), Selection.cursor((0, 2))]
+            )
             original = Style(color="#abcdef", bgcolor=background)
             width = editor.scrollable_content_region.width
-            segments = [Segment(" " * editor.gutter_width), Segment("SELECT", original)]
+            segments = [
+                Segment(" " * editor.gutter_width),
+                Segment(text.expandtabs(editor.indent_width), original),
+            ]
             source = Strip(segments).adjust_cell_length(width)
             native_render = TextArea.render_line
             monkeypatch.setattr(TextArea, "render_line", lambda _editor, _row: source)
@@ -197,8 +204,9 @@ def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
                 strip = editor.render_line(0)
                 assert strip.text == source.text
                 assert strip.cell_length == source.cell_length
-                for column in (0, 2):
-                    left = editor.gutter_width + column
+                for column in (0, 1, 2):
+                    offset, _ = editor.wrapped_document.location_to_offset((0, column))
+                    left = editor.gutter_width + offset
                     cell = strip.crop(left, left + 1)
                     assert all(segment.style.color == original.color for segment in cell)
                     assert all(segment.style.bgcolor == original.bgcolor for segment in cell)
@@ -217,7 +225,7 @@ def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
             assert editor._theme is theme
             assert theme.cursor_style is cursor_style
             monkeypatch.setattr(TextArea, "render_line", native_render)
-            assert editor.text == "SELECT"
+            assert editor.text == text
 
     asyncio.run(exercise())
 
@@ -266,5 +274,138 @@ def test_blank_and_end_caret_bars_preserve_original_cell_background(
                         for segment in caret
                     )
             assert editor.text == "x\n"
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("command_focus", [False, True])
+@pytest.mark.parametrize("line", ["x x", "x\tx", "\t\tx"])
+def test_whitespace_carets_preserve_widget_and_compositor_cells(
+    line: str, command_focus: bool
+) -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 30)) as pilot:
+            editor = app.active_workspace.editor
+            editor.text = line + "\n" + line
+            editor._set_selections(Selection.cursor((0, 2)), [Selection.cursor((1, 2))])
+            if command_focus:
+                app.active_workspace.command_input.focus()
+            else:
+                editor.focus()
+            await pilot.pause()
+            baseline = [editor.render_line(row) for row in range(2)]
+            editor._set_selections(Selection.cursor((0, 1)), [Selection.cursor((1, 1))])
+            await pilot.pause()
+            viewport = editor.scrollable_content_region
+            composed = app.screen._compositor.render_strips()
+            expanded = line.expandtabs(editor.indent_width)
+            for row in range(2):
+                offset, visual_row = editor.wrapped_document.location_to_offset((row, 1))
+                next_offset, _ = editor.wrapped_document.location_to_offset((row, 2))
+                left = editor.gutter_width + offset
+                right = editor.gutter_width + next_offset
+                original = baseline[row].crop(left, right)
+                widget = editor.render_line(visual_row)
+                assert widget.cell_length == viewport.width
+                visible_line = widget.crop(
+                    editor.gutter_width, editor.gutter_width + len(expanded)
+                )
+                assert visible_line.text == expanded
+                screen = composed[viewport.y + visual_row].crop(viewport.x, viewport.right)
+                for strip in (widget, screen):
+                    caret = strip.crop(left, right)
+                    assert caret.text == original.text == " " * (next_offset - offset)
+                    assert caret.cell_length == original.cell_length
+                    original_style = next(iter(original)).style
+                    assert all(
+                        segment.style.color == original_style.color
+                        and segment.style.bgcolor == original_style.bgcolor
+                        and segment.style.underline is True
+                        and segment.style.bold is False
+                        and segment.style.reverse is False
+                        for segment in caret
+                    )
+                rendered_line = editor.get_line(row)
+                assert rendered_line.plain == line
+                assert rendered_line.get_style_at_offset(app.console, 1).underline is True
+            assert editor.text == line + "\n" + line
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("command_focus", [False, True])
+def test_tab_carets_fill_the_visible_cells_when_the_following_character_wraps(
+    command_focus: bool,
+) -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 30)) as pilot:
+            editor = app.active_workspace.editor
+            editor.soft_wrap = True
+            editor.show_line_numbers = False
+            await pilot.pause()
+            editor.indent_width = editor.scrollable_content_region.width - editor.gutter_width
+            editor.text = "\tZ\n\tZ"
+            editor._set_selections(Selection.cursor((0, 0)), [Selection.cursor((1, 0))])
+            if command_focus:
+                app.active_workspace.command_input.focus()
+            else:
+                editor.focus()
+            await pilot.pause()
+            viewport = editor.scrollable_content_region
+            composed = app.screen._compositor.render_strips()
+            for row in range(2):
+                offset, visual_row = editor.wrapped_document.location_to_offset((row, 0))
+                _, next_row = editor.wrapped_document.location_to_offset((row, 1))
+                assert offset == 0
+                assert next_row > visual_row
+                left = editor.gutter_width
+                for strip in (
+                    editor.render_line(visual_row),
+                    composed[viewport.y + visual_row].crop(viewport.x, viewport.right),
+                ):
+                    caret = strip.crop(left, viewport.width)
+                    assert caret.cell_length == editor.indent_width
+                    assert caret.text == " " * editor.indent_width
+                    assert all(
+                        segment.style.underline is True
+                        and segment.style.bold is False
+                        and segment.style.reverse is False
+                        for segment in caret
+                    )
+                assert editor.get_line(row).plain == "\tZ"
+            assert editor.text == "\tZ\n\tZ"
+
+    asyncio.run(exercise())
+
+
+def test_horizontally_clipped_tabs_keep_all_visible_caret_cells() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 30)) as pilot:
+            editor = app.active_workspace.editor
+            line = "x" * 100 + "\t" + "z" * 200
+            editor.text = line + "\n" + line
+            editor._set_selections(Selection.cursor((0, 100)), [Selection.cursor((1, 100))])
+            await pilot.pause()
+            offset, _ = editor.wrapped_document.location_to_offset((0, 100))
+            editor.scroll_to(x=offset + 1, animate=False, force=True)
+            await pilot.pause()
+            assert int(editor.scroll_x) == offset + 1
+            viewport = editor.scrollable_content_region
+            composed = app.screen._compositor.render_strips()
+            for row in range(2):
+                for strip in (
+                    editor.render_line(row),
+                    composed[viewport.y + row].crop(viewport.x, viewport.right),
+                ):
+                    caret = strip.crop(
+                        editor.gutter_width, editor.gutter_width + editor.indent_width - 1
+                    )
+                    assert caret.text == " " * (editor.indent_width - 1)
+                    assert all(segment.style.underline is True for segment in caret)
+                    assert strip.cell_length == viewport.width
+            assert editor.text == line + "\n" + line
 
     asyncio.run(exercise())
