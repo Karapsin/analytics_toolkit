@@ -121,10 +121,7 @@ def telegram_approval(control: Any, gh: GitHub) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize("branch", ["codex/orchestrator-task", "codex/telegram-feature-task"])
-def test_context_mismatch_notice_preserves_hold_without_requesting_owner_answer(
-    control: Any,
-    branch: str,
-) -> None:
+def test_context_mismatch_notice_keeps_hold(control: Any, branch: str) -> None:
     gh = GitHub()
     gh.pr["head"]["ref"] = branch
     reason = "Feature context does not match the host-owned request."
@@ -224,7 +221,10 @@ def test_other_heads_or_actors_cannot_clear_the_label(
 
 @pytest.mark.parametrize(
     "reason",
-    ["Correction agent requires owner input.", "Feature context does not match the host-owned request."],
+    [
+        "Correction agent requires owner input.",
+        "Feature context does not match the host-owned request.",
+    ],
 )
 def test_approved_policy_does_not_clear_a_question_or_provenance_hold(
     merge_environment: Any,
