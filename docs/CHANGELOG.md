@@ -50,6 +50,8 @@ Generated from package version bumps and recent commit history.
 - Route nontrivial protected conflict publications to fresh correction planning while retaining sensitive-path denial and exact-head approval gates.
 - Preserve actionable context-blocked owner correction notices alongside waiting questions while suppressing local status retries and retaining delivery evidence.
 - Preserve replacement authority holds and late vetoes through shared atomic publication and correction-question recovery.
+- Preserve newer owner decisions during policy approval comment recovery in both pause and merge authorization checks.
+- Share exact-snapshot policy-comment recovery across pause and authorization checks, preserving newer owner decisions and active holds without private-approval fallback.
 
 ## 1.3.12.5 - 2026-10-14
 

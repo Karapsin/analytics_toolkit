@@ -394,4 +394,17 @@ controller readers with separate isolated rehearsal; protected controller
 activation still requires the owner's exact-head approval. Neither resolver
 decisions nor companion recovery evidence releases PR #25's provenance hold.
 
+
+Both `paused()` and `authorization_error()` snapshot the complete PR pause and
+current-head veto, including absent records, before looking up owner policy
+comments. One shared helper compares that exact snapshot under `BEGIN IMMEDIATE`
+and clears only unchanged owner-disapproval authority when the exact-head approval
+is strictly newer than every observed decision. A later disapproval, veto,
+evidence request, cancellation, or replacement hold survives an older lookup.
+Changed snapshots block that attempt without retry or fallback to private approval,
+so merge authorization cannot bypass the pause guard. Evidence and cancellation
+holds remain intact. GitHub calls stay outside the transaction, and displayed
+labels are repaired by normal reconciliation. Authenticated Telegram callbacks
+retain their separate owner-decision clearing contract.
+
 [Documentation overview](README.md)
