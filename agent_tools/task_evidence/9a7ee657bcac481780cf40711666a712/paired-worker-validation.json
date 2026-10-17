@@ -1,0 +1,156 @@
+{
+  "kind": "paired-worker-source-and-validation",
+  "repository": "Karapsin/self_host",
+  "commit": "dca97bd3fb8e2eb57184d2344be1aa5d56193383",
+  "source_base": "dbd01fe66fb3a53981c9517a60c4f10b2b747781",
+  "runtime_status": "SOURCE-PROPOSAL-NOT-DEPLOYED",
+  "current_sources": {
+    "agent_tools/tests/fixtures/status_producer_controller.json": "c851dedc4b440116fc040764f2c585986ad2a0276d7eca1b5526e33a6fff7903",
+    "agent_tools/tests/test_status_producers.py": "0be24b844793be6b113e0a43d67d8c377383ed6b31f9fc1f1a3606bec7ec52d9",
+    "self_host/services/github_agent/README.md": "d7d30290810e997a610ff726e0392b65389e9e8c2c5b9972cb4bebb9d5ea0ef7",
+    "self_host/services/github_agent/daemon.py": "1110324b375a1fbf9c282328c21e50d3802687f4d046a116a6ffbf4598bb07fc",
+    "self_host/services/github_agent/intake.py": "2683f66d02682554ee33c1b51e26caee553f338ffee231c27e19ea0666a74654",
+    "self_host/services/github_agent/labels.py": "a4798889a6b666b933c5c33a5a27c4f65e82b11a30cb283e780b3bef2a4407da"
+  },
+  "controller_fixture_hashes": {
+    ".github/agent/controller.py": "b00035df190c86becb01b74afa925b2f79a542e5f109b942021f3a219515d222",
+    ".github/agent/review_control.py": "b5f803d9000299774dba5f75334224175c377a342971e6f589db4882145d6535"
+  },
+  "independent_source_review": {
+    "kind": "independent-paired-status-producer-source-review",
+    "reviewer": "/root/review_status_producer_pair",
+    "revision": 4,
+    "verdict": "approved",
+    "approved": true,
+    "alignment": "aligned",
+    "candidate_packet": "/private/tmp/status-producer-paired-complete-candidate-v4.json",
+    "candidate_packet_sha256": "91f604122a2def08e4ef3ac86d7cea415cb83ab4bcb91aa76b9100b52dda02f0",
+    "root_task": "9a7ee657bcac481780cf40711666a712",
+    "bases": {
+      "analytics_toolkit": "98e4236a0431d9f94bd322691eb7c8b9de204d22",
+      "self_host": "dbd01fe66fb3a53981c9517a60c4f10b2b747781"
+    },
+    "reviewed_file_hashes": {
+      "analytics_toolkit": {
+        ".github/agent/controller.py": "b00035df190c86becb01b74afa925b2f79a542e5f109b942021f3a219515d222",
+        ".github/agent/review_control.py": "b5f803d9000299774dba5f75334224175c377a342971e6f589db4882145d6535",
+        "agent_tools/changelog/6ae20f384c6444a7b76449f0d4ca170d.md": "8bc53e3a95074673076663c4aa27bb008b473ca93b5a8959b1125f3f991ed3cb",
+        "agent_tools/task_evidence/9a7ee657bcac481780cf40711666a712/parent-objective.json": "e3291ee38262ec02e806ff110cee7bbbf3bcf0cd54dce94365bca1f778451c41",
+        "docs/GITHUB_AGENT_OPERATIONS.md": "e87f75cfcb1364eddb45d2c4493250cd2d0e0d800cc0a533f60b0ffd41ff2ca4",
+        "tests/repository/label_reconciliation.py": "73705dc2a7b39ec668d72d8ad557671eb9f8673460a986bcae704d8c7fff0ccb",
+        "tests/repository/publication_holds.py": "035ff3dbe1bd384c3fcfeed34aff0ca4ff0dae5e7dab4650261b7aa04750d964",
+        "tests/repository/status_producers.py": "9476d9834d99fea4c95133ff2e22e6a41f55a9cce3340fa0be1c9465d936c9ad"
+      },
+      "self_host": {
+        "agent_tools/tests/fixtures/status_producer_controller.json": "c851dedc4b440116fc040764f2c585986ad2a0276d7eca1b5526e33a6fff7903",
+        "agent_tools/tests/test_status_producers.py": "0be24b844793be6b113e0a43d67d8c377383ed6b31f9fc1f1a3606bec7ec52d9",
+        "self_host/services/github_agent/README.md": "d7d30290810e997a610ff726e0392b65389e9e8c2c5b9972cb4bebb9d5ea0ef7",
+        "self_host/services/github_agent/daemon.py": "1110324b375a1fbf9c282328c21e50d3802687f4d046a116a6ffbf4598bb07fc",
+        "self_host/services/github_agent/intake.py": "2683f66d02682554ee33c1b51e26caee553f338ffee231c27e19ea0666a74654",
+        "self_host/services/github_agent/labels.py": "a4798889a6b666b933c5c33a5a27c4f65e82b11a30cb283e780b3bef2a4407da"
+      }
+    },
+    "change_summary": "Routes controlled lifecycle-label mutations through one display-only per-PR transition, preserves authority and live ownership, observes internal work gates consistently, and binds compatible worker production paths to exact controller source fixtures.",
+    "summary": "Approved the final v4 paired source changes after complete patch review, full changed function/caller inspection, exact source/hash binding verification, and reassessment of all revisions. The v2 inconsistent SQLite gate-read blocker is fixed with one explicit read transaction and a two-connection WAL regression. The new regression closes its writer connection explicitly. No concrete source blockers remain. This source approval does not grant protected policy approval or confirm runtime activation, live acceptance, or all-PR completion.",
+    "findings": [],
+    "coverage": {
+      "complete_patch": true,
+      "all_14_candidate_file_bytes_and_sha256_verified": true,
+      "exact_paired_embedded_source_verified": true,
+      "complete_controller_and_review_control_implementations": true,
+      "complete_worker_labels_implementation": true,
+      "complete_changed_tests_and_parent_objective": true,
+      "all_changed_daemon_intake_callsites_and_affected_lifecycle_control_flow": true,
+      "all_changed_documentation_and_changelog": true,
+      "full_ast_status_producer_and_callsite_inventory_in_supplied_python_files": true,
+      "supporting_pending33_actual_schema_and_handoff_apis": true,
+      "unrelated_unchanged_large_file_lines": "Not re-audited line by line; full tracked diffs and affected consumers were reviewed against complete hash-verified files.",
+      "unresolved_changed_scope": []
+    },
+    "reviewed_behaviors": [
+      "All direct controller needs-user producers and writer acquire/release use the shared status_transition; the real worker phase writer and all three acquisition callsites select the trusted capability.",
+      "Per-state-directory/repository/PR RLock acquisition is bounded; nonblocking POSIX flock serializes cooperating processes; thread-local depth prevents same-thread advisory reentry deadlock; finally unwinds ownership. Different PR keys are independent.",
+      "The transition preserves unrelated labels, rechecks exact head/state/authoritative issue labels/read-only attention after mutations, removes conflicts before adding status, and defers persistent errors or exhausted convergence. It does not process owner comments or mutate authority.",
+      "None preserves unknown phase ownership; release removes writing only. Closed owner attention suppresses displayed phases while active/unknown Futures and private ownership stay intact; without attention the live callback preserves its phase; reopening stops the old cleanup.",
+      "Pure authorization_error(recover=False) preserves default recovery behavior for existing callers and never invokes policy recovery; approval_attention only projects readiness and remains separate from merge authority.",
+      "display_work_pending checks real known additive pending33 schemas in one explicit SQLite read transaction, handles absent capabilities conservatively, and lets malformed present schemas raise rather than claiming readiness. Current versus stale head binding is covered.",
+      "Exact-row/veto retirement SQL is unchanged; display recovery follows the committed result, replacement authority wins, interrupted display cleanup retries when the pause is already absent, and trusted publication reacquires its actual writer display after recovery.",
+      "Compatibility fallback is selected by callable capability absence only; execution failure of the deployed helper never triggers an unsafe legacy mutation.",
+      "Paired tests use actual request classification, SQLite authority, real Futures, actual pending33 hold/renew APIs and complete immutable controller bytes. Source fixtures preserve task/base/plan identity and make no protected approval or activation claim."
+    ],
+    "resolved_findings": [
+      {
+        "prior_review": "/private/tmp/status-producer-paired-source-review-v2.json",
+        "id": "read internal work gates in one SQLite snapshot",
+        "resolution": "BEGIN precedes all gate reads; real two-connection WAL amendment-to-pause transfer regression retains the old consistent snapshot."
+      },
+      {
+        "id": "explicitly close newly added SQLite writer",
+        "resolution": "The race test wraps the writer in contextlib.closing plus its transaction context."
+      }
+    ],
+    "accepted_scope_clarifications": [
+      "Owner attention is the sole displayed status even on closed PRs while an existing Future finishes; display suppression does not release ownership.",
+      "Ordinary renewed planning and verified coordinator work are internal work gates, not new owner questions.",
+      "Remote APIs provide no cross-request label compare-and-swap; the guarantee is bounded convergence for observed stable state plus retriable failures, with periodic repair for interruptions and external writers."
+    ],
+    "checks_observed": {
+      "companion_managed_prepush": {
+        "fingerprint": "cde44e33b5f28f764f23a70fd2f6a6ed73d09395f925f90e34090870a5fc817c",
+        "level": "prepush",
+        "python": "3.14.3 (main, Feb  3 2026, 15:32:20) [Clang 17.0.0 (clang-1700.6.3.2)]",
+        "ok": true
+      },
+      "reviewer_executed_tests": false,
+      "root_focused_and_mandatory_precommit": "Parent-managed validation still required; no claim made by this review.",
+      "exact_commit_ci": "Pending publication; not granted by source review."
+    },
+    "authority_limits": {
+      "source_edited": false,
+      "candidate_programs_or_tests_executed_by_reviewer": false,
+      "pi_state_touched": false,
+      "github_or_telegram_actions": false,
+      "protected_exact_head_approval": false,
+      "runtime_activation_or_live_acceptance": false,
+      "all_relevant_prs_merged": false
+    }
+  },
+  "independent_review_sha256": "9758920977d56b819344ce7d559e7b0bb1cc5bbb00172b90679a0d9ebdd786e1",
+  "local_prepush": {
+    "fingerprint": "cde44e33b5f28f764f23a70fd2f6a6ed73d09395f925f90e34090870a5fc817c",
+    "level": "prepush",
+    "python": "3.14.3 (main, Feb  3 2026, 15:32:20) [Clang 17.0.0 (clang-1700.6.3.2)]",
+    "ok": true
+  },
+  "exact_commit_CI": {
+    "repository": "Karapsin/self_host",
+    "sha": "dca97bd3fb8e2eb57184d2344be1aa5d56193383",
+    "branch": "dev",
+    "status": "success",
+    "started": 1792215638.968839,
+    "workflows": [
+      {
+        "name": "Repository Checks",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Karapsin/self_host/actions/runs/39007134282"
+      }
+    ]
+  },
+  "source_evidence": {
+    "path": "operator/status-producers-dca97bd3fb8e/index.json",
+    "sha256": "73ce090ebedaf51a9ed8a46efb498b1d99359232864033e874c7220a966b02da",
+    "complete_wrapped_source_files": 6,
+    "source_packet_sha256": "4ca7420a59ceece5a1047014eb9bac695ad5dd3b06c23c03edd9601a30f85020",
+    "acceptance_requirement": "Publish and verify the complete immutable index on the review host before final independent review. Every full controller/worker source hash must match validated fixtures; changed bytes require refreshed paired evidence."
+  },
+  "remaining_acceptance": [
+    "Mandatory local precommit and signed ATK PR publication",
+    "Fresh exact-head independent implementation review and required GitHub checks",
+    "Required delegated exact-head protected decision",
+    "Independently reviewed isolated rollout rehearsal and verified actual controller/worker activation",
+    "Live labels, coordinator recovery, actual PR9 diagnostic assignment and subsequent visual correction",
+    "All relevant PRs and resulting repairs successfully merged with dev"
+  ],
+  "authority": "Complete source and validation evidence only. No owner fact, protected approval, dependency completion, current runtime activation, visual pass or all-PR completion claim."
+}

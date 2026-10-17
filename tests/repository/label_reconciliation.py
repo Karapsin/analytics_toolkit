@@ -57,7 +57,7 @@ class GitHub:
                 message = "Transient label API failure"
                 raise RuntimeError(message)
             self.pr["labels"] = [
-                item for item in self.pr["labels"] if item["name"] != "agent:needs-user"
+                item for item in self.pr["labels"] if item["name"] != path.rsplit("/", 1)[-1]
             ]
             if self.on_delete:
                 self.on_delete()
@@ -224,12 +224,9 @@ def test_other_heads_or_actors_cannot_clear_the_label(
 
 @pytest.mark.parametrize(
     "reason",
-    [
-        "Correction agent requires owner input.",
-        "Feature context does not match the host-owned request.",
-    ],
+    ["Correction agent requires owner input.", "Feature context does not match the host-owned request."],
 )
-def test_approved_policy_does_not_clear_a_genuine_question_hold(
+def test_approved_policy_does_not_clear_a_question_or_provenance_hold(
     merge_environment: Any,
     tmp_path: Path,
     reason: str,
@@ -262,7 +259,8 @@ def test_concurrent_new_head_or_hold_restores_label_and_blocks_merge(
 
     gh.on_delete = changed
     controller.merge(gh, 17, tmp_path)
-    assert {item["name"] for item in gh.pr["labels"]} == {"agent:needs-user", "feature"}
+    expected = {"feature"} if race == "head" else {"agent:needs-user", "feature"}
+    assert {item["name"] for item in gh.pr["labels"]} == expected
     assert not any(path.endswith("/merge") for path, method in gh.mutations)
     assert gh.pr["state"] == "open"
 
@@ -312,6 +310,120 @@ def test_unready_policy_candidate_is_not_mislabelled_as_waiting_for_user(
     controller.merge(gh, 17, tmp_path)
     assert "agent:needs-user" in {item["name"] for item in gh.pr["labels"]}
     assert gh.pr["state"] == "open"
+
+
+def test_scoped_merge_ignores_continuous_unrelated_work_and_protects_cleanup(
+    merge_environment: Any, monkeypatch: Any, tmp_path: Path
+) -> None:
+    gh = GitHub()
+    gh.owner_approval()
+    pull = gh.pull
+    pulled: list[int] = []
+    cleanup_calls: list[dict[str, Any]] = []
+    dispatches: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(gh, "pulls", lambda: [{"number": 25}, {"number": 1}])
+
+    def selected_pull(number: int) -> dict[str, Any]:
+        assert number == 1  # The continuously owned PR is never inspected or mutated.
+        pulled.append(number)
+        return pull(number)
+
+    def cleanup(actual_gh: Any, work: Path, **kwargs: Any) -> None:
+        assert actual_gh is gh
+        assert work == tmp_path
+        cleanup_calls.append(kwargs)
+
+    original = controller.trusted_module
+    monkeypatch.setattr(gh, "pull", selected_pull)
+    monkeypatch.setattr(
+        controller,
+        "trusted_module",
+        lambda name: (
+            SimpleNamespace(cleanup=cleanup) if name == "branch_cleanup" else original(name)
+        ),
+    )
+    monkeypatch.setattr(controller, "monitor", lambda gh: (1, {"candidates": {}}))
+    monkeypatch.setattr(controller, "dispatch", lambda *args: dispatches.append(args))
+    active = {"codex/correction-unpublished", "codex/live-writer"}
+    # Match the worker's scoped call while unrelated admissions/retries continue.
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers={1}, active_branches=active)
+    assert gh.pr["state"] == "closed"
+    assert set(pulled) == {1}
+    assert cleanup_calls == [{"active_branches": active, "force": True}]
+    assert active == {"codex/correction-unpublished", "codex/live-writer"}
+    assert dispatches == [(gh, "integration", {"candidate": "a" * 40, "number": 1})]
+    assert [path for path, method in gh.mutations if method == "PUT"] == ["pulls/1/merge"]
+
+
+def test_empty_scoped_selection_never_means_merge_all(
+    merge_environment: Any, monkeypatch: Any, tmp_path: Path
+) -> None:
+    gh = GitHub()
+    gh.owner_approval()
+
+    def unexpected_pull(number: int) -> dict[str, Any]:
+        pytest.fail("An empty selection must not inspect or mutate a PR")
+
+    monkeypatch.setattr(gh, "pull", unexpected_pull)
+    monkeypatch.setattr(gh, "pulls", lambda: [{"number": 1}])
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers=set())
+    assert not gh.mutations
+
+
+@pytest.mark.parametrize(
+    "gate",
+    [
+        "ci",
+        "review",
+        "writer",
+        "mergeability",
+        "policy",
+        "question",
+        "signature",
+        "base",
+    ],
+)
+def test_scoped_selection_cannot_bypass_merge_authority(
+    merge_environment: Any, monkeypatch: Any, tmp_path: Path, gate: str
+) -> None:
+    gh = GitHub()
+    if gate != "policy":
+        gh.owner_approval()
+    if gate == "ci":
+        gh.fast[1]["conclusion"] = "failure"
+    elif gate == "review":
+        gh.fast[0]["external_id"] = "old-base"
+    elif gate == "writer":
+        gh.pr["labels"].append({"name": "agent:writing"})
+    elif gate == "mergeability":
+        gh.pr["mergeable"] = False
+    elif gate == "question":
+        insert_hold(merge_environment)
+    elif gate == "signature":
+        monkeypatch.setattr(controller, "signed_head", lambda *args: False)
+    elif gate == "base":
+        bases = iter(["base", "new-base"])
+        monkeypatch.setattr(gh, "base", lambda: next(bases))
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers={1})
+    assert gh.pr["state"] == "open"
+    assert not any(path.endswith("/merge") for path, method in gh.mutations)
+
+
+def test_scoped_merge_rejects_invalid_task_provenance(
+    merge_environment: Any, monkeypatch: Any, tmp_path: Path
+) -> None:
+    gh = GitHub()
+    gh.owner_approval()
+
+    def invalid_metadata(*args: Any) -> Any:
+        message = "Signed task context changed"
+        raise ValueError(message)
+
+    monkeypatch.setattr(controller, "task_metadata", invalid_metadata)
+    with pytest.raises(ValueError, match="Signed task context changed"):
+        controller.merge_selected(gh, 17, tmp_path, pr_numbers={1})
+    assert gh.pr["state"] == "open"
+    assert not any(path.endswith("/merge") for path, method in gh.mutations)
 
 
 def test_rejected_bot_repair_is_paused_until_owner_resumes(
@@ -381,6 +493,155 @@ def test_rejected_bot_repair_is_paused_until_owner_resumes(
     assert pr["labels"] == [{"name": "agent:needs-user"}]
 
 
+def test_revision_retry_backlog_is_suppressed_without_losing_originals(control: Any) -> None:
+    payload = {
+        "text": "Worker deferred this phase; private logs retained. Retry is queued.",
+        "request_id": "69db3ccc1579",
+        "telegram_feature": False,
+        "turn_revision": 30,
+        "render_version": 1,
+        "rendered_parts": ["previously rendered status"],
+        "next_part": 1,
+    }
+    # Reproduce the observed distinct keys, including pre-existing queued rows
+    # that bypass any future enqueue-time filter.
+    with control.connect() as db:
+        for revision in range(30, 116):
+            db.execute(
+                "INSERT INTO notifications(key,kind,payload,message_id) VALUES (?,?,?,?)",
+                (
+                    f"request:69db3ccc1579:{revision}:plan:deferred",
+                    "request",
+                    json.dumps(payload),
+                    724,
+                ),
+            )
+    control.enqueue("approval:current", "approval", {"head": "a" * 40}, buttons=True)
+    events = control.pending()
+    assert [event["key"] for event in events] == ["approval:current"]
+    assert events[0]["token"]
+    with control.connect() as db:
+        rows = db.execute("SELECT * FROM notifications WHERE kind='request'").fetchall()
+    assert len(rows) == 86
+    assert all(row["sent"] == -1 and row["message_id"] == 724 for row in rows)
+    assert all(json.loads(row["payload"]) == payload for row in rows)
+    control.delivery("approval:current", delay=30)
+    assert control.pending() == []
+
+
+@pytest.mark.parametrize(
+    ("key", "kind", "payload"),
+    [
+        ("request:local:31:waiting", "request", {"telegram_feature": False}),
+        ("request:telegram:31:plan:deferred", "request", {"telegram_feature": True}),
+        ("legacy-request", "request", {"text": "Origin not established"}),
+        ("confirm:answer", "request-auth", {"telegram_feature": False}),
+        ("approval:head", "approval", {}),
+        ("merged:dev", "merged", {}),
+        ("main:promotion", "main", {}),
+        ("release:version", "release", {}),
+    ],
+)
+def test_filter_preserves_questions_and_existing_delivery_retry_contract(
+    control: Any, key: str, kind: str, payload: dict[str, Any]
+) -> None:
+    control.enqueue(key, kind, payload)
+    event = control.pending()[0]
+    assert event["key"] == key
+    assert json.loads(event["payload"]) == payload
+    control.delivery(key, delay=30)
+    assert control.pending() == []
+    control.delivery(key, message_id=99)
+    assert control.pending() == []
+
+
+def test_scan_and_delivery_batches_stay_bounded(control: Any) -> None:
+    for revision in range(205):
+        control.enqueue(
+            f"request:local:{revision}:plan:deferred",
+            "request",
+            {"telegram_feature": False},
+        )
+    for number in range(25):
+        control.enqueue(f"approval:{number}", "approval", {})
+    assert control.pending() == []
+    events = control.pending()
+    assert len(events) == 20
+    for event in events:
+        control.delivery(event["key"], message_id=1)
+    assert len(control.pending()) == 5
+
+
+def test_historically_suppressed_owner_notice_is_left_untouched(control: Any) -> None:
+    with control.connect() as db:
+        db.execute(
+            "INSERT INTO notifications(key,kind,payload,sent,retry,token,message_id) "
+            "VALUES (?,?,?,-1,?,?,?)",
+            (
+                "request:local:30:context-blocked",
+                "request",
+                json.dumps({"telegram_feature": False, "text": "Send a correction."}),
+                123,
+                "retained-receipt",
+                724,
+            ),
+        )
+        original = dict(db.execute("SELECT * FROM notifications").fetchone())
+    assert control.pending() == []
+    with control.connect() as db:
+        assert dict(db.execute("SELECT * FROM notifications").fetchone()) == original
+
+
+@pytest.mark.parametrize("pre_existing", [False, True])
+def test_context_blocked_correction_notice_survives_status_suppression(
+    control: Any, monkeypatch: Any, pre_existing: bool
+) -> None:
+    monkeypatch.setattr(control.time, "time", lambda: 1000)
+    revision = 30
+    key = f"request:69db3ccc1579:{revision}:context-blocked"
+    # Intake completes the waiting turn before building this notice, incrementing
+    # turn_revision. No waiting_notice means no separate :waiting event is queued.
+    payload = {
+        "title": "Feature request 69db3ccc1579",
+        "text": "Task context exceeds the limit. Request paused; send a correction.",
+        "request_id": "69db3ccc1579",
+        "turn_revision": revision + 1,
+        "telegram_feature": False,
+    }
+    original = json.dumps(payload)
+    status_key = f"request:69db3ccc1579:{revision}:plan:deferred"
+    control.enqueue(status_key, "request", {"telegram_feature": False})
+    if pre_existing:
+        with control.connect() as db:
+            db.execute(
+                "INSERT INTO notifications(key,kind,payload,message_id) VALUES (?,?,?,?)",
+                (key, "request", original, 724),
+            )
+    else:
+        control.enqueue(key, "request", payload)
+    events = control.pending()
+    assert [event["key"] for event in events] == [key]
+    event = events[0]
+    assert event["payload"] == original
+    assert event["message_id"] == (724 if pre_existing else None)
+    with control.connect() as db:
+        status = db.execute("SELECT * FROM notifications WHERE key=?", (status_key,)).fetchone()
+        assert status["sent"] == -1
+
+    control.delivery(key, delay=30)
+    assert control.pending() == []
+    with control.connect() as db:
+        delayed = dict(db.execute("SELECT * FROM notifications WHERE key=?", (key,)).fetchone())
+    assert delayed == {**event, "retry": 1030}
+    monkeypatch.setattr(control.time, "time", lambda: 1030)
+    assert control.pending() == [delayed]
+    control.delivery(key, message_id=99)
+    assert control.pending() == []
+    with control.connect() as db:
+        delivered = dict(db.execute("SELECT * FROM notifications WHERE key=?", (key,)).fetchone())
+    assert delivered == {**delayed, "sent": 1, "message_id": 99}
+
+
 @pytest.mark.parametrize(
     "case",
     [
@@ -432,6 +693,7 @@ def test_orchestrator_publication_recovers_only_enrolled_exact_head(
     with control.connect() as db:
         held = db.execute("SELECT reason FROM pauses").fetchone()
     assert (held is None) == (case == "valid")
-    # Reconciliation separately owns displayed labels and protected approval.
-    assert gh.pr["labels"] == [{"name": control.PAUSED}]
+    # Renewed planning remains held without manufacturing an owner question.
+    expected = [] if case in {"owner-hold", "valid"} else [{"name": control.PAUSED}]
+    assert gh.pr["labels"] == expected
     assert not control.approved(gh.repository, gh.pr["number"], gh.pr["head"]["sha"])

@@ -55,13 +55,14 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
     proto = trusted_module("task_context")
     body = pr.get("body") or ""
     head = pr["head"]["sha"]
-    if proto.MARKER not in body and pr["user"].get("type") == "Bot":
+    if (proto.MARKER not in body and proto.ARCHIVE_MARKER not in body
+            and pr["user"].get("type") == "Bot"):
         # Older App repairs inherit the already-authorized standing repair task.
         # The immutable signed head is part of this legacy task identity.
         value = proto.repair_context(head, "legacy-repair:" + head)
         actor = value["producer_id"]
     else:
-        value = proto.parse(body)
+        value = proto.parse(body, api=gh.api)
         if value["source"] == "standing-integration-repair" and pr["user"].get("type") != "Bot":
             raise ValueError("Only the trusted App can inherit the standing repair authority.")
         directory = os.environ.get("AGENT_CONTROL_DIR")
@@ -173,12 +174,12 @@ class GitHub:
         self.api(f"issues/{number}/comments", "POST", {"body": body[:60000]})
 
     def label(self, number: int, *, acquire: bool) -> None:
-        if acquire:
-            self.api(f"issues/{number}/labels", "POST", {"labels": [WRITER]})
-        else:
-            labels = self.api(f"issues/{number}/labels")
-            if any(label["name"] == WRITER for label in labels):
-                self.api(f"issues/{number}/labels/{WRITER}", "DELETE")
+        controls = trusted_module("review_control")
+        pr = self.pull(number)
+        if pr["state"] == "open":
+            controls.status_transition(self, number, pr["head"]["sha"],
+                (lambda fresh: WRITER) if acquire else (lambda fresh: None),
+                remove=frozenset() if acquire else frozenset({WRITER}))
 
 
 def trusted(pr: dict[str, Any], repository: str) -> bool:
@@ -225,7 +226,8 @@ def policy_path(path: str) -> bool:
         ".github/required-workflows.json", "agent_tools/machine_signing.py"})
 
 
-def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True) -> str | None:
+def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True, *,
+                        recover: bool = True) -> str | None:
     head = pr["head"]["sha"]
     if not trusted(pr, gh.repository) or not signed_head(gh.repository, head):
         return "Only the repository owner's PRs signed by an enrolled machine are automated."
@@ -237,21 +239,42 @@ def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = T
         return None
     owner = gh.repository.split("/")[0].casefold()
     approval = "/agent approve-policy " + head
-    comments = gh.pages(f"issues/{pr['number']}/comments?per_page=100")
     controls = trusted_module("review_control")
-    declined = controls.veto(gh.repository, pr["number"], head)
-    if any(comment["user"].get("type") == "User"
-           and comment["user"]["login"].casefold() == owner
-           and comment["body"].strip() == approval
-           and (not declined or datetime.fromisoformat(comment.get("created_at", "1970-01-01T00:00:00Z")
-                 .replace("Z", "+00:00")).timestamp() > declined) for comment in comments):
-        if declined:
-            controls.clear_owner_decline(gh, pr["number"], head)
-        return None
+    snapshot = controls.authority_snapshot(gh.repository, pr["number"], head)
+    comments = gh.pages(f"issues/{pr['number']}/comments?per_page=100")
+    approvals = [
+        datetime.fromisoformat(comment.get("created_at", "1970-01-01T00:00:00Z")
+                               .replace("Z", "+00:00")).timestamp()
+        for comment in comments if comment["user"].get("type") == "User"
+        and comment["user"]["login"].casefold() == owner
+        and comment["body"].strip() == approval]
+    if approvals:
+        if not recover:
+            # UI observation never processes comments into private authority.
+            # A changed/newer record or a non-owner hold keeps the denial.
+            current = controls.authority_snapshot(gh.repository, pr["number"], head)
+            if (current == snapshot
+                    and (current[0] is None or current[0]["reason"].startswith("Owner disapproved"))
+                    and all(max(approvals) > item["created"] for item in current if item is not None)):
+                return None
+            return "Policy approval recovery blocked by newer authority or an active hold."
+        if controls.recover_policy_comment(
+                gh.repository, pr["number"], head, max(approvals), expected=snapshot):
+            return None
+        return "Policy approval recovery blocked by newer authority or an active hold."
     if (os.environ.get("AGENT_STATE_DIR")
-            and trusted_module("review_control").approved(gh.repository, pr["number"], head)):
+            and controls.approved(gh.repository, pr["number"], head)):
         return None
     return "Policy changes require the owner's exact-head approval comment: `" + approval + "`."
+
+
+def approval_attention(gh: GitHub, pr: dict[str, Any], app_id: int) -> bool:
+    """Pure display projection; normal authorization owns decision recovery."""
+    controls = trusted_module("review_control")
+    if controls.display_work_pending(gh, pr):
+        return False  # Current holds are classified separately, never approval readiness.
+    return bool(authorization_error(gh, pr, recover=False)) and approval_ready(
+        pr, gh.checks(pr["head"]["sha"]), gh.base(), app_id)
 
 
 def signing_options() -> list[str]:
@@ -485,7 +508,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
             continue
         controls = trusted_module("review_control")
         if controls.paused(gh, pr):
-            controls.reconcile_label(gh, pr, approval_required=True)
+            controls.reconcile_label(gh, pr, approval_required=False)
             continue
         try:
             metadata = task_metadata(gh, pr)
@@ -501,7 +524,8 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                     "output": {"title": "Authorization required", "summary": denial}})
             continue
         approval_required = bool(authorization_error(gh, pr)) and approval_ready(pr, checks, base, app_id)
-        if not controls.reconcile_label(gh, pr, approval_required=approval_required):
+        if not controls.reconcile_label(gh, pr, approval_required=approval_required,
+                approval_check=lambda fresh: approval_attention(gh, fresh, app_id)):
             continue
         fast = fast_check(checks)
         comparison = gh.api(f"compare/{base}...{head}")
@@ -643,9 +667,22 @@ def fold(work: Path) -> bool:
     end = len(text) if end < 0 else end
     # Preserve the complete section, including wrapped bullets and paragraphs.
     body = text[start:end].strip()
-    additions = "\n".join(summaries)
-    body = body + "\n" + additions if body else additions
-    changelog.write_text(text[:start] + "\n\n" + body + "\n\n" + text[end:].lstrip("\n"))
+    lines = body.splitlines()
+    represented = set()
+    for index, line in enumerate(lines):
+        if not line.startswith("- "):
+            continue
+        following = index + 1
+        while following < len(lines) and not lines[following].strip():
+            following += 1
+        if (following == len(lines) or lines[following].startswith(("- ", "#"))
+                or (following > index + 1 and not lines[following][0].isspace())):
+            represented.add(line)
+    additions = "\n".join(
+        summary for summary in dict.fromkeys(summaries) if summary not in represented)
+    if additions:
+        body = body + "\n" + additions if body else additions
+        changelog.write_text(text[:start] + "\n\n" + body + "\n\n" + text[end:].lstrip("\n"))
     for path in fragments:
         path.unlink()
     return True
@@ -740,27 +777,58 @@ def inherited_controller_path(task: dict[str, Any], work: Path, path: str) -> bo
     return original == head and base != original and staged == base
 
 
-def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dict[str, Any] | None:
+def publication_authority(
+    gh: GitHub, task: dict[str, Any], *, renewal_hold: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Recheck the original authority after potentially interrupted archive I/O."""
+    if gh.base() != task["base"]:
+        raise RuntimeError("Dev changed during execution; discard the stale decision.")
+    if not task["number"]:
+        return {}
+    pr = gh.pull(task["number"])
+    if not trusted(pr, gh.repository) or pr["head"]["sha"] != task["head"]:
+        raise RuntimeError("Stale model output; PR changed during execution.")
+    denial = authorization_error(gh, pr, False)
+    if denial:
+        raise RuntimeError(denial)
+    controls = trusted_module("review_control")
+    held = controls.paused(gh, pr)
+    if controls.coordinator_held(gh, pr):
+        raise RuntimeError("PR is awaiting coordinator dependency verification.")
+    if renewal_hold is not None:
+        # Host-only publication capability, never a task/model field. Keep the
+        # exact amendment active for discovery/merge until the signed successor
+        # has been verified. Replacement holds cannot inherit this capability.
+        with controls.connect() as db:
+            row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
+                             (gh.repository, pr["number"])).fetchone()
+        if (task["kind"] != "feature" or row is None or dict(row) != renewal_hold
+                or task["branch"] != pr["head"]["ref"] or row["head"] != task["head"]
+                or row["reason"] != "Owner changed the request; renewed planning is required."
+                or not controls.enrolled_feature(gh.repository, pr["head"]["ref"], task["task_digest"])
+                or controls.veto(gh.repository, pr["number"], task["head"])):
+            raise RuntimeError("Feature amendment authority changed during publication.")
+    elif held:
+        raise RuntimeError("PR is awaiting user instructions.")
+    metadata = task_metadata(gh, pr)
+    if metadata["task_digest"] != task.get("previous_task_digest", task["task_digest"]):
+        raise RuntimeError("Task context changed while the reviewer was running.")
+    return pr
+
+
+def publish(
+    gh: GitHub, task: dict[str, Any], artifact: Path, work: Path, *,
+    renewal_hold: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     number = task["number"]
     try:
         if not (artifact / "task.json").exists():
             raise RuntimeError("Model job failed; inspect its Actions run before retrying.")
         if json.loads((artifact / "task.json").read_text()) != task:
             raise RuntimeError("Artifact task identity does not match the claimed job.")
-        if gh.base() != task["base"]:
-            raise RuntimeError("Dev changed during execution; discard the stale decision.")
-        if number:
-            pr = gh.pull(number)
-            if not trusted(pr, gh.repository) or pr["head"]["sha"] != task["head"]:
-                raise RuntimeError("Stale model output; PR changed during execution.")
-            denial = authorization_error(gh, pr, False)
-            if denial:
-                raise RuntimeError(denial)
-            if trusted_module("review_control").paused(gh, pr):
-                raise RuntimeError("PR is awaiting user instructions.")
-            metadata = task_metadata(gh, pr)
-            if metadata["task_digest"] != task.get("previous_task_digest", task["task_digest"]):
-                raise RuntimeError("Task context changed while the reviewer was running.")
+        correction_scope = (trusted_module("review_control").correction_snapshot(gh.repository, number)
+                            if number and task["kind"] == "conflict" else None)
+        pr = publication_authority(gh, task, renewal_hold=renewal_hold)
         if task["kind"] == "review":
             receipt = json.loads((artifact / "review-execution.json").read_text())
             verify_review_execution(task, receipt)
@@ -822,19 +890,45 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                     gh.comment(issue, message)
                     evidence.record(task, outcome)
                 return {"status": "blocked"}
+        proto = trusted_module("task_context")
+        prefix = ((pr.get("body") or "").split("## User task", 1)[0] if number else
+                  ("Owner-requested Telegram feature. " if task["kind"] == "feature" else
+                   "Automated integration repair. ")
+                  + "Includes a fast regression test; requires independent review and fast CI.")
+        # Preflight before patch/commit/push or archive writes. Metadata-only
+        # archives never change the candidate tree or its visual receipt.
+        proto.publication(task["user_task"], prefix=prefix, repository=gh.repository)
         if not patch.read_bytes().strip() and task["kind"] != "conflict":
             raise RuntimeError("No repair produced. Diagnose credentials/infrastructure explicitly.")
         if patch.read_bytes().strip():
             command("git", "apply", "--index", str(patch.resolve()), cwd=work)
         paths = command("git", "diff", "--cached", "--name-only", task["head"], cwd=work).splitlines()
+        protected_conflicts: list[str] = []
         for path in paths:
             sensitive = path.startswith(".git/") or path in {".connections", ".env"}
             protected = (path.startswith(".github/agent/")
                          or path == ".github/workflows/github-agent.yml")
-            if sensitive or (protected and task["kind"] not in {"feature", "correction"}
-                             and (task["kind"] != "conflict"
-                                  or not inherited_controller_path(task, work, path))):
+            if sensitive:
                 raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+            if protected and task["kind"] not in {"feature", "correction"}:
+                if task["kind"] != "conflict":
+                    raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+                if not inherited_controller_path(task, work, path):
+                    protected_conflicts.append(path)
+        if protected_conflicts:
+            if not number:
+                raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
+            reason = ("Protected conflict resolution requires a fresh correction plan and independent review: "
+                      + ", ".join(protected_conflicts)
+                      + ". Preserve the existing PR changes and current dev; protected exact-head approval still applies.")
+            pr = publication_authority(gh, task)
+            queued = trusted_module("review_control").require_correction(
+                gh.repository, number, task["head"], task["task_digest"], reason,
+                pr.get("title", "PR changes"), expected=correction_scope)
+            if not queued:
+                raise RuntimeError("Correction findings changed during execution; preserve the newer request.")
+            raise RuntimeError("Repair modifies controller or sensitive files; fresh correction planning queued. "
+                               + reason)
         if task["kind"] == "repair" and not any(path.startswith("tests/") and path.endswith(".py")
                                                  for path in paths):
             raise RuntimeError("Integration repair must include a fast regression test.")
@@ -844,7 +938,6 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
         parents = ["-p", task["head"]]
         if task["kind"] in {"conflict", "repair", "feature", "correction"} and task["base"] != task["head"]:
             parents.extend(["-p", task["base"]])
-        proto = trusted_module("task_context")
         message = "GitHub agent: " + task["kind"] + proto.trailers(task["user_task"], task["producer_id"])
         commit = command("git", *signing_options(), "commit-tree", "-S", tree, *parents,
                          "-m", message, cwd=work)
@@ -857,19 +950,20 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                     raise RuntimeError("Existing feature branch differs; publication recovery requires owner correction.")
                 proto.verify_commit(task["user_task"], command("git", "log", "-1", "--format=%B", existing_head, cwd=work))
                 commit = existing_head
+        body = proto.publish(task["user_task"], api=gh.api, repository=gh.repository, prefix=prefix)
+        current = publication_authority(gh, task, renewal_hold=renewal_hold)
+        if number and current.get("body") != pr.get("body"):
+            raise RuntimeError("PR description changed during archive publication.")
         push = ["git", "push"]
         if number:
             push.append(f"--force-with-lease=refs/heads/{task['branch']}:{task['head']}")
         command(*push, "origin", f"{commit}:refs/heads/{task['branch']}", cwd=work)
         if number:
-            prefix = (pr.get("body") or "").split("## User task", 1)[0]
-            gh.api(f"pulls/{number}", "PATCH", {"body": prefix + "\n\n" + proto.render(task["user_task"])})
+            gh.api(f"pulls/{number}", "PATCH", {"body": body})
         if not number:
             existing_pr = next((item for item in gh.pulls() if item["head"]["ref"] == task["branch"]), None)
             pr = existing_pr or gh.api("pulls", "POST", {"title": task.get("title", "Repair post-merge integration failures"),
-                "head": task["branch"], "base": "dev", "body": ("Owner-requested Telegram feature. " if task["kind"] == "feature" else "Automated integration repair. ")
-                + "Includes a fast regression test; requires independent review and fast CI.\n\n"
-                + proto.render(task["user_task"])})
+                "head": task["branch"], "base": "dev", "body": body})
             if task["kind"] != "feature":
                 gh.comment(pr["number"], "Integration runs: " + ", ".join(str(x) for x in task["runs"]))
         if task["kind"] in {"feature", "correction"}:
@@ -888,21 +982,41 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
 
 
 def merge(gh: GitHub, app_id: int, work: Path) -> None:
+    merge_selected(gh, app_id, work, pr_numbers=None)
+
+
+def merge_selected(
+    gh: GitHub, app_id: int, work: Path, *,
+    pr_numbers: set[int] | None, active_branches: set[str] | None = None,
+) -> None:
+    """Apply every merge gate to only the supervisor-selected, unowned PRs."""
+    selected = None if pr_numbers is None else set(pr_numbers)
+    protected_branches = set(active_branches or ())
     for item in gh.pulls():
+        if selected is not None and item["number"] not in selected:
+            continue
         pr = gh.pull(item["number"])
         if not trusted(pr, gh.repository):
             continue
         head, base = pr["head"]["sha"], gh.base()
         denial = authorization_error(gh, pr)
+        if denial == "Policy approval recovery blocked by newer authority or an active hold.":
+            # Label reconciliation calls paused(), which can recover policy
+            # comments too. Never retry a failed snapshot against refreshed rows
+            # during this merge attempt, even if the replacement is older.
+            continue
         controls = trusted_module("review_control")
         checks = gh.checks(head)
-        approval_required = bool(denial) and (
+        approval_required = bool(denial) and not controls.paused(gh, pr) and (
             bool(authorization_error(gh, pr, False)) or approval_ready(pr, checks, base, app_id))
-        if not controls.reconcile_label(gh, pr, approval_required=approval_required):
+        if not controls.reconcile_label(gh, pr, approval_required=approval_required,
+                approval_check=lambda fresh: approval_attention(gh, fresh, app_id)):
             continue
         if denial or controls.paused(gh, pr):
             continue
-        task_metadata(gh, pr)
+        metadata = task_metadata(gh, pr)
+        if controls.correction(gh.repository, pr["number"], head, metadata["task_digest"]):
+            continue  # Pending renewed planning also gates an earlier green review.
         if not ready(pr, checks, base, app_id):
             continue
         # Folding/rebasing must already have happened before final review.
@@ -922,7 +1036,8 @@ def merge(gh: GitHub, app_id: int, work: Path) -> None:
         # GitHub protection also enforces fast checks; expected head rejects races.
         result = gh.api(f"pulls/{pr['number']}/merge", "PUT", {"sha": head, "merge_method": "squash"})
         if result.get("merged"):
-            trusted_module("branch_cleanup").cleanup(gh, work, force=True)
+            trusted_module("branch_cleanup").cleanup(
+                gh, work, active_branches=protected_branches, force=True)
 
 
 def cleanup_branches(gh: GitHub, *, active_branches: set[str] | None = None) -> dict[str, Any]:

@@ -109,3 +109,42 @@ def test_policy_notice_carries_assessed_digest_and_keeps_exact_head_callback(con
     assert payload["command"] == "/agent approve-policy " + gh.pr["head"]["sha"]
     assert event["token"]
     assert not control.approved(gh.repository, 1, gh.pr["head"]["sha"])
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Feature context does not match the host-owned request",
+        "feature context does not match the host-owned request.",
+        "Supply original evidence for the host-owned request.",
+    ],
+)
+def test_coordinator_notice_classification_requires_the_exact_mismatch(
+    control: Any, reason: str
+) -> None:
+    gh = GitHub()
+    control.pause(gh, gh.pr, reason, "Preserve the existing pause classification")
+    payload = json.loads(control.pending()[0]["payload"])
+    assert payload["reason"] == reason
+    assert payload["notification_category"] == "paused"
+    assert payload["coordinator_blocked"] is False
+    assert "Coordinator must restore and verify" not in payload["command"]
+    assert control.paused(gh, gh.pr)
+
+
+def test_mismatch_notice_does_not_replace_an_existing_authority_hold(control: Any) -> None:
+    gh = GitHub()
+    original = (gh.repository, gh.pr["number"], "b" * 40, "Supply the original image.", 12.0)
+    with control.connect() as db:
+        db.execute("INSERT INTO pauses VALUES (?,?,?,?,?)", original)
+    control.pause(
+        gh, gh.pr, "Feature context does not match the host-owned request.", "Context verification"
+    )
+    control.pause(
+        gh, gh.pr, "Feature context does not match the host-owned request.", "Duplicate notice"
+    )
+    with control.connect() as db:
+        assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == original
+    assert len(control.pending()) == 1
+    assert control.paused(gh, gh.pr)
+    assert not control.approved(gh.repository, gh.pr["number"], gh.pr["head"]["sha"])
