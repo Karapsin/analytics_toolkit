@@ -83,6 +83,7 @@ Generated from package version bumps and recent commit history.
 - Make exact coordinator renewal replays and Unreleased fragment folding idempotent.
 - Bind successor companion sources, review and exact-commit CI to retained orchestrator evidence.
 - Split paired-evidence digest assertions to satisfy Ruff PT018 while preserving both validation checks.
+- Preserve SQL spaces and expanded tabs beneath primary and secondary thin carets, including completion separators, wrapping, and scrolling.
 
 ## 1.3.12.5 - 2026-10-14
 
