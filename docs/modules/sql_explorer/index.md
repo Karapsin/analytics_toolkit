@@ -201,6 +201,11 @@ Tab is reserved for completion and indentation. Shift+Tab requests columns in
 a SELECT projection or WHERE expression even with a blank prefix; elsewhere it unindents. Neither
 key moves focus. Ctrl+Space also requests completion without indentation.
 With multiple editor cursors, completion is disabled and Tab only indents.
+Completion lists prefer the space below the active SQL row and move above it
+when the full list fits there instead. If neither side fits the full list, it
+uses the larger space and scrolls its options. Scrolling, narrowing suggestions,
+and resizing keep that row readable. The list stays inside the query area and
+closes if there is no room for an option without covering the active row.
 Accepting complete SQL or command tokens adds a space unless whitespace or
 closing punctuation already follows. Catalog, schema, and ClickHouse database
 completion inserts a trailing dot with no space, ready to continue qualification.
@@ -633,6 +638,11 @@ case-insensitive substrings. Select an entry to inspect it; **Next SQL** cycles
 through user-visible SQL and actual database submissions. **Previous/Next**
 replace the current page of up to 100 summaries; query details load only for the
 selected action. **Refresh** reloads history. `Ctrl+F` focuses search; Escape closes.
+
+If history cannot be read, the status shows **Cannot read journal: …** with the
+failure reason. **No matching journal entries.** appears only after a successful
+read with no matches, including when no journal exists yet. **Refresh** retries
+loading after the underlying problem is resolved; **Close** remains available.
 
 **Open in new tab** copies the user-visible query into a new unsaved tab on its
 original connection. For an internal action it copies the selected submission.

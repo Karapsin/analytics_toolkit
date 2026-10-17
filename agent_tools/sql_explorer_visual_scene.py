@@ -536,6 +536,29 @@ def _pane_gaps(workspace: Any, panes: list[Any]) -> bool:
     return all(right.region.y - left.region.bottom == 1 for left, right in zip(panes, panes[1:]))
 
 
+def _completion_geometry_assertions(workspace: Any) -> dict[str, bool]:
+    """Check the outer popup, including its border, against the rendered row."""
+    menu = workspace.completion_menu
+    editor = workspace.editor
+    bounds = editor.scrollable_content_region
+    row = bounds.y + editor.cursor_render_offset[1] - int(editor.scroll_y)
+    region = menu.region
+    parent = menu.parent.content_region
+    return {
+        "completion_active_row_visible": (
+            menu.is_open
+            and bounds.y <= row < bounds.bottom
+            and (region.bottom <= row or region.y >= row + 1)
+        ),
+        "completion_contained": (
+            menu.is_open
+            and parent.x <= region.x < region.right <= parent.right
+            and parent.y <= region.y < region.bottom <= parent.bottom
+            and bounds.y <= region.y < region.bottom <= bounds.bottom
+        ),
+    }
+
+
 def _write_evidence(
     app: App[Any],
     scene_id: str,
@@ -596,6 +619,8 @@ def _write_evidence(
             workspace.query_state in {"running", "cancelling"}
         )
         _assert_changed_controls(app, scene_id, assertions)
+        if "#completion-menu" in required:
+            assertions.update(_completion_geometry_assertions(workspace))
 
         panes = [workspace.query_one(".query-pane")]
         if workspace.results_open:

@@ -77,6 +77,9 @@ Generated from package version bumps and recent commit history.
 - Reconcile coordinator mismatch notices and notification lookup metadata with current controller authority, preserve hold regressions and require refreshed final-source companion delivery validation before merge or activation.
 - Apply canonical formatting to the provenance-hold regression while preserving all cases and assertions within the 700-line test-module limit.
 - Repair SQL Explorer search, scrollbars, type suggestions, live creation validation and help layout; make visual fixtures consistent and verify their final state.
+- Preserve available failed visual capture artifacts through the trusted workflow without changing candidate harnesses or treating unknown stream coverage as complete.
+- Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
+- Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
 
 ## 1.3.12.5 - 2026-10-14
 

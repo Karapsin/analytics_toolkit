@@ -35,6 +35,10 @@ class QueryPane(Vertical, can_focus=True):
     def on_focus(self) -> None:
         workspace_for(self).editor.focus(scroll_visible=False)
 
+    def on_resize(self) -> None:
+        if self.is_mounted:
+            cast("Any", self.app)._schedule_completion_position(workspace_for(self))
+
 
 class CommandPanel(Vertical, can_focus=True):
     """Forward focus from the command surface, including disabled controls."""

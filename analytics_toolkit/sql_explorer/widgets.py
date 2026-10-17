@@ -566,6 +566,22 @@ class CompletionMenu(OptionList):
     def is_open(self) -> bool:
         return self.styles.display != "none"
 
+    def on_mount(self) -> None:
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
+        editor = workspace_for(self).editor
+        for attribute in ("scroll_x", "scroll_y", "selection"):
+            self.watch(editor, attribute, self._queue_position)
+
+    def on_resize(self) -> None:
+        self._queue_position()
+
+    def _queue_position(self) -> None:
+        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
+
+        if self.is_mounted and self.is_open:
+            cast("SqlExplorerApp", self.app)._schedule_completion_position(workspace_for(self))
+
     def open(self, suggestions: tuple[str, ...]) -> None:
         self.suggestions = suggestions
         self.clear_options()
