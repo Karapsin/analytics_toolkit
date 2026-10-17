@@ -89,7 +89,9 @@ class SqlEditor(TextArea):
             self._refresh_size()
 
     def load_text(self, text: str) -> None:
-        """Release cursor snapshots when Textual resets the document history."""
+        """Release obsolete cursor state before Textual replaces the document."""
+        self._secondary_selections.clear()
+        self._cursor_preferences.clear()
         self._cursor_edits.clear()
         super().load_text(text)
 

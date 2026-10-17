@@ -124,7 +124,9 @@ def test_history_eviction_keeps_only_live_cursor_snapshots_and_undoable_edits() 
         async with app.run_test():
             editor = app.active_workspace.editor
             editor.text = "one\ntwo"
-            editor.history = type(editor.history)(max_checkpoints=2)
+            editor.history = type(editor.history)(
+                max_checkpoints=2, checkpoint_timer=60.0, checkpoint_max_characters=1000
+            )
             editor._set_selections(Selection((0, 0), (1, 3)), [])
             states = [(editor.text, editor.selection, dict(editor._cursor_preferences))]
             evicted = None
@@ -155,38 +157,88 @@ def test_history_eviction_keeps_only_live_cursor_snapshots_and_undoable_edits() 
 
 
 @pytest.mark.parametrize("reset", ["load_text", "text"])
-def test_document_reset_immediately_releases_undo_and_redo_snapshots(reset: str) -> None:
+@pytest.mark.parametrize("replacement", ["x", ""])
+def test_document_reset_immediately_releases_undo_and_redo_snapshots(
+    reset: str, replacement: str
+) -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())
-        async with app.run_test():
-            fresh = SqlEditor("initial", soft_wrap=False)
-            assert fresh.text == "initial"
-            assert fresh._cursor_edits == []
-            fresh.action_undo()
-            fresh.action_redo()
-            assert fresh.text == "initial"
+        async with app.run_test() as pilot:
             editor = app.active_workspace.editor
-            editor.text = "one\ntwo"
-            editor._set_selections(Selection((0, 0), (1, 3)), [])
+            editor.text = "one\ntwo\nthree"
+            active = Selection((2, 5), (1, 1))
+            secondary = Selection((0, 3), (0, 0))
+            editor._set_selections(active, [secondary], preferences={active: 11, secondary: 7})
             editor.action_indent()
             editor.action_indent()
             editor.action_undo()
             assert editor.history.undo_stack
             assert editor.history.redo_stack
             assert len(editor._cursor_edits) == 2
+            assert editor.cursor_count == 2
+            assert set(editor._cursor_preferences.values()) == {11, 15}
             if reset == "load_text":
-                editor.load_text("replacement")
+                editor.load_text(replacement)
             else:
-                editor.text = "replacement"
-            assert editor.text == "replacement"
+                editor.text = replacement
+            assert editor.text == replacement
+            assert editor.cursor_count == 1
+            assert editor.cursor_selections == (Selection.cursor((0, 0)),)
+            assert editor._secondary_selections == []
+            assert editor._cursor_preferences == {}
+            assert editor.logical_column == 0
             assert editor._cursor_edits == []
             assert not editor.history.undo_stack
             assert not editor.history.redo_stack
             editor.action_undo()
             editor.action_redo()
-            assert editor.text == "replacement"
+            assert editor.text == replacement
+            assert editor.cursor_selections == (Selection.cursor((0, 0)),)
+            editor.focus()
+            await pilot.pause()
+            for row in range(editor.content_size.height):
+                strip = editor.render_line(row)
+                assert strip.cell_length == editor.scrollable_content_region.width
+            assert editor.text == replacement
+            await pilot.press("z")
+            assert editor.text == "z" + replacement
+            assert editor.cursor_selections == (Selection.cursor((0, 1)),)
+            editor.action_undo()
+            assert editor.text == replacement
+            assert editor.cursor_selections == (Selection.cursor((0, 0)),)
+            editor.action_redo()
+            assert editor.text == "z" + replacement
+            assert editor.cursor_selections == (Selection.cursor((0, 1)),)
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("reset", ["load_text", "text"])
+@pytest.mark.parametrize("replacement", ["x", ""])
+def test_unmounted_document_reset_clears_secondary_cursors_and_preferences(
+    reset: str, replacement: str
+) -> None:
+    fresh = SqlEditor("initial", soft_wrap=False)
+    assert fresh.text == "initial"
+    assert fresh._cursor_edits == []
+    fresh.action_undo()
+    fresh.action_redo()
+    assert fresh.text == "initial"
+    editor = SqlEditor("one\ntwo\nthree", soft_wrap=False)
+    secondary = Selection((2, 5), (1, 1))
+    editor._secondary_selections = [secondary]
+    editor._cursor_preferences = {editor.selection: 9, secondary: 12}
+    if reset == "load_text":
+        editor.load_text(replacement)
+    else:
+        editor.text = replacement
+    assert editor.text == replacement
+    assert editor.cursor_selections == (Selection.cursor((0, 0)),)
+    assert editor._secondary_selections == []
+    assert editor._cursor_preferences == {}
+    assert editor._cursor_edits == []
+    assert not editor.history.undo_stack
+    assert not editor.history.redo_stack
 
 
 @pytest.mark.parametrize("maintenance", ["idle", "undo", "redo", "edit", "unindent"])

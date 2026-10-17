@@ -129,6 +129,9 @@ def test_idle_repositions_retained_suggestions_even_while_popup_is_hidden() -> N
     editor = workspace.editor
     editor.app = app
     editor._sync_horizontal_scrollbar = lambda: None
+    editor.history = SimpleNamespace(undo_stack=[], redo_stack=[])
+    editor._cursor_edits = []
+    editor._prune_cursor_history = lambda: SqlEditor._prune_cursor_history(editor)
     SqlEditor.on_idle(editor)
     assert workspace.completion_menu.is_open
     workspace.completion_menu.suggestions = ()
