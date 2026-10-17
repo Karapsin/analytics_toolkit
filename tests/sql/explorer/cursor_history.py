@@ -218,27 +218,37 @@ def test_document_reset_immediately_releases_undo_and_redo_snapshots(
 def test_unmounted_document_reset_clears_secondary_cursors_and_preferences(
     reset: str, replacement: str
 ) -> None:
-    fresh = SqlEditor("initial", soft_wrap=False)
-    assert fresh.text == "initial"
-    assert fresh._cursor_edits == []
-    fresh.action_undo()
-    fresh.action_redo()
-    assert fresh.text == "initial"
-    editor = SqlEditor("one\ntwo\nthree", soft_wrap=False)
-    secondary = Selection((2, 5), (1, 1))
-    editor._secondary_selections = [secondary]
-    editor._cursor_preferences = {editor.selection: 9, secondary: 12}
-    if reset == "load_text":
-        editor.load_text(replacement)
-    else:
-        editor.text = replacement
-    assert editor.text == replacement
-    assert editor.cursor_selections == (Selection.cursor((0, 0)),)
-    assert editor._secondary_selections == []
-    assert editor._cursor_preferences == {}
-    assert editor._cursor_edits == []
-    assert not editor.history.undo_stack
-    assert not editor.history.redo_stack
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test():
+            fresh = SqlEditor("initial", soft_wrap=False)
+            assert not fresh.is_mounted
+            assert fresh.text == "initial"
+            assert fresh._cursor_edits == []
+            fresh.action_undo()
+            fresh.action_redo()
+            assert fresh.text == "initial"
+            assert not fresh.is_mounted
+            editor = SqlEditor("one\ntwo\nthree", soft_wrap=False)
+            assert not editor.is_mounted
+            secondary = Selection((2, 5), (1, 1))
+            editor._secondary_selections = [secondary]
+            editor._cursor_preferences = {editor.selection: 9, secondary: 12}
+            if reset == "load_text":
+                editor.load_text(replacement)
+            else:
+                editor.text = replacement
+            assert editor.text == replacement
+            assert editor.cursor_selections == (Selection.cursor((0, 0)),)
+            assert editor._secondary_selections == []
+            assert editor._cursor_preferences == {}
+            assert editor._cursor_edits == []
+            assert not editor.history.undo_stack
+            assert not editor.history.redo_stack
+            assert not fresh.is_mounted
+            assert not editor.is_mounted
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize("maintenance", ["idle", "undo", "redo", "edit", "unindent"])
