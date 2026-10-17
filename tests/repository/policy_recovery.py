@@ -242,3 +242,110 @@ def test_policy_approval_preserves_an_existing_hold(
     with controls.connect() as db:
         assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == pause
         assert tuple(db.execute("SELECT * FROM vetoes").fetchone()) == veto
+
+
+def _amendment_policy_scenario(
+    tmp_path: Path, monkeypatch: Any
+) -> tuple[Any, GitHub, tuple[Any, ...], dict[str, Any]]:
+    """Prepare separate policy and amendment authority with a later owner comment."""
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(controller, "signed_head", lambda *_args: True)
+    controls = controller.trusted_module("review_control")
+    gh = GitHub()
+    head, number = gh.pr["head"]["sha"], gh.pr["number"]
+    original = (gh.repository, number, head, "Owner disapproved policy.", 1000)
+    with controls.connect() as db:
+        db.execute("INSERT INTO pauses VALUES (?,?,?,?,?)", original)
+        db.execute("INSERT INTO vetoes VALUES (?,?,?,?)", (gh.repository, number, head, 1000))
+        db.execute(
+            "INSERT INTO approvals VALUES (?,?,?,?,?)",
+            (gh.repository, number, head, 22, "prior-private-approval"),
+        )
+    controls.enroll_feature(gh.repository, gh.pr["head"]["ref"], "amended-digest")
+    monkeypatch.setattr(controls.time, "time", lambda: 3000)
+    controls.hold_feature(gh, gh.pr)
+    with controls.connect() as db:
+        amendment = dict(db.execute("SELECT * FROM feature_amendments").fetchone())
+    gh.comments.append(
+        {
+            "body": "/agent approve-policy " + head,
+            "user": {"type": "User", "login": "owner"},
+            "created_at": datetime.fromtimestamp(2000, timezone.utc).isoformat(),
+        }
+    )
+    return controls, gh, original, amendment
+
+
+def _install_policy_lookup_change(
+    controls: Any, gh: GitHub, monkeypatch: Any, original: tuple[Any, ...], change: str | None
+) -> tuple[tuple[Any, ...], int]:
+    """Change authority once, after the recovery caller has inspected its snapshot."""
+    head, number = gh.pr["head"]["sha"], gh.pr["number"]
+    reason = {
+        "evidence": "Supply the original image.",
+        "cancel": "Owner cancelled the request.",
+    }.get(change, original[3])
+    # An older replacement still invalidates the snapshot. A recursive retry
+    # would accept it because 1500 precedes the policy comment at 2000.
+    expected = (*original[:3], reason, 1500) if change not in {None, "veto"} else original
+    veto_created = 1500 if change == "veto" else 1000
+    installed = False
+
+    def pages(path: str) -> list[dict[str, Any]]:
+        nonlocal installed
+        if path.startswith("pulls/"):
+            return [{"filename": ".github/agent/controller.py"}]
+        if change is not None and not installed:
+            installed = True
+            with controls.connect() as db:
+                db.execute("INSERT OR REPLACE INTO pauses VALUES (?,?,?,?,?)", expected)
+                db.execute(
+                    "INSERT OR REPLACE INTO vetoes VALUES (?,?,?,?)",
+                    (gh.repository, number, head, veto_created),
+                )
+        return gh.comments
+
+    monkeypatch.setattr(gh, "pages", pages)
+    return expected, veto_created
+
+
+@pytest.mark.parametrize("caller", ["paused", "merge"])
+@pytest.mark.parametrize("change", [None, "replacement", "veto", "evidence", "cancel"])
+def test_policy_recovery_reconciles_amendment_only_after_success(
+    tmp_path: Path, monkeypatch: Any, caller: str, change: str | None
+) -> None:
+    controls, gh, original, amendment = _amendment_policy_scenario(tmp_path, monkeypatch)
+    expected, veto_created = _install_policy_lookup_change(
+        controls, gh, monkeypatch, original, change
+    )
+    number = gh.pr["number"]
+    recover = Mock(wraps=controls.recover_policy_comment)
+    monkeypatch.setattr(controls, "recover_policy_comment", recover)
+    if caller == "paused":
+        assert controls.paused(gh, gh.pr)
+    else:
+        gh.pulls = Mock(return_value=[gh.pr])
+        gh.base = Mock(return_value="base")
+        gh.checks = Mock(return_value=checks())
+        gh.api = Mock(wraps=gh.api)
+        monkeypatch.setattr(controller, "ready", lambda *_args: True)
+        controller.merge_selected(gh, 17, tmp_path, pr_numbers={number})
+        assert not any(call.args[0].endswith("/merge") for call in gh.api.call_args_list)
+    recover.assert_called_once()
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    restarted = controller.trusted_module("review_control")
+    with restarted.connect() as db:
+        pause = dict(db.execute("SELECT * FROM pauses").fetchone())
+        pending = db.execute("SELECT * FROM feature_amendments").fetchone()
+        veto = db.execute("SELECT * FROM vetoes").fetchone()
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 1
+    if change is None:
+        assert pause["reason"] == "Owner changed the request; renewed planning is required."
+        assert pause["created"] == amendment["created"]
+        assert pending is None
+        assert veto is None
+        assert restarted.paused(gh, gh.pr)
+    else:
+        assert tuple(pause.values()) == expected
+        assert dict(pending) == amendment
+        assert veto["created"] == veto_created

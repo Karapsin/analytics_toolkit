@@ -210,18 +210,10 @@ def test_internal_work_is_not_protected_approval_readiness(
             )
         elif kind == "dependency":
             db.execute(
-                "CREATE TABLE coordinator_holds "
-                "(repository TEXT,number INTEGER,request TEXT,binding TEXT)"
-            )
-            db.execute(
                 "INSERT INTO coordinator_holds VALUES (?,?,?,?)",
                 (gh.repository, 1, "request", "{}"),
             )
         elif "renewal" in kind:
-            db.execute(
-                "CREATE TABLE coordinator_renewals "
-                "(repository TEXT,number INTEGER,request TEXT,binding TEXT,head TEXT,digest TEXT)"
-            )
             db.execute(
                 "INSERT INTO coordinator_renewals VALUES (?,?,?,?,?,?)",
                 (
@@ -235,10 +227,6 @@ def test_internal_work_is_not_protected_approval_readiness(
             )
         elif kind == "amendment":
             db.execute(
-                "CREATE TABLE feature_amendments "
-                "(repository TEXT,number INTEGER,head TEXT,created REAL)"
-            )
-            db.execute(
                 "INSERT INTO feature_amendments VALUES (?,?,?,?)", (gh.repository, 1, "a" * 40, 1)
             )
     before = authority(control)
@@ -251,6 +239,7 @@ def test_internal_work_is_not_protected_approval_readiness(
 def test_present_malformed_internal_gate_is_an_error_not_ready(control: Any) -> None:
     gh = ProducerGitHub()
     with control.connect() as db:
+        db.execute("DROP TABLE coordinator_holds")
         db.execute("CREATE TABLE coordinator_holds (malformed TEXT)")
     before = authority(control)
     with pytest.raises(sqlite3.OperationalError):
@@ -267,10 +256,6 @@ def test_internal_work_projection_uses_one_snapshot_during_amendment_transfer(
     original_connect = control.connect
     with original_connect() as db:
         db.execute("PRAGMA journal_mode=WAL")
-        db.execute(
-            "CREATE TABLE feature_amendments "
-            "(repository TEXT,number INTEGER,head TEXT,created REAL)"
-        )
         db.execute(
             "INSERT INTO feature_amendments VALUES (?,?,?,?)", (gh.repository, 1, "a" * 40, 1)
         )
