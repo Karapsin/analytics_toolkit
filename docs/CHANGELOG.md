@@ -54,6 +54,7 @@ Generated from package version bumps and recent commit history.
 - Preserve newer owner decisions during policy approval comment recovery in both pause and merge authorization checks.
 - Share exact-snapshot policy-comment recovery across pause and authorization checks, preserving newer owner decisions and active holds without private-approval fallback.
 - Bind reliable PR attention labels to exact companion source, paired regressions and CI evidence; retain policy-recovery documentation and authority gates.
+- Converge controller and worker lifecycle labels at every producer while preserving private authority and current-head readiness.
 
 ## 1.3.12.5 - 2026-10-14
 
