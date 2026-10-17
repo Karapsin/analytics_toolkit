@@ -218,6 +218,19 @@ def delivery(key: str, *, message_id: int | None = None, delay: float = 0) -> No
             db.execute("UPDATE notifications SET retry=? WHERE key=?", (time.time() + delay, key))
 
 
+def _notification_metadata(
+    pr: dict[str, Any], category: str, task_digest: str | None = None,
+) -> dict[str, Any]:
+    """Lookup hints only: the companion must verify authenticated request bindings."""
+    return {
+        "notification_category": category,
+        "request_origin": {
+            "branch": pr["head"].get("ref"),
+            "task_digest": task_digest,
+        },
+    }
+
+
 def pause(gh: Any, pr: dict[str, Any], reason: str, changes: str) -> None:
     head, number = pr["head"]["sha"], pr["number"]
     with connect() as db:
@@ -227,16 +240,34 @@ def pause(gh: Any, pr: dict[str, Any], reason: str, changes: str) -> None:
     marker = f"<!-- agent-rejection-{head} -->"
     comments = gh.pages(f"issues/{number}/comments?per_page=100")
     owner = gh.repository.split("/")[0]
+    context_blocked = reason == "Feature context does not match the host-owned request."
+    coordinator_guidance = (
+        "Coordinator must restore and verify the matching authenticated task context. "
+        "The provenance hold remains active; no new owner answer or approval is inferred."
+    )
     if not any(marker in item["body"] for item in comments):
-        gh.comment(number, marker + f"\n@{owner} This PR requires user input.\n\n"
+        introduction = ("Automatic processing is blocked by a task-context mismatch."
+                        if context_blocked else f"@{owner} This PR requires user input.")
+        guidance = (coordinator_guidance if context_blocked else
+                    "Automatic corrections are paused. To resume, post exactly:\n"
+                    + f"`/agent resume {head}`")
+        gh.comment(number, marker + "\n" + introduction + "\n\n"
                    + "What changed: " + changes + "\n\nWhy rejected:\n" + reason
-                   + "\n\nAutomatic corrections are paused. To resume, post exactly:\n"
-                   + f"`/agent resume {head}`")
+                   + "\n\n" + guidance)
+    if context_blocked:
+        recovery_command = coordinator_guidance
+    elif pr["head"].get("ref", "").startswith("codex/telegram-feature-"):
+        request_id = pr["head"]["ref"][len("codex/telegram-feature-"):].split("-", 1)[0]
+        recovery_command = "/reply_agent " + request_id + " <correction>"
+    else:
+        recovery_command = "/agent resume " + head
     enqueue(f"reject:{gh.repository}:{number}:{head}", "rejection",
             {"repository": gh.repository, "number": number, "head": head,
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
-             "title": pr.get("title", "PR " + str(number)), "changes": changes, "reason": reason, "command": ("/reply_agent " + pr["head"]["ref"][len("codex/telegram-feature-"):].split("-", 1)[0] + " <correction>"
-                if pr["head"].get("ref", "").startswith("codex/telegram-feature-") else "/agent resume " + head)})
+             "title": pr.get("title", "PR " + str(number)), "changes": changes,
+             "reason": reason, "command": recovery_command,
+             "coordinator_blocked": context_blocked,
+             **_notification_metadata(pr, "coordinator_blocked" if context_blocked else "paused")})
 
 
 def hold_coordinator(gh: Any, pr: dict[str, Any], binding: dict[str, Any]) -> None:
@@ -608,7 +639,8 @@ def reject(gh: Any, pr: dict[str, Any], task: dict[str, Any], reason: str, chang
             {"repository": gh.repository, "number": number, "head": head,
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
              "title": pr.get("title", "PR " + str(number)), "changes": changes,
-             "reason": reason, "command": "A separate RPi5 correction agent is queued; no resume command is needed."})
+             "reason": reason, "command": "A separate RPi5 correction agent is queued; no resume command is needed.",
+             **_notification_metadata(pr, "review_rejection", task["task_digest"])})
 
 
 def correction(repository: str, number: int, head: str, digest: str) -> dict[str, Any] | None:
@@ -686,7 +718,8 @@ def approval_notice(gh: Any, pr: dict[str, Any], paths: list[str], task: dict[st
              "reason": "These files govern the reviewer/controller, its trusted prompts or "
              "security and merge permissions. Your retained policy requires owner approval "
              "for this exact head, in addition to separate review and fast CI.",
-             "command": "/agent approve-policy " + head}, buttons=True)
+             "command": "/agent approve-policy " + head,
+             **_notification_metadata(pr, "owner_approval", digest)}, buttons=True)
 
 
 def callback(gh: Any, query: dict[str, Any], owner_id: int, chat_id: int) -> str:
