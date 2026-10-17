@@ -6,6 +6,7 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Direct host-owned task-context mismatch notices to coordinator verification with an additive rendering status, preserving provenance holds and owner approval gates; controller activation and paired completion still require verified companion delivery eligibility.
 - Preserve a durable correction gate when verified coordinator dependencies return to planning, blocking earlier green heads through unavailable workers and restart; resolve restored controller conflicts without weakening pause retirement.
 
 - Include unstaged new source files in maintenance change inventories and paginated diffs, preserving source boundaries and the Git index; add offline repository regressions.
@@ -19,9 +20,6 @@ Generated from package version bumps and recent commit history.
 - Preserve provenance and owner pauses when recording feature answers; retain overlapping amendments separately and keep the exact renewed-planning hold through failed publication, retiring it only after verifying the signed successor.
 - Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
 
-- Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
-- Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
-- SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
 - Add the worker-compatible scoped merge entrypoint so unrelated live jobs do not starve ready PRs; preserve every merge gate and protect unpublished branches during cleanup.
 
 - Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
@@ -49,30 +47,21 @@ Generated from package version bumps and recent commit history.
 - Route malformed changelog fragments to fresh correction plans instead of repeating metadata failures
 - Require follow-up task publication to retain the exact authenticated parent objective and signed-source provenance.
 - Preserve the OAuth integration timeout repair and service-free regressions while restoring dev version metadata and keeping pending notes under Unreleased.
-- Preserve SQL Explorer multicursor selection, clipboard spreading and readable thin carets; stabilize armed-directory scene setup and semantic readiness, correct quality and scrollbar typing failures, retain CODE6 fixes and changelog history, and add focused service-free regressions.
 - Fixed disposable authentication fault cleanup restarting Keycloak again after explicit recovery and readiness checks. Retained scenario fault history and full redacted OAuth browser failure diagnostics with guaranteed browser cleanup and fast service-free regression coverage.
 - Refactor service-free OAuth browser regressions and correct lint/format findings while preserving all failure phases, cleanup, redaction, and scenario history.
 - Add request-aligned plan resolution, singleton Pi maintenance and lossless signed task evidence
 - Preserve OAuth diagnostics, fault recovery and fast service-free regressions; extract the browser fake step factory to remove new complexity debt, reconcile Unreleased notes and retain current-dev automation files.
 - Preserve chronological maintenance eligibility answers in generated orchestrator context and document verified companion publication recovery separately from pending cross-repository trigger discovery.
 - Escape Unicode apostrophes in orchestrator correction expectations to satisfy lint while preserving authenticated context text.
+- Remove misleading label and cancellation question requirements from coordinator-notice regressions; document the complete companion delivery and activation gate while preserving private holds and approval boundaries.
+- Add controller notification category and request-binding lookup metadata with fast producer regressions; retain coordinator notices, private holds and the complete companion delivery/routing activation gate.
 - Apply Ruff's canonical layout to the scoped-merge regression parameters, preserving all assertions and merge-authority coverage.
 - Apply Ruff's canonical multiline layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
 - Apply Ruff's canonical layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
 - Preserve oversized signed agent task histories in immutable chunk archives with retry-safe publication
 - Route nontrivial protected conflict publications to fresh correction planning while retaining sensitive-path denial and exact-head approval gates.
 - Preserve actionable context-blocked owner correction notices alongside waiting questions while suppressing local status retries and retaining delivery evidence.
-- Improve SQL Explorer multicursors, clipboard spreading and readable carets; add bounded four-way picker rasterization evidence.
-- Correct SQL Explorer disabled-color regression CSS resolution and SVG evidence lint without changing diagnostic output or multicursor behavior.
-- Preserve SQL Explorer multicursors, clipboard spreading and readable carets; reconcile dev changelog history, retain bounded checkbox and picker diagnostics, correct diagnostic lint/formatting, and extend service-free regressions.
-- Correct SQL Explorer diagnostic fixture context, preserve bounded region collection during lint cleanup, and normalize diagnostic regression formatting.
-- Preserve SQL Explorer multicursor changes while retaining bounded type-menu observations, serialization/scaling comparison controls, and canonical GitHub coverage JSON for evidence-led repairs.
-- Preserve SQL Explorer multicursor editing while supersampling visual captures, stabilizing the type-menu viewport regression, and covering editor lifecycle and clipped highlights.
-- Declare Pillow in GitHub and tox test environments and format supersampling regressions without changing their assertions.
 - Preserve replacement authority holds and late vetoes through shared atomic publication and correction-question recovery.
-- Bound SQL Explorer cursor snapshots to live undo/redo history across editing, indentation, history eviction, and document resets, with focused lifecycle regressions.
-- Fix SQL Explorer document resets to clear obsolete multicursors, preferred columns and history; cover reset rendering and editing and complete history/idle test fixtures.
-- Fix detached SQL Explorer reset regressions to use an active Textual app while asserting editors remain unmounted and retaining cursor/history cleanup checks.
 - Preserve durable coordinator dependency and feature amendment holds through replanning and publication; bind separately delivered companion routing, source inventory and notification recovery evidence.
 - Display genuine owner attention separately from internal dependency and renewed-planning holds without weakening merge gates.
 - Preserve newer owner decisions during policy approval comment recovery in both pause and merge authorization checks.
@@ -83,6 +72,22 @@ Generated from package version bumps and recent commit history.
 - Make exact coordinator renewal replays and Unreleased fragment folding idempotent.
 - Bind successor companion sources, review and exact-commit CI to retained orchestrator evidence.
 - Split paired-evidence digest assertions to satisfy Ruff PT018 while preserving both validation checks.
+- Reconcile coordinator mismatch notices and notification lookup metadata with current controller authority, preserve hold regressions and require refreshed final-source companion delivery validation before merge or activation.
+- Apply canonical formatting to the provenance-hold regression while preserving all cases and assertions within the 700-line test-module limit.
+- Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
+- Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
+- SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
+- Preserve SQL Explorer multicursor selection, clipboard spreading and readable thin carets; stabilize armed-directory scene setup and semantic readiness, correct quality and scrollbar typing failures, retain CODE6 fixes and changelog history, and add focused service-free regressions.
+- Improve SQL Explorer multicursors, clipboard spreading and readable carets; add bounded four-way picker rasterization evidence.
+- Correct SQL Explorer disabled-color regression CSS resolution and SVG evidence lint without changing diagnostic output or multicursor behavior.
+- Preserve SQL Explorer multicursors, clipboard spreading and readable carets; reconcile dev changelog history, retain bounded checkbox and picker diagnostics, correct diagnostic lint/formatting, and extend service-free regressions.
+- Correct SQL Explorer diagnostic fixture context, preserve bounded region collection during lint cleanup, and normalize diagnostic regression formatting.
+- Preserve SQL Explorer multicursor changes while retaining bounded type-menu observations, serialization/scaling comparison controls, and canonical GitHub coverage JSON for evidence-led repairs.
+- Preserve SQL Explorer multicursor editing while supersampling visual captures, stabilizing the type-menu viewport regression, and covering editor lifecycle and clipped highlights.
+- Declare Pillow in GitHub and tox test environments and format supersampling regressions without changing their assertions.
+- Bound SQL Explorer cursor snapshots to live undo/redo history across editing, indentation, history eviction, and document resets, with focused lifecycle regressions.
+- Fix SQL Explorer document resets to clear obsolete multicursors, preferred columns and history; cover reset rendering and editing and complete history/idle test fixtures.
+- Fix detached SQL Explorer reset regressions to use an active Textual app while asserting editors remain unmounted and retaining cursor/history cleanup checks.
 - Preserve SQL spaces and expanded tabs beneath primary and secondary thin carets, including completion separators, wrapping, and scrolling.
 
 ## 1.3.12.5 - 2026-10-14

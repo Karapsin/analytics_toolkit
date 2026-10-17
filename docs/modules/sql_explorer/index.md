@@ -158,7 +158,8 @@ readable and terminal columns stay aligned, including tabs, wide characters,
 horizontal scrolling, and empty lines. Carets and selections remain visible when
 the command or find input has focus; search matches keep their yellow background
 through caret overlays. In-document carets preserve the original foreground and
-background, including selection and find colors. End-padding bars preserve the
+background, including selection and find colors, with no native block colors
+beneath the underline when the editor has focus. End-padding bars preserve the
 existing cell background, including inherited backgrounds. Presentation padding
 never changes the SQL buffer.
 Text inputs retain steady non-blinking carets. The compact active tab uses a dark surface with amber text and always includes its database key.

@@ -32,6 +32,20 @@ _SEARCH_MATCH_STYLE = Style(color="#000000", bgcolor="#ffff00", bold=True)
 SearchMatch: TypeAlias = Tuple[Tuple[int, int], Tuple[int, int]]
 
 
+class _CaretRenderTheme:
+    """Resolve native styles on a copy, then leave caret styling to the overlay."""
+
+    def __init__(self, theme: Any) -> None:
+        self._resolved = copy(theme)
+
+    def apply_css(self, text_area: TextArea) -> None:
+        self._resolved.apply_css(text_area)
+        self._resolved.cursor_style = Style()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolved, name)
+
+
 class SqlEditor(TextArea):
     """A Textual editor with independent cursors and anchored selections."""
 
@@ -788,9 +802,7 @@ class SqlEditor(TextArea):
         # Textual's block cursor must not mask SQL or an active find match.
         theme = self._theme
         if theme is not None:
-            render_theme = copy(theme)
-            render_theme.cursor_style = Style()
-            self._theme = render_theme
+            self._theme = cast("Any", _CaretRenderTheme(theme))
         try:
             strip = super().render_line(y)
         finally:

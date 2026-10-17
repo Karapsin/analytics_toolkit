@@ -196,6 +196,7 @@ def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
             monkeypatch.setattr(TextArea, "render_line", lambda _editor, _row: source)
             theme = editor._theme
             cursor_style = theme.cursor_style
+            theme_state = vars(theme).copy()
             for focused in (True, False):
                 if focused:
                     editor.focus()
@@ -214,8 +215,11 @@ def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
                     assert all(segment.style.bold is False for segment in cell)
                 assert editor._theme is theme
                 assert theme.cursor_style is cursor_style
+                assert vars(theme) == theme_state
 
             def fail_render(_editor: TextArea, _row: int) -> Strip:
+                native_render(_editor, _row)
+                assert _editor._theme.cursor_style == Style()
                 message = "native render failed"
                 raise RuntimeError(message)
 
@@ -224,6 +228,7 @@ def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
                 editor.render_line(0)
             assert editor._theme is theme
             assert theme.cursor_style is cursor_style
+            assert vars(theme) == theme_state
             monkeypatch.setattr(TextArea, "render_line", native_render)
             assert editor.text == text
 
@@ -308,9 +313,7 @@ def test_whitespace_carets_preserve_widget_and_compositor_cells(
                 original = baseline[row].crop(left, right)
                 widget = editor.render_line(visual_row)
                 assert widget.cell_length == viewport.width
-                visible_line = widget.crop(
-                    editor.gutter_width, editor.gutter_width + len(expanded)
-                )
+                visible_line = widget.crop(editor.gutter_width, editor.gutter_width + len(expanded))
                 assert visible_line.text == expanded
                 screen = composed[viewport.y + visual_row].crop(viewport.x, viewport.right)
                 for strip in (widget, screen):
@@ -406,6 +409,73 @@ def test_horizontally_clipped_tabs_keep_all_visible_caret_cells() -> None:
                     assert caret.text == " " * (editor.indent_width - 1)
                     assert all(segment.style.underline is True for segment in caret)
                     assert strip.cell_length == viewport.width
+            assert editor.text == line + "\n" + line
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("command_focus", [False, True])
+@pytest.mark.parametrize("column", [0, 10])
+def test_native_renderer_preserves_syntax_and_completion_separator_colors(
+    command_focus: bool, column: int
+) -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 30)) as pilot:
+            editor = app.active_workspace.editor
+            line = "SELECT c.c FROM"
+            editor.text = line + "\n" + line
+            editor._theme = copy(editor._theme)
+            editor._theme.syntax_styles = {
+                **editor._theme.syntax_styles,
+                "keyword": Style(color="#12ab34"),
+            }
+            for row in range(2):
+                editor._highlights[row] = [(0, 6, "keyword")]
+            editor._set_selections(
+                Selection.cursor((0, len(line))), [Selection.cursor((1, len(line)))]
+            )
+            if command_focus:
+                app.active_workspace.command_input.focus()
+            else:
+                editor.focus()
+            await pilot.pause()
+            theme = editor._theme
+            theme_state = vars(theme).copy()
+            baseline = [editor.render_line(row) for row in range(2)]
+            editor._set_selections(
+                Selection.cursor((0, column)), [Selection.cursor((1, column))]
+            )
+            await pilot.pause()
+            viewport = editor.scrollable_content_region
+            left = editor.gutter_width + column
+            for _ in range(2):
+                composed = app.screen._compositor.render_strips()
+                for row in range(2):
+                    for strip in (
+                        editor.render_line(row),
+                        composed[viewport.y + row].crop(viewport.x, viewport.right),
+                    ):
+                        assert strip.cell_length == viewport.width
+                        assert (
+                            strip.crop(editor.gutter_width, editor.gutter_width + len(line)).text
+                            == line
+                        )
+                        caret = strip.crop(left, left + 1)
+                        assert caret.text == baseline[row].crop(left, left + 1).text == line[column]
+                        original_style = next(iter(baseline[row].crop(left, left + 1))).style
+                        assert all(
+                            segment.style.color == original_style.color
+                            and segment.style.bgcolor == original_style.bgcolor
+                            and segment.style.underline is True
+                            and segment.style.bold is False
+                            and segment.style.reverse is False
+                            for segment in caret
+                        )
+                        if column == 0:
+                            assert original_style.color == Style(color="#12ab34").color
+                assert editor._theme is theme
+                assert vars(theme) == theme_state
             assert editor.text == line + "\n" + line
 
     asyncio.run(exercise())
