@@ -10,7 +10,7 @@ import secrets
 import sqlite3
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -300,6 +300,80 @@ def coordinator_held(gh: Any, pr: dict[str, Any]) -> bool:
     with connect() as db:
         return db.execute("SELECT 1 FROM coordinator_holds WHERE repository=? AND number=?",
                           (gh.repository, pr["number"])).fetchone() is not None
+
+
+def _coordinator_target_valid(gh: Any, pr: dict[str, Any], binding: Any) -> bool:
+    if not isinstance(binding, dict):
+        return False
+    head, digest = binding.get("candidate_head"), binding.get("task_digest")
+    if not all((isinstance(head, str), isinstance(digest, str))):
+        return False
+    return all((
+        pr.get("state") == "open", binding.get("repository") == gh.repository,
+        isinstance(binding.get("request_id"), str), bool(binding.get("request_id")),
+        type(binding.get("revision")) is int,
+        isinstance(binding.get("revision"), int) and binding["revision"] >= 0,
+        re.fullmatch(r"[0-9a-f]{40}", head) is not None,
+        head == pr["head"]["sha"], re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
+    ))
+
+
+def readonly_coordinator_scope(
+    gh: Any, pr: dict[str, Any], binding: dict[str, Any], *, stage: str,
+) -> bool:
+    """Permit only fresh read-only planning while its exact dependency stays held.
+
+    This predicate processes no owner commands and changes no authority. It is
+    never a coding, publication, hold-release, review or merge capability.
+    """
+    if stage not in {"plan", "plan-review", "plan-resolver"} or not _coordinator_target_valid(gh, pr, binding):
+        return False
+    with closing(connect()) as db, db:
+        db.execute("BEGIN")
+        rows = db.execute(
+            "SELECT request,binding FROM coordinator_holds WHERE repository=? AND number=?",
+            (gh.repository, pr["number"]),
+        ).fetchall()
+        if (len(rows) != 1 or rows[0]["request"] != binding["request_id"]
+                or rows[0]["binding"] != json.dumps(binding, sort_keys=True)):
+            return False
+        pause, veto_row = _authority_records(db, gh.repository, pr["number"], pr["head"]["sha"])
+        amendment = db.execute(
+            "SELECT 1 FROM feature_amendments WHERE repository=? AND number=?",
+            (gh.repository, pr["number"]),
+        ).fetchone()
+        return pause is None and veto_row is None and amendment is None
+
+
+def replace_coordinator(
+    gh: Any, pr: dict[str, Any], expected: dict[str, Any], replacement: dict[str, Any],
+) -> bool:
+    """CAS a reviewed inventory without briefly retiring its factual merge gate."""
+    if not (_coordinator_target_valid(gh, pr, expected) and _coordinator_target_valid(gh, pr, replacement)):
+        return False
+    predecessor = hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()
+    if (expected["request_id"] != replacement["request_id"]
+            or replacement["revision"] <= expected["revision"]
+            or replacement.get("task_digest") != expected["task_digest"]
+            or replacement.get("coordinator_predecessor_sha256") != predecessor):
+        return False
+    encoded = json.dumps(replacement, sort_keys=True)
+    with closing(connect()) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT binding FROM coordinator_holds WHERE repository=? AND number=? AND request=?",
+            (gh.repository, pr["number"], expected["request_id"]),
+        ).fetchone()
+        if row is None:
+            return False  # A retired hold can never be reinstalled by a replay.
+        if row["binding"] == encoded:
+            return True  # Exact predecessor identity binds a lost-response replay.
+        if row["binding"] != json.dumps(expected, sort_keys=True):
+            return False
+        return bool(db.execute(
+            "UPDATE coordinator_holds SET binding=? WHERE repository=? AND number=? AND request=? AND binding=?",
+            (encoded, gh.repository, pr["number"], expected["request_id"], row["binding"]),
+        ).rowcount)
 
 
 def release_coordinator(gh: Any, pr: dict[str, Any], binding: dict[str, Any]) -> bool:
