@@ -70,6 +70,7 @@ Generated from package version bumps and recent commit history.
 - Converge controller and worker lifecycle labels at every producer while preserving private authority and current-head readiness.
 - Make exact coordinator renewal replays and Unreleased fragment folding idempotent.
 - Bind successor companion sources, review and exact-commit CI to retained orchestrator evidence.
+- Split paired-evidence digest assertions to satisfy Ruff PT018 while preserving both validation checks.
 
 ## 1.3.12.5 - 2026-10-14
 
