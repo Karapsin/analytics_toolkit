@@ -204,6 +204,7 @@ def test_precommit_stage_receipt_requires_current_tree_toolchain_command_and_tim
     now = 1_000_000.0
     monkeypatch.setattr(mcp_server.time, "time", lambda: now)
     receipt = {
+        "format_version": 2,
         "fingerprint": "tree",
         "toolchain_fingerprint": "tools",
         "command_fingerprint": mcp_server._precommit_command_fingerprint(command),
@@ -212,6 +213,13 @@ def test_precommit_stage_receipt_requires_current_tree_toolchain_command_and_tim
 
     assert mcp_server._precommit_stage_receipt_is_current(
         receipt,
+        fingerprint="tree",
+        toolchain_fingerprint="tools",
+        command=command,
+    )
+    legacy = {key: value for key, value in receipt.items() if key != "format_version"}
+    assert not mcp_server._precommit_stage_receipt_is_current(
+        legacy,
         fingerprint="tree",
         toolchain_fingerprint="tools",
         command=command,
