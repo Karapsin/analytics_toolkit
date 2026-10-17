@@ -290,5 +290,158 @@
     "remaining_obligations": "Fresh independent implementation review and final-head checks, paired proof, exact-head protected authorization, allowed workflow/helper activation together, separate consumer runtime provenance, fresh failed-run verification and coordinator monitoring/repairs until all relevant PRs merge into dev. self_host relevance remains limited to GitHub agents; PR9 visual and PR10 actual PR9 merge ancestry gates remain required.",
     "authority": "Source correction and pending validation handoff only; no new approval, hold release, activation or parent-task completion."
   },
+  "paired_validation_provenance": {
+    "status": "supplied-synthetic-compatibility-regression-proof",
+    "dev_base": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+    "reviewed_correction_plan_sha256": "6e8b27f21a370eab96b3ac6b2b3f0ee814e4a972494c095f8274e4b7a64a1541",
+    "historical_record": {
+      "path": "session_only_collection_correction",
+      "paired_validation_status": "coordinator-owned-refresh-required",
+      "interpretation": "Preserved as the status before the companion proof was supplied; the additive record here records the subsequently supplied proof without rewriting historical scope or obligations.",
+      "review": {
+        "head": "acfed139ea06b7e7a19b28744d5da7e0c37e1ff2",
+        "url": "https://github.com/Karapsin/analytics_toolkit/pull/38#pullrequestreview-5559572331",
+        "finding": "What changed: Adds trusted failed-capture artifact export and upload, marks session-only collections incomplete, preserves session bytes and hashes, and updates regressions, operations documentation and changelog.\n\nThe complete patch follows the recorded scope and fixes the completeness predicate, but required paired consumer regression proof remains missing. Exact-head CI is pending and must pass separately.\n[P2] tests/repository/capture_artifact.py:235 and agent_tools/task_evidence/1253260b20f14ee680edd15d01547757/parent-objective.json:287: The recorded correction requires actual archives from both copy-tree and first-child failures to pass pinned capture_archive.unpack() and reach capture_diagnostics.retain(). The new tests stop at producer output assertions, and the task record explicitly leaves paired validation outstanding. Immutable consumer tests at 8b0191d3fea63770ddf4d18bfbd3a60b85802a55 still bind exporter e93a6ca…, rather than corrected exporter 7a032cf…. Consequently, the required regression does not verify that these session-only archives survive validation and durable partial retention. Supply refreshed companion fixtures/tests and exact-commit GitHub validation proving both archives retain their original ZIP and binding, report the expected partial-diagnostics prerequisite, and create no model assignment reference. Preserve historical fixture bindings.",
+        "disposition": "Refreshed companion fixture, actual pipeline tests and exact-commit GitHub validation are now supplied below. This does not replace fresh independent implementation review or approve a changed producer head."
+      }
+    },
+    "evidence": {
+      "path": "operator/pr38-paired-454693e0c10f/pair-proof.json",
+      "sha256": "6a51826f1e91b325bd0b0862f3a64556079477884009efe597c9eb7a67a7f762"
+    },
+    "companion": {
+      "repository": "Karapsin/self_host",
+      "commit": "454693e0c10fecb5e98a41977626c21f0af3a01b",
+      "github_validation": {
+        "conclusion": "success",
+        "headSha": "454693e0c10fecb5e98a41977626c21f0af3a01b",
+        "status": "completed",
+        "url": "https://github.com/Karapsin/self_host/actions/runs/39060331199"
+      },
+      "fixture": {
+        "path": "agent_tools/tests/fixtures/failed_capture_producer_pr38.json",
+        "sha256": "2f66090889d0626987db7c4998d4972efd551f0507bfbbcaabfd1089e9224679"
+      },
+      "regressions": {
+        "path": "agent_tools/tests/test_pr38_capture_pair.py",
+        "sha256": "a0d243dfca29eb5e2ef92ad697cabfca753aed204b46902f43e47398e8dd7e9b"
+      },
+      "historical_bindings": "The older producer fixture and its exporter e93a6ca62f5c5201e1312559640a09d05052e49b6c7ed3626f4175da792c2c7b binding remain historical; the new PR38 fixture is additive.",
+      "immutable_files": {
+        "operator/pr38-paired-454693e0c10f/source/agent_tools/tests/fixtures/failed_capture_producer_pr38.json": "2f66090889d0626987db7c4998d4972efd551f0507bfbbcaabfd1089e9224679",
+        "operator/pr38-paired-454693e0c10f/source/agent_tools/tests/test_pr38_capture_pair.py": "a0d243dfca29eb5e2ef92ad697cabfca753aed204b46902f43e47398e8dd7e9b",
+        "operator/pr38-paired-454693e0c10f/source/self_host/services/github_agent/README.md": "a24d5bcae64a812416f8d9e05c4796e3b943d87d9c6a65f3e3ab5eac134d2b44",
+        "operator/pr38-paired-454693e0c10f/pr38-af06-isolated-mac-consumer-pair-report.json": "2df0096ee074a2710b0216444d223b868f1e010af64ef3a901221bff5d0ed73f",
+        "operator/pr38-paired-454693e0c10f/pr38-af06-consumer-runtime-byte-bridge.json": "01c25fe0a2994c45b7c136352b58e01a73b23086d62b468aa4b511bb83367585",
+        "operator/pr38-paired-454693e0c10f/selfhost-pr38-final-pair-independent-source-review.json": "12a657fe0da43ab6f3e5773adb36a48efa43cb0eb867f75c8bf3470a9a3e76a2",
+        "operator/pr38-paired-454693e0c10f/pr38-af06-independent-source-review.json": "0057e6960ad761e0b8d5d6db17cb0d6ff401da6aaf0e0e1cd7a794907b4550d3"
+      }
+    },
+    "component_bindings": {
+      "producer_fixture_head": "af06f3b9446e1e679b04d4fcf76e34acd712e4e9",
+      "published_producer_head": "acfed139ea06b7e7a19b28744d5da7e0c37e1ff2",
+      "exporter_path": ".github/agent/capture_artifact.py",
+      "exporter_sha256": "7a032cfbab17109dc41312d1565a75cca53910bcc68805000a8aba850ac9f89b",
+      "workflow_sha256": "07ad275c1131744a16ce0bceac2200d430e323205e3bdf7c04c4f7116ba7e5da",
+      "legacy_capture_path": "agent_tools/sql_explorer_visual.py",
+      "legacy_capture_sha256": "bc0c9674e7f8e4eb618f966257816ef10fb98bda5022585abe075f1b693af254",
+      "consumer_byte_bridge": {
+        "paired_report_sha256": "2df0096ee074a2710b0216444d223b868f1e010af64ef3a901221bff5d0ed73f",
+        "source_base": "c8a18598ceeac88ced0ddd89ebbfda23b1205809",
+        "runtime_base": "8b0191d3fea63770ddf4d18bfbd3a60b85802a55",
+        "exact_identical_consumer_files": {
+          "self_host/services/github_agent/capture_diagnostics.py": "0a2ed0ddc8833f54a9f8dfaffb2d26d4a3ab08971c4e156ad20445a157cea9e1",
+          "self_host/services/github_agent/capture_archive.py": "e2a807f43b98fdf03d38fa0fcabc8b7698bd0e525dc1e6cadca00659eb90848b",
+          "self_host/services/github_agent/capture_io.py": "888c1b2b000582c5f3f01c5213ba43410b68a0acb94b3b8617be5dee51eb4760",
+          "self_host/services/github_agent/evidence_limits.py": "76d6315baefa86681be4daafbf0df3c61a89c40181a45dcce5a9c24c31401a65",
+          "self_host/services/github_agent/file_tools.py": "7ba64addd19b2d39630281a17d2c6028cdd8096a335a30c85022ee787526f517"
+        },
+        "candidate_execution_on_pi": false
+      },
+      "reuse_rule": "The inspected producer, workflow and legacy capture bytes match the supplied proof. Reuse exact-commit companion validation only while bound component bytes match; refresh paired proof if exporter, legacy capture or relevant consumer bytes change."
+    },
+    "verified_scope": {
+      "session_only_cases": [
+        "failure during _copy_review_tree",
+        "failure at first child invocation before evidence exists"
+      ],
+      "pipeline": "Actual unchanged capture orchestration finalizes failed sessions; corrected producer output is packed and accepted by capture_archive.unpack(), then passed to capture_diagnostics.retain().",
+      "retention": "Original ZIP and binding are durably retained before the expected partial-diagnostics prerequisite. collection_complete is false, process_output_complete is null, and no model snapshot or assignment reference is created. Finalized session bytes/hashes and absence of passing artifacts remain covered by the producer regressions.",
+      "geometry": "The geometry-present legacy failure retains collection_complete:true and process_output_complete:null, verifies every ordered text continuation through Files, and verifies identical assignment after restart without a visual receipt.",
+      "existing_regressions": "Preserve archive safety, identity, capacity and passing-artifact regressions; the companion refresh changes no consumer runtime source.",
+      "report_chronology": "The Mac report and source reviews retain their earlier pending-CI statements as historical records. pair-proof.json subsequently records successful Repository Checks at companion commit 454693e0c10fecb5e98a41977626c21f0af3a01b."
+    },
+    "producer_check_snapshot": {
+      "head": "acfed139ea06b7e7a19b28744d5da7e0c37e1ff2",
+      "evidence": {
+        "bytes": 91489,
+        "files": [
+          "pr-checks/acfed139ea06b7e7a19b28744d5da7e0c37e1ff2/330a73e58ba06f5d7aa6af77327ffeed997cdedfc80ca672c6b351801827e0c4-0.json"
+        ],
+        "format": "ordered-utf8-json-parts-v1",
+        "head_sha": "acfed139ea06b7e7a19b28744d5da7e0c37e1ff2",
+        "repository": "Karapsin/analytics_toolkit",
+        "sha256": "330a73e58ba06f5d7aa6af77327ffeed997cdedfc80ca672c6b351801827e0c4"
+      },
+      "results": [
+        {
+          "name": "fast-checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "agent-review",
+          "conclusion": "failure"
+        },
+        {
+          "name": "py314-latest",
+          "conclusion": "success"
+        },
+        {
+          "name": "py310-latest",
+          "conclusion": "success"
+        },
+        {
+          "name": "py312-latest",
+          "conclusion": "success"
+        },
+        {
+          "name": "py311-latest",
+          "conclusion": "success"
+        },
+        {
+          "name": "py38-latest",
+          "conclusion": "success"
+        },
+        {
+          "name": "py313-latest",
+          "conclusion": "success"
+        },
+        {
+          "name": "py310-sdk32",
+          "conclusion": "success"
+        },
+        {
+          "name": "py310-sdk31",
+          "conclusion": "success"
+        },
+        {
+          "name": "py39-latest",
+          "conclusion": "success"
+        },
+        {
+          "name": "py38-min",
+          "conclusion": "success"
+        },
+        {
+          "name": "quality gates",
+          "conclusion": "success"
+        }
+      ],
+      "interpretation": "Successful fast-checks, quality and compatibility results belong to this predecessor head; agent-review remains failed there. A changed head requires fresh applicable GitHub checks and successful independent review."
+    },
+    "limits": "Synthetic compatibility regression proof only. This does not recover historical PR15 capture bytes, establish an actual new GitHub failed capture, prove live activation or planning delivery, or grant owner answers, plan/source/visual/protected approval or hold release.",
+    "local_validation": "No programs, tests, installs, builds, services or scenes executed by this isolated worker. Published companion regressions and supplied immutable GitHub validation are reused.",
+    "remaining_obligations": "Fresh independent full-context implementation review and final-head fast-checks, quality/compatibility and successful agent-review; required exact-head protected authorization; allowed trusted workflow/helper main synchronization together; separate installed consumer provenance; fresh failed-run retention or planning-delivery verification after authorized activation (session-only partial archives remain unassigned); coordinator monitoring, conflict resolution and aligned repairs until all relevant PRs and resulting repairs merge successfully into dev. self_host relevance remains limited to GitHub-agent functionality. Preserve PR37 process-output and visual responsibilities, PR9 visual acceptance, PR10 actual PR9 merge ancestry, complete original feature and lifecycle labels, notification policy, authenticated answers, credentials, owner vetoes and all authority gates."
+  },
   "authority": "Additive authenticated signed parent and independent plan provenance; no new owner fact, policy approval, source/plan/visual pass or hold release."
 }
