@@ -766,7 +766,10 @@ another renewal. Replacement bindings, head/digest mismatches, veto/provenance h
 unchanged checkpoint/context and refusal to merge the earlier green head remain
 covered. Inherited producer tests select the same pair and exercise the actual pure
 shared status caller. The fast archival-evidence regression checks source, review,
-request and CI consistency without executing archived companion code.
+request and CI consistency without executing archived companion code. Its source
+manifest digest checks assert length and hexadecimal characters separately to
+satisfy Ruff PT018 while retaining both checks. This test-only correction leaves
+the paired controller bytes unchanged; GitHub must validate the final successor.
 
 The assigned activation receipt
 `operator/worker-replay-replan-20261017-v1-active.json`

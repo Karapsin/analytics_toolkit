@@ -49,7 +49,8 @@ def test_successor_sources_reviews_and_ci_travel_together(delivery: dict[str, An
     sources = list(assignment["source_versions"].values())
     for source in sources:
         digest = assignment["required_files"][source["evidence_file"]]
-        assert len(digest) == 64 and set(digest) <= set("0123456789abcdef")
+        assert len(digest) == 64
+        assert set(digest) <= set("0123456789abcdef")
     review = companion["source_review"]
     for artifact in (companion["fixture"], companion["regression"]):
         versions = [source for source in sources if source["source_path"] == artifact["path"]]
