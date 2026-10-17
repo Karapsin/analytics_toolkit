@@ -1,0 +1,36 @@
+{
+  "format_version": 1,
+  "parent_objective": "once orchestrator is started monitor only its actions. If it works fine - do nothing, otherwise make corrections. Stop when all merged",
+  "parent_signed_task": {
+    "repository": "Karapsin/analytics_toolkit",
+    "pr": 30,
+    "head": "c7cd561946018f0753d4c825aef9aeb2ad8b700d",
+    "task_id": "dc4c6898f7964b4e91290009f61d8f11",
+    "digest": "5a30047738e6bc13cd6cd9edc9ac919b3982392564bc0eec3721ea3d0f1789c0",
+    "producer": "author:2a5a18c23f744a8b82ebbadac9b4abfe",
+    "url": "https://github.com/Karapsin/analytics_toolkit/pull/30",
+    "signature_and_task_review_check": 116906892584
+  },
+  "follow_up_scope": "Complete and deliver the retained paired orchestrator proposal for durable coordinator dependency gates, feature amendment publication, clause-level routing, full question and answer history, notification suppression and literal source inventories. Preserve every earlier task and hold, fresh plan and source reviews, exact-head checks and protected approval.",
+  "direct_follow_up_user_prompt": "implement it on your own if orchestator is not doing that",
+  "new_policy_approval": false,
+  "new_owner_answer": false,
+  "retained_proposal": {
+    "orchestrator_id": "cd64f344447f498da4f8d73520b675c4",
+    "bases": {
+      "analytics_toolkit": "8955054742d6df6c4700c6e9db815ff3cb9efc3b",
+      "self_host": "d5ce3fe24912490f8d513296e37c497d695c6c68"
+    },
+    "patch_sha256": {
+      "analytics_toolkit": "734a0e3e53c0910d36f05dfbc32be8ee82d86d2fb1676c5431cfc6a68715f55e",
+      "self_host": "56a480a09f692092fd3e159fdcca8cb2a4b895f8ac7d955fb7ee591c0749bd05"
+    },
+    "prior_review_status": "incomplete; no publication or approval granted"
+  },
+  "retained_incremental_proposal": {
+    "orchestrator_id": "6f9f89cf743c42cea4a017f47c3eacea",
+    "self_host_patch_sha256": "cc74f2d3e27b1313c0074cbec617236d8df209dba5f7315ab2a39bb7d56d2ec8",
+    "scope": "Literal Git paths and explicit repository-relative source directories; focused regressions and documentation.",
+    "prior_review_status": "rejected for formatting; semantic review incomplete"
+  }
+}

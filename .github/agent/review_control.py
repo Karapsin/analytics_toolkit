@@ -24,6 +24,15 @@ def connect() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS pauses (
           repository TEXT, number INTEGER, head TEXT, reason TEXT, created REAL,
           PRIMARY KEY(repository, number));
+        CREATE TABLE IF NOT EXISTS coordinator_holds (
+          repository TEXT, number INTEGER, request TEXT, binding TEXT,
+          PRIMARY KEY(repository, number, request));
+        CREATE TABLE IF NOT EXISTS coordinator_renewals (
+          repository TEXT, number INTEGER, request TEXT, binding TEXT, head TEXT, digest TEXT,
+          PRIMARY KEY(repository, number, request));
+        CREATE TABLE IF NOT EXISTS feature_amendments (
+          repository TEXT, number INTEGER, head TEXT, created REAL,
+          PRIMARY KEY(repository, number));
         CREATE TABLE IF NOT EXISTS notifications (
           key TEXT PRIMARY KEY, kind TEXT, payload TEXT, sent INTEGER DEFAULT 0,
           retry REAL DEFAULT 0, token TEXT, message_id INTEGER);
@@ -102,8 +111,98 @@ def pause(gh: Any, pr: dict[str, Any], reason: str, changes: str) -> None:
                 if pr["head"].get("ref", "").startswith("codex/telegram-feature-") else "/agent resume " + head)})
 
 
-def paused(gh: Any, pr: dict[str, Any]) -> bool:
+def hold_coordinator(gh: Any, pr: dict[str, Any], binding: dict[str, Any]) -> None:
+    """Host-only dependency gate, separate from owner decisions and questions."""
+    if (binding["repository"] != gh.repository or not binding["request_id"]
+            or type(binding["revision"]) is not int or binding["revision"] < 0):
+        raise ValueError("Coordinator hold identity differs from the request.")
     with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT binding FROM coordinator_holds WHERE repository=? AND number=? AND request=?",
+            (gh.repository, pr["number"], binding["request_id"]),
+        ).fetchone()
+        if row is not None and json.loads(row["binding"])["revision"] > binding["revision"]:
+            return  # A stale reconciliation cannot replace a newer request.
+        db.execute("INSERT OR REPLACE INTO coordinator_holds VALUES (?,?,?,?)",
+                   (gh.repository, pr["number"], binding["request_id"],
+                    json.dumps(binding, sort_keys=True)))
+
+
+def coordinator_held(gh: Any, pr: dict[str, Any]) -> bool:
+    with connect() as db:
+        return db.execute("SELECT 1 FROM coordinator_holds WHERE repository=? AND number=?",
+                          (gh.repository, pr["number"])).fetchone() is not None
+
+
+def release_coordinator(gh: Any, pr: dict[str, Any], binding: dict[str, Any]) -> bool:
+    """Caller verified the exact dependency receipt; retire only its binding."""
+    with connect() as db:
+        return bool(db.execute(
+            "DELETE FROM coordinator_holds WHERE repository=? AND number=? "
+            "AND request=? AND binding=?",
+            (gh.repository, pr["number"], binding["request_id"],
+             json.dumps(binding, sort_keys=True)),
+        ).rowcount)
+
+
+def renew_coordinator(
+    gh: Any, pr: dict[str, Any], binding: dict[str, Any], digest: str,
+) -> bool:
+    """Atomically hand a verified dependency to renewed correction planning."""
+    if (binding["repository"] != gh.repository or not digest or pr["state"] != "open"):
+        return False
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        held = db.execute(
+            "SELECT binding FROM coordinator_holds WHERE repository=? AND number=? AND request=?",
+            (gh.repository, pr["number"], binding["request_id"]),
+        ).fetchone()
+        if held is None or held["binding"] != json.dumps(binding, sort_keys=True):
+            return False
+        if db.execute("SELECT 1 FROM vetoes WHERE repository=? AND number=? AND head=?",
+                      (gh.repository, pr["number"], pr["head"]["sha"])).fetchone():
+            return False
+        row = db.execute(
+            "SELECT binding FROM coordinator_renewals WHERE repository=? AND number=? AND request=?",
+            (gh.repository, pr["number"], binding["request_id"]),
+        ).fetchone()
+        if row is not None and json.loads(row["binding"])["revision"] > binding["revision"]:
+            return False
+        # Keep renewal authority separate from existing reviewer findings and
+        # other requests. No earlier green review can authorize this head.
+        db.execute("INSERT OR REPLACE INTO coordinator_renewals VALUES (?,?,?,?,?,?)",
+                   (gh.repository, pr["number"], binding["request_id"], held["binding"],
+                    pr["head"]["sha"], digest))
+        db.execute(
+            "DELETE FROM coordinator_holds WHERE repository=? AND number=? AND request=? AND binding=?",
+            (gh.repository, pr["number"], binding["request_id"], held["binding"]),
+        )
+    return True
+
+
+def paused(gh: Any, pr: dict[str, Any]) -> bool:
+    # Owner resumes, approvals and derived-pause recovery cannot satisfy a
+    # coordinator dependency. It also survives pushes and supervisor restart.
+    if coordinator_held(gh, pr):
+        return True
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        # A separate authority may have been cleared by a resume or verified
+        # recovery. Transfer its pending amendment into the ordinary planning
+        # pause without changing the unrelated hold's original audit fields.
+        db.execute(
+            "INSERT OR IGNORE INTO pauses "
+            "SELECT repository,number,head,?,created FROM feature_amendments "
+            "WHERE repository=? AND number=?",
+            ("Owner changed the request; renewed planning is required.",
+             gh.repository, pr["number"]))
+        db.execute(
+            "DELETE FROM feature_amendments WHERE repository=? AND number=? "
+            "AND EXISTS (SELECT 1 FROM pauses WHERE pauses.repository=feature_amendments.repository "
+            "AND pauses.number=feature_amendments.number AND pauses.head=feature_amendments.head "
+            "AND pauses.created=feature_amendments.created AND pauses.reason=?)",
+            (gh.repository, pr["number"], "Owner changed the request; renewed planning is required."))
         row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
                          (gh.repository, pr["number"])).fetchone()
     if row is None:
@@ -120,11 +219,13 @@ def paused(gh: Any, pr: dict[str, Any]) -> bool:
                 and item["body"].strip() == "/agent approve-policy " + pr["head"]["sha"]
                 and created > row["created"]):
             clear_owner_decline(gh, pr["number"], pr["head"]["sha"])
-            return False
+            return paused(gh, pr)
         if (human and item["body"].strip() == command and created > row["created"]):
             with connect() as db:
-                db.execute("DELETE FROM pauses WHERE repository=? AND number=?",
-                           (gh.repository, pr["number"]))
+                db.execute("DELETE FROM pauses WHERE repository=? AND number=? AND head=? AND reason=? AND created=?",
+                           (gh.repository, pr["number"], row["head"], row["reason"], row["created"]))
+            if paused(gh, pr):
+                return True
             labels = gh.api(f"issues/{pr['number']}/labels")
             if any(label["name"] == PAUSED for label in labels):
                 gh.api(f"issues/{pr['number']}/labels/{PAUSED}", "DELETE")
@@ -247,7 +348,15 @@ def correction(repository: str, number: int, head: str, digest: str) -> dict[str
     with connect() as db:
         row = db.execute("SELECT reason,changes FROM corrections WHERE repository=? AND number=? AND head=? AND digest=?",
                          (repository, number, head, digest)).fetchone()
-    return dict(row) if row else None
+        if row is not None:
+            return dict(row)
+        renewal = db.execute(
+            "SELECT 1 FROM coordinator_renewals WHERE repository=? AND number=? AND head=? AND digest=?",
+            (repository, number, head, digest),
+        ).fetchone()
+    return ({"reason": "Verified coordinator dependency requires renewed planning and review.",
+             "changes": "Preserve the complete request and revalidate its dependency evidence."}
+            if renewal else None)
 
 
 def hold_correction(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> None:
@@ -471,10 +580,23 @@ def hold_feature(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> None:
     if not enrolled_feature(gh.repository, pr["head"]["ref"]):
         raise ValueError("Feature is not host-enrolled.")
     with connect() as db:
-        db.execute("INSERT OR REPLACE INTO pauses VALUES (?,?,?,?,?)",
-                   (gh.repository, pr["number"], pr["head"]["sha"],
-                    "Owner cancelled the request." if cancel else "Owner changed the request; renewed planning is required.",
-                    time.time()))
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT reason FROM pauses WHERE repository=? AND number=?",
+                         (gh.repository, pr["number"])).fetchone()
+        reason = "Owner changed the request; renewed planning is required."
+        created = time.time()
+        if not cancel and row is not None and row["reason"] != reason:
+            # Record both authorities. A resume older than this amendment can
+            # release the unrelated hold but cannot authorize the amended task.
+            db.execute("INSERT OR REPLACE INTO feature_amendments VALUES (?,?,?,?)",
+                       (gh.repository, pr["number"], pr["head"]["sha"], created))
+        else:
+            db.execute("INSERT OR REPLACE INTO pauses VALUES (?,?,?,?,?)",
+                       (gh.repository, pr["number"], pr["head"]["sha"],
+                        "Owner cancelled the request." if cancel else reason, created))
+            if not cancel:
+                db.execute("DELETE FROM feature_amendments WHERE repository=? AND number=?",
+                           (gh.repository, pr["number"]))
     gh.api(f"issues/{pr['number']}/labels", "POST", {"labels": [PAUSED]})
     if cancel:
         gh.api(f"pulls/{pr['number']}", "PATCH", {"state": "closed"})

@@ -6,6 +6,17 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Preserve a durable correction gate when verified coordinator dependencies return to planning, blocking earlier green heads through unavailable workers and restart; resolve restored controller conflicts without weakening pause retirement.
+
+- Include unstaged new source files in maintenance change inventories and paginated diffs, preserving source boundaries and the Git index; add offline repository regressions.
+
+- Gate coordinator dependency waits in the trusted controller, preserving exact request/evidence bindings through restart and green CI; add fast intake, stale-receipt and merge-refusal regressions.
+
+- Make correction-question recovery atomic and preserve concurrent replacement holds through restart, discovery and merge; add deterministic service-free regressions.
+
+- Retire only the exact inspected publication pause during verified recovery; preserve replacement evidence, cancellation and newer same-reason holds with fast restart regressions.
+
+- Preserve provenance and owner pauses when recording feature answers; retain overlapping amendments separately and keep the exact renewed-planning hold through failed publication, retiring it only after verifying the signed successor.
 - Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
 
 - Add the worker-compatible scoped merge entrypoint so unrelated live jobs do not starve ready PRs; preserve every merge gate and protect unpublished branches during cleanup.

@@ -117,8 +117,53 @@ plans the correction, a separate agent reviews that plan, and another agent edit
 Fresh independent PR review follows every changed head. This cycle continues until
 approved, without an arbitrary retry cap. Rejection alerts have no buttons and
 require no resume command. Genuine questions wait for authenticated owner answers;
-owner vetoes/cancellation and invalid provenance stop work. Invalid task context
-also fails closed. Older trusted
+owner vetoes/cancellation and invalid provenance stop work. Authenticated feature
+answers retain unrelated private pauses, including their reason, head and timestamp;
+a factual reply cannot turn a provenance or cancellation hold into a recoverable
+replanning pause. An unheld feature receives the normal replanning pause. A newer
+amendment refreshes an existing replanning pause's head and timestamp atomically,
+so an intervening resume comment cannot clear the newer planning requirement.
+When an unrelated pause already exists, a separate durable amendment record retains
+that newer requirement without changing the original pause. After an authenticated
+resume or verified recovery clears the unrelated pause, the next pause check
+atomically transfers the amendment into the normal renewed-planning hold. A resume
+that predates the amendment cannot release it; discovery and merge remain blocked.
+The ordinary feature path still requires fresh planning, independent review and
+coding before retiring its derived hold. Linked publication keeps that hold active
+through checkout, archive writes and push. A host-only publisher argument binds to
+the exact private pause (including its timestamp); it permits only the enrolled
+feature's publication, never discovery, review, merge or policy approval. Intake
+persists this binding before the first attempt and retires only that same row
+after verifying the open PR's signed successor, task digest and producer. Failures
+before push and lost responses after accepted pushes retain the hold and artifact
+for restart. Replacement holds survive; legacy lost responses without a captured
+binding cannot retrospectively authorize a pause. Deploy the compatible trusted
+publisher before activating this companion path; an older publisher fails closed.
+Verified publication recovery also compares the inspected pause's head, reason and
+creation timestamp in its atomic deletion. It never calls the broad owner-resume
+operation: original-evidence, cancellation and newer same-reason holds installed
+between inspection and deletion survive recovery and restart. Correction-question
+recovery likewise uses the base's shared atomic retirement operation: it deletes
+only the full inspected row in the absence of a current-head veto, leaving labels
+to normal reconciliation. A coordinator workspace receipt cannot erase
+a concurrent cancellation or original-evidence requirement. Reconciliation owns labels.
+Coordinator dependency waits also persist a separate controller hold before intake
+releases worker ownership. It binds the request revision, complete task/question state,
+checkpoint bytes, stage and dev base. Green checks, owner resumes, protected decisions,
+amendment publication capabilities and derived-pause recovery cannot bypass it.
+Only the matching supervisor-verified dependency receipt can transfer that exact
+binding into the durable correction queue in one controller transaction. Merge
+checks that queue even when earlier review/CI are green and no worker is available.
+Fresh planning and independent review can proceed; failed publication leaves the
+old head gated, and a signed successor still needs final review/CI. Existing
+findings, concurrent replacement bindings and other requests remain held. Verification
+does not retire unrelated pauses, grant approvals or replace fresh planning/review.
+Legacy queued waits install the same gate during reconciliation. Activate compatible
+protected controller support before this companion path; older controllers retain
+a blocking compatibility pause rather than silently leaving a dependency ungated.
+Explicit cancellation retains its stop-and-close behavior. Coordinator evidence
+cannot replace the independent authority needed to resolve an existing hold.
+Invalid task context also fails closed. Older trusted
 App repairs can inherit the standing integration-repair task, bound to their
 immutable signed head; owner-authored PRs must attach their task.
 

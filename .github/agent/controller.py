@@ -741,7 +741,9 @@ def inherited_controller_path(task: dict[str, Any], work: Path, path: str) -> bo
     return original == head and base != original and staged == base
 
 
-def publication_authority(gh: GitHub, task: dict[str, Any]) -> dict[str, Any]:
+def publication_authority(
+    gh: GitHub, task: dict[str, Any], *, renewal_hold: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Recheck the original authority after potentially interrupted archive I/O."""
     if gh.base() != task["base"]:
         raise RuntimeError("Dev changed during execution; discard the stale decision.")
@@ -753,7 +755,24 @@ def publication_authority(gh: GitHub, task: dict[str, Any]) -> dict[str, Any]:
     denial = authorization_error(gh, pr, False)
     if denial:
         raise RuntimeError(denial)
-    if trusted_module("review_control").paused(gh, pr):
+    controls = trusted_module("review_control")
+    held = controls.paused(gh, pr)
+    if controls.coordinator_held(gh, pr):
+        raise RuntimeError("PR is awaiting coordinator dependency verification.")
+    if renewal_hold is not None:
+        # Host-only publication capability, never a task/model field. Keep the
+        # exact amendment active for discovery/merge until the signed successor
+        # has been verified. Replacement holds cannot inherit this capability.
+        with controls.connect() as db:
+            row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
+                             (gh.repository, pr["number"])).fetchone()
+        if (task["kind"] != "feature" or row is None or dict(row) != renewal_hold
+                or task["branch"] != pr["head"]["ref"] or row["head"] != task["head"]
+                or row["reason"] != "Owner changed the request; renewed planning is required."
+                or not controls.enrolled_feature(gh.repository, pr["head"]["ref"], task["task_digest"])
+                or controls.veto(gh.repository, pr["number"], task["head"])):
+            raise RuntimeError("Feature amendment authority changed during publication.")
+    elif held:
         raise RuntimeError("PR is awaiting user instructions.")
     metadata = task_metadata(gh, pr)
     if metadata["task_digest"] != task.get("previous_task_digest", task["task_digest"]):
@@ -761,7 +780,10 @@ def publication_authority(gh: GitHub, task: dict[str, Any]) -> dict[str, Any]:
     return pr
 
 
-def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dict[str, Any] | None:
+def publish(
+    gh: GitHub, task: dict[str, Any], artifact: Path, work: Path, *,
+    renewal_hold: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     number = task["number"]
     try:
         if not (artifact / "task.json").exists():
@@ -770,7 +792,7 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
             raise RuntimeError("Artifact task identity does not match the claimed job.")
         correction_scope = (trusted_module("review_control").correction_snapshot(gh.repository, number)
                             if number and task["kind"] == "conflict" else None)
-        pr = publication_authority(gh, task)
+        pr = publication_authority(gh, task, renewal_hold=renewal_hold)
         if task["kind"] == "review":
             receipt = json.loads((artifact / "review-execution.json").read_text())
             verify_review_execution(task, receipt)
@@ -893,7 +915,7 @@ def publish(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> dic
                 proto.verify_commit(task["user_task"], command("git", "log", "-1", "--format=%B", existing_head, cwd=work))
                 commit = existing_head
         body = proto.publish(task["user_task"], api=gh.api, repository=gh.repository, prefix=prefix)
-        current = publication_authority(gh, task)
+        current = publication_authority(gh, task, renewal_hold=renewal_hold)
         if number and current.get("body") != pr.get("body"):
             raise RuntimeError("PR description changed during archive publication.")
         push = ["git", "push"]
@@ -950,7 +972,9 @@ def merge_selected(
             continue
         if denial or controls.paused(gh, pr):
             continue
-        task_metadata(gh, pr)
+        metadata = task_metadata(gh, pr)
+        if controls.correction(gh.repository, pr["number"], head, metadata["task_digest"]):
+            continue  # Pending renewed planning also gates an earlier green review.
         if not ready(pr, checks, base, app_id):
             continue
         # Folding/rebasing must already have happened before final review.
