@@ -667,9 +667,22 @@ def fold(work: Path) -> bool:
     end = len(text) if end < 0 else end
     # Preserve the complete section, including wrapped bullets and paragraphs.
     body = text[start:end].strip()
-    additions = "\n".join(summaries)
-    body = body + "\n" + additions if body else additions
-    changelog.write_text(text[:start] + "\n\n" + body + "\n\n" + text[end:].lstrip("\n"))
+    lines = body.splitlines()
+    represented = set()
+    for index, line in enumerate(lines):
+        if not line.startswith("- "):
+            continue
+        following = index + 1
+        while following < len(lines) and not lines[following].strip():
+            following += 1
+        if (following == len(lines) or lines[following].startswith(("- ", "#"))
+                or (following > index + 1 and not lines[following][0].isspace())):
+            represented.add(line)
+    additions = "\n".join(
+        summary for summary in dict.fromkeys(summaries) if summary not in represented)
+    if additions:
+        body = body + "\n" + additions if body else additions
+        changelog.write_text(text[:start] + "\n\n" + body + "\n\n" + text[end:].lstrip("\n"))
     for path in fragments:
         path.unlink()
     return True

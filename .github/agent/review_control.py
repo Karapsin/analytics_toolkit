@@ -252,6 +252,14 @@ def hold_coordinator(gh: Any, pr: dict[str, Any], binding: dict[str, Any]) -> No
         ).fetchone()
         if row is not None and json.loads(row["binding"])["revision"] > binding["revision"]:
             return  # A stale reconciliation cannot replace a newer request.
+        renewed = db.execute(
+            "SELECT binding FROM coordinator_renewals WHERE repository=? AND number=? AND request=?",
+            (gh.repository, pr["number"], binding["request_id"]),
+        ).fetchone()
+        if renewed is not None and (
+                renewed["binding"] == json.dumps(binding, sort_keys=True)
+                or json.loads(renewed["binding"])["revision"] > binding["revision"]):
+            return  # Intake may replay after renewal committed but before it advanced.
         db.execute("INSERT OR REPLACE INTO coordinator_holds VALUES (?,?,?,?)",
                    (gh.repository, pr["number"], binding["request_id"],
                     json.dumps(binding, sort_keys=True)))
@@ -286,25 +294,32 @@ def renew_coordinator(
             "SELECT binding FROM coordinator_holds WHERE repository=? AND number=? AND request=?",
             (gh.repository, pr["number"], binding["request_id"]),
         ).fetchone()
-        if held is None or held["binding"] != json.dumps(binding, sort_keys=True):
-            return False
         if db.execute("SELECT 1 FROM vetoes WHERE repository=? AND number=? AND head=?",
                       (gh.repository, pr["number"], pr["head"]["sha"])).fetchone():
             return False
         row = db.execute(
-            "SELECT binding FROM coordinator_renewals WHERE repository=? AND number=? AND request=?",
+            "SELECT * FROM coordinator_renewals WHERE repository=? AND number=? AND request=?",
             (gh.repository, pr["number"], binding["request_id"]),
         ).fetchone()
-        if row is not None and json.loads(row["binding"])["revision"] > binding["revision"]:
-            return False
-        # Keep renewal authority separate from existing reviewer findings and
-        # other requests. No earlier green review can authorize this head.
-        db.execute("INSERT OR REPLACE INTO coordinator_renewals VALUES (?,?,?,?,?,?)",
-                   (gh.repository, pr["number"], binding["request_id"], held["binding"],
-                    pr["head"]["sha"], digest))
+        encoded = json.dumps(binding, sort_keys=True)
+        if row is not None and row["binding"] == encoded:
+            if row["head"] != pr["head"]["sha"] or row["digest"] != digest:
+                return False
+            # A lost response can replay this completed transition after restart,
+            # even when intake has already installed a replacement dependency.
+        else:
+            if held is None or held["binding"] != encoded:
+                return False
+            if row is not None and json.loads(row["binding"])["revision"] > binding["revision"]:
+                return False
+            # Keep renewal authority separate from existing reviewer findings and
+            # other requests. No earlier green review can authorize this head.
+            db.execute("INSERT OR REPLACE INTO coordinator_renewals VALUES (?,?,?,?,?,?)",
+                       (gh.repository, pr["number"], binding["request_id"], encoded,
+                        pr["head"]["sha"], digest))
         db.execute(
             "DELETE FROM coordinator_holds WHERE repository=? AND number=? AND request=? AND binding=?",
-            (gh.repository, pr["number"], binding["request_id"], held["binding"]),
+            (gh.repository, pr["number"], binding["request_id"], encoded),
         )
     return True
 

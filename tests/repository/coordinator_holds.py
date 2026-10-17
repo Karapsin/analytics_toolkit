@@ -183,6 +183,177 @@ def test_verified_dependency_handoff_blocks_old_green_review(
     assert not controls.correction(gh.repository, gh.pr["number"], "b" * 40, "digest")
 
 
+def test_renewal_retry_retires_only_matching_legacy_reinstalled_hold(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    controls = controller.trusted_module("review_control")
+    gh = GitHub()
+    binding = _replay_binding(gh)
+    controls.hold_coordinator(gh, gh.pr, binding)
+    assert controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    with controls.connect() as db:
+        # State left by the previous controller replay bug survives an upgrade.
+        db.execute(
+            "INSERT INTO coordinator_holds "
+            "SELECT repository,number,request,binding FROM coordinator_renewals"
+        )
+        renewal = tuple(db.execute("SELECT * FROM coordinator_renewals").fetchone())
+    assert controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    assert not controls.coordinator_held(gh, gh.pr)
+    with controls.connect() as db:
+        assert tuple(db.execute("SELECT * FROM coordinator_renewals").fetchone()) == renewal
+
+
+def _replay_binding(gh: Any) -> dict[str, Any]:
+    return {
+        "request_id": "replay",
+        "revision": 115,
+        "repository": gh.repository,
+        "state_sha256": "complete-questions-answers-plan",
+        "checkpoint_sha256": "retained-patch",
+        "stage": "code",
+        "dev_base": "pinned-dev",
+    }
+
+
+def _durable_state(controls: Any) -> tuple[str, ...]:
+    with controls.connect() as db:
+        return tuple(db.iterdump())
+
+
+@pytest.mark.parametrize("replacement", [None, "newer", "same-revision"])
+def test_exact_renewal_replay_after_restart_preserves_replacement(
+    tmp_path: Path, monkeypatch: Any, replacement: str | None
+) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    controls = controller.trusted_module("review_control")
+    gh = GitHub()
+    binding = _replay_binding(gh)
+    controls.hold_coordinator(gh, gh.pr, binding)
+    assert controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    # Model the committed controller handoff with intake still waiting, or with
+    # intake advanced to N+1 and a new dependency installed before the replay.
+    if replacement:
+        controls.hold_coordinator(
+            gh,
+            gh.pr,
+            {
+                **binding,
+                "revision": 116 if replacement == "newer" else 115,
+                "checkpoint_sha256": "replacement-patch",
+            },
+        )
+    controls.hold_coordinator(gh, gh.pr, {**binding, "request_id": "unrelated"})
+    before = _durable_state(controls)
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    controls = controller.trusted_module("review_control")
+    controls.hold_coordinator(gh, gh.pr, dict(reversed(list(binding.items()))))
+    assert controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    assert controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    assert _durable_state(controls) == before
+    assert controls.release_coordinator(gh, gh.pr, {**binding, "request_id": "unrelated"})
+    assert controls.coordinator_held(gh, gh.pr) == bool(replacement)
+    assert controls.correction(gh.repository, gh.pr["number"], gh.pr["head"]["sha"], "digest")
+    client, _ = _discovery_client(gh, monkeypatch)
+    monkeypatch.setattr(controller, "ready", lambda *args: True)
+    controller.merge_selected(client, 17, tmp_path, pr_numbers={gh.pr["number"]})
+    assert not any(call.args[0].endswith("/merge") for call in client.api.call_args_list)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("repository", "other/repository"),
+        ("request_id", "other-request"),
+        ("revision", 116),
+        ("state_sha256", "different-history"),
+        ("checkpoint_sha256", "different-patch"),
+        ("stage", "plan"),
+        ("dev_base", "different-dev"),
+        ("head", "b" * 40),
+        ("digest", "other-digest"),
+        ("digest", ""),
+        ("number", 2),
+        ("state", "closed"),
+    ],
+)
+def test_renewal_replay_requires_complete_identity(
+    tmp_path: Path, monkeypatch: Any, field: str, value: Any
+) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    controls = controller.trusted_module("review_control")
+    gh = GitHub()
+    binding = _replay_binding(gh)
+    controls.hold_coordinator(gh, gh.pr, binding)
+    assert controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    before = _durable_state(controls)
+    digest = "digest"
+    if field == "head":
+        gh.pr["head"]["sha"] = value
+    elif field in {"number", "state"}:
+        gh.pr[field] = value
+    elif field == "digest":
+        digest = value
+    else:
+        binding[field] = value
+    assert not controls.renew_coordinator(gh, gh.pr, binding, digest)
+    assert _durable_state(controls) == before
+
+
+def test_renewal_replay_preserves_veto_and_unrelated_owner_authority(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    controls = controller.trusted_module("review_control")
+    gh = GitHub()
+    binding = _replay_binding(gh)
+    controls.hold_coordinator(gh, gh.pr, binding)
+    assert controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    with controls.connect() as db:
+        db.execute(
+            "INSERT INTO pauses VALUES (?,?,?,?,?)",
+            (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], "Original evidence needed", 1),
+        )
+        db.execute(
+            "INSERT INTO feature_amendments VALUES (?,?,?,?)",
+            (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], 2),
+        )
+    before = _durable_state(controls)
+    assert controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    assert _durable_state(controls) == before
+    with controls.connect() as db:
+        db.execute(
+            "INSERT INTO vetoes VALUES (?,?,?,?)",
+            (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], 3),
+        )
+    before = _durable_state(controls)
+    assert not controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    controls.hold_coordinator(gh, gh.pr, binding)
+    assert _durable_state(controls) == before
+
+
+@pytest.mark.parametrize("revision", [114, 115])
+def test_hold_replay_uses_full_binding_and_retained_newer_renewal(
+    tmp_path: Path, monkeypatch: Any, revision: int
+) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    controls = controller.trusted_module("review_control")
+    gh = GitHub()
+    binding = _replay_binding(gh)
+    controls.hold_coordinator(gh, gh.pr, binding)
+    assert controls.renew_coordinator(gh, gh.pr, binding, "digest")
+    changed = {**binding, "revision": revision, "checkpoint_sha256": "different-patch"}
+    before = _durable_state(controls)
+    controls.hold_coordinator(gh, gh.pr, changed)
+    if revision < binding["revision"]:
+        assert _durable_state(controls) == before
+    else:
+        assert controls.coordinator_held(gh, gh.pr)
+        assert not controls.release_coordinator(gh, gh.pr, binding)
+        assert controls.release_coordinator(gh, gh.pr, changed)
+
+
 @pytest.mark.parametrize("case", ["replacement", "veto", "other-correction", "existing-findings"])
 def test_dependency_handoff_preserves_replacement_authority(
     tmp_path: Path, monkeypatch: Any, case: str

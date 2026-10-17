@@ -452,8 +452,10 @@ rejects `recover`, and status scenarios recreate production-initialized tables.
 The correction accepts the keyword-only argument, inserts scenario rows into the
 existing schema, and replaces only the test-local coordinator table for the
 malformed-schema case. Restart, authority-preservation and WAL single-snapshot
-assertions remain intact. The duplicate recovery release note is removed; signed
-publication must fold the task fragment once without adding a second copy.
+assertions remain intact. That correction removed the duplicate recovery release
+note in its checkpoint, but metadata publication at `4d2b1637` appended it again.
+The replay/publication correction below removes that duplicate and makes exact
+Unreleased entry folding idempotent.
 
 The independently reviewed plan is
 `8cc97542e01126e9d41893ab4c5f91d7c42aad765eb8d502fd7e0f8cfff7d47c`,
@@ -698,5 +700,52 @@ including `fast-checks`. Fresh implementation review, real owner exact-head
 policy approval, guarded activation and deployed-revision evidence remain
 required. Operator monitoring ends only after successful dev merges drain every
 qualifying PR and repair; the scheduler remains available for future work.
+
+### Exact coordinator replay and publication recovery
+
+The reviewed correction for starting head `4d2b1637c10f20813d9c82f94b98a3c14e2e0209`
+and pinned dev `581d81b6f18950b91164eabe6dfa32500db106f4` changes both controller
+sources. A dependency installation consults retained renewals inside its transaction:
+an exact already-renewed binding cannot reinstall its hold after restart or intake
+advancement. Equal revisions with different complete bindings remain dependencies.
+A renewal retry succeeds only for the retained repository, PR, request, complete
+binding, head and digest, while the PR is open and has no current-head veto.
+It retires only a matching hold, preserving replacement and unrelated authority.
+The durable renewal continues to block an earlier green head.
+
+Changelog folding consumes all validated fragments and appends each distinct entry
+once. An exact complete single-line entry already under Unreleased is represented;
+wrapped entries and historical-release text do not suppress a new entry. No-fragment
+folding remains a no-op. The recovery bullet is retained once; the new task fragment
+describes replay and folding repairs rather than recreating that folded note.
+GitHub must verify the final metadata publication still contains exactly one copy.
+
+The historical pair is now explicitly available in the immutable source chain:
+`coordinator_shared_code6.json` and `test_coordinator_shared_checkpoint.py` from
+self_host `3c906ec350634316545e4e7229417e09ef9a490c`, with independent review
+`a82850c4d33aafdf410055d1e86eb628367ac8bb728437b3bbe891b2ba715d2a` and successful
+[Repository Checks 39013892714](https://github.com/Karapsin/self_host/actions/runs/39013892714).
+That pair covers the starting `1a6edae9` / `ad016e0d` controller sources.
+The older combined fixture/module and `d0f6d916` receipts remain historical.
+The pure shared-status caller in self_host `c211cc87` has separate source review
+and successful [Repository Checks 39016268860](https://github.com/Karapsin/self_host/actions/runs/39016268860).
+
+The supplied activation receipt
+`operator/worker-feedback-lock-retry-20261017-v1-active.json`
+(SHA256 `d3bdaa40c84cc616b44857ff4bf6b5130ba6bde1426e6a907f5a2cd8e89d4a16`)
+retains these complete sources, reviews and CI records. It records worker
+`f21c812a7292097892ec17761922d695b0b8e625` active with trusted controller
+`13f0043b89d805ac5267d25fc0f4fdec7250f083`; it does not activate PR #33.
+
+This patch's exact source hashes and historical evidence paths are appended to
+[the parent-objective evidence](../agent_tools/task_evidence/29adce308110491580e26a80f16fbb4a/parent-objective.json).
+The coordinator owns the new immutable successor fixture, real producer/recovery
+and pure shared-caller regressions, independent review and successful exact-commit
+CI for these changed bytes. Before final acceptance, bind that evidence to the signed
+candidate and verify the fresh reviewer's actual immutable manifest includes every
+precise source, test, review and CI record. A catalogue entry or comment is insufficient.
+Metadata publication changing controller bytes requires another paired refresh.
+This source checkpoint claims no unexecuted successor validation, protected approval,
+deployment or successful all-relevant-PR merge completion.
 
 [Documentation overview](README.md)

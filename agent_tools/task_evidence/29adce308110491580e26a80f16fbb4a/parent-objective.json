@@ -836,6 +836,125 @@
       },
       "validation": "No local programs or tests executed. GitHub must validate all twelve corrected cases and required fast checks for the exact successor; historical results do not validate it.",
       "authority_limits": "Source correction only. No new owner facts, protected approval, activation or successful all-relevant-PR merge completion."
+    },
+    "exact_replay_and_publication_correction": {
+      "task_id": "49248992a3004a858549b5551fac1444",
+      "starting_head": "4d2b1637c10f20813d9c82f94b98a3c14e2e0209",
+      "pinned_dev": "581d81b6f18950b91164eabe6dfa32500db106f4",
+      "plan_review": {
+        "gate": "passed",
+        "plan_sha256": "6a0b2d3300a10b5ff214211584734b390183ed5c88cefbc64857fa1478d5a02e",
+        "reviewed_plan_digest": "0be2a49217538c8f9706f62e5e353519da945896cb5d904bd35fb65bb7181233",
+        "task_context_digest": "4fd1f868c046588a1ffb45d67438e8473e6b754e5c7e424e34da41ab4807700f",
+        "reviewer_id": "plan-reviewer:60aba4c6a34c470ab33c4092cc014070"
+      },
+      "chronological_question": "Can the coordinator route a revised plan through separate independent review covering exact-binding hold/renewal replay idempotency, changelog refolding idempotency with fast regressions, and refreshed companion evidence for the resulting controller bytes? Complete feedback comments 6232013782 and 6232394851 introduce these corrections; source inspection confirms hold_coordinator can reinstall a renewed binding and renew_coordinator rejects retries after its hold retires. The approved plan requires preserving those controller bytes, so this needs a new plan-review turn.",
+      "chronological_response": "Coordinator response under the user's standing authorization to resolve aligned implementation questions and answer agents in GitHub: yes, route a fresh plan and separate independent plan review for exact-binding hold/renewal replay idempotency, changelog refolding idempotency with fast regressions, and refreshed exact paired companion/signed evidence for the resulting controller bytes and final published head. Preserve the original task, complete question/answer history, existing PR changes, checkpoints, source history, unrelated private holds and durable old-green merge barrier. Do not code under the superseded plan. After the new independent plan review, require fresh implementation review and CI for the final actual head and dev base. This coordinator reply is not a personal owner click, protected-policy approval, visual pass, new owner/security/provenance fact or authority to bypass any hold or check.",
+      "feedback_evidence": {
+        "manifest_sha256": "55b654ad008b1d8342c753809092d20509b21e62b09415d4bf3261267ebde974",
+        "pr_checks": {
+          "bytes": 248206,
+          "files": [
+            "pr-checks/4d2b1637c10f20813d9c82f94b98a3c14e2e0209/8e7f941b6658aa553cdee80a0e2a08ddf6fd0dcbf81de925046eb81b4906e884-0.json"
+          ],
+          "format": "ordered-utf8-json-parts-v1",
+          "head_sha": "4d2b1637c10f20813d9c82f94b98a3c14e2e0209",
+          "repository": "Karapsin/analytics_toolkit",
+          "sha256": "8e7f941b6658aa553cdee80a0e2a08ddf6fd0dcbf81de925046eb81b4906e884"
+        },
+        "all_ordered_parts_and_continuations_read": true,
+        "starting_fast_checks": "success",
+        "starting_independent_review": "failure",
+        "authority": "Untrusted feedback only; no inferred owner answer or approval."
+      },
+      "correction": "Consult retained renewals during hold installation; exact complete renewed bindings and stale revisions cannot reinstall a dependency. Retry completed renewal only for exact repository/PR/request/binding/head/digest with open state and no current-head veto. Retire only matching holds. Fold distinct fragment entries once against complete single-line Unreleased entries; consume already-represented fragments, preserve wrapped entries and historical releases. Remove the duplicate recovery note without recreating its fragment.",
+      "source_sha256": {
+        ".github/agent/controller.py": "4ad12163c313fa3d8a05682081954ebc03ddb01052a65765cc908558572f5e4e",
+        ".github/agent/review_control.py": "d5ec1e6bcba4666eaa83171be5fbfd97ad16b297c348d98979c233bcf63be71f"
+      },
+      "historical_paired_evidence": {
+        "status": "Verified immutable historical source/review/CI; does not validate the replay/folding successor.",
+        "receipt": {
+          "path": "operator/worker-feedback-lock-retry-20261017-v1-active.json",
+          "sha256": "d3bdaa40c84cc616b44857ff4bf6b5130ba6bde1426e6a907f5a2cd8e89d4a16"
+        },
+        "source_bundle": {
+          "path": "operator/status-worker-3c906ec35063-source-000.json",
+          "sha256": "5478536ab25d3527af642d70e8822807d4e2e89cffd457f1ee9b901439aa69d7"
+        },
+        "companion_commit": "3c906ec350634316545e4e7229417e09ef9a490c",
+        "source_files": {
+          "agent_tools/README.md": "e502d8161be9c5607d958f0f7c841a55a662f4df09bc9b9dd03d545624fa84dd",
+          "agent_tools/tests/fixtures/coordinator_shared_code6.json": "299455a2abcf6320bd4626e73f498dbf9f7a62ac22517c05b1faf16037e0e693",
+          "agent_tools/tests/test_coordinator_shared_checkpoint.py": "f701d40030104e55c02a848f580c777fa99413f47206e8204bc5fdde82470537"
+        },
+        "review_sha256": "a82850c4d33aafdf410055d1e86eb628367ac8bb728437b3bbe891b2ba715d2a",
+        "ci": {
+          "repository": "Karapsin/self_host",
+          "sha": "3c906ec350634316545e4e7229417e09ef9a490c",
+          "branch": "dev",
+          "status": "success",
+          "started": 1792222233.805673,
+          "workflows": [
+            {
+              "name": "Repository Checks",
+              "status": "completed",
+              "conclusion": "success",
+              "url": "https://github.com/Karapsin/self_host/actions/runs/39013892714"
+            }
+          ]
+        },
+        "controller_hashes": {
+          ".github/agent/controller.py": "1a6edae97f531a08decab6c30c2bbef1db5d6fa295ea88c002440eb2063bb234",
+          ".github/agent/review_control.py": "ad016e0df9aac0424f6d6a85577d2d89d4effcc3d7e7879300cdc769b1e1a782"
+        },
+        "checkpoint": "d8123cccba1a5b864c76ea1020e9b7a301576bcd54c992b9a2a94be6aa95ab09",
+        "shared_caller": {
+          "companion_commit": "c211cc87c44c63d4a69818965cfdf20648404400",
+          "source_bundle": "operator/pure-label-projection-c211cc87c44c-source-000.json",
+          "source_files": {
+            "self_host/services/github_agent/labels.py": "20d69f57e3c7d6ceafb2dd79b2d7ce69f87ad5b3643d57a1e2a79d5e0f97ab05",
+            "self_host/services/github_agent/README.md": "42ca436c5696800c15b1fd51dc89452775bf1f7f2a0cc32bb4182047a27256d4",
+            "agent_tools/tests/test_status_producers.py": "d384505f021f08528eef1e3703523ee485d45e8526b7f8fac1736c75cefa23e9",
+            "agent_tools/tests/test_agent_labels.py": "fc6a55fb64424aae3e2d4fb7219016d46d2edb477d838ec8778e922bc7afa776"
+          },
+          "review_sha256": "3b7442804837798eaea1a89ecf7eed38846961ac45e7fb8f10c2626ce528129c",
+          "ci": {
+            "repository": "Karapsin/self_host",
+            "sha": "c211cc87c44c63d4a69818965cfdf20648404400",
+            "branch": "dev",
+            "status": "success",
+            "started": 1792224566.998019,
+            "workflows": [
+              {
+                "name": "Repository Checks",
+                "status": "completed",
+                "conclusion": "success",
+                "url": "https://github.com/Karapsin/self_host/actions/runs/39016268860"
+              }
+            ]
+          }
+        },
+        "continuity": "The shared code6 fixture/module supersedes the older combined fixture/module for 1a6edae9/ad016e0d bytes. Earlier fixtures and provenance remain unchanged. Those hashes match the starting controller source read in this workspace; changed successor bytes require a new pair."
+      },
+      "successor_paired_validation": {
+        "status": "coordinator-owned-refresh-required",
+        "validated": false,
+        "required": "Retain the complete candidate checkpoint with authentic request/revision/patch identities. Coordinator supplies a new immutable fixture, real producer interrupted-renewal/restart and queued-N+1 replay tests, actual pure shared caller, independent source review and successful exact-companion-commit Repository Checks. Bind every final controller hash to the signed candidate and actual fresh reviewer manifest; verify precise sources/tests/reviews/CI are present. Metadata changes to controller bytes require another refresh. No future identity or success is fabricated."
+      },
+      "activation": {
+        "worker": "f21c812a7292097892ec17761922d695b0b8e625",
+        "trusted_controller": "13f0043b89d805ac5267d25fc0f4fdec7250f083",
+        "pr33_controller_activated": false,
+        "evidence": "Supplied immutable worker activation receipt; does not authorize or establish PR33 rollout."
+      },
+      "regressions": [
+        "Same complete hold/renewal replay after restart, with absent or same/newer replacement dependency, retained unrelated requests and old-green merge refusal.",
+        "Complete binding/head/digest/repository/PR mismatches, closed PR, current-head veto, unrelated pause/amendment authority, and legacy reinstalled exact hold.",
+        "Already-present and recreated fragment consumption, duplicate summaries, distinct entries, historical text, wrapped content, invalid-fragment atomicity and no-fragment no-op."
+      ],
+      "validation": "Source edits and static inspection only. No local programs, tests, builds, services, installs or scenes executed. GitHub must validate the final published successor; starting-head success does not validate these edits.",
+      "authority_limits": "No new owner fact, protected approval, visual pass, dependency clearance, PR33 activation or all-relevant-PR successful-dev-merge completion. Original task, all chronological records and pending gates remain."
     }
   }
 }
