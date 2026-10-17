@@ -57,7 +57,7 @@ class GitHub:
                 message = "Transient label API failure"
                 raise RuntimeError(message)
             self.pr["labels"] = [
-                item for item in self.pr["labels"] if item["name"] != "agent:needs-user"
+                item for item in self.pr["labels"] if item["name"] != path.rsplit("/", 1)[-1]
             ]
             if self.on_delete:
                 self.on_delete()
@@ -208,7 +208,8 @@ def test_concurrent_new_head_or_hold_restores_label_and_blocks_merge(
 
     gh.on_delete = changed
     controller.merge(gh, 17, tmp_path)
-    assert {item["name"] for item in gh.pr["labels"]} == {"agent:needs-user", "feature"}
+    expected = {"feature"} if race == "head" else {"agent:needs-user", "feature"}
+    assert {item["name"] for item in gh.pr["labels"]} == expected
     assert not any(path.endswith("/merge") for path, method in gh.mutations)
     assert gh.pr["state"] == "open"
 
@@ -641,6 +642,7 @@ def test_orchestrator_publication_recovers_only_enrolled_exact_head(
     with control.connect() as db:
         held = db.execute("SELECT reason FROM pauses").fetchone()
     assert (held is None) == (case == "valid")
-    # Reconciliation separately owns displayed labels and protected approval.
-    assert gh.pr["labels"] == [{"name": control.PAUSED}]
+    # Renewed planning remains held without manufacturing an owner question.
+    expected = [] if case in {"owner-hold", "valid"} else [{"name": control.PAUSED}]
+    assert gh.pr["labels"] == expected
     assert not control.approved(gh.repository, gh.pr["number"], gh.pr["head"]["sha"])

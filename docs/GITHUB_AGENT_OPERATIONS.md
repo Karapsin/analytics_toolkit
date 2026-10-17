@@ -331,6 +331,28 @@ pointer.
 
 ### Telegram feature requests and planning
 
+Controlled lifecycle-label producers share the display-only `status_transition`
+boundary: attention creation/recovery, phase reconciliation and writer
+acquisition/release remove conflicting statuses before appending the current one.
+Per-PR host locks serialize controlled writers without a global worker lock.
+Each mutation rechecks the open/closed state, exact head, authoritative issue
+labels and private attention. A changed head aborts the old decision; a push by
+itself never creates `needs-user`. Ordinary renewed planning keeps its merge
+hold and displays its current phase without inventing an owner question.
+Writer release removes only writing, preserving a later non-writing phase.
+Closed cleanup preserves live Futures and stops on reopening. Visible owner
+attention suppresses a phase even while its existing Future finishes; without
+attention a live or unknown job retains its phase.
+
+Readiness observation uses the pure authorization projection; authenticated
+comment recovery remains an explicit separate workflow. Display updates do not
+grant approval, clear a veto, answer questions or release a Future. Persistent
+API errors and bounded lock/convergence failures retry through normal
+reconciliation. GitHub does not provide an atomic compare-and-swap across label
+requests, so the periodic reconciler remains recovery for interrupted operations
+and external writers. Paired companion source/tests and exact-commit checks must
+cover the final controller bytes before activation.
+
 Verified publication recovery and correction-question recovery share one atomic
 pause-retirement operation. It matches the observed repository, PR, head, reason
 and creation time. A replacement hold or a current-head owner veto prevents the
