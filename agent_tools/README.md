@@ -174,13 +174,20 @@ visual receipt created by `visual-workflow`. The capture runs headlessly on the
 current Linux, macOS, or Windows host, using the checkout's Python environment.
 It starts each scene in a separate process with Textual's headless driver and
 fake database fixtures, exports the complete application screen, and rasterizes
-it to a 1280x800 PNG with `resvg-py`. The terminal grid is 208x47 cells. A host
+it with `resvg-py` at 2560x1600, then reduces once with Pillow's
+`Image.Resampling.LANCZOS` to the full 1280x800 PNG. An outer SVG viewport scales
+the unchanged framed SVG; intermediate and final dimensions are validated, and
+rendering errors propagate. The terminal grid is 208x47 cells. A host
 monospace font must be installed (for example Menlo, Consolas, or Liberation
 Mono). No VM, OS image download, desktop session, or VNC server is needed.
 
 Install `agent_tools/requirements-mcp.txt` in the agent environment for the PNG
-renderer. On Windows, the workflow finds `.venv/Scripts/python.exe`; on Linux
-and macOS it uses `.venv/bin/python`, falling back to the running interpreter.
+renderer. The GitHub latest/minimum test matrix and tox latest/minimum and
+coverage environments also install `Pillow>=10,<13` for the unconditional,
+service-free supersampling regressions.
+
+On Windows, the workflow finds `.venv/Scripts/python.exe`; on Linux and macOS it
+uses `.venv/bin/python`, falling back to the running interpreter.
 The shell-free CLI equivalent on every platform is:
 
 ```text
@@ -196,6 +203,215 @@ batch; the agent must open every full image and record a verdict through
 completion. The receipt records the host and capture method and is bound to
 the complete reviewed content; only a current all-pass receipt allows commit
 or push. Failed or interrupted captures require a new review session.
+
+Capture waits for both intended scene state and passing geometry, with a bounded
+timeout. Save scenes require the active document name and requested button focus;
+invalid create-table scenes require an incomplete row and its validation notice.
+Completion scenes start unready, open fake suggestions after editor refresh, and
+require a mounted, visible popup with composed suggestion text and valid geometry.
+A popup hidden during an earlier invalid layout must become visible when its
+cursor and available space are valid again.
+Normal modal teardown postpones readiness, including delayed configuration and
+queued readiness callbacks. Evidence refreshes require a mounted active screen;
+only missing-control and screen-stack lifecycle errors are handled, while
+unexpected errors still fail.
+Immediately before export, capture rechecks readiness, removes stale geometry,
+and validates every required control again. Missing controls or a timeout block
+PNG export. Configuration is recorded after mounted controls are available and the
+intended action has been requested; periodic refreshes then poll settled state
+without resubmitting validation. Invalid-scene feedback is read from the Static
+plain-text renderable; an unexpected renderable fails instead of passing on its
+object representation. Control mounting is checked before reading modal values.
+Timeout errors include bounded readiness conditions,
+missing or unmounted controls, incomplete rows, notice text, requested focus,
+and freshly evaluated geometry assertions before teardown and evidence removal.
+The timeout and every required geometry check remain unchanged.
+
+The `directory-armed` fixture configures its pending picker after mounting,
+refresh and queued initialization messages, then invokes the existing Escape
+action once. Readiness requires directory-selection mode, mounted path/tree,
+selection-button and notice controls, the armed flag and button class, selection
+button focus, and the exact notice
+`Enter: select this directory   Escape: cancel   Arrows: keep browsing`.
+Periodic readiness checks observe these conditions without re-arming the picker.
+The public harness method `scene_readiness_details()` exposes the existing
+readiness contract while retaining `_scene_readiness_details()` for compatibility.
+Each directory geometry payload collects readiness once, so its semantic assertions
+and recorded scene-state details describe the same observation.
+Geometry includes the same semantic assertions and bounded scene-state evidence;
+lost focus, styling or instructions blocks capture and appears in timeout
+diagnostics. Service-free regressions retain the state across idle refreshes and
+verify Enter selection, Escape cancellation and arrow browsing on the real fixture.
+These changes require a new full 46-scene capture and independent PNG review;
+the initialization timing hypothesis remains unverified until GitHub validation.
+Button color assertions retain `button_focus_color:<id>` for named controls.
+Controls without IDs use their widget class, sorted CSS classes and query index
+(for example, `button_focus_color:Button.remove-column[0]`), so every removal
+button is checked separately. Modal buttons use the surface color when neutral
+or disabled, the shared hover color under the pointer, and amber for enabled
+keyboard focus, including focus with hover. Disabled-color regressions resolve an
+independent disabled Button reference with `color: $text-disabled` resolved by
+Textual CSS after mounting beside each tested button under the same parent.
+Plain-color parsing cannot resolve automatic/percentage CSS values such as
+`auto 38%`. The reference preserves Button opacity, ancestor
+background and contrast context. They compare CSS foreground/background, automatic
+contrast and rendered foreground/background exactly, and reject
+an intentionally incorrect reference foreground.
+
+For database-picker, find-replace, column-ruler-scrolled, create-table-advanced,
+create-table-schema, create-table-invalid, and create-table-sql, geometry JSON also includes bounded
+`render_diagnostics`: widget and composed terminal strips, styles and control
+state, SVG clips/transforms, scrollbar state, and frame hashes. Missing or
+truncated layers explicitly report incompleteness. The PNG and diagnostic hashes
+come from one export; atomic evidence replacement protects that frame from later
+timer refreshes. These diagnostics do not replace geometry checks or individual
+review of every full PNG.
+
+Create-table checkbox entries additionally retain bounded model label/value and
+enabled/focused state, direct Rich render text/styles/spans, computed geometry and
+styles, and ancestor clips. The terminal snapshot records whether Advanced is
+collapsed. Direct output remains separate from cached widget and compositor rows;
+text loss in either layer is an observation, not a collection failure or a pass.
+Missing probes and label, direct-render, ancestor or payload limits explicitly
+mark evidence incomplete. These additions share the existing region, row, cell,
+element and 512 KiB bounds.
+
+The strict checkbox indicator and complete-label assertions attach a JSON snapshot
+only when they fail, using the original collected rows before teardown or another
+refresh. The message retains Python, Textual and Rich versions and terminal size;
+it never recollects rows or changes readiness to wait for the disputed text.
+GitHub must reproduce the advanced scene on Python 3.14/Textual 0.89.1, then the
+canonical and minimum environments, and retain exact-head coverage JSON with
+missing statements/arcs and tool versions. The first failing checkbox layer and
+the four picker comparisons still need independent review before a production
+repair is selected. Assertions, coverage/debt baselines and full-scene review
+remain required; this diagnostic checkpoint supplies no repair or visual verdict.
+
+Database-picker geometry also retains versioned `export_input_evidence` outside
+the 512 KiB parsed-diagnostic reducer. Its raw and framed SVG `content` strings
+are the actual export and target frame inputs. The supersampling input is retained
+separately in `rasterization_comparisons`. Decode JSON, encode each string
+as UTF-8 without normalization, then verify its byte length and SHA256; verify
+`png_sha256` against the same frame. Combined SVG bytes are limited to 4 MiB.
+Above that limit both contents are omitted, lengths/hashes remain, and
+`complete=false` explicitly blocks the diagnostic prerequisite. No content is
+silently truncated. The geometry and parsed-layer completeness verdicts remain
+independent and must still pass.
+
+Rendering context includes Python, Textual, Rich and resvg-py package versions,
+requested SVG font families, and bounded fontconfig inventory/match probes.
+Missing commands, timeout, errors and output limits are explicit. System matches
+do not establish resvg font selection, which is marked unobservable. These probes
+run only in the capture job and do not change fonts, framing or rasterization.
+Picker geometry additionally includes versioned `rasterization_comparisons`
+outside the parsed reducer: `raw_original`, `framed_original`, `raw_dejavu` and
+`framed_dejavu`. All four reuse the single final screenshot export. The framed
+original is rendered independently; all seven direct controls call the same resvg
+API with only `svg_string`. Raw inputs keep native sizing. Diagnostic font
+variants replace only the generated terminal matrix font-family declaration with
+DejaVu Sans Mono; title fonts, text, positions, clips and framing stay intact.
+An exact, nontruncated fontconfig family/file observation must confirm that family
+is installed. This observation does not prove the renderer selected that font.
+
+Each variant retains the exact UTF-8 SVG and base64 PNG, byte lengths, SHA256,
+actual PNG dimensions, font/framing identity and renderer arguments; package
+versions and the font probe accompany the comparison. Decode SVG strings without
+normalization and base64 PNG content without transformation, then verify both
+lengths and hashes. Combined comparison SVG bytes and decoded PNG bytes each have
+a separate 4 MiB limit (including the reused ordinary variant). Exceeding either
+limit omits all content of that type while retaining available lengths/hashes.
+Oversized SVG inputs are not rendered. Missing fonts, ambiguous declarations,
+render failures and omissions have explicit per-variant reasons and
+`complete=false`. Service-free regressions cover both runtime and operating-system
+renderer errors while retaining the successful variants. Successful ordinary capture
+or parsed diagnostics cannot override incomplete comparisons. Production UI remains
+unchanged; probes and comparison rendering execute only on GitHub.
+Readiness and final geometry must pass before export or comparison rendering;
+regressions verify that stale successful comparisons cannot qualify a rejected frame.
+
+Three additional controls separate serialization from scaling:
+`raw_xml_native` reserializes the raw SVG with native sizing;
+`framed_preserved_target` uses the target frame with every original SVG interior
+byte intact; `framed_xml_native` uses the existing XML frame at the original
+viewBox dimensions. They retain original font declarations and share both 4 MiB
+comparison budgets with the original four variants. Invalid or missing native
+sizing and failed controls explicitly make the comparison incomplete. The target
+frame remains unchanged.
+
+The additional `framed_supersampled` variant retains the exact outer SVG, renderer
+arguments, scale factor, intermediate dimensions/hash, final dimensions/hash,
+Pillow version and reduction filter. It alone reuses the ordinary final PNG;
+`framed_original` remains a direct-render control. All eight variants share the
+existing separate 4 MiB SVG and decoded-PNG budgets and explicit omission rules.
+
+The coordinator must bind and independently inspect the supersampled picker and
+all comparisons, then all 46 full scenes. Supersampling is accepted only when the
+actual heading is readable and every geometry check and individual PNG verdict
+passes. Incomplete evidence or a successful capture alone supplies no visual
+approval.
+
+The type-menu viewport regression attaches an observational JSON snapshot before
+its initial visibility assertion, after scrolling, and after positioning. It records
+focus and tracked-input identities, matches/index/accepted type, mount/visibility,
+scroll offsets, field/menu/viewport geometry, advanced-panel state and dependency
+versions. Queue sizes and pending layout/refresh flags are read only when available;
+unavailable probes and omissions are explicit. Snapshots are limited to 8 KiB and
+attach the original observation to failures without retries, event draining,
+refocusing or recollection. Before the assertion sequence, the fixture settles the
+expanded layout, focuses and scrolls the field into view without animation, then
+checks that its full region is visible with space below. Existing menu visibility,
+placement and scroll-out assertions remain intact; production positioning is unchanged.
+
+The quality job always attempts to upload generated `coverage.json` under a unique
+run/attempt/head-bound artifact name, including when the coverage ratchet fails.
+The upload warns explicitly if no report exists and does not change the preceding
+command's exit status. Fresh GitHub reports supply actual missing arcs; historical
+coverage totals cannot reconstruct them. The 98.03% branch floor and all debt
+baselines remain unchanged.
+
+The schema, invalid and SQL creation scenes also record scoped source-selector
+children: `SelectCurrent`, its `Static#label`, and the active arrow, with the
+inactive arrow described separately. Diagnostics retain the selected/expected
+mode, computed styles, child/content geometry, ancestor clipping and complete
+bounded render-cache/compositor rows. `visibility_ok` and explicit visibility
+findings are separate from collection completeness; successfully observing blank
+text does not approve the selector. The region budget is nine; row, cell, SVG and
+512 KiB payload bounds remain in force and omissions remain explicit.
+
+Schema, invalid-schema and SQL scenes require complete selector evidence, the
+expected source value, and readable composed label/arrow output contained within
+every ancestor clip. These checks gate both current scene readiness and freshly
+evaluated final geometry. Source and advanced Boolean selectors place their frame
+on the inner `SelectCurrent`, leaving the outer three-row allocation borderless
+and unpadded. Positive regressions require complete, visible selector evidence
+and passing readiness assertions for all three source scenes; failure regressions
+retain observational evidence without approving the frame.
+Selector-only create-table fixtures also mount the real `create-table-advanced`
+Collapsible and compare its collapsed state with the collected checkbox context;
+missing-panel negative controls continue to require explicit incomplete evidence.
+Per-region collection shares the scene row budget, including after invisible
+regions and contained row-collection failures.
+
+Diagnostic collection remains observational and available for failed frames.
+Timeout observations are retained in a sibling `*.timeout.json` file, including
+selector rows, even if the error log truncates its summary. Final capture deletes
+stale geometry before rechecking readiness and geometry; a previous successful
+frame cannot approve a clipped selector. Service-free regressions cover composed
+output, containment after resize/scroll, keyboard choices, and deliberate double
+framing. GitHub must run these on Textual 0.73.x and 0.89.1 and perform a fresh
+46-scene capture and individual full-PNG review before publication.
+
+For private controller visual corrections, collect the complete source patch first
+and publish only an isolated `agent-visual/<sha>` temporary capture candidate.
+GitHub must capture all 46 manifest scenes at 208x47 cells and full 1280x800 PNGs;
+an independent reviewer inspects every full PNG individually. Require every geometry
+check and scene verdict to pass in a new receipt bound to the actual candidate,
+capture artifacts, task digest, and complete patch. Remove the temporary ref before
+publishing the correction to the feature PR. Any source correction invalidates that
+receipt and repeats the candidate capture and review sequence; historical receipts
+cannot certify a changed patch. After publication, require fast CI, matrix/quality
+checks and a separate implementation review for the final published head and current
+dev base, preserving signatures and protected exact-head owner approval gates.
 
 Normal `version-bump` calls record a feature fragment or add the supplied
 summary under `## Unreleased`; they never bump versions, regardless of entry count.

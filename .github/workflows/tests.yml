@@ -64,11 +64,11 @@ jobs:
 
       - name: Install latest test environment
         if: matrix.env_name != 'py38-min'
-        run: python -m pip install -e '.[tui,datalens]' pytest
+        run: python -m pip install -e '.[tui,datalens]' pytest "Pillow>=10,<13"
 
       - name: Install minimum Python 3.8 test environment
         if: matrix.env_name == 'py38-min'
-        run: python -m pip install -c constraints/py38-min.txt -e '.[tui,datalens]' pytest==8.3.5
+        run: python -m pip install -c constraints/py38-min.txt -e '.[tui,datalens]' pytest==8.3.5 "Pillow>=10,<13"
 
       - name: Validate minimum dependency constraints
         if: matrix.env_name == 'py38-min'
@@ -121,3 +121,11 @@ jobs:
 
       - name: Run lint, type, coverage, and artifact gates
         run: tox -e lint,type,coverage,artifacts
+
+      - name: Retain canonical coverage JSON
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: coverage.json
+          if-no-files-found: warn
