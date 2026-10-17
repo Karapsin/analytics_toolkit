@@ -175,7 +175,9 @@ def test_underlined_search_space_preserves_the_complete_highlight() -> None:
 @pytest.mark.parametrize("text", ["SELECT", "S LECT", "S\tLECT"])
 @pytest.mark.parametrize("background", [None, "#123456"])
 def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
-    text: str, background: str | None, monkeypatch: pytest.MonkeyPatch
+    text: str,
+    background: str | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())
@@ -237,7 +239,8 @@ def test_occupied_carets_preserve_original_cell_colors_and_restore_theme(
 
 @pytest.mark.parametrize("background", [None, "#123456"])
 def test_blank_and_end_caret_bars_preserve_original_cell_background(
-    background: str | None, monkeypatch: pytest.MonkeyPatch
+    background: str | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())
@@ -286,7 +289,8 @@ def test_blank_and_end_caret_bars_preserve_original_cell_background(
 @pytest.mark.parametrize("command_focus", [False, True])
 @pytest.mark.parametrize("line", ["x x", "x\tx", "\t\tx"])
 def test_whitespace_carets_preserve_widget_and_compositor_cells(
-    line: str, command_focus: bool
+    line: str,
+    command_focus: bool,
 ) -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())
@@ -417,7 +421,8 @@ def test_horizontally_clipped_tabs_keep_all_visible_caret_cells() -> None:
 @pytest.mark.parametrize("command_focus", [False, True])
 @pytest.mark.parametrize("column", [0, 10])
 def test_native_renderer_preserves_syntax_and_completion_separator_colors(
-    command_focus: bool, column: int
+    command_focus: bool,
+    column: int,
 ) -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())
@@ -443,9 +448,7 @@ def test_native_renderer_preserves_syntax_and_completion_separator_colors(
             theme = editor._theme
             theme_state = vars(theme).copy()
             baseline = [editor.render_line(row) for row in range(2)]
-            editor._set_selections(
-                Selection.cursor((0, column)), [Selection.cursor((1, column))]
-            )
+            editor._set_selections(Selection.cursor((0, column)), [Selection.cursor((1, column))])
             await pilot.pause()
             viewport = editor.scrollable_content_region
             left = editor.gutter_width + column
@@ -458,7 +461,10 @@ def test_native_renderer_preserves_syntax_and_completion_separator_colors(
                     ):
                         assert strip.cell_length == viewport.width
                         assert (
-                            strip.crop(editor.gutter_width, editor.gutter_width + len(line)).text
+                            strip.crop(
+                                editor.gutter_width,
+                                editor.gutter_width + len(line),
+                            ).text
                             == line
                         )
                         caret = strip.crop(left, left + 1)
