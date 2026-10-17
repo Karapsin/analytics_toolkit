@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from tests.repository.github_agent import controller
 from tests.repository.label_reconciliation import GitHub, insert_hold
+from tests.repository.label_reconciliation import (
+    merge_environment as merge_environment,  # noqa: PLC0414 - pytest fixture
+)
 from tests.repository.review_control import control as control  # noqa: PLC0414 - pytest fixture
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def hint(control: Any, gh: GitHub, required: bool = False) -> bool:
@@ -109,3 +115,68 @@ def test_question_without_pause_and_stale_heads_remain_independent(control: Any)
     assert not hint(control, gh)
     assert control.owner_attention(gh, gh.pr)
     assert not control.attention_hint(gh, gh.pr, None, False, "d" * 64)
+
+
+def test_internal_display_retry_preserves_authority_and_unrelated_labels(
+    control: Any, monkeypatch: Any
+) -> None:
+    gh = GitHub()
+    insert_hold(control, "Correction agent requires user input.")
+    observed = control.attention_snapshot(gh, gh.pr)
+    assert hint(control, gh)
+    gh.fail_delete = True
+    with pytest.raises(RuntimeError, match="Transient label"):
+        control.reconcile_label(gh, gh.pr, approval_required=False)
+    assert control.attention_snapshot(gh, gh.pr) == observed
+    assert control.paused(gh, gh.pr)
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    restarted = controller.trusted_module("review_control")
+    gh.fail_delete = False
+    assert restarted.reconcile_label(gh, gh.pr, approval_required=False)
+    assert gh.pr["labels"] == [{"name": "feature"}]
+    assert restarted.attention_snapshot(gh, gh.pr) == observed
+    assert restarted.paused(gh, gh.pr)
+    # A successful retry is idempotent and never becomes an owner decision.
+    count = len(gh.mutations)
+    assert restarted.reconcile_label(gh, gh.pr, approval_required=False)
+    assert len(gh.mutations) == count
+    with restarted.connect() as db:
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("replace_pause", [False, True])
+def test_reopened_pr_rechecks_attention_without_clearing_private_hold(
+    control: Any, replace_pause: bool
+) -> None:
+    gh = GitHub()
+    insert_hold(control, "Correction agent requires user input.")
+    assert hint(control, gh)
+    gh.pr["state"] = "closed"
+    assert not control.reconcile_label(gh, gh.pr, approval_required=False)
+    assert not gh.mutations
+    if replace_pause:
+        control.hold_correction(gh, gh.pr)
+    gh.pr["state"] = "open"
+    assert control.reconcile_label(gh, gh.pr, approval_required=False)
+    labels = {label["name"] for label in gh.pr["labels"]}
+    assert (control.PAUSED in labels) is replace_pause
+    assert "feature" in labels
+    assert control.paused(gh, gh.pr)
+
+
+def test_internal_display_hint_cannot_merge_an_approved_green_pr(
+    merge_environment: Any, tmp_path: Path
+) -> None:
+    gh = GitHub()
+    gh.owner_approval()
+    insert_hold(merge_environment, "Correction agent requires user input.")
+    observed = merge_environment.attention_snapshot(gh, gh.pr)
+    assert hint(merge_environment, gh)
+    controller.merge_selected(gh, 17, tmp_path, pr_numbers={1})
+    assert gh.pr["state"] == "open"
+    assert gh.pr["labels"] == [{"name": "feature"}]
+    assert not any(path.endswith("/merge") for path, _method in gh.mutations)
+    assert merge_environment.attention_snapshot(gh, gh.pr) == observed
+    assert merge_environment.paused(gh, gh.pr)
+    with merge_environment.connect() as db:
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0

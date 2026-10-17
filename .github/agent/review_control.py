@@ -106,10 +106,58 @@ def pause(gh: Any, pr: dict[str, Any], reason: str, changes: str) -> None:
                 if pr["head"].get("ref", "").startswith("codex/telegram-feature-") else "/agent resume " + head)})
 
 
-def paused(gh: Any, pr: dict[str, Any]) -> bool:
+def _authority_records(
+    db: sqlite3.Connection, repository: str, number: int, head: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    pause_row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
+                           (repository, number)).fetchone()
+    veto_row = db.execute("SELECT * FROM vetoes WHERE repository=? AND number=? AND head=?",
+                          (repository, number, head)).fetchone()
+    return (dict(pause_row) if pause_row is not None else None,
+            dict(veto_row) if veto_row is not None else None)
+
+
+def authority_snapshot(
+    repository: str, number: int, head: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Read both authorities, including absence, in one SQLite snapshot."""
+    if not os.environ.get("AGENT_STATE_DIR"):
+        return None, None
     with connect() as db:
-        row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
-                         (gh.repository, pr["number"])).fetchone()
+        db.execute("BEGIN")
+        return _authority_records(db, repository, number, head)
+
+
+def recover_policy_comment(
+    repository: str, number: int, head: str, created: float, *,
+    expected: tuple[dict[str, Any] | None, dict[str, Any] | None],
+) -> bool:
+    """Retire only unchanged, strictly older owner authority; never clear holds."""
+    if not os.environ.get("AGENT_STATE_DIR"):
+        return expected == (None, None)
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        current = _authority_records(db, repository, number, head)
+        if current != expected:
+            return False
+        row, denial = current
+        if row is not None and not row["reason"].startswith("Owner disapproved"):
+            return False
+        if any(created <= record["created"] for record in current if record is not None):
+            return False
+        if row is not None:
+            db.execute("DELETE FROM pauses WHERE repository=? AND number=?",
+                       (repository, number))
+        if denial is not None:
+            db.execute("DELETE FROM vetoes WHERE repository=? AND number=? AND head=?",
+                       (repository, number, head))
+    return True
+
+
+def paused(gh: Any, pr: dict[str, Any]) -> bool:
+    snapshot = authority_snapshot(gh.repository, pr["number"], pr["head"]["sha"])
+    row, denial = snapshot
+    declined = denial["created"] if denial is not None else 0
     if row is None:
         return False
     owner = gh.repository.split("/")[0].casefold()
@@ -122,9 +170,9 @@ def paused(gh: Any, pr: dict[str, Any]) -> bool:
         human = user.get("type") == "User" and user.get("login", "").casefold() == owner
         if (human and row["reason"].startswith("Owner disapproved")
                 and item["body"].strip() == "/agent approve-policy " + pr["head"]["sha"]
-                and created > row["created"]):
-            clear_owner_decline(gh, pr["number"], pr["head"]["sha"])
-            return False
+                and created > max(row["created"], declined)):
+            return not recover_policy_comment(
+                gh.repository, pr["number"], pr["head"]["sha"], created, expected=snapshot)
         if (human and item["body"].strip() == command and created > row["created"]):
             with connect() as db:
                 db.execute("DELETE FROM pauses WHERE repository=? AND number=?",
