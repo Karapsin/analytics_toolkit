@@ -6,6 +6,7 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Direct host-owned task-context mismatch notices to coordinator verification with an additive rendering status, preserving provenance holds and owner approval gates; controller activation and paired completion still require verified companion delivery eligibility.
 - Preserve a durable correction gate when verified coordinator dependencies return to planning, blocking earlier green heads through unavailable workers and restart; resolve restored controller conflicts without weakening pause retirement.
 
 - Include unstaged new source files in maintenance change inventories and paginated diffs, preserving source boundaries and the Git index; add offline repository regressions.
@@ -54,6 +55,8 @@ Generated from package version bumps and recent commit history.
 - Preserve chronological maintenance eligibility answers in generated orchestrator context and document verified companion publication recovery separately from pending cross-repository trigger discovery.
 - Escape Unicode apostrophes in orchestrator correction expectations to satisfy lint while preserving authenticated context text.
 - Apply Ruff's canonical layout to the OAuth browser regression expectation while preserving all assertions and service-free coverage.
+- Remove misleading label and cancellation question requirements from coordinator-notice regressions; document the complete companion delivery and activation gate while preserving private holds and approval boundaries.
+- Add controller notification category and request-binding lookup metadata with fast producer regressions; retain coordinator notices, private holds and the complete companion delivery/routing activation gate.
 - Apply Ruff's canonical layout to the scoped-merge regression parameters, preserving all assertions and merge-authority coverage.
 - Apply Ruff's canonical multiline layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
 - Apply Ruff's canonical layout to the scoped-merge regression lambda while preserving all assertions and merge-authority coverage.
@@ -71,6 +74,8 @@ Generated from package version bumps and recent commit history.
 - Make exact coordinator renewal replays and Unreleased fragment folding idempotent.
 - Bind successor companion sources, review and exact-commit CI to retained orchestrator evidence.
 - Split paired-evidence digest assertions to satisfy Ruff PT018 while preserving both validation checks.
+- Reconcile coordinator mismatch notices and notification lookup metadata with current controller authority, preserve hold regressions and require refreshed final-source companion delivery validation before merge or activation.
+- Apply canonical formatting to the provenance-hold regression while preserving all cases and assertions within the 700-line test-module limit.
 
 ## 1.3.12.5 - 2026-10-14
 
