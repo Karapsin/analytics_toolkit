@@ -90,6 +90,7 @@ Generated from package version bumps and recent commit history.
 - Fix detached SQL Explorer reset regressions to use an active Textual app while asserting editors remain unmounted and retaining cursor/history cleanup checks.
 - Preserve SQL spaces and expanded tabs beneath primary and secondary thin carets, including completion separators, wrapping, and scrolling.
 - Preserve SQL Explorer cell colors beneath focused thin carets after CSS resolution, strengthen real-renderer regressions, and reconcile dev documentation and changelog history.
+- Normalize SQL Explorer caret regression signatures and assertions without changing rendering coverage.
 
 ## 1.3.12.5 - 2026-10-14
 
