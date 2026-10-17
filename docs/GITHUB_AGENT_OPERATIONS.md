@@ -445,6 +445,26 @@ status-transition API. Source delivery does not establish deployment or successf
 dev merges of all relevant PRs. Local programs and tests were not run; GitHub
 must validate the final successor.
 
+The follow-up for head `05acf2d776c1a7aacaf2ca89ce9330063abb3694`
+keeps those controller bytes unchanged. Exact-head check records from run
+`39014018021` report twelve test-setup failures: the discovery authorization fake
+rejects `recover`, and status scenarios recreate production-initialized tables.
+The correction accepts the keyword-only argument, inserts scenario rows into the
+existing schema, and replaces only the test-local coordinator table for the
+malformed-schema case. Restart, authority-preservation and WAL single-snapshot
+assertions remain intact. The duplicate recovery release note is removed; signed
+publication must fold the task fragment once without adding a second copy.
+
+The independently reviewed plan is
+`8cc97542e01126e9d41893ab4c5f91d7c42aad765eb8d502fd7e0f8cfff7d47c`,
+bound to the same pinned dev and head. This is source correction provenance,
+not successful successor validation. The supplied companion evidence still lacks
+a refreshed pair for these controller bytes; the coordinator owns that refresh
+and its immutable source, independent review and exact-commit CI records.
+GitHub must run the twelve focused cases and required fast checks on the final
+successor. Protected approval, activation and all-relevant-PR merge acceptance
+remain pending separate gates.
+
 ### Recovery acceptance for the documented worker
 
 Inventory every active and queued analytics_toolkit review and correction on

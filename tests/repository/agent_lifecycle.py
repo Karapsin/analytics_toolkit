@@ -147,7 +147,7 @@ def _discovery_client(gh: Any, monkeypatch: Any) -> tuple[Any, Any]:
     monkeypatch.setattr(controller, "signed_head", lambda *args: True)
     metadata = Mock(return_value={"task_digest": "digest"})
     monkeypatch.setattr(controller, "task_metadata", metadata)
-    monkeypatch.setattr(controller, "authorization_error", lambda *args: None)
+    monkeypatch.setattr(controller, "authorization_error", lambda *args, recover=True: None)
     return client, metadata
 
 

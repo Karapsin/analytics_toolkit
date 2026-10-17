@@ -813,6 +813,29 @@
       },
       "validation": "Source-file edits only; no local programs or checks. Final-successor fast CI and fresh independent implementation review remain required.",
       "authority_limits": "No new owner facts, protected approval, runtime activation or all-relevant-PR successful dev-merge completion. Historical evidence and chronological answers remain intact."
+    },
+    "reconciled_test_setup_correction": {
+      "task_id": "49248992a3004a858549b5551fac1444",
+      "pinned_dev": "581d81b6f18950b91164eabe6dfa32500db106f4",
+      "pre_correction_head": "05acf2d776c1a7aacaf2ca89ce9330063abb3694",
+      "plan_review": {
+        "gate": "passed",
+        "plan_sha256": "8cc97542e01126e9d41893ab4c5f91d7c42aad765eb8d502fd7e0f8cfff7d47c",
+        "reviewed_plan_digest": "d1cae7718b92405b926fdf6b6b286293618dadb1067ae179f2ee4e56a60cb6d8",
+        "task_context_digest": "a80dada0838e4149da9c0de657f5925ba2bf510e4a805a2e1293ac2ee5a9c137",
+        "reviewer_id": "plan-reviewer:b85aec284c904a469882b753569beb1e"
+      },
+      "diagnostic_ci_run": 39014018021,
+      "correction": "Accept keyword-only recover in the discovery authorization fake. Use production-initialized coordinator and amendment tables for normal test rows; replace only the test-local coordinator table for malformed-schema coverage. Preserve restart, unchanged-authority and concurrent WAL single-snapshot assertions. Retain one recovery changelog bullet and a single-line task fragment for serialized publication.",
+      "controller_source_changed": false,
+      "paired_validation": {
+        "status": "coordinator-refresh-required",
+        "historical_companion_commit": "d0f6d916c597052c596fdf17f7371ee302ca910f",
+        "validates_reconciled_source": false,
+        "required": "Refresh combined checkpoint fixtures and selectors to controller 1a6edae97f531a08decab6c30c2bbef1db5d6fa295ea88c002440eb2063bb234 and review-control ad016e0df9aac0424f6d6a85577d2d89d4effcc3d7e7879300cdc769b1e1a782. Supply immutable companion source, independent review and successful exact-commit Repository Checks covering producer, verified renewal, restart, earlier-green-head refusal and actual shared status-transition caller."
+      },
+      "validation": "No local programs or tests executed. GitHub must validate all twelve corrected cases and required fast checks for the exact successor; historical results do not validate it.",
+      "authority_limits": "Source correction only. No new owner facts, protected approval, activation or successful all-relevant-PR merge completion."
     }
   }
 }
