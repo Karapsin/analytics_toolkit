@@ -1,1 +1,0 @@
-- Apply canonical formatting to the provenance-hold regression while preserving all cases and assertions within the 700-line test-module limit.
