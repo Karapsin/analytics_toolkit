@@ -81,6 +81,7 @@ Generated from package version bumps and recent commit history.
 - Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
 - Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
 - Resume incomplete independent source reviews with immutable assessment checkpoints, durable merge exclusion and replay-safe terminal publication.
+- Restore merge-readiness regressions with valid PR identity, isolated private state and independent stale-review, wrong-App, failed-fast-check and active-writer cases.
 
 ## 1.3.12.5 - 2026-10-14
 
