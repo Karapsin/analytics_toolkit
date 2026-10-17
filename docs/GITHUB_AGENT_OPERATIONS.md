@@ -504,6 +504,35 @@ with separate isolated rehearsal; protected controller
 activation still requires the owner's exact-head approval. Neither resolver
 decisions nor companion recovery evidence releases PR #25's provenance hold.
 
+`agent:needs-user` reports actual owner attention rather than every private merge
+hold. Coordinator dependencies and authenticated scope amendments awaiting renewed
+planning keep all authority gates while displaying their work phase. The host may
+classify an exact derived pause for display only after inspecting all current
+request states. Display hints cannot clear pauses, vetoes, coordinator gates or
+approvals; replacement pauses and new genuine questions invalidate old hints.
+Unknown/security holds and current-head policy decisions retain owner attention.
+
+The companion chooses phases from live ownership before durable waiting requests
+and current-head CI. An owner-attention label masks every phase while preserving
+private job ownership. Other labels are retained.
+
+| Label | Display condition |
+| --- | --- |
+| `agent:planning` | Live request validation or planning |
+| `agent:reviewing` | Live independent review, plan review or plan resolution |
+| `agent:writing` | Live code/publication or another recognized writer |
+| `agent:queued` | Internal waiting/queued requests or an idle candidate awaiting work |
+| `agent:testing` | Current GitHub fast-check aggregate or prerequisite jobs are unfinished |
+| `agent:ready` | Current candidate satisfies the existing readiness gates |
+
+Closed-PR cleanup removes obsolete phases only after live ownership ends, unless
+owner attention already masks that phase. Every mutation rechecks PR state and
+head; reopening returns the PR to normal reconciliation. API failures retry on a
+later pass. The companion `test_agent_labels.py` and `test_closed_labels.py`
+cover these transitions, CI, concurrent holds, failures and reopening; refreshed
+`test_owner_attention.py` covers the production classifier with actual SQLite
+requests and the paired controller candidate. These display checks grant no
+merge or protected approval authority.
 
 Both `paused()` and `authorization_error()` snapshot the complete PR pause and
 current-head veto, including absent records, before looking up owner policy
@@ -516,5 +545,57 @@ so merge authorization cannot bypass the pause guard. Evidence and cancellation
 holds remain intact. GitHub calls stay outside the transaction, and displayed
 labels are repaired by normal reconciliation. Authenticated Telegram callbacks
 retain their separate owner-decision clearing contract.
+
+The production companion label caller is self_host
+`8050fee15a67abc9f77450b181bea7d3304ed657`, retained in verified active worker
+`a6e713ddf02c176babde546a69b6b954c3d0df36`. It classifies durable requests,
+submits an exact-pause attention hint, reconciles owner attention, and then selects
+one exclusive phase. Older controllers retain conservative attention labels.
+The immutable evidence index `operator/paired-fixtures-bde64ba6c702/index.json`
+(SHA256 `f47dc39b22d51ba317886814ebbe319fd943d74ef0ca8bfd3b5f2a479c132d10`)
+binds refreshed actual-classifier/SQLite and hold-recovery tests to retained PR #35
+code6 and PR #33 code8 sources. Companion commit
+`bde64ba6c7026e37991397e59dda3da67eb550c5` passed
+[Repository Checks 39002462254](https://github.com/Karapsin/self_host/actions/runs/39002462254).
+Exact source, review, CI and activation references are retained in
+[the task evidence](../agent_tools/task_evidence/df10e10053314309b74455688916a621/parent-objective.json).
+This fixture-only refresh does not activate protected controller APIs. Final-head
+review, GitHub checks, exact-head owner policy approval, controlled activation and
+live label verification remain required. Changed bound controller bytes require
+refreshed paired evidence before acceptance; all relevant PRs and repairs still
+require successful dev merge.
+
+### Combined controller reconciliation against dev 98e4236
+
+The subsequent recorded resolution selected “Combine and revalidate” after
+independent plan-resolver review. PR #33 now preserves the coordinator and
+amendment gates together with the owner-attention APIs from pinned dev
+`98e4236a0431d9f94bd322691eb7c8b9de204d22`. The separately owned PR #35
+provenance and both historical implementations' evidence remain retained.
+The earlier source, validation and activation descriptions above are checkpoint
+records; they do not validate or activate this combined controller.
+
+Amendment recording invalidates display hints in the same transaction that
+preserves unrelated pauses and records a pending amendment. Displaying an
+internal dependency without an owner-attention label still blocks a green merge.
+Focused SQLite/fake-GitHub regressions cover both compositions, restart and veto
+preservation. Policy-recovery scenario helpers retain every caller/change case
+and assertion without increasing the lint baseline.
+
+The combined source hashes and plan-review receipt are appended in
+[the parent-objective evidence](../agent_tools/task_evidence/29adce308110491580e26a80f16fbb4a/parent-objective.json).
+The coordinator must refresh both companion controller fixtures and selectors to
+these bytes, including producer → verified renewal → restart → merge refusal and
+the actual owner-attention caller. The `bde64ba6` index and successful Repository
+Checks 39002462254 remain historical checkpoint evidence only. Refreshed immutable
+source bindings, independent companion review and exact-commit Repository Checks
+are still required before protected approval.
+
+This private correction worker executes no programs or checks. GitHub validates
+the final successor with lint, type, coverage, artifact and compatibility gates,
+including `fast-checks`. Fresh implementation review, real owner exact-head
+policy approval, guarded activation and deployed-revision evidence remain
+required. Operator monitoring ends only after successful dev merges drain every
+qualifying PR and repair; the scheduler remains available for future work.
 
 [Documentation overview](README.md)

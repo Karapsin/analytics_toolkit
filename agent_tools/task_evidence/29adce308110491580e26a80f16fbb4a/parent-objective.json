@@ -523,6 +523,31 @@
       "activation_record": "delivery_evidence.companion.activation_receipt",
       "authority_limits": "The retained a6e713dd activation receipt covers the delivered runtime chain; bde64ba6 is a fixture-only refresh. Neither record activates PR33 or separately owned PR35 controller APIs, supplies owner approval, or proves all-relevant-PR merge completion. Fresh operational evidence remains required."
     },
-    "pending_operational_acceptance": "PR35 owner-attention APIs remain separately owned. Neither PR33 activation nor all-relevant-PR completion is claimed. Monitor only orchestrator actions after startup; intervene for demonstrated malfunction; stop operator monitoring only after verified successful merges drain all qualifying PRs and repairs; retain the scheduler."
+    "pending_operational_acceptance": "PR35 owner-attention APIs remain separately owned. Neither PR33 activation nor all-relevant-PR completion is claimed. Monitor only orchestrator actions after startup; intervene for demonstrated malfunction; stop operator monitoring only after verified successful merges drain all qualifying PRs and repairs; retain the scheduler.",
+    "combined_controller_reconciliation": {
+      "pinned_dev": "98e4236a0431d9f94bd322691eb7c8b9de204d22",
+      "pre_correction_head": "055f23838505781226ac3e3ae80a86e2a5ab2086",
+      "chronological_resolution": "Automated delegated resolution after fresh independent plan-resolver review: choose Combine and revalidate (Recommended). Preserve both complete implementations, tests, documentation and provenance; fix the changelog bullet, reconcile current dev, and require fresh combined source fixtures, independent review and exact-commit CI before protected approval. Complete original question/options, reasons, immutable merge and resolver bindings, and authority limits are recorded in the preceding coordinator comment. This grants no new human fact, protected approval, missing future evidence or completion claim; the full all-relevant-PR successful dev-merge objective remains.",
+      "plan_review": {
+        "gate": "passed",
+        "plan_sha256": "9b6647bf01a90d00225bd4eb5ad8d886d13a4562d7374e0331a81109b80b3e30",
+        "reviewed_plan_digest": "e28d0b66a57623d11c12dd2063427cf81f2126c81376a1a2322b486e5b182c98",
+        "task_context_digest": "2055112336575f32e374d312b62fa332684b6875113e23e0dcd624cc7dc12677",
+        "reviewer_id": "plan-reviewer:65bae04eaab64d57b5b0a5c996848c0f"
+      },
+      "combined_source_sha256": {
+        ".github/agent/controller.py": "f80b33ac82a8e590bba98822e79cc9d1a25816bddcd98343ea631f8607208fb1",
+        ".github/agent/review_control.py": "2016e391ea758606ae1ae9eb63319168c69f57724dff6edddf66c32ebc02741c"
+      },
+      "historical_paired_evidence": {
+        "index": "operator/paired-fixtures-bde64ba6c702/index.json",
+        "sha256": "f47dc39b22d51ba317886814ebbe319fd943d74ef0ca8bfd3b5f2a479c132d10",
+        "ci_run": 39002462254,
+        "validates_combined_controller": false
+      },
+      "required_companion_refresh": "Coordinator must refresh both embedded controller fixtures and selectors to the combined source hashes, independently review the actual producer/renewal/restart/merge-refusal and owner-attention caller composition, and supply immutable source/review/exact-commit Repository Checks bindings.",
+      "validation": "Source edits only; no local programs or checks executed. Final-successor fast CI and independent implementation review remain required.",
+      "authority_limits": "This reconciliation preserves the historical records above. It grants no protected owner approval or activation, and does not claim all-relevant-PR successful dev-merge completion."
+    }
   }
 }

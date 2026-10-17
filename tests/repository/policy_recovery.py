@@ -244,11 +244,10 @@ def test_policy_approval_preserves_an_existing_hold(
         assert tuple(db.execute("SELECT * FROM vetoes").fetchone()) == veto
 
 
-@pytest.mark.parametrize("caller", ["paused", "merge"])
-@pytest.mark.parametrize("change", [None, "replacement", "veto", "evidence", "cancel"])
-def test_policy_recovery_reconciles_amendment_only_after_success(
-    tmp_path: Path, monkeypatch: Any, caller: str, change: str | None
-) -> None:
+def _amendment_policy_scenario(
+    tmp_path: Path, monkeypatch: Any
+) -> tuple[Any, GitHub, tuple[Any, ...], dict[str, Any]]:
+    """Prepare separate policy and amendment authority with a later owner comment."""
     monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(controller, "signed_head", lambda *_args: True)
     controls = controller.trusted_module("review_control")
@@ -274,6 +273,14 @@ def test_policy_recovery_reconciles_amendment_only_after_success(
             "created_at": datetime.fromtimestamp(2000, timezone.utc).isoformat(),
         }
     )
+    return controls, gh, original, amendment
+
+
+def _install_policy_lookup_change(
+    controls: Any, gh: GitHub, monkeypatch: Any, original: tuple[Any, ...], change: str | None
+) -> tuple[tuple[Any, ...], int]:
+    """Change authority once, after the recovery caller has inspected its snapshot."""
+    head, number = gh.pr["head"]["sha"], gh.pr["number"]
     reason = {
         "evidence": "Supply the original image.",
         "cancel": "Owner cancelled the request.",
@@ -299,6 +306,19 @@ def test_policy_recovery_reconciles_amendment_only_after_success(
         return gh.comments
 
     monkeypatch.setattr(gh, "pages", pages)
+    return expected, veto_created
+
+
+@pytest.mark.parametrize("caller", ["paused", "merge"])
+@pytest.mark.parametrize("change", [None, "replacement", "veto", "evidence", "cancel"])
+def test_policy_recovery_reconciles_amendment_only_after_success(
+    tmp_path: Path, monkeypatch: Any, caller: str, change: str | None
+) -> None:
+    controls, gh, original, amendment = _amendment_policy_scenario(tmp_path, monkeypatch)
+    expected, veto_created = _install_policy_lookup_change(
+        controls, gh, monkeypatch, original, change
+    )
+    number = gh.pr["number"]
     recover = Mock(wraps=controls.recover_policy_comment)
     monkeypatch.setattr(controls, "recover_policy_comment", recover)
     if caller == "paused":
