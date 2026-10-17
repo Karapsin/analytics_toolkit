@@ -106,6 +106,9 @@ def paused(gh: Any, pr: dict[str, Any]) -> bool:
     with connect() as db:
         row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
                          (gh.repository, pr["number"])).fetchone()
+        denial = db.execute("SELECT created FROM vetoes WHERE repository=? AND number=? AND head=?",
+                            (gh.repository, pr["number"], pr["head"]["sha"])).fetchone()
+        declined = denial["created"] if denial is not None else 0
     if row is None:
         return False
     owner = gh.repository.split("/")[0].casefold()
@@ -118,9 +121,22 @@ def paused(gh: Any, pr: dict[str, Any]) -> bool:
         human = user.get("type") == "User" and user.get("login", "").casefold() == owner
         if (human and row["reason"].startswith("Owner disapproved")
                 and item["body"].strip() == "/agent approve-policy " + pr["head"]["sha"]
-                and created > row["created"]):
-            clear_owner_decline(gh, pr["number"], pr["head"]["sha"])
-            return False
+                and created > max(row["created"], declined)):
+            with connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                current = db.execute(
+                    "SELECT created FROM vetoes WHERE repository=? AND number=? AND head=?",
+                    (gh.repository, pr["number"], pr["head"]["sha"])).fetchone()
+                # Comment lookup can overlap a newer owner decision. Retire
+                # both authorities only if their inspected identities survive.
+                if (current["created"] if current is not None else 0) == declined:
+                    removed = db.execute(
+                        "DELETE FROM pauses WHERE repository=? AND number=? AND head=? AND reason=? AND created=?",
+                        (gh.repository, pr["number"], row["head"], row["reason"], row["created"])).rowcount
+                    if removed:
+                        db.execute("DELETE FROM vetoes WHERE repository=? AND number=? AND head=? AND created=?",
+                                   (gh.repository, pr["number"], pr["head"]["sha"], declined))
+            return paused(gh, pr)
         if (human and item["body"].strip() == command and created > row["created"]):
             with connect() as db:
                 db.execute("DELETE FROM pauses WHERE repository=? AND number=?",

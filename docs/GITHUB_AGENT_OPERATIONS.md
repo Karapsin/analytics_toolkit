@@ -394,4 +394,10 @@ controller readers with separate isolated rehearsal; protected controller
 activation still requires the owner's exact-head approval. Neither resolver
 decisions nor companion recovery evidence releases PR #25's provenance hold.
 
+
+Owner policy-comment recovery compares both the inspected pause and current-head
+veto in one transaction. A later disapproval, evidence request, cancellation, or
+replacement hold survives an older approval even when it arrives during GitHub
+comment lookup. The approval must also be newer than both inspected decisions.
+
 [Documentation overview](README.md)
