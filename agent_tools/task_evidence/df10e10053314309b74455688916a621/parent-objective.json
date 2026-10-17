@@ -1,0 +1,18 @@
+{
+  "kind": "agent-authored-scope-note",
+  "exact_user_messages": [
+    "check other labels and provide reliable fixes if needed",
+    "provide reliable fix so that does not occur again",
+    "and once you done - monitor PRs until completion, stop only when ALL of them are merged successfully with dev",
+    "implement it on your own if orchestator is not doing that"
+  ],
+  "parent_objective": "All relevant PRs and repairs must merge with dev; this leaf repair does not replace that objective.",
+  "scope": "Truthful owner-attention and exclusive work-phase labels, with every authority gate retained.",
+  "companion_source": "self_host labels reconciliation follow-up to df672554b3c7eb7163f4249c9095e96b98ab04dd.",
+  "related_prs": [
+    33,
+    34
+  ],
+  "owner_answer": false,
+  "policy_approval": false
+}

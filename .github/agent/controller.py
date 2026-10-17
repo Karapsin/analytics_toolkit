@@ -486,7 +486,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
             continue
         controls = trusted_module("review_control")
         if controls.paused(gh, pr):
-            controls.reconcile_label(gh, pr, approval_required=True)
+            controls.reconcile_label(gh, pr, approval_required=False)
             continue
         try:
             metadata = task_metadata(gh, pr)
@@ -944,7 +944,7 @@ def merge_selected(
         denial = authorization_error(gh, pr)
         controls = trusted_module("review_control")
         checks = gh.checks(head)
-        approval_required = bool(denial) and (
+        approval_required = bool(denial) and not controls.paused(gh, pr) and (
             bool(authorization_error(gh, pr, False)) or approval_ready(pr, checks, base, app_id))
         if not controls.reconcile_label(gh, pr, approval_required=approval_required):
             continue

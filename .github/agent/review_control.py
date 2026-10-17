@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import base64
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -23,6 +24,9 @@ def connect() -> sqlite3.Connection:
     db.executescript("""
         CREATE TABLE IF NOT EXISTS pauses (
           repository TEXT, number INTEGER, head TEXT, reason TEXT, created REAL,
+          PRIMARY KEY(repository, number));
+        CREATE TABLE IF NOT EXISTS attention_hints (
+          repository TEXT, number INTEGER, head TEXT, pause TEXT, required INTEGER, context TEXT,
           PRIMARY KEY(repository, number));
         CREATE TABLE IF NOT EXISTS notifications (
           key TEXT PRIMARY KEY, kind TEXT, payload TEXT, sent INTEGER DEFAULT 0,
@@ -140,13 +144,67 @@ def approved(repository: str, number: int, head: str) -> bool:
                           (repository, number, head)).fetchone() is not None
 
 
+
+def attention_snapshot(gh: Any, pr: dict[str, Any]) -> dict[str, Any] | None:
+    """Observe a pause identity for display only; never consult owner comments."""
+    with connect() as db:
+        row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
+                         (gh.repository, pr["number"])).fetchone()
+    return dict(row) if row is not None else None
+
+
+def attention_hint(gh: Any, pr: dict[str, Any], observed: dict[str, Any] | None,
+                   required: bool, context: str) -> bool:
+    """Host-only UI classification; cannot retire a pause or authorize any work."""
+    if (type(required) is not bool or not re.fullmatch("[0-9a-f]{64}", context)
+            or (observed is not None and (
+                (not required and observed.get("head") != pr["head"]["sha"])
+                or observed.get("reason") not in {"Correction agent requires user input.",
+                    "Owner changed the request; renewed planning is required."}))):
+        return False
+    encoded = json.dumps(observed, sort_keys=True)
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
+                         (gh.repository, pr["number"])).fetchone()
+        if (dict(row) if row is not None else None) != observed:
+            return False
+        db.execute("INSERT OR REPLACE INTO attention_hints VALUES (?,?,?,?,?,?)",
+                   (gh.repository, pr["number"], pr["head"]["sha"], encoded, required, context))
+    return True
+
+
+def owner_attention(gh: Any, pr: dict[str, Any]) -> bool:
+    """Report actual owner attention independently of merge-blocking authority."""
+    if not os.environ.get("AGENT_STATE_DIR"):
+        return False  # Stateless CI/controller diagnostics have no private holds.
+    with connect() as db:
+        if db.execute("SELECT 1 FROM vetoes WHERE repository=? AND number=? AND head=?",
+                      (gh.repository, pr["number"], pr["head"]["sha"])).fetchone():
+            return True
+        row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
+                         (gh.repository, pr["number"])).fetchone()
+        hint = db.execute("SELECT * FROM attention_hints WHERE repository=? AND number=?",
+                          (gh.repository, pr["number"])).fetchone()
+        if row is None:
+            return bool(hint is not None and hint["head"] == pr["head"]["sha"]
+                        and hint["pause"] == "null" and hint["required"])
+        if row["reason"] not in {"Correction agent requires user input.",
+                "Owner changed the request; renewed planning is required."}:
+            return True  # Unknown owner/security/provenance reasons stay visible.
+        if (hint is not None and hint["head"] == pr["head"]["sha"]
+                and hint["pause"] == json.dumps(dict(row), sort_keys=True)):
+            return bool(hint["required"])
+        return row["reason"] != "Owner changed the request; renewed planning is required."
+
 def reconcile_label(gh: Any, pr: dict[str, Any], *, approval_required: bool) -> bool:
     """Repair the UI label from authority and private holds; never clear a hold."""
     number, head = pr["number"], pr["head"]["sha"]
     current = gh.pull(number)
     if current["state"] != "open" or current["head"]["sha"] != head:
         return False
-    required = approval_required or paused(gh, current) or bool(veto(gh.repository, number, head))
+    paused(gh, current)  # Retain authenticated recovery; display is a separate read.
+    required = approval_required or owner_attention(gh, current)
     # paused() may itself accept an authenticated resume and remove the label.
     present = any(label["name"] == PAUSED for label in gh.api(f"issues/{number}/labels"))
     if required and not present:
@@ -160,7 +218,7 @@ def reconcile_label(gh: Any, pr: dict[str, Any], *, approval_required: bool) -> 
             gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
         return False
     # A new question/veto may have arrived while the GitHub request was in flight.
-    if not required and (paused(gh, latest) or veto(gh.repository, number, head)):
+    if not required and owner_attention(gh, latest):
         gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
         latest = gh.pull(number)
         if latest["state"] != "open" or latest["head"]["sha"] != head:
@@ -257,6 +315,8 @@ def hold_correction(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> Non
                          (gh.repository, pr["number"])).fetchone()
         if row and row["reason"] != "Correction agent requires user input.":
             raise ValueError("A separate owner/security hold is active.")
+        db.execute("DELETE FROM attention_hints WHERE repository=? AND number=?",
+                   (gh.repository, pr["number"]))
         db.execute("INSERT OR REPLACE INTO pauses VALUES (?,?,?,?,?)",
                    (gh.repository, pr["number"], pr["head"]["sha"],
                     "Owner cancelled the correction." if cancel else "Correction agent requires user input.", time.time()))
@@ -471,6 +531,8 @@ def hold_feature(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> None:
     if not enrolled_feature(gh.repository, pr["head"]["ref"]):
         raise ValueError("Feature is not host-enrolled.")
     with connect() as db:
+        db.execute("DELETE FROM attention_hints WHERE repository=? AND number=?",
+                   (gh.repository, pr["number"]))
         db.execute("INSERT OR REPLACE INTO pauses VALUES (?,?,?,?,?)",
                    (gh.repository, pr["number"], pr["head"]["sha"],
                     "Owner cancelled the request." if cancel else "Owner changed the request; renewed planning is required.",

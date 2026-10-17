@@ -394,4 +394,12 @@ controller readers with separate isolated rehearsal; protected controller
 activation still requires the owner's exact-head approval. Neither resolver
 decisions nor companion recovery evidence releases PR #25's provenance hold.
 
+`agent:needs-user` reports actual owner attention rather than every private merge
+hold. Coordinator dependencies and authenticated scope amendments awaiting renewed
+planning keep all authority gates while displaying their work phase. The host may
+classify an exact derived pause for display only after inspecting all current
+request states. Display hints cannot clear pauses, vetoes, coordinator gates or
+approvals; replacement pauses and new genuine questions invalidate old hints.
+Unknown/security holds and current-head policy decisions retain owner attention.
+
 [Documentation overview](README.md)
