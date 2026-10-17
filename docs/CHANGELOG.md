@@ -76,6 +76,9 @@ Generated from package version bumps and recent commit history.
 - Split paired-evidence digest assertions to satisfy Ruff PT018 while preserving both validation checks.
 - Reconcile coordinator mismatch notices and notification lookup metadata with current controller authority, preserve hold regressions and require refreshed final-source companion delivery validation before merge or activation.
 - Apply canonical formatting to the provenance-hold regression while preserving all cases and assertions within the 700-line test-module limit.
+- Preserve available failed visual capture artifacts through the trusted workflow without changing candidate harnesses or treating unknown stream coverage as complete.
+- Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
+- Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
 
 ## 1.3.12.5 - 2026-10-14
 
