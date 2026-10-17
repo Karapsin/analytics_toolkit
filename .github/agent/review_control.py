@@ -3,16 +3,140 @@ from __future__ import annotations
 
 import json
 import base64
+import hashlib
 import os
 import re
 import secrets
 import sqlite3
+import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterator
 
 PAUSED = "agent:needs-user"
+PHASES = frozenset({"agent:writing", "agent:planning", "agent:reviewing",
+                    "agent:queued", "agent:testing", "agent:ready"})
+_STATUS_LOCKS: dict[tuple[str, str, int], Any] = {}
+_STATUS_GUARD = threading.Lock()
+_STATUS_DEPTH = threading.local()
+
+
+@contextmanager
+def _status_lock(repository: str, number: int) -> Iterator[None]:
+    """Serialize this host's display writers per PR, with bounded acquisition."""
+    directory = os.environ.get("AGENT_STATE_DIR", "")
+    key = (str(Path(directory).resolve()) if directory else "", repository, number)
+    with _STATUS_GUARD:
+        lock = _STATUS_LOCKS.setdefault(key, threading.RLock())
+    if not lock.acquire(timeout=2):
+        raise TimeoutError("PR status display is busy")
+    descriptor = None
+    depths = getattr(_STATUS_DEPTH, "keys", {})
+    _STATUS_DEPTH.keys = depths
+    nested = depths.get(key, 0)
+    try:
+        if not nested and directory and os.name == "posix":
+            import fcntl
+            root = Path(directory) / "status-locks"
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            name = hashlib.sha256(f"{repository}:{number}".encode()).hexdigest() + ".lock"
+            descriptor = os.open(root / name, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        depths[key] = nested + 1
+        yield
+    finally:
+        if nested:
+            depths[key] = nested
+        else:
+            depths.pop(key, None)
+        if descriptor is not None:
+            os.close(descriptor)
+        lock.release()
+
+
+def status_transition(
+    gh: Any, number: int, head: str,
+    choose: Callable[[dict[str, Any]], str | None], *,
+    attention: Callable[[dict[str, Any]], bool] | None = None,
+    remove: frozenset[str] = frozenset(), expected_state: str = "open",
+) -> dict[str, Any] | None:
+    """Converge owned display labels without changing any private authority.
+
+    None from choose preserves unknown phase ownership. Existing attention is
+    preserved unless an explicit read-only classification is supplied. Each
+    successful mutation is followed by fresh metadata; failures are retried by
+    normal reconciliation. GitHub has no cross-request label compare-and-swap.
+    """
+    if expected_state not in {"open", "closed"} or not remove <= PHASES:
+        raise ValueError("Invalid status transition")
+    deadline = time.monotonic() + 30
+
+    def snapshot() -> tuple[dict[str, Any], set[str], bool, str | None] | None:
+        fresh = gh.pull(number)
+        if fresh["state"] != expected_state or fresh["head"]["sha"] != head:
+            return None
+        names = {item["name"] for item in gh.api(f"issues/{number}/labels")}
+        fresh = dict(fresh, labels=[{"name": name} for name in sorted(names)])
+        if expected_state == "closed":
+            required = PAUSED in names  # Closed cleanup changes phases only.
+        else:
+            required = (bool(attention(fresh)) if attention is not None else PAUSED in names)
+            required = owner_attention(gh, fresh) or required
+        target = "" if required else choose(fresh)
+        if target is not None and target != "" and target not in PHASES:
+            raise ValueError("Unknown PR status phase")
+        latest = gh.pull(number)
+        if latest["state"] != expected_state or latest["head"]["sha"] != head:
+            return None
+        if expected_state == "open" and (owner_attention(gh, latest) or (
+                attention is None and any(item["name"] == PAUSED for item in latest.get("labels", [])))):
+            required, target = True, ""
+        return dict(latest, labels=fresh["labels"]), names, required, target
+
+    with _status_lock(gh.repository, number):
+        for _ in range(24):
+            state = snapshot()
+            if state is None:
+                return None  # Never transfer the old head's attention decision.
+            fresh, names, required, target = state
+            conflicts = names & PHASES & remove
+            if target is not None:
+                conflicts |= (names & PHASES) - {target}
+            if not required and attention is not None and expected_state == "open":
+                conflicts |= names & {PAUSED}
+            missing = PAUSED if required and PAUSED not in names else target if target and target not in names else ""
+            if not conflicts and not missing:
+                return fresh
+            if time.monotonic() >= deadline:
+                break
+            if conflicts:
+                name = sorted(conflicts)[0]
+                try:
+                    gh.api(f"issues/{number}/labels/{name}", "DELETE")
+                except Exception:
+                    # Only a successful authenticated label read proving absence
+                    # can turn a concurrent deletion into success. Head changes
+                    # and failed reads cannot conceal a persistent/auth error.
+                    observed = {item["name"] for item in gh.api(f"issues/{number}/labels")}
+                    if name in observed:
+                        raise
+            else:
+                gh.api(f"issues/{number}/labels", "POST", {"labels": [missing]})
+        raise TimeoutError("PR status display did not converge")
+
+
+def _preserve_phase(pr: dict[str, Any]) -> str:
+    phases = {item["name"] for item in pr.get("labels", [])} & PHASES
+    return next(iter(phases)) if len(phases) == 1 else ""
+
+
+def _attention_display(gh: Any, pr: dict[str, Any]) -> None:
+    fresh = status_transition(gh, pr["number"], pr["head"]["sha"], _preserve_phase,
+                              attention=lambda latest: False)
+    if fresh is not None:
+        pr["labels"] = fresh["labels"]
 
 
 def connect() -> sqlite3.Connection:
@@ -99,7 +223,7 @@ def pause(gh: Any, pr: dict[str, Any], reason: str, changes: str) -> None:
     with connect() as db:
         db.execute("INSERT OR IGNORE INTO pauses VALUES (?,?,?,?,?)",
                    (gh.repository, number, head, reason, time.time()))
-    gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
+    _attention_display(gh, pr)
     marker = f"<!-- agent-rejection-{head} -->"
     comments = gh.pages(f"issues/{number}/comments?per_page=100")
     owner = gh.repository.split("/")[0]
@@ -277,13 +401,12 @@ def paused(gh: Any, pr: dict[str, Any]) -> bool:
             return paused(gh, pr)  # Successful retirement may expose an amendment.
         if (human and item["body"].strip() == command and created > row["created"]):
             with connect() as db:
-                db.execute("DELETE FROM pauses WHERE repository=? AND number=? AND head=? AND reason=? AND created=?",
-                           (gh.repository, pr["number"], row["head"], row["reason"], row["created"]))
-            if paused(gh, pr):
+                retired = db.execute("DELETE FROM pauses WHERE repository=? AND number=? AND head=? AND reason=? AND created=?",
+                                     (gh.repository, pr["number"], row["head"], row["reason"], row["created"])).rowcount
+            # A failed comparison must not retry this comment against a replacement.
+            if not retired or paused(gh, pr):
                 return True
-            labels = gh.api(f"issues/{pr['number']}/labels")
-            if any(label["name"] == PAUSED for label in labels):
-                gh.api(f"issues/{pr['number']}/labels/{PAUSED}", "DELETE")
+            _attention_display(gh, pr)
             return False
     return True
 
@@ -349,33 +472,53 @@ def owner_attention(gh: Any, pr: dict[str, Any]) -> bool:
             return bool(hint["required"])
         return row["reason"] != "Owner changed the request; renewed planning is required."
 
-def reconcile_label(gh: Any, pr: dict[str, Any], *, approval_required: bool) -> bool:
-    """Repair the UI label from authority and private holds; never clear a hold."""
+
+def display_work_pending(gh: Any, pr: dict[str, Any]) -> bool:
+    """Read internal work gates for UI readiness, never process or clear them."""
+    if not os.environ.get("AGENT_STATE_DIR"):
+        return False
+    repository, number, head = gh.repository, pr["number"], pr["head"]["sha"]
+    with connect() as db:
+        db.execute("BEGIN")  # One read snapshot spans amendment/dependency transfers.
+        if db.execute("SELECT 1 FROM pauses WHERE repository=? AND number=?",
+                      (repository, number)).fetchone():
+            return True
+        if db.execute("SELECT 1 FROM corrections WHERE repository=? AND number=? AND head=?",
+                      (repository, number, head)).fetchone():
+            return True
+        # Additive coordinator APIs are independently delivered by the paired
+        # recovery controller. Missing tables are legacy capability absence;
+        # present malformed/unavailable tables are errors, never a false pass.
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        for table, query, parameters in (
+            ("coordinator_holds", "SELECT 1 FROM coordinator_holds WHERE repository=? AND number=?", (repository, number)),
+            ("coordinator_renewals", "SELECT 1 FROM coordinator_renewals WHERE repository=? AND number=? AND head=?", (repository, number, head)),
+            ("feature_amendments", "SELECT 1 FROM feature_amendments WHERE repository=? AND number=?", (repository, number)),
+        ):
+            if table in tables and db.execute(query, parameters).fetchone():
+                return True
+    return False
+
+
+def reconcile_label(
+    gh: Any, pr: dict[str, Any], *, approval_required: bool,
+    approval_check: Callable[[dict[str, Any]], bool] | None = None,
+) -> bool:
+    """Recover authenticated decisions explicitly, then update display only.
+
+    Legacy callers retain their head-bound bool. New controller/worker callers
+    supply a pure current-readiness projection, never authenticated recovery.
+    """
     number, head = pr["number"], pr["head"]["sha"]
     current = gh.pull(number)
     if current["state"] != "open" or current["head"]["sha"] != head:
         return False
-    paused(gh, current)  # Retain authenticated recovery; display is a separate read.
-    required = approval_required or owner_attention(gh, current)
-    # paused() may itself accept an authenticated resume and remove the label.
-    present = any(label["name"] == PAUSED for label in gh.api(f"issues/{number}/labels"))
-    if required and not present:
-        gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
-    elif not required and present:
-        gh.api(f"issues/{number}/labels/{PAUSED}", "DELETE")
-    latest = gh.pull(number)
-    if latest["state"] != "open" or latest["head"]["sha"] != head:
-        if latest["state"] == "open":
-            # A concurrent push cannot inherit the old head's authorization.
-            gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
+    paused(gh, current)
+    fresh = status_transition(gh, number, head, _preserve_phase,
+        attention=approval_check if approval_check is not None else lambda latest: approval_required)
+    if fresh is None:
         return False
-    # A new question/veto may have arrived while the GitHub request was in flight.
-    if not required and owner_attention(gh, latest):
-        gh.api(f"issues/{number}/labels", "POST", {"labels": [PAUSED]})
-        latest = gh.pull(number)
-        if latest["state"] != "open" or latest["head"]["sha"] != head:
-            return False
-    pr["labels"] = latest.get("labels", [])
+    pr["labels"] = fresh["labels"]
     return True
 
 
@@ -397,9 +540,9 @@ def clear_owner_decline(gh: Any, number: int, head: str) -> None:
         if row and row[0].startswith("Owner disapproved"):
             db.execute("DELETE FROM pauses WHERE repository=? AND number=?", (gh.repository, number))
     if row and row[0].startswith("Owner disapproved"):
-        labels = gh.api(f"issues/{number}/labels")
-        if any(label["name"] == PAUSED for label in labels):
-            gh.api(f"issues/{number}/labels/{PAUSED}", "DELETE")
+        current = gh.pull(number)
+        if current["head"]["sha"] == head:
+            _attention_display(gh, current)
 
 
 def assess(repository: str, number: int, head: str, digest: str, changes: str) -> None:
@@ -480,7 +623,7 @@ def hold_correction(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> Non
         db.execute("INSERT OR REPLACE INTO pauses VALUES (?,?,?,?,?)",
                    (gh.repository, pr["number"], pr["head"]["sha"],
                     "Owner cancelled the correction." if cancel else "Correction agent requires user input.", time.time()))
-    gh.api(f"issues/{pr['number']}/labels", "POST", {"labels": [PAUSED]})
+    _attention_display(gh, pr)
 
 
 def _retire_derived_pause(gh: Any, pr: dict[str, Any], row: sqlite3.Row) -> None:
@@ -494,14 +637,19 @@ def _retire_derived_pause(gh: Any, pr: dict[str, Any], row: sqlite3.Row) -> None
             (gh.repository, pr["number"], row["head"], row["reason"], row["created"],
              gh.repository, pr["number"], pr["head"]["sha"]),
         )
-    # Normal reconciliation owns labels and protected approval readiness.
+    # The exact-row/veto retirement above owns authority. Its completed result
+    # is now observed separately for display, including replacement holds.
+    _attention_display(gh, pr)
 
 
 def resume_correction(gh: Any, pr: dict[str, Any]) -> None:
     with connect() as db:
         row = db.execute("SELECT * FROM pauses WHERE repository=? AND number=?",
                          (gh.repository, pr["number"])).fetchone()
-    if row is None or row["reason"] != "Correction agent requires user input.":
+    if row is None:
+        _attention_display(gh, pr)  # Retry display after an interrupted completed retirement.
+        return
+    if row["reason"] != "Correction agent requires user input.":
         return
     _retire_derived_pause(gh, pr, row)
 
@@ -682,9 +830,7 @@ def resume_feature(gh: Any, pr: dict[str, Any]) -> None:
         raise ValueError("Feature is not host-enrolled.")
     with connect() as db:
         db.execute("DELETE FROM pauses WHERE repository=? AND number=?", (gh.repository, pr["number"]))
-    labels = gh.api(f"issues/{pr['number']}/labels")
-    if any(item["name"] == PAUSED for item in labels):
-        gh.api(f"issues/{pr['number']}/labels/{PAUSED}", "DELETE")
+    _attention_display(gh, pr)
 
 
 def hold_feature(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> None:
@@ -710,7 +856,7 @@ def hold_feature(gh: Any, pr: dict[str, Any], *, cancel: bool = False) -> None:
             if not cancel:
                 db.execute("DELETE FROM feature_amendments WHERE repository=? AND number=?",
                            (gh.repository, pr["number"]))
-    gh.api(f"issues/{pr['number']}/labels", "POST", {"labels": [PAUSED]})
+    _attention_display(gh, pr)
     if cancel:
         gh.api(f"pulls/{pr['number']}", "PATCH", {"state": "closed"})
 

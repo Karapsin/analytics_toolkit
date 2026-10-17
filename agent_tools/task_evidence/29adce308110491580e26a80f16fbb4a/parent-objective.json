@@ -545,9 +545,274 @@
         "ci_run": 39002462254,
         "validates_combined_controller": false
       },
-      "required_companion_refresh": "Coordinator must refresh both embedded controller fixtures and selectors to the combined source hashes, independently review the actual producer/renewal/restart/merge-refusal and owner-attention caller composition, and supply immutable source/review/exact-commit Repository Checks bindings.",
+      "historical_companion_refresh_requirement": "Coordinator must refresh both embedded controller fixtures and selectors to the combined source hashes, independently review the actual producer/renewal/restart/merge-refusal and owner-attention caller composition, and supply immutable source/review/exact-commit Repository Checks bindings.",
+      "companion_refresh_status": "Fulfilled by delivery_evidence.combined_source_validation; the preceding requirement and bde64ba6 evidence are historical.",
       "validation": "Source edits only; no local programs or checks executed. Final-successor fast CI and independent implementation review remain required.",
       "authority_limits": "This reconciliation preserves the historical records above. It grants no protected owner approval or activation, and does not claim all-relevant-PR successful dev-merge completion."
+    },
+    "combined_source_validation": {
+      "status": "delivered-and-validated; final-toolkit-and-operational-gates-remain",
+      "repository": "Karapsin/self_host",
+      "companion_commit": "d0f6d916c597052c596fdf17f7371ee302ca910f",
+      "source_base": "dca97bd3fb8e2eb57184d2344be1aa5d56193383",
+      "evidence_index": {
+        "path": "operator/pr33-combined-d0f6d916c597/index.json",
+        "sha256": "235500d7342253137b4935888e965fb58df794e1bdccea06d432c76f5e7893d9"
+      },
+      "source_hashes": {
+        "agent_tools/tests/fixtures/coordinator_combined_code7.json": "910da21bd4c9ea1b2a91bf750303b62be1434b8060435cf1be16697aa36967bd",
+        "agent_tools/tests/test_coordinator_combined_checkpoint.py": "9f137afae0d46558d885330179685bf5d20492ed41a8fc4bb152713b1eedf248",
+        "self_host/services/github_agent/README.md": "c691a9fd37c677fbf4b0d003fe178189a19ee3196e59973107073d81ee47668e"
+      },
+      "source_bundles": [
+        {
+          "path": "operator/pr33-combined-d0f6d916c597/s0.json",
+          "sha256": "0fb61d9b21f851c5fd619383633d91fa9765082df96612ed44e1cfb30aed0836"
+        },
+        {
+          "path": "operator/pr33-combined-d0f6d916c597/s1.json",
+          "sha256": "26848d8015e1a1f93abf0a8b90f24856a8dfce5633db326a73201224d933c926"
+        },
+        {
+          "path": "operator/pr33-combined-d0f6d916c597/s2.json",
+          "sha256": "163b8b103bc7216bedab5a72265c2728d4813badc71f53b835f16c032b0f4a3e"
+        }
+      ],
+      "paired_controller": {
+        "repository": "Karapsin/analytics_toolkit",
+        "published_head": "9aa3018bfd22a768b79062c7c1589e89eb31fd0f",
+        "source_hashes": {
+          ".github/agent/controller.py": "f80b33ac82a8e590bba98822e79cc9d1a25816bddcd98343ea631f8607208fb1",
+          ".github/agent/review_control.py": "2016e391ea758606ae1ae9eb63319168c69f57724dff6edddf66c32ebc02741c"
+        },
+        "request_id": "f7dc4258460e",
+        "coding_revision": 7,
+        "publication_revision": 8,
+        "publication_stage": "publish",
+        "patch_input_head": "055f23838505781226ac3e3ae80a86e2a5ab2086",
+        "target_dev_base": "98e4236a0431d9f94bd322691eb7c8b9de204d22",
+        "checkpoint_patch_sha256": "3d6c58bd95dbd2b13718eb93ca205fa39637d1997625c5f82ac1282b5db503bc",
+        "checkpoint_patch_bytes": 45752,
+        "publication_task_digest": "2055112336575f32e374d312b62fa332684b6875113e23e0dcd624cc7dc12677",
+        "publication_producer": "author:25062f76a1d94946bbbaff40be202504",
+        "published_source_verification": "/private/tmp/pr33-combined-published-source-verification.json",
+        "protected_approval": false,
+        "runtime_activated": false,
+        "verification": "Decoded fixture bytes independently hash-match reconstructed complete checkpoint source and the supplied exact published-head source verification. Checkpoint bytes independently hash to the recorded digest/length and actual request distinguishes input head055f from target dev98e."
+      },
+      "later_exact_source_observation": {
+        "pr": 33,
+        "head": "60fec89777a8127dcaab1c1fb444cd86c061a3e1",
+        "base": "98e4236a0431d9f94bd322691eb7c8b9de204d22",
+        "state": "open",
+        "source_hashes": {
+          ".github/agent/controller.py": "f80b33ac82a8e590bba98822e79cc9d1a25816bddcd98343ea631f8607208fb1",
+          ".github/agent/review_control.py": "2016e391ea758606ae1ae9eb63319168c69f57724dff6edddf66c32ebc02741c"
+        }
+      },
+      "published_source_evidence": {
+        "path": "operator/pr33-combined-d0f6d916c597/published-source.json",
+        "sha256": "e14dfb5b7593e9265724319c6d95695d57c2b6af2e30d3adbc57618e1f864105"
+      },
+      "independent_review": {
+        "path": "operator/pr33-combined-d0f6d916c597/review.json",
+        "sha256": "d847b429b964218049ab80a4507e7e8f8eb41d6aa3aaf5b967e3317fcc836027",
+        "reviewer": "/root/complete_coordinator_proposal_review",
+        "decision": "approve",
+        "scope": "Independent complete source review of the three-file self_host paired-validation delta, including both full immutable embedded controller sources, their composition with target dev and the actual worker callers. This is not full PR33 protected approval, runtime activation or completion of the broader feature."
+      },
+      "ci": {
+        "id": 39008919260,
+        "head_sha": "d0f6d916c597052c596fdf17f7371ee302ca910f",
+        "conclusion": "success",
+        "url": "https://github.com/Karapsin/self_host/actions/runs/39008919260",
+        "evidence": {
+          "path": "operator/pr33-combined-d0f6d916c597/ci.json",
+          "sha256": "5154e0358923fb298a2ca5ac88b868c9a628484d7b168cc265dffb0572bb4a36"
+        }
+      },
+      "regressions": [
+        "agent_tools/tests/test_coordinator_combined_checkpoint.py:CombinedCheckpointTests.test_real_producer_verified_recovery_restart_and_merge_without_worker",
+        "agent_tools/tests/test_coordinator_combined_checkpoint.py:CombinedCheckpointTests.test_old_controller_denial_preserves_owner_hold_and_processes_other_requests",
+        "agent_tools/tests/test_coordinator_combined_checkpoint.py:CombinedCheckpointTests.test_real_worker_classifies_complete_internal_and_mixed_questions"
+      ],
+      "historical_checkpoint": "bde64ba6c7026e37991397e59dda3da67eb550c5 and Repository Checks 39002462254 remain historical evidence, not validation of the combined controller.",
+      "runtime_change": false,
+      "runtime_activated": false,
+      "owner_answer": false,
+      "policy_approval": false,
+      "complete_feature_verdict": false,
+      "authority_limits": "Validates the exact combined coordinator/attention sources and existing worker caller. It does not establish PR36 status_transition API delivery, final toolkit implementation review or successor CI, protected approval, runtime activation or all-relevant-PR successful dev-merge completion. Changed controller bytes require refreshed paired evidence."
+    },
+    "combined_evidence_correction": {
+      "pinned_dev": "98e4236a0431d9f94bd322691eb7c8b9de204d22",
+      "pre_correction_head": "60fec89777a8127dcaab1c1fb444cd86c061a3e1",
+      "plan_review": {
+        "gate": "passed",
+        "plan_sha256": "4cb5771b1f0f9fa6733240c70f5ffa5341ad190d607d6b353fbf1fec2384c206",
+        "reviewed_plan_digest": "a8aaa42ea561900a63724d212b66375bdef0624f51ce408f68028df03785ff48",
+        "task_context_digest": "787650cabc18b72fb87658b87c357a2be2b8177c5afa0630ccb86bf286607641",
+        "reviewer_id": "plan-reviewer:9c0043203aa74c35996ffe25765158b2"
+      },
+      "check_records": {
+        "bytes": 66459,
+        "files": [
+          "pr-checks/60fec89777a8127dcaab1c1fb444cd86c061a3e1/e0dd8be5a1db4a6ff22e94496668fbac06371f1e0ba8b146c5966208a9ee4a90-0.json"
+        ],
+        "format": "ordered-utf8-json-parts-v1",
+        "head_sha": "60fec89777a8127dcaab1c1fb444cd86c061a3e1",
+        "repository": "Karapsin/analytics_toolkit",
+        "sha256": "e0dd8be5a1db4a6ff22e94496668fbac06371f1e0ba8b146c5966208a9ee4a90"
+      },
+      "fast_ci": {
+        "run_id": 39008903001,
+        "head_sha": "60fec89777a8127dcaab1c1fb444cd86c061a3e1",
+        "conclusion": "failure",
+        "logs": [
+          {
+            "job_id": 117326974268,
+            "name": "quality gates",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117326974268-0.log",
+                "sha256": "dfcd5cb0bf93ec71f7063b6944bcf60e3c889183da1369364addb5c29614db6e"
+              },
+              {
+                "path": "fast-ci/39008903001/117326974268-1.log",
+                "sha256": "413125e3d82ba5bddf75701fc85c62c0be24f7e61d6dac33dea1d94398789fe0"
+              }
+            ]
+          },
+          {
+            "job_id": 117326974353,
+            "name": "py311-latest",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117326974353-0.log",
+                "sha256": "dbfe7d973fc35ceb1a847a0d80100ec3a3108c29ed086e12a130ba54e0f2aa68"
+              }
+            ]
+          },
+          {
+            "job_id": 117326974421,
+            "name": "py38-latest",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117326974421-0.log",
+                "sha256": "0600bf712c48b7b4c0966693876a4f74c509d5d2dede1d0b46177d63b2e9eaa6"
+              }
+            ]
+          },
+          {
+            "job_id": 117326974442,
+            "name": "py39-latest",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117326974442-0.log",
+                "sha256": "7ce9e04716bd6496a923549608d5f10888e3b35dd4beec7241d817f6e07f266e"
+              }
+            ]
+          },
+          {
+            "job_id": 117326974452,
+            "name": "py310-latest",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117326974452-0.log",
+                "sha256": "1136db096298df557fb59018503006fea76d0c1b997bc9b3f430dbd353d09f85"
+              }
+            ]
+          },
+          {
+            "job_id": 117326974454,
+            "name": "py312-latest",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117326974454-0.log",
+                "sha256": "0cca798a02a6761cdc652eeada4410be141d9ce0b1097fe8ea39ec0545fbd1fd"
+              }
+            ]
+          },
+          {
+            "job_id": 117326974464,
+            "name": "py313-latest",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117326974464-0.log",
+                "sha256": "a4c825e5c4e3ea76052773cb3a12edb26749a9865d143365a341c6ba86c85979"
+              }
+            ]
+          },
+          {
+            "job_id": 117326974580,
+            "name": "py314-latest",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117326974580-0.log",
+                "sha256": "b50682753844814ae0d7bbb9717c81c00bd60c7494da1ea04527b64d0728c1fe"
+              }
+            ]
+          },
+          {
+            "job_id": 117326974605,
+            "name": "py38-min",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117326974605-0.log",
+                "sha256": "5e107cf587f7bb71094b87eaaec61b80ec8cab4dc4bde55f8c4873c68214d987"
+              }
+            ]
+          },
+          {
+            "job_id": 117330406977,
+            "name": "fast-checks",
+            "files": [
+              {
+                "path": "fast-ci/39008903001/117330406977-0.log",
+                "sha256": "98fe3d97ecc6b1f92946b03b203c2dc58e46a0fe822f3c46c0b308c6a748834f"
+              }
+            ]
+          }
+        ],
+        "diagnosis": "Complete ordered check records and failed-job logs inspected. All eight Python compatibility jobs and quality coverage fail the same owner_attention.py:228 label assertion. Lint and type passed; fast-checks failed because tests and quality failed. Failed policy-comment recovery intentionally skips reconciliation, so the stale label must remain for that attempt."
+      },
+      "correction": "Attach the delivered combined-source evidence without changing either controller. Parameterize the service-free merge regression: an existing private approval permits hiding an internal display label while its pause blocks merge; an attempted policy-comment recovery blocked by that pause ends the attempt with no label mutations. Preserve the pause snapshot, merge refusal and approval records in both cases.",
+      "validation": "Source edits only; no local programs or tests executed. GitHub must validate the exact successor, including fast-checks and fresh independent implementation review.",
+      "authority_limits": "No new owner answer, protected approval, activation or parent-objective completion is supplied."
+    },
+    "dev581_conflict_reconciliation": {
+      "pinned_dev": "581d81b6f18950b91164eabe6dfa32500db106f4",
+      "pre_correction_head": "60fec89777a8127dcaab1c1fb444cd86c061a3e1",
+      "plan_review": {
+        "gate": "passed",
+        "plan_sha256": "005880ada5d3cf321d2fd0451860bbc3fae3087e00b786b13c664aec40161d02",
+        "reviewed_plan_digest": "441977a118ce203bd2a6398f097fe9c5f67ef2017ce5917f8c98484e35950cdf",
+        "task_context_digest": "dcdec0ff8fd0b4159622c37c8cfb8b22b66d73c5c0277f995dce2b22ed072dad",
+        "reviewer_id": "plan-reviewer:be4c9fe1821b4803a45a68ef1e8c858d"
+      },
+      "conflict_paths": [
+        ".github/agent/review_control.py",
+        "docs/CHANGELOG.md"
+      ],
+      "reconciliation": "Preserve exact inspected-pause retirement and pending-amendment recheck. A failed resume deletion ends the attempt without retry against replacement authority. Keep atomic amendment recording, unrelated pause audit fields, vetoes and hint invalidation, using dev's read-only attention display and shared status transitions. Retain both Unreleased entries and all historical provenance.",
+      "source_sha256": {
+        ".github/agent/controller.py": "1a6edae97f531a08decab6c30c2bbef1db5d6fa295ea88c002440eb2063bb234",
+        ".github/agent/review_control.py": "ad016e0df9aac0424f6d6a85577d2d89d4effcc3d7e7879300cdc769b1e1a782"
+      },
+      "regressions": [
+        "Exact-pause resume, later pending amendment and concurrent replacement older than resume comment; inspect durable state after restart.",
+        "Amendment display over new and unrelated holds uses shared status transitions without processing authority.",
+        "Retain separate failed policy-comment and prior private-approval merge cases, all policy-recovery helper scenarios and existing publication regressions."
+      ],
+      "paired_validation": {
+        "status": "refresh-required-for-reconciled-source",
+        "historical_companion_commit": "d0f6d916c597052c596fdf17f7371ee302ca910f",
+        "historical_ci_run": 39008919260,
+        "validates_reconciled_source": false,
+        "coordinator_obligation": "Refresh both embedded controller fixtures and selectors, independently review producer/verified-renewal/restart/earlier-green-merge-refusal and actual worker status-transition caller, and provide immutable sources plus successful exact-companion-commit Repository Checks before protected approval."
+      },
+      "validation": "Source-file edits only; no local programs or checks. Final-successor fast CI and fresh independent implementation review remain required.",
+      "authority_limits": "No new owner facts, protected approval, runtime activation or all-relevant-PR successful dev-merge completion. Historical evidence and chronological answers remain intact."
     }
   }
 }

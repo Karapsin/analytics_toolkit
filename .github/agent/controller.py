@@ -174,12 +174,12 @@ class GitHub:
         self.api(f"issues/{number}/comments", "POST", {"body": body[:60000]})
 
     def label(self, number: int, *, acquire: bool) -> None:
-        if acquire:
-            self.api(f"issues/{number}/labels", "POST", {"labels": [WRITER]})
-        else:
-            labels = self.api(f"issues/{number}/labels")
-            if any(label["name"] == WRITER for label in labels):
-                self.api(f"issues/{number}/labels/{WRITER}", "DELETE")
+        controls = trusted_module("review_control")
+        pr = self.pull(number)
+        if pr["state"] == "open":
+            controls.status_transition(self, number, pr["head"]["sha"],
+                (lambda fresh: WRITER) if acquire else (lambda fresh: None),
+                remove=frozenset() if acquire else frozenset({WRITER}))
 
 
 def trusted(pr: dict[str, Any], repository: str) -> bool:
@@ -226,7 +226,8 @@ def policy_path(path: str) -> bool:
         ".github/required-workflows.json", "agent_tools/machine_signing.py"})
 
 
-def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True) -> str | None:
+def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True, *,
+                        recover: bool = True) -> str | None:
     head = pr["head"]["sha"]
     if not trusted(pr, gh.repository) or not signed_head(gh.repository, head):
         return "Only the repository owner's PRs signed by an enrolled machine are automated."
@@ -248,6 +249,15 @@ def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = T
         and comment["user"]["login"].casefold() == owner
         and comment["body"].strip() == approval]
     if approvals:
+        if not recover:
+            # UI observation never processes comments into private authority.
+            # A changed/newer record or a non-owner hold keeps the denial.
+            current = controls.authority_snapshot(gh.repository, pr["number"], head)
+            if (current == snapshot
+                    and (current[0] is None or current[0]["reason"].startswith("Owner disapproved"))
+                    and all(max(approvals) > item["created"] for item in current if item is not None)):
+                return None
+            return "Policy approval recovery blocked by newer authority or an active hold."
         if controls.recover_policy_comment(
                 gh.repository, pr["number"], head, max(approvals), expected=snapshot):
             return None
@@ -256,6 +266,15 @@ def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = T
             and controls.approved(gh.repository, pr["number"], head)):
         return None
     return "Policy changes require the owner's exact-head approval comment: `" + approval + "`."
+
+
+def approval_attention(gh: GitHub, pr: dict[str, Any], app_id: int) -> bool:
+    """Pure display projection; normal authorization owns decision recovery."""
+    controls = trusted_module("review_control")
+    if controls.display_work_pending(gh, pr):
+        return False  # Current holds are classified separately, never approval readiness.
+    return bool(authorization_error(gh, pr, recover=False)) and approval_ready(
+        pr, gh.checks(pr["head"]["sha"]), gh.base(), app_id)
 
 
 def signing_options() -> list[str]:
@@ -505,7 +524,8 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                     "output": {"title": "Authorization required", "summary": denial}})
             continue
         approval_required = bool(authorization_error(gh, pr)) and approval_ready(pr, checks, base, app_id)
-        if not controls.reconcile_label(gh, pr, approval_required=approval_required):
+        if not controls.reconcile_label(gh, pr, approval_required=approval_required,
+                approval_check=lambda fresh: approval_attention(gh, fresh, app_id)):
             continue
         fast = fast_check(checks)
         comparison = gh.api(f"compare/{base}...{head}")
@@ -976,7 +996,8 @@ def merge_selected(
         checks = gh.checks(head)
         approval_required = bool(denial) and not controls.paused(gh, pr) and (
             bool(authorization_error(gh, pr, False)) or approval_ready(pr, checks, base, app_id))
-        if not controls.reconcile_label(gh, pr, approval_required=approval_required):
+        if not controls.reconcile_label(gh, pr, approval_required=approval_required,
+                approval_check=lambda fresh: approval_attention(gh, fresh, app_id)):
             continue
         if denial or controls.paused(gh, pr):
             continue

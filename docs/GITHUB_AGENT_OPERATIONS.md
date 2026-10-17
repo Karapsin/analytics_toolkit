@@ -362,7 +362,7 @@ independent review in that index's `review.json`, the successful full prepush
 receipt and exact-commit
 [Repository Checks run 39002462254](https://github.com/Karapsin/self_host/actions/runs/39002462254).
 
-The current producer/verified-renewal/restart/old-green-merge-refusal regression
+That historical producer/verified-renewal/restart/old-green-merge-refusal regression
 loads `controller_recovery_contracts.json:coordinator_checkpoint_candidate`.
 It binds checkpoint base `c125af22b47bff350686b5bd05ad226b7d307a8c`,
 request `40ee14810aba` coding revision 8 / waiting revision 9, and predecessor
@@ -381,10 +381,69 @@ it requires no runtime deployment and does not change the observed active worker
 Fixture validation does not depend on activating the APIs it validates. Any later
 controller source change requires refreshed immutable bindings, independent
 companion review and exact-commit Repository Checks.
+
+The coordinator subsequently delivered combined-source validation in self_host
+commit `d0f6d916c597052c596fdf17f7371ee302ca910f`. Its immutable index is
+`operator/pr33-combined-d0f6d916c597/index.json` (SHA256
+`235500d7342253137b4935888e965fb58df794e1bdccea06d432c76f5e7893d9`).
+The parent-objective record binds all three companion source hashes, independent
+review, published-source verification and successful exact-commit
+[Repository Checks run 39008919260](https://github.com/Karapsin/self_host/actions/runs/39008919260).
+This supersedes `bde64ba6` as validation for the combined controller; the earlier
+checkpoint records remain historical.
+
+The combined fixture `agent_tools/tests/fixtures/coordinator_combined_code7.json`
+binds controller SHA256
+`f80b33ac82a8e590bba98822e79cc9d1a25816bddcd98343ea631f8607208fb1`
+and review-control SHA256
+`2016e391ea758606ae1ae9eb63319168c69f57724dff6edddf66c32ebc02741c`.
+Its checkpoint identifies request `f7dc4258460e`, coding revision 7,
+publication revision 8, input head `055f2383` and target dev `98e4236a`.
+Both source hashes also match the later observed PR33 head `60fec897`.
+The combined checkpoint tests exercise the real producer, dependency verification,
+durable renewal, restart without a claimed worker and earlier-green-head merge
+refusal, plus legacy-controller denial and the actual worker's internal/mixed
+question attention caller. They exercise the existing attention APIs and fallback,
+not PR36's separately owned `status_transition` API. This fixture-only commit
+does not change the observed `a6e713dd` runtime or activate proposed support.
+
+Complete logs for toolkit head `60fec897`, run `39008903001`, diagnose the same
+owner-attention regression assertion in every Python job and quality coverage;
+lint and type passed. A failed policy-comment recovery intentionally ends the
+merge attempt before label reconciliation, retaining its existing labels. The
+service-free regression now distinguishes that path from an existing private
+approval, which permits hiding an internal display label while its pause still
+refuses merge. Both cases retain the exact pause and approval records. Dedicated
+later reconciliation can update display state; a hidden hint never authorizes
+recovery retries or a fallback after a failed authority comparison.
+
 Final toolkit review, exact-successor fast CI, real owner exact-head protected
 approval, compatible controller activation and verified operational acceptance
 remain separate gates. The coordinator provisions this evidence; the owner is not
 asked to retrieve source files or CI logs.
+
+The subsequent reconciliation targets dev
+`581d81b6f18950b91164eabe6dfa32500db106f4`. It retains exact-pause resume,
+pending amendments, dependency/renewal gates and dev's shared status transitions.
+A resume whose inspected pause was replaced ends that attempt; it cannot retry
+the same comment against a refreshed pause. After successful retirement, pending
+amendments are checked before reporting unpaused. Amendment recording preserves
+unrelated hold audit fields and vetoes while invalidating stale attention hints.
+Both producers use read-only attention display updates without policy recovery.
+
+The reconciled source hashes are controller
+`1a6edae97f531a08decab6c30c2bbef1db5d6fa295ea88c002440eb2063bb234`
+and review-control
+`ad016e0df9aac0424f6d6a85577d2d89d4effcc3d7e7879300cdc769b1e1a782`.
+The `d0f6d916` pair above remains historical validation for its recorded bytes;
+it does not validate this reconciliation. Before protected approval, the
+coordinator must supply refreshed immutable companion fixtures and selectors,
+independent review and successful exact-companion-commit Repository Checks.
+That refresh must exercise producer → verified renewal → restart → refusal to
+merge an earlier green head, plus the actual worker caller through the shared
+status-transition API. Source delivery does not establish deployment or successful
+dev merges of all relevant PRs. Local programs and tests were not run; GitHub
+must validate the final successor.
 
 ### Recovery acceptance for the documented worker
 
@@ -439,6 +498,28 @@ pointer.
 
 
 ### Telegram feature requests and planning
+
+Controlled lifecycle-label producers share the display-only `status_transition`
+boundary: attention creation/recovery, phase reconciliation and writer
+acquisition/release remove conflicting statuses before appending the current one.
+Per-PR host locks serialize controlled writers without a global worker lock.
+Each mutation rechecks the open/closed state, exact head, authoritative issue
+labels and private attention. A changed head aborts the old decision; a push by
+itself never creates `needs-user`. Ordinary renewed planning keeps its merge
+hold and displays its current phase without inventing an owner question.
+Writer release removes only writing, preserving a later non-writing phase.
+Closed cleanup preserves live Futures and stops on reopening. Visible owner
+attention suppresses a phase even while its existing Future finishes; without
+attention a live or unknown job retains its phase.
+
+Readiness observation uses the pure authorization projection; authenticated
+comment recovery remains an explicit separate workflow. Display updates do not
+grant approval, clear a veto, answer questions or release a Future. Persistent
+API errors and bounded lock/convergence failures retry through normal
+reconciliation. GitHub does not provide an atomic compare-and-swap across label
+requests, so the periodic reconciler remains recovery for interrupted operations
+and external writers. Paired companion source/tests and exact-commit checks must
+cover the final controller bytes before activation.
 
 Verified publication recovery and correction-question recovery share one atomic
 pause-retirement operation. It matches the observed repository, PR, head, reason

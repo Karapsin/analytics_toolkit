@@ -113,8 +113,8 @@ def test_recovery_clears_only_its_unchanged_derived_hold(control: Any, reason: s
             control.recover_feature_publication(gh, gh.pr, task_digest="a" * 64)
         assert saved_pause(control, gh) is None
         assert not control.paused(gh, gh.pr)
-    # Label reconciliation and exact-head approval are separate authority paths.
-    assert gh.pr["labels"] == [{"name": control.PAUSED}]
+    # Successful exact retirement refreshes display without granting approval.
+    assert gh.pr["labels"] == []
     assert not control.approved(gh.repository, gh.pr["number"], gh.pr["head"]["sha"])
 
 

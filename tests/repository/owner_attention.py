@@ -215,19 +215,123 @@ def test_amendment_invalidates_display_hint_and_preserves_other_authority(
     assert restarted.owner_attention(gh, gh.pr)  # The independent veto remains visible.
 
 
+@pytest.mark.parametrize("policy_comment", [False, True])
 def test_internal_display_hint_cannot_merge_an_approved_green_pr(
-    merge_environment: Any, tmp_path: Path
+    merge_environment: Any, tmp_path: Path, policy_comment: bool
 ) -> None:
     gh = GitHub()
-    gh.owner_approval()
+    if policy_comment:
+        gh.owner_approval()
+    else:
+        with merge_environment.connect() as db:
+            db.execute(
+                "INSERT INTO approvals VALUES (?,?,?,?,?)",
+                (gh.repository, 1, gh.pr["head"]["sha"], 22, "prior-private-approval"),
+            )
     insert_hold(merge_environment, "Correction agent requires user input.")
     observed = merge_environment.attention_snapshot(gh, gh.pr)
     assert hint(merge_environment, gh)
+    assert not merge_environment.owner_attention(gh, gh.pr)
     controller.merge_selected(gh, 17, tmp_path, pr_numbers={1})
     assert gh.pr["state"] == "open"
-    assert gh.pr["labels"] == [{"name": "feature"}]
+    if policy_comment:
+        # Failed policy recovery ends this attempt before label reconciliation;
+        # a hidden display hint cannot authorize a retry or private fallback.
+        assert gh.pr["labels"] == [{"name": "agent:needs-user"}, {"name": "feature"}]
+        assert not gh.mutations
+    else:
+        assert gh.pr["labels"] == [{"name": "feature"}]
     assert not any(path.endswith("/merge") for path, _method in gh.mutations)
     assert merge_environment.attention_snapshot(gh, gh.pr) == observed
     assert merge_environment.paused(gh, gh.pr)
     with merge_environment.connect() as db:
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == (
+            0 if policy_comment else 1
+        )
+
+
+@pytest.mark.parametrize("outcome", ["clear", "amendment", "replacement"])
+def test_resume_rechecks_amendment_without_retrying_replacement(
+    control: Any, monkeypatch: Any, outcome: str
+) -> None:
+    gh = GitHub()
+    insert_hold(control, "Correction agent requires user input.")
+    if outcome == "amendment":
+        control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "amended-digest")
+        monkeypatch.setattr(control.time, "time", lambda: 3000)
+        control.hold_feature(gh, gh.pr)
+    gh.comments.append(
+        {
+            "body": "/agent resume " + gh.pr["head"]["sha"],
+            "user": {"type": "User", "login": "owner"},
+            "created_at": "1970-01-01T00:33:20+00:00",
+        }
+    )
+    gh.mutations.clear()  # Observe the resume attempt separately from amendment display.
+    lookups = 0
+
+    def pages(path: str) -> list[dict[str, Any]]:
+        nonlocal lookups
+        assert "/comments?" in path
+        lookups += 1
+        if outcome == "replacement" and lookups == 1:
+            # Even a replacement older than the comment is a different identity.
+            with control.connect() as db:
+                db.execute("UPDATE pauses SET created=1500")
+        return gh.comments
+
+    monkeypatch.setattr(gh, "pages", pages)
+    assert control.paused(gh, gh.pr) is (outcome != "clear")
+    assert lookups == (2 if outcome == "amendment" else 1)
+    if outcome == "clear":
+        assert gh.pr["labels"] == [{"name": "feature"}]
+    else:
+        assert not gh.mutations
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    restarted = controller.trusted_module("review_control")
+    observed = restarted.attention_snapshot(gh, gh.pr)
+    if outcome == "clear":
+        assert observed is None
+    else:
+        assert observed["created"] == (3000 if outcome == "amendment" else 1500)
+        assert observed["reason"] == (
+            "Owner changed the request; renewed planning is required."
+            if outcome == "amendment"
+            else "Correction agent requires user input."
+        )
+    with restarted.connect() as db:
+        assert db.execute("SELECT count(*) FROM feature_amendments").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("existing_pause", [False, True])
+def test_amendment_display_uses_shared_transition_without_authority_recovery(
+    control: Any, monkeypatch: Any, existing_pause: bool
+) -> None:
+    gh = GitHub()
+    gh.pr["labels"].append({"name": "agent:writing"})
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "amended-digest")
+    if existing_pause:
+        insert_hold(control, "Supply original evidence.")
+    before = control.attention_snapshot(gh, gh.pr)
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("Display must not process authority")
+
+    monkeypatch.setattr(control, "paused", forbidden)
+    monkeypatch.setattr(control, "recover_policy_comment", forbidden)
+    control.hold_feature(gh, gh.pr)
+    names = {label["name"] for label in gh.pr["labels"]}
+    assert ("agent:needs-user" in names) is existing_pause
+    assert ("agent:writing" in names) is not existing_pause
+    assert "feature" in names
+    with control.connect() as db:
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+        pending = db.execute("SELECT * FROM feature_amendments").fetchone()
+        assert (pending is not None) is existing_pause
+    if existing_pause:
+        assert control.attention_snapshot(gh, gh.pr) == before
+    else:
+        assert control.attention_snapshot(gh, gh.pr)["reason"] == (
+            "Owner changed the request; renewed planning is required."
+        )
