@@ -1,5 +1,9 @@
 """Compact command reference and specialized keyboard references."""
 
+from __future__ import annotations
+
+import textwrap
+
 HELP_TEXT = """SQL Explorer commands
   Query: run, cancel, format, create_table, clear query|results|all
   Files/tabs: open, save, connections, db KEY, to_csv, to_excel
@@ -94,3 +98,24 @@ Only absolute mv adds text; its 100-new-line and 10-new-column caps clamp target
 Arrows/Home/End and Ctrl+Left/Right move; Shift variants select.
 Shift+Up/Down adds/removes cursors; Ctrl+Home/End moves to document bounds.
 """
+
+
+def reference_for_width(content: str, width: int) -> str | None:
+    """Keep wrapped reference descriptions beneath their command column."""
+    if content not in (SHORTCUTS_HELP, MOVEMENT_HELP):
+        return None
+    width = max(1, width)
+    column = 28 if content == SHORTCUTS_HELP else 20
+    continuation = " " * min(column, width // 2)
+    lines = []
+    for line in content.splitlines():
+        lines.extend(
+            textwrap.wrap(
+                line,
+                width=width,
+                subsequent_indent=continuation if line.startswith("  ") else "",
+                break_on_hyphens=False,
+            )
+            or [""]
+        )
+    return "\n".join(lines)

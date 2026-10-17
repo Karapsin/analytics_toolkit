@@ -10,6 +10,7 @@ from textual.widgets import Input, OptionList, RichLog
 
 from .command_completion import command_suggestions
 from .editor_actions import completion_text
+from .help_text import reference_for_width
 from .inputs import EditableInput
 
 if TYPE_CHECKING:
@@ -37,7 +38,13 @@ class ResultMessage(RichLog):
     def _write_content(self) -> None:
         self.clear()
         if self._message:
-            self.write(self._message)
+            width = max(1, self.scrollable_content_region.width)
+            reference = reference_for_width(self._message.plain, width)
+            self.write(
+                Text(reference) if reference is not None else self._message,
+                width=width,
+                expand=True,
+            )
 
     def on_resize(self) -> None:
         # Textual dispatches base-class resize handlers independently; their
