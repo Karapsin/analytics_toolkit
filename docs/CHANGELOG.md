@@ -61,6 +61,7 @@ Generated from package version bumps and recent commit history.
 - Preserve replacement authority holds and late vetoes through shared atomic publication and correction-question recovery.
 - Bound SQL Explorer cursor snapshots to live undo/redo history across editing, indentation, history eviction, and document resets, with focused lifecycle regressions.
 - Fix SQL Explorer document resets to clear obsolete multicursors, preferred columns and history; cover reset rendering and editing and complete history/idle test fixtures.
+- Fix detached SQL Explorer reset regressions to use an active Textual app while asserting editors remain unmounted and retaining cursor/history cleanup checks.
 
 ## 1.3.12.5 - 2026-10-14
 
