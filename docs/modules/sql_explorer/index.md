@@ -201,6 +201,11 @@ Tab is reserved for completion and indentation. Shift+Tab requests columns in
 a SELECT projection or WHERE expression even with a blank prefix; elsewhere it unindents. Neither
 key moves focus. Ctrl+Space also requests completion without indentation.
 With multiple editor cursors, completion is disabled and Tab only indents.
+Completion lists prefer the space below the active SQL row and move above it
+when the full list fits there instead. If neither side fits the full list, it
+uses the larger space and scrolls its options. Scrolling, narrowing suggestions,
+and resizing keep that row readable. The list stays inside the query area and
+closes if there is no room for an option without covering the active row.
 Accepting complete SQL or command tokens adds a space unless whitespace or
 closing punctuation already follows. Catalog, schema, and ClickHouse database
 completion inserts a trailing dot with no space, ready to continue qualification.
@@ -474,6 +479,9 @@ An empty document shows only column 1. All rows share the range of the longest
 row, including its final insertion position. Typing or `mv` can grow that range;
 displaying those columns never pads or changes the text on other rows.
 The ruler follows horizontal scrolling and accounts for tabs and wide characters.
+The horizontal scrollbar follows that same offset after document replacement
+and resizing. Search matches remain highlighted on the current editor line;
+the selection and caret retain their own contrast.
 
 Absolute `mv` creates missing rows when its numeric destination is beyond the
 document end. One invocation adds at most 100 lines; larger destinations stop
@@ -524,6 +532,9 @@ Enter commands in the lower panel, with or without a leading colon:
 - `exit!` or `q!` - close without the Save/Don’t Save dialog, discarding unsaved edits
 - `wq` - save every changed tab and exit; untitled tabs request a filename and
   directory. A cancelled or failed save keeps the Explorer open.
+
+Help references use the available pane width; wrapped shortcut and movement
+descriptions stay beneath their description column as the pane narrows.
 
 Commands are case-sensitive. Coordinates are 1-based: `S` means the first row
 or column, and `E` means the last row or physical line end, including trailing
@@ -588,10 +599,13 @@ the originating tab's connection key. Enter `table_name` and choose one source:
 `table_schema` provides add/remove column-name and SQL-type rows; `from_sql`
 provides a multiline query field and maps to the function's `sql` argument.
 Type fields offer backend-specific suggestions using Up/Down and Enter,
-while accepting custom type expressions.
+while accepting custom type expressions. Suggestions follow the active type
+field, including when the form is scrolled or resized.
 
 The basic form always shows `insert_data`, `skip_if_exists`, and
 `drop_if_exists`, initially False. `insert_data` is enabled only with source SQL.
+An empty `[ ]` marker means False and `[x]` means True; the text label also
+shows the current value.
 `skip_if_exists` maps to `if_not_exists`; selecting skip clears drop and vice versa.
 Advanced expands source database, partition/order, and backend-specific creation
 settings. Retry controls are omitted; creation uses the function’s retry defaults. Blank advanced settings retain the function defaults;
@@ -604,7 +618,10 @@ buttons. In multiline SQL, Up/Down moves through lines and leaves the field at
 the first/last line; Enter inserts a newline. Escape first dismisses an open
 choice/type menu, then cancels the form.
 
-**Cancel** or Escape closes the form without executing SQL. **Create** validates
+The form shows structural validation errors as its fields change. **Create** is
+disabled while the table name, source, column rows or advanced values are invalid,
+and becomes available after correction. Validation does not connect to a database.
+**Cancel** or Escape closes the form without executing SQL. **Create** revalidates
 and queues the operation; the button is its execution confirmation. Creation
 shares the user-operation queue and status/cancellation handling. Results and
 errors belong to the originating tab, and reopening the form retains the last
@@ -621,6 +638,11 @@ case-insensitive substrings. Select an entry to inspect it; **Next SQL** cycles
 through user-visible SQL and actual database submissions. **Previous/Next**
 replace the current page of up to 100 summaries; query details load only for the
 selected action. **Refresh** reloads history. `Ctrl+F` focuses search; Escape closes.
+
+If history cannot be read, the status shows **Cannot read journal: …** with the
+failure reason. **No matching journal entries.** appears only after a successful
+read with no matches, including when no journal exists yet. **Refresh** retries
+loading after the underlying problem is resolved; **Close** remains available.
 
 **Open in new tab** copies the user-visible query into a new unsaved tab on its
 original connection. For an internal action it copies the selected submission.

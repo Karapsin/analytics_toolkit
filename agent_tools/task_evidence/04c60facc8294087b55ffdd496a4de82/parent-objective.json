@@ -1,0 +1,1035 @@
+{
+  "format_version": 1,
+  "kind": "separate-visual-repair-complete-parent-objective",
+  "parent": {
+    "kind": "parent-objective-and-exporter-prerequisite-scope",
+    "parent": {
+      "repository": "Karapsin/analytics_toolkit",
+      "pr": 37,
+      "signed_published_head": "35949732eb3a9f1d9dfe0c7ba8016ecb8f64f503",
+      "current_pi_owned_head": "0986c4c16965b34806b1924e8b264d62cdd43888",
+      "task_digest": "b9f9a00ab7b6d4b975bd5e3c7b04a1336800595ffa0af540deeec0add49c948b",
+      "path": "agent_tools/task_evidence/28bfc78bd15a454a8463b5f859c8206a/parent-objective.json",
+      "sha256": "768b64e908176300faac4c37cc8b2cb8a9eb85ed106bf6b6ed5b5ab186f261e9",
+      "complete_record": {
+        "kind": "parent-objective-and-followup-scope",
+        "historical_parent": {
+          "path": "agent_tools/task_evidence/9a7ee657bcac481780cf40711666a712/parent-objective.json",
+          "sha256": "e3291ee38262ec02e806ff110cee7bbbf3bcf0cd54dce94365bca1f778451c41",
+          "complete_record": {
+            "kind": "parent-objective-and-followup-scope",
+            "parent": {
+              "repository": "Karapsin/analytics_toolkit",
+              "pr": 35,
+              "reviewed_head": "8779625b3a08cf00a0aa7ff329a4f2fe89825b26",
+              "dev_merge": "98e4236a0431d9f94bd322691eb7c8b9de204d22",
+              "task_digest": "dad62cd7094da0cd638024119ec2a098de7ab856642ae929de01d871dbd1f489",
+              "producer_id": "author:f01f760eb16549e89e990d827a88e188",
+              "complete_signed_user_task": {
+                "corrections": [
+                  "check other labels and provide reliable fixes if needed",
+                  "Automated delegated resolution after independent plan review: choose Reliable PR labels (Recommended) and Agent lifecycle labels (Recommended). Preserve the full original feature, necessary self_host companion integration, all-PR successful dev-merge objective and all review/CI/provenance/protected approval gates. Complete original questions, options, provenance and limits are recorded in the immediately preceding comment. This is an automated choice aligned with the existing user request, not a new human answer or policy approval. Worker source currently remains NOT DEPLOYED.",
+                  "Automated delegated resolution after fresh independent plan-resolver review: Reliable PR labels (Recommended) and Gated activation (Recommended). Complete exact questions/options, reasons, provenance and current verified activation are in the preceding comment. Worker087a24fe01311e6a8e65cf73e36f2475e266239d is already VERIFIED ACTIVE; remaining protected controller/API activation and live label verification stay pending. Preserve the complete feature, all authority gates and all-relevant-PR successful dev-merge obligation. This grants no new human fact or protected-policy approval.",
+                  "The coordinator has completed the requested companion fixture refresh and paired source validation. The complete original question, factual response, exact commit/CI/source bindings and authority limits are recorded in the preceding coordinator comment. Use operator/paired-fixtures-bde64ba6c702/index.json, SHA256 f47dc39b22d51ba317886814ebbe319fd943d74ef0ca8bfd3b5f2a479c132d10, as immutable complete source/review/CI evidence; self_host commit bde64ba6c7026e37991397e59dda3da67eb550c5 passed full prepush and exact Repository Checks39002462254. No writable companion checkout is fabricated or required from the owner: the coordinator performed those edits separately. Continue the complete existing feature through fresh planning and independent review. These retained code8/code6 source fixtures are not final published/controller deployment approval; changed controller bytes need refreshed paired evidence. All actual authority and all-relevant-PR merge obligations remain."
+                ],
+                "decisions": [],
+                "images": [],
+                "plans": [
+                  {
+                    "approval_index": null,
+                    "id": "8eec3b8dd04368cfbdea4999960e05a30db2ea9faf2555d04f54a1696849300c",
+                    "text": "# Complete reliable PR labels and protected activation\n\n## Summary\n\nComplete truthful attention and lifecycle labels, preserve every authority gate, and continue all relevant PRs and resulting repairs through successful dev merge.\n\nThe companion fixture refresh is complete: `self_host` commit `bde64ba6c7026e37991397e59dda3da67eb550c5` passed prepush and [Repository Checks 39002462254](https://github.com/Karapsin/self_host/actions/runs/39002462254). Its immutable index has the supplied SHA256 `f47dc39b…132d10`. It validates retained checkpoint candidates, without approving final controller publication or deployment.\n\nCurrent evidence identifies active worker `a6e713dd…`; protected attention APIs and live acceptance remain pending. No further owner clarification or companion checkout access is needed for this plan.\n\n## Implementation and compatibility\n\n- Preserve the existing attention feature in `.github/agent/review_control.py` and its controller integration. Retain pinned dev’s atomic policy-comment recovery, which is already present in the current source.\n- Keep `attention_snapshot()`, `attention_hint()`, and `owner_attention()` as additive host interfaces. The hint table records display classification bound to the PR head and exact observed pause; it never clears holds, changes approvals, or authorizes work.\n- Preserve genuine questions, vetoes, protected approval requests, and unknown/security holds as `needs-user`. Suppress a derived correction hold only when all associated current requests are positively classified as internal. Replacement pauses and stale or uncertain classifications must prevent suppression.\n- Reuse the companion production classifier and reconciliation path: durable request classification → attention hint → attention-label reconciliation → exclusive work phase. Retain older-controller conservative fallback.\n- Resolve conflict markers in `docs/CHANGELOG.md` and `docs/GITHUB_AGENT_OPERATIONS.md`, retaining both attention-label documentation and dev’s approval-recovery documentation. Preserve restored policy-recovery tests and recover any remaining deleted provenance note.\n- Replace the vague companion follow-up reference in task evidence with exact production-source, fixture, review, CI, and activation bindings. Preserve historical records and distinguish automated decisions from authenticated owner answers.\n- Audit `needs-user`, `planning`, `reviewing`, `writing`, `queued`, `testing`, and `ready` across active work, waiting requests, CI, closure, and reopening. Fix demonstrated defects only; preserve unrelated labels, worker ownership, pagination, and head/state checks.\n\nPackage APIs and versions remain unchanged. Existing authority tables retain their meaning.\n\n## Focused regression coverage\n\n- Retain `tests/repository/owner_attention.py`, `policy_recovery.py`, and label-reconciliation coverage. Verify replacement pauses, newer vetoes, cancellations, and evidence holds survive comment lookup, reconciliation, restart, and merge attempts.\n- Reuse the completed companion `test_owner_attention.py` and `test_coordinator_holds.py` coverage through actual SQLite request classification, label reconciliation, recovery, and merge refusal.\n- Verify internal-only and mixed questions, multiple requests, stale/running state, renewed planning, questions without pauses, operational retries, concurrent questions, and live writers. Assert no approval creation or unintended authority/request changes.\n- Cover phase transitions, CI outcomes, API failure/retry, closed/reopened PRs, and old-controller compatibility with fakes and temporary databases.\n- Compare final controller source hashes against the paired fixture bindings. The current `review_control.py` hash matches validated PR #35 code6 (`e2c6bd3e…420000`). If either bound controller component changes, the coordinator refreshes immutable fixtures and paired checks before final acceptance. Documentation-only cleanup does not invalidate unchanged component bindings.\n\n## GitHub validation and gated activation\n\n- Publish the completed correction through the established signed workflow. Obtain fresh independent review bound to the final head, dev base, and complete task digest.\n- Require final-head focused regressions, quality gates, compatibility matrix, and aggregate fast checks. Existing PR #35 checks are successful, but cover its published predecessor rather than unpublished corrections.\n- Supply paired source evidence before activation; do not make fixture validation depend on activating the same proposed APIs.\n- Obtain required owner exact-head protected approval, then activate the reviewed compatible controller through the established controlled rollout and isolated rehearsal. Preserve the active worker unless a separately validated runtime change is necessary.\n- Verify live internal waits display their phase while remaining blocked from merge; genuine questions and approval requests display `needs-user`; phases remain exclusive. Retain exact source hashes and activation receipts.\n- Continue coordinator-owned monitoring and aligned repairs until every relevant PR and resulting repair merges successfully into dev. Separate dependency-proof requirements remain intact; fixture evidence alone cannot satisfy broader activation or workspace-verification gates.\n\n## Limits\n\nRecorded scope choices guide this plan but grant no protected approval, credentials, veto override, or fabricated owner fact. Companion fixture work is already completed separately. This read-only session makes no edits and runs no programs, tests, or activation.\n"
+                  }
+                ],
+                "producer_id": "local:8483c088caa64fa9b9799f3bdcb980b4",
+                "questions": [
+                  {
+                    "answer_index": 1,
+                    "id": "9000656d723251c065afbdd41f5a34f3eb79c5448e62a184ba918b388bf9f8c3",
+                    "text": "What does “implement it” refer to? The supplied conversation does not identify the original feature; the patch suggests truthful PR attention and work-phase labels.\nReliable PR labels (Recommended): Preserve the current feature and complete truthful attention/phase labels, including the necessary self_host companion integration.\nDifferent original objective: Provide the missing objective in free text so the plan does not derive scope from partial code or reviewer claims.\n\nFor “check other labels and provide reliable fixes if needed,” which label set should the plan cover?\nAgent lifecycle labels (Recommended): Inspect needs-user, planning, reviewing, writing, queued, testing and ready across open/closed PR transitions; fix demonstrated defects while preserving authority gates.\nAll repository labels: Also inspect labels outside the agent lifecycle; specify any additional intended behavior or known failures in free text."
+                  },
+                  {
+                    "answer_index": 2,
+                    "id": "ac75f217cdab11b9cd6cc56e2c2cf7633a7df12b36364f8872ef0fc606d5659c",
+                    "text": "1. Should the plan define “implement it” as reliable PR attention and lifecycle labels (needs-user, planning, reviewing, writing, queued, testing, ready), including necessary self_host integration, while retaining the all-PR dev-merge objective and every authority gate?\nReliable PR labels (Recommended): Complete this feature and fix demonstrated lifecycle defects; preserve existing changes and pinned-dev safeguards.\nDifferent original feature: Provide the missing original objective in free text so partial code does not define or narrow the feature.\n\n2. Beyond successful dev merges for all relevant PRs and resulting repairs, what production activation should the plan include for the currently NOT DEPLOYED worker source?\nGated activation (Recommended): Plan exact-commit rollout and live label verification after review, CI, provenance and required protected approvals; these answers grant no policy approval.\nMerge completion only: Complete the source changes and all relevant dev merges, documenting deployment as a separate follow-up."
+                  },
+                  {
+                    "answer_index": 3,
+                    "id": "85d247c84f4edc4857aac5935b932023d3ffbc9a3314eabded73cadb90b95687",
+                    "text": "Can the coordinator provide source_files edit access to the self_host companion checkout? The reviewed plan requires rebinding owner_attention_controller.json and its regression tests to the corrected controller, but this workspace exposes only analytics_toolkit source and read-only companion evidence."
+                  }
+                ],
+                "replacements": [],
+                "source": "user",
+                "starting_prompt": "implement it on your own if orchestator is not doing that",
+                "task_id": "8483c088caa64fa9b9799f3bdcb980b4",
+                "version": 2
+              }
+            },
+            "followup": {
+              "task_id": "9a7ee657bcac481780cf40711666a712",
+              "starting_user_prompt": "implement it on your own if orchestator is not doing that",
+              "scope": "Complete reliable lifecycle labels at every direct controller/worker producer; preserve all private authority and complete paired validation, protected activation, live verification and successful dev merges for all relevant PRs and resulting repairs. PR9 capture/tool-access recovery and PR10 actual PR9 merge ancestry remain separate dependency gates. Relevant self_host PRs affect GitHub agents only. No programs/tests/scenes on Pi. Preserve full question/answer history and notification filtering.",
+              "scope_review_sha256": "a7e36cd08fe96b78e3a9517888ee73a55de0fc7ab5b84dc6311ab6280fb376ad",
+              "plan_review_sha256": "5dcc1df7857bb2eee4b0c982f0bbf169546aacfa69e4f8d63b9eeddac8927e9a",
+              "known_preexisting_findings": [
+                "append-only direct attention/writer label producers",
+                "stale-head branch invents needs-user",
+                "ordinary renewed planning briefly displays needs-user"
+              ]
+            },
+            "authority": "This record restores parent scope and independent review provenance. It grants no owner fact, policy approval, veto override, visual pass, missing dependency proof or completion claim."
+          }
+        },
+        "followup": {
+          "task_id": "28bfc78bd15a454a8463b5f859c8206a",
+          "starting_user_prompt": "implement it on your own if orchestator is not doing that",
+          "scope": "Preserve complete failed GitHub visual capture diagnostics and deliver immutable task/candidate/base/checkpoint/run-bound evidence to fresh RPi planning. Preserve the full existing lifecycle-label, authority, notification, original PR feature and all-relevant-PR successful dev-merge objectives. No Pi tests, programs, installs, builds, integration or scenes. Failed diagnostics never grant a visual pass or protected approval. PR10 still requires actual PR9 dev merge and ancestry.",
+          "independent_plan_review": {
+            "reviewer": "/root/review_failed_visual_delivery_plan",
+            "mode": "independent read-only plan review",
+            "decision": "approve_plan_with_required_boundaries",
+            "scope": "Retain failed SQL Explorer capture diagnostics on GitHub and assign them immutably to subsequent RPi planning; do not change visual acceptance or approval authority.",
+            "root_suggested_plan": {
+              "description": "A small cross-repository workflow/helper and worker change to retain complete failed-capture artifacts and deliver task/candidate/base/patch-bound evidence to fresh planning.",
+              "assessment": "Correct direction and necessary: the current workflow asserts capture success before copying anything and uploads only on success. The worker retains a bounded failed-step log, which contains the generic failure and a runner-local diagnostics path, but cannot recover the geometry, session, child output or diagnostic data at that path. The current maintenance proposal concerns publication authority and does not address this gap. This review does not approve any source implementation or deployment."
+            },
+            "observations": [
+              {
+                "path": ".github/workflows/agent-visual.yml",
+                "finding": "The capture script asserts result.ok before loading session/copying evidence, and actions/upload-artifact has no always condition. Run 39040499995 therefore lost the command-completion failure evidence on candidate c15835aa940badef5843a369354d572dab6f7151."
+              },
+              {
+                "path": "agent_tools/sql_explorer_visual.py:capture_review",
+                "finding": "Raw per-scene geometry is written under the run-owned evidence root before a failed scene is marked pass. A failed scene's session entry may still have empty geometry/screenshot fields. Exporting only the successful scene entries would silently omit the most useful failure. Session status and error are persisted in finally, and the temporary checkout is removed."
+              },
+              {
+                "path": "agent_tools/sql_explorer_visual.py:_run",
+                "finding": "The child process captures stdout/stderr, but an error selects stderr OR stdout, and timeout loses partial output from the raised timeout exception. Preserve both streams for visual capture rather than assuming the failed-step log is complete child evidence."
+              },
+              {
+                "path": "self_host/services/github_agent/daemon.py:capture_failure",
+                "finding": "The existing path accepts only completed failure with a failed Capture every scene headlessly step, redacts all metadata/logs, and fails closed above 64 KiB. Its complete-inline findings path should remain a legacy fallback, not be expanded into a large prompt. Setup/cancel/timeouts currently remain operational retries."
+              },
+              {
+                "path": "self_host/services/github_agent/visual_evidence.py and file_tools.py",
+                "finding": "Existing visual evidence requires a complete passing capture, including rejected image reviews. Files.visual_call accepts only current-head-visual-review, at most 258 files, a 512 KiB manifest and 8 MiB per visual file; export/assignment has a 64 MiB total bound. Companion export instead has 512 KiB per file and reserved Git source-index semantics. Failed capture evidence needs an explicit diagnostic schema/assignment path, not a forged passing capture or an invalid companion sources entry."
+              },
+              {
+                "path": "self_host/services/github_agent/intake.py:finish_artifact and run",
+                "finding": "An unpublished correction VisualRejection resets only plan authority and queues fresh planning while preserving checkpoint and answers. Its next request workspace is not necessarily the published-review job located by assign_request_visual. A durable explicit request/revision-bound failure reference is needed for both unpublished correction failure and published review failure."
+              }
+            ],
+            "required_implementation_plan": [
+              {
+                "step": 1,
+                "files": [
+                  "agent_tools/sql_explorer_visual.py",
+                  "new narrowly scoped visual artifact export helper",
+                  ".github/workflows/agent-visual.yml",
+                  "tests/agent_tools/visual.py",
+                  "focused artifact-helper/workflow tests"
+                ],
+                "change": "Create the diagnostic destination before capture; persist the run/review identity as soon as known; finalize a diagnostic manifest in a finally or separate always-run export step. Copy the exact run-owned session plus actual geometry/screenshots/diagnostics in the owned evidence root, including files from the failed scene even when its session entry is pending. Preserve all actual diagnostic sidecars as inert bytes: candidate c158 may already emit sidecars absent from pinned dev, so discover/retain run-owned files without adopting candidate source or assuming only the current dev layout. Preserve a complete expected scene inventory and explicit attempted/pass/failed/pending state. Preserve both visual child stdout/stderr, return code or timeout and partial timeout output in bounded raw files; use a narrowly scoped capture-specific facility rather than exposing generic command stderr. Do not change geometry checks or mark a failed scene pass. Upload the artifact with always(), if-no-files-found:error and candidate plus run-attempt identity. The overall job must still fail when capture fails; a successful upload must not turn the run green. Export a minimal setup/export-failure envelope when possible rather than an empty apparently complete artifact."
+              },
+              {
+                "step": 2,
+                "files": [
+                  "self_host/services/github_agent/daemon.py",
+                  "self_host/services/github_agent/visual_evidence.py or new isolated capture_failure_evidence.py",
+                  "self_host/services/github_agent/intake.py",
+                  "self_host/services/github_agent/file_tools.py",
+                  "request-model evidence wiring only as needed"
+                ],
+                "change": "Download the exact failed run/attempt artifact as inert data. Validate trusted API run/workflow/event/repository/job/attempt identity, expected artifact name and candidate, and bind a host-created diagnostic receipt to full task identity, original head, assigned base, producer, context digest, exact checkpoint patch SHA256, candidate and artifact/file digests. For unpublished candidates retain the trusted candidate-creation association, distinguishing original head from temporary composed candidate. Use a new failed/incomplete-capture diagnostic kind; teach the existing visual Files surface an explicit narrow allowlist for this kind without weakening current passing-review validation. Store a durable immutable private snapshot before updating request state. Record a small hash-bound reference in the request/history; assign and reverify the snapshot in every subsequent plan/plan-review/code phase that needs it, including restart and rebase. Present old candidate/base/patch explicitly when checkpoint or base has changed. Keep historical evidence rather than relabeling it current."
+              },
+              {
+                "step": 3,
+                "files": [
+                  "self_host/services/github_agent/daemon.py:capture_failure",
+                  "self_host/services/github_agent/intake.py:finish_artifact",
+                  "focused self_host regression tests",
+                  "relevant README and changelog fragments"
+                ],
+                "change": "Use the complete verified diagnostic artifact for fresh planning only for a genuine completed capture failure. Keep setup failures, cancellation, timeout without a complete candidate-failure record, upload/download errors, malformed evidence and exhausted capacity operationally distinct. Preserve any obtainable partial diagnostic snapshot but label its collection completeness honestly; never say missing/truncated evidence is complete. Preserve original context, all Q+A, complete checkpoint and old diagnostic history. Clear stale plan approval only when entering the existing fresh-planning transition; an in-flight owner cancel, veto, answer revision or security hold wins the state CAS. Retain the existing 64 KiB inline log fallback for historical workflows, with explicit legacy/log-only status; do not silently treat it as full geometry evidence."
+              },
+              {
+                "step": 4,
+                "files": [
+                  "cross-repository fixture tests and deployment receipts"
+                ],
+                "change": "Publish the protected GitHub workflow through the normal signed/reviewed dev PR and allowed main synchronization. Validate host producer/consumer compatibility before enabling the new path. Then independently review and deploy the worker source through a separate drained operation after the already prepared f5ff operation; do not mutate or reuse that operation's payload. Recover this run only if its evidence actually exists; it cannot be reconstructed retroactively from an absent artifact. A fresh isolated candidate run may generate new evidence and must be labeled as a new run."
+              }
+            ],
+            "hard_boundaries": [
+              "Always means reliable preservation when a runner and upload service can execute finalization. Runner termination, provider loss or cancellation can prevent upload; surface unavailable/incomplete evidence and retry without fabricating it.",
+              "All downloaded files and logs are untrusted diagnostic data, never instructions or authority. No programs, imports, tests, installs, builds or scenes on Pi. Metadata/hash/copy validation and normal scheduling only.",
+              "Do not copy arbitrary paths supplied by capture.json. Enumerate only a dedicated run-owned root, reject absolute paths, traversal, symlinks, duplicate names, non-regular files, devices/FIFOs and path alias/collision. Validate archive entries before extraction, with bounded compressed/uncompressed totals, entry count, per-file and aggregate size; do not extract hostile ZIP data using unchecked gh download semantics.",
+              "Apply bounds before allocation/read, not after reading an unbounded artifact. Completeness requires every declared entry and expected file digest, exact manifest membership and no unknown unassigned files. Include explicit absent/unattempted scene records. Reject malformed JSON/schema, duplicate keys where identity matters, wrong types, stale task/base/patch/candidate/run/attempt and digest mismatch.",
+              "Keep raw GitHub bytes private and hash-bound; redact all text/structured diagnostics exposed to models with trusted context redaction, while retaining original hash and transformation provenance. Do not silently mutate JSON structure or claim redacted model evidence is byte-identical raw. Images may be assigned only as inert PNG evidence through existing image gates; no SVG rendering on Pi.",
+              "Use the existing 8 MiB visual-file, 64 MiB total, 258-file and 512 KiB visual-manifest bounds unless a measured fixture requires a separately reviewed limit change. Larger text/log files can be complete ordered UTF-8 boundary-safe parts with whole-file digest, byte counts and contiguous coverage. Do not simply raise the old inline 64 KiB cap or globally alter companion limits. If bounded evidence cannot fit, retain a clear capacity error and retry/operator tooling path, never truncate while declaring complete.",
+              "New diagnostics must never write visual-receipt.json, a pass verdict, owner approval, independent source/plan approval, or release a dependency/security hold. Full manifest scene capture, every required geometry check and every individual full PNG verdict remain mandatory before publication.",
+              "Immutable installation must be atomic and idempotent, verify identical retry and reject collision/tampering; preserve directory durability as appropriate. Do not overwrite old attempt evidence or rebuild request authority from mutable GitHub comments. A reference is deliverable only after Files actually lists and reads every continuation and any required full image in a fixture.",
+              "Keep new diagnostic catalogue data outside the reserved manifest.sources Git-commit schema; prefer request-local visual assignment and its own schema. Any global evidence publication must test the actual unchanged export_evidence/export_integration consumer contract."
+            ],
+            "test_strategy": {
+              "ATK_fast": [
+                "Fixture real command-completion-style failure with session pending failed scene, populated raw geometry including embedded diagnostics, both stdout and stderr, previous passing scene and remaining pending scenes; assert all existing bytes retained and job stays failed.",
+                "Exercise start/import/setup failure, child nonzero, timeout partial output, export exception, zero-scene/empty diagnostics, successful capture compatibility and malformed/unsafe paths. Verify upload always condition and fixed output directory without invoking real GitHub or rendering scenes.",
+                "Assert failing-scene raw geometry survives even though session entry has no geometry path, and that temporary checkout cleanup cannot remove the persistent evidence root."
+              ],
+              "self_host_fast": [
+                "Use the exact new producer fixture through actual downloader validator, durable snapshot exporter, actual Files list/read continuation APIs and normal Intake replan/restart assignment for both published review and unpublished checkpoint capture failure.",
+                "Include long Unicode logs beyond 64 KiB, geometry with embedded SVG/comparison data, all ordered parts and full PNG read where one exists; verify byte coverage, raw/redacted provenance, task/candidate/base/checkpoint binding and no authority gains.",
+                "Reject archive traversal, symlinks, devices, duplicate paths/keys, zip bomb size/count, extra/missing files, wrong run/attempt/repository/candidate/head/base/patch/context, tampering, collision, fetch failure, capacity exactly at/over bounds and empty/incomplete artifacts.",
+                "Fault inject interrupted publication/retry, restart, source-directory replacement, simultaneous owner cancel/answer/revision/veto, rebase and changed checkpoint. Assert full Q+A/checkpoint/history preserved and no duplicate publication, green receipt, resumed hold or TG spam.",
+                "Retain old workflow log-only behavior tests and complete passing/rejected visual handoff regressions; test the new failure schema cannot enter export_review or verify_visual as passing evidence."
+              ],
+              "validation_location": "Focused and mandatory local checks on Mac; full capture/scene validation on GitHub. No Pi test execution. Source-only implementation must pass fresh independent review and exact-head CI before runtime activation."
+            },
+            "scope_and_authority": {
+              "authorized": "The user's request to implement missing orchestrator/tooling repairs covers this diagnosed source-delivery defect in both repositories. It does not authorize accepting a visually failed candidate or discarding original task scope.",
+              "protected_boundary": "agent-visual.yml is a protected capture workflow. A normal exact-head owner/delegated approval must follow fresh independent review and passing CI for its published change. This plan review is not that approval.",
+              "current_rollout": "The parent reports f5ff has now applied after natural zero-job drain and is awaiting healthy paused post-start reconciliation. Do not modify that immutable source/payload, pause lease or operational review. New daemon/helper runtime changes require their own later reviewed operation and natural drain.",
+              "complete_parent_scope": "Read the complete 12961-byte agent_tools/task_evidence/9a7ee657bcac481780cf40711666a712/parent-objective.json, retaining PR35 signed task, full questions/options/answers/plans and the unchanged all-relevant-PR dev-merge obligation. New task 28bfc78bd15a454a8463b5f859c8206a on owned branch codex/19ac2eeff8284a2f-749f96f6 must carry this full historical parent record and fresh current source/runtime provenance as separate additive evidence outside frozen signed task fields. Do not infer or narrow the original feature from the diagnostics patch. Keep PR9 visual recovery and PR10 actual PR9 dev-merge ancestry requirements distinct. Existing lifecycle-label work, notification filtering, authority gates, paired validation and live verification remain in scope.",
+              "retrospective_limit": "Run 39040499995 log proves its failure, not the missing raw diagnostics. Do not claim those original bytes were recovered without an actual retained artifact. A later recapture supplies new-run evidence only."
+            },
+            "review_limitations": "Read-only review of the supplied failed-step log and focused ATK/self_host source. No repository writes, imports, tests, network or Pi operations were performed. Only this review report was written."
+          },
+          "independent_plan_review_sha256": "81afc4d2f7e88c2de11a5532ea18edb2190b68942febd9d7740fa64f23c4e3bc",
+          "observed_gap": {
+            "run_id": 39040499995,
+            "candidate": "c15835aa940badef5843a369354d572dab6f7151",
+            "workflow_head": "e149dd83b9f699d442ebe47c900e55e523ab02b7",
+            "failure": "command-completion failed; diagnostics artifact upload skipped",
+            "original_raw_diagnostics_recovered": false
+          },
+          "runtime_at_start": {
+            "worker": "f5ff889c9f6852f816d5b317f673dd7d4117c2ee",
+            "controller": "e149dd83b9f699d442ebe47c900e55e523ab02b7",
+            "actual_readback_sha256": "3ee0171ec174a36e9dfadeaded6988430ef679dd18997f8c4adf1122bc403885",
+            "status": "Verified active; a later companion consumer change requires a separate reviewed deployment."
+          }
+        },
+        "authority": "Additive historical task and planning provenance only; no owner fact, approval, hold release, visual pass or completion claim."
+      }
+    },
+    "followup": {
+      "reason": "Existing producer PR37 also modifies the visual-process harness and its full visual review rejected scene inconsistencies. Deliver the independently useful trusted available-file transport prerequisite without editing the handed-off branch or claiming its visual/process work passed.",
+      "scope": [
+        "Exact separately reviewed exporter e93a6ca62f5c5201e1312559640a09d05052e49b6c7ed3626f4175da792c2c7b and protected workflow from original37head",
+        "Exporter-only regressions, actual unchanged pinned-dev legacy capture failure layout with process_output_complete null, operations documentation, unique fragment",
+        "No SQLExplorer production, scene, visual harness or process implementation changes. PR37 remains open for all process-output guarantees and fresh visual correction.",
+        "Originalc158/run39040499995 rawdiagnostics are absent. A new isolated main workflow can retain newly produced available files only; old process stdout/stderr completeness remains unknown.",
+        "Preserve full original feature/all questions/options/answers, tenworkers/singleton30min cadence, notification policy, GitHub authenticated answers, authority and allrelevantPR successfuldevmerge scope.",
+        "Consumer8b source/CI/review completed; separate reviewed runtime deployment is in natural drain. Producer main activation and actual newrun assignment are pending."
+      ],
+      "independent_plan_review": {
+        "reviewer": "/root/review_failed_visual_delivery_plan",
+        "mode": "independent read-only prerequisite plan review",
+        "decision": "approve_plan_with_required_scope_and_tests",
+        "findings": [],
+        "authority": "Plan assessment only; not source approval, visual approval, protected authorization, merge or runtime activation.",
+        "current_context": {
+          "inspected_local_dev": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+          "source_pr": 37,
+          "source_head_for_exact_exporter": "35949732eb3a9f1d9dfe0c7ba8016ecb8f64f503",
+          "rejected_pr37_head": "0986c4c16965b34806b1924e8b264d62cdd43888",
+          "rejected_verdict": "/private/tmp/pr37-0986-rejected-visual-verdict.json",
+          "producer_source_review": "/private/tmp/failed-capture-producer-independent-source-review-v4.json",
+          "consumer_source_review": "/private/tmp/failed-capture-consumer-independent-source-review-v3.json",
+          "exporter_sha256": "e93a6ca62f5c5201e1312559640a09d05052e49b6c7ed3626f4175da792c2c7b",
+          "workflow_sha256": "07ad275c1131744a16ce0bceac2200d430e323205e3bdf7c04c4f7116ba7e5da"
+        },
+        "root_proposal": "Create a separate signed prerequisite PR from clean current dev with the exact previously reviewed trusted capture_artifact.py and agent-visual workflow, exporter-only fast regressions, narrow operations documentation, uniquely owned fragment and complete historical parent-objective provenance. Leave SQL Explorer implementation, visual harness/process/scene code and handed-off PR37 untouched.",
+        "assessment": {
+          "coherence": "This is a legitimate independently useful transport prerequisite. The exporter is loaded from the trusted exact workflow commit and can invoke the candidate's existing visual_workflow without requiring the new process helper. It retains whichever raw run-owned files actually exist, including pending failed-scene geometry, separately from approval. PR37's process-output improvement is a stronger additional producer guarantee rather than an import or execution dependency of this exporter.",
+          "visual_gate": "Current controller visual_required covers SQL Explorer, the agent_tools/sql_explorer_visual prefix, visual scene manifest and SQL Explorer tests; it does not classify .github/agent/capture_artifact.py or the capture workflow alone as SQL Explorer implementation. The proposed narrow prerequisite must not modify any visual predicate, test discovery requirement, scene source or receipt validator. Avoiding unrelated harness changes in an independently useful controller transport PR is not asserting that PR37's rejected visual gate passed. Its actual changed paths still determine all normal review/check requirements.",
+          "pr37_failure_preserved": "The inspected rejection is substantive: scrollbar/editor state mismatch, invalid-form state, checkbox appearance, dropdown positioning, find highlights, help wrapping, destructive-confirmation/query state, query/result state and save-dialog identity/focus. None is resolved by this transport split. PR37 must remain open under Pi ownership with its complete original task and all rejected scene evidence. Future PR37 correction and full review must still address those findings and retain full process-output guarantees.",
+          "old_candidate_compatibility": "The exact exporter computes process_output_complete as null when there are no execution.json records. Current dev's old _run and the older c158 candidate can therefore yield a complete inventory of available session/geometry/sidecar files while full stdout/stderr completeness remains unknown. Reviewed consumer capture_archive accepts strictly null as distinct from bool; capture_diagnostics retains and exposes that nullable value, rejecting explicit false while not relabeling null true. This is compatible data transport, with explicit historical limits. It does not recover streams that the candidate never wrote or retroactively attest old installed dependency bytes.",
+          "scope_preservation": "Carry the full parent objective/Q+A/plans and fresh separate provenance, explain that this is a prerequisite subset with PR37 remaining responsible for process capture and visual corrections, and preserve the all-qualifying-PR successful dev-merge obligation. Do not narrow the original feature to the prerequisite patch or declare parent completion."
+        },
+        "necessary_source_scope": [
+          "Restore exact reviewed .github/agent/capture_artifact.py and exact agent-visual.yml from the pinned original PR37 source, with fresh content hashes in this new branch. No cherry-pick of the entire PR37 patch.",
+          "Add only exporter/controller regression tests and their minimum non-visual support. Use a separate newly owned task/changelog fragment and additive parent-objective evidence; preserve frozen signed parent fields and historical source/CI/review records.",
+          "Add narrow operations documentation describing available raw artifact retention, trusted transport, run/attempt/candidate binding, collection_complete versus nullable process_output_complete, consumer pairing and independent activation. Do not claim complete stdout/stderr on old candidates.",
+          "Do not add or change analytics_toolkit/sql_explorer, agent_tools/sql_explorer_visual.py, sql_explorer_visual_process.py, scenes, scene manifests, visual test harness or any gate/allowlist to avoid a required visual review. Any later necessary change in those areas belongs to a normally reviewed visual-bearing task."
+        ],
+        "necessary_test_changes": [
+          "Do not copy tests/repository/capture_artifact.py wholesale from PR37. Its sql_explorer_visual_process import, fake_transport import, test_capture_child_retains_both_streams_and_timeout_partial_bytes, test_child_output_capacity_is_bounded_and_marked_incomplete and test_process_cleanup_freezes_all_output_before_artifact_export depend on the unmerged process implementation. Leave these tests/support with PR37.",
+          "Retain exporter-only tests for pending failed-scene raw geometry and sidecars, exact bytes/hash membership and >64 KiB available file retention; old passing flat artifact compatibility; explicit incomplete start/import/export failures; unsafe symlink/hardlink/FIFO/size/count/depth inputs; descriptor root/parent/leaf replacement and destination publication safety; separate always-conditioned failed upload without continue-on-error.",
+          "Use current pinned-dev visual.STATE_ROOT/session_path for real split selected-session/run-root fixture layout. Importing the unchanged module for layout and monkeypatching visual_workflow does not require modifying it or exercising scene rendering. Do not bring in PR37 process transports as an exporter dependency.",
+          "Add a direct legacy candidate fixture with session plus geometry/sidecars but no execution.json and assert collection_complete:true, process_output_complete:null and visual_approval:false. Add a modern execution.json case with true and false outcomes to retain honest producer semantics without running child code.",
+          "Exercise the exact prerequisite exporter fixture through the already reviewed consumer's inert ZIP validator, immutable retention and actual Files model reads, explicitly checking that null survives the model diagnostic binding and never creates a visual receipt or full-stream claim. This paired proof may be a separate self_host fixture/test refresh if the exact exporter bytes remain unchanged.",
+          "Keep test discovery and coverage requirements honest; run focused repository checks and mandatory precommit on the new exact tree. Do not delete unrelated existing test coverage or weaken visual/source review requirements to pass the new PR."
+        ],
+        "documentation_required": [
+          "Separate complete collection of currently available files from full process-output completeness; null means unknown and missing stdout/stderr remain missing.",
+          "Name PR37 and its still-pending process-output and full visual-review obligations; reference the exact rejected head/run as historical evidence rather than copying approval-like summaries.",
+          "Identify exact shared exporter/workflow hashes, current consumer source/runtime provenance separately, and the future activation sequence. A fixture can bind source bytes before protected workflow activation; neither fixture nor this plan grants activation.",
+          "State that older missing artifacts are not retrospectively recovered. A recapture of old candidate source is a new run with a new run/attempt receipt and potentially different installed environment."
+        ],
+        "authority_and_remaining_gates": [
+          "Do not edit the handed-off PR37 branch; normal Pi correction/review continues there. If prerequisite dev merge causes conflicts or supersedes identical transport files, Pi must preserve both complete tasks and process/visual work rather than dropping it as a duplicate.",
+          "Fresh exact-source independent review, focused and complete mandatory checks, signed PR publication, final-head GitHub checks and complete prompt-aligned review apply to the prerequisite.",
+          "Both exporter and capture workflow are protected. Required exact-head authorization remains a separate gate after checks/review; this report is not that approval and does not alter the existing authorized delegation policy.",
+          "Only the normal explicit workflow/controller allowlist may reach main outside release. Verify exact protected exporter/helper activation alongside workflow; workflow referencing a missing helper is not a complete rollout. No package or visual code may be smuggled into main through the prerequisite.",
+          "Revalidate exact exporter compatibility with the published consumer8b source and actual installed worker provenance; source-only consumerV3 review is historical source evidence, not proof of runtime activation. Any fixture head refresh must preserve the old PR37 source record and distinguish byte-identical shared exporter from changed producer heads.",
+          "After actual approved activation, obtain a fresh exact failed-run artifact and verify normal immutable assignment to planning through complete Files pages/images. No Pi candidate programs/tests/scenes. Continue PR37 and every other qualifying PR and repair to successful dev merge; PR9 visual and PR10 actual PR9 merge ancestry gates remain intact."
+        ],
+        "limitations": "Read-only local git/source/evidence inspection only. No repository edits, imports, tests, network, Pi execution, agent messages, state changes or approval issuance. Only this report was written. Actual current remote PR/CI/runtime state supplied by parent was not independently fetched."
+      },
+      "independent_plan_review_sha256": "072c84388d036b551de01fe226440635bc1e06e125376b3924ec287972ddb732"
+    },
+    "authority": "Additive authenticated signed parent and independent plan provenance; no new owner fact, policy approval, source/plan/visual pass or hold release."
+  },
+  "parent_provenance": {
+    "repository": "Karapsin/analytics_toolkit",
+    "pr": 38,
+    "commit": "ceafc2daa5919363317c82fbd8a2acb1ed1dea95",
+    "path": "agent_tools/task_evidence/1253260b20f14ee680edd15d01547757/parent-objective.json",
+    "sha256": "f82f22fc824e9bda5f828e9485be5c7bb54c2786464de2279d0f6536c147b023"
+  },
+  "evidence": {
+    "pr37-separate-visual-repair-independent-plan.json": {
+      "sha256": "603fe3a816bfc9597a7784650eca4abcdccafd76876a96ffbcf88b9577388b66",
+      "record": {
+        "format_version": 1,
+        "kind": "independent-read-only-separate-sql-explorer-visual-repair-plan",
+        "reviewer": "/root/review_current_coordinator_routing",
+        "decision": "approve_separate_repair_plan_with_required_regressions_and_full_visual_gate",
+        "visual_approval": false,
+        "existing_rejection_unchanged": true,
+        "summary": "Repair the demonstrated rendering/placement defects and make the visual fixtures internally consistent in a separate normally reviewed dependency. Do not infer14production functional failures from14rejected scenes: several states are injected only by the harness, the checkbox interpretation overstates the boolean evidence, and the scrollbar/focus root causes need focused lifecycle reproduction. Preserve every rejected scene and require fresh complete46scene acceptance.",
+        "bindings": {
+          "repository": "Karapsin/analytics_toolkit",
+          "source_base_inspected": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+          "rejected_candidate": "0986c4c16965b34806b1924e8b264d62cdd43888",
+          "capture_run": 39048373793,
+          "capture_run_url": "https://github.com/Karapsin/analytics_toolkit/actions/runs/39048373793",
+          "workflow_head": "c425ef4dc7f54511ccf662c89d12129649067fef",
+          "capture_archive_sha256": "6085bbc38cef06aa6df6a88a62eae484175efabf917aa6ebe0b23790fc27b74d",
+          "inert_evidence_directory": "/private/tmp/pr37-0986-rejected-visual-plan-evidence",
+          "verified_evidence_sha256": "8f397ff1dd98ac70b020c82795d4a092832dbda410ee56219b7781b357ef31f8",
+          "existing_visual_rejection_sha256": "54fd61bb92a4d0ef8cb90f837e94f1f88a2400f7757c4b3d0a75483e27774ecb",
+          "recommended_scope_resolution_sha256": "e703c8dae024c55c7de0eff48bce2845ebb0a5739fd6e5de5eb94ba4f13191be",
+          "retained_parent_record": "agent_tools/task_evidence/1253260b20f14ee680edd15d01547757/parent-objective.json",
+          "retained_parent_record_sha256": "f82f22fc824e9bda5f828e9485be5c7bb54c2786464de2279d0f6536c147b023",
+          "viewport": "Complete1280x800 PNG;208x47Textual grid",
+          "source_files_sha256": {
+            "agent_tools/sql_explorer_visual_scene.py": "87f6103e4e20385b60a153f3d3ffb8f6547809d6926634311527db59d9a60c63",
+            "agent_tools/sql_explorer_visual_capture.py": "50ed8229d849df4e81485586d46f75e5ab4704499830ac36f05e2e9aaf96c49d",
+            "analytics_toolkit/sql_explorer/editor.py": "10dbdb7ab0982f1674f7b5411c553a4ed50634c438fd07957efc9527ffac33c5",
+            "analytics_toolkit/sql_explorer/create_table_screen.py": "9fd067d8130152fa2307d2f6edf24fb23586bf3b56ae97b035974739f84eb386",
+            "analytics_toolkit/sql_explorer/panes.py": "2cade35cfcda4490a4808c1a7352d94346cc36b65b51fd63217eba12c38f0b09",
+            "analytics_toolkit/sql_explorer/tabs.py": "a9ee4f7535a66ac7ce52a71be16e613a2e070d3642e55baeb17f595cf44cc684",
+            "analytics_toolkit/sql_explorer/help_text.py": "f559114b8dcadd05aace59ce901b911af6c733227fda8a61c261f2511cc67cc4",
+            "analytics_toolkit/sql_explorer/app.py": "2c9a4064a75eaec8fb0b1f5b1f21dce9acc8e240aec35761c4f1ed5ea8fcb829",
+            "analytics_toolkit/sql_explorer/styles.py": "c4aa75517b36e6feb375215d91644ee99f084a3675d7623c38eb12ee3177cb98"
+          }
+        },
+        "evidence_review": {
+          "all14affected_full_pngs_opened_individually": true,
+          "all93_supplied_capture_png_geometry_file_hashes_independently_verified": true,
+          "current_sql_explorer_and_inspected_scene_capture_files_have_no_diff_from_inspected_HEAD": true,
+          "geometry_capture_success_is_visual_approval": false,
+          "repository_context": "Read-only snapshot planning only: no startup sync or source mutation under the parent restriction. Local RAG returned focused SQL visual/doc citations and warned that the unrelated operations-document index was stale; no index rebuild performed. Read development/sql visual policy and relevant result/ruler docs. Findings are bound to inspected1f7source and the supplied0986artifacts, not independently fetched future live state.",
+          "dependency_source_limit": "Read local installed Textual0.73.0 source without importing it to explain compatible rendering behavior. This matches the declaredPython3.11dependency range but is not attestation of the exact installed files in historical GitHub39048373793. Supported0.73and0.89.1families require focused behavioral verification during implementation."
+        },
+        "scene_assessments": [
+          {
+            "scene": "column-ruler-scrolled",
+            "png_sha256": "56a4d3052f00c05e524cc3cad58d337e373b91744d5d78b16a2de938a559b39b",
+            "classification": "confirmed_display_inconsistency; scroll-lifecycle root cause remains a focused reproduction",
+            "observation": "Ruler begins around55and caret/status show252, but the large amber horizontal thumb begins at the left edge. The thumb position contradicts the visible editor scroll. Layout itself is contained.",
+            "source": [
+              "agent_tools/sql_explorer_visual_scene.py:332-334",
+              "agent_tools/sql_explorer_visual_scene.py:642-643",
+              "analytics_toolkit/sql_explorer/ruler.py:65-86",
+              "analytics_toolkit/sql_explorer/editor.py:594-610"
+            ],
+            "assessment": "The fixture immediately assigns a long document and distant cursor, which is a legitimate editor operation. Its assertion checks only scroll_x>0, not the scrollbar model. LocalTextual0.73 ScrollView.watch_scroll_x updates scrollbar.position only when the bar is already visible and old/new rounded offsets differ; Widget._scroll_update later changes visibility/dimensions but merely reassigns the same validated offset. This is a concrete plausible first-layout synchronization hole, not a proven exact historical callback trace.",
+            "minimal_action": "Reproduce document replacement/caret movement before first layout and after mounted layout. If the actual public scrollbar model disagrees, synchronize the SqlEditor scrollbar position with validated scroll_x on the relevant scroll/visibility/layout lifecycle while preserving superclass behavior. Do not move the ruler or fake the scrollbar in the scene. If only screenshot timing is inconsistent, repair readiness instead and keep a normal-user lifecycle regression.",
+            "regression": "After cursor move, resize and horizontal scrolling, assert thumb.position==round(editor.scroll_x), correct virtual/window dimensions and nonzero thumb offset; include start/end, long line replacement and tabs/wide characters. Assert ruler/caret agreement and unchanged text."
+          },
+          {
+            "scene": "create-table-invalid",
+            "png_sha256": "4cf15d4a77f4d654ce6061baa792928c007d22be8151f1809b92dbf553aff3f5",
+            "classification": "proven_contradictory_fixture",
+            "observation": "Both customer_id/BIGINT and revenue/NUMERIC(18,2) are complete while the notice says a column lacks a name or type.",
+            "source": [
+              "agent_tools/sql_explorer_visual_scene.py:375-403",
+              "analytics_toolkit/sql_explorer/create_table_screen.py:278-291"
+            ],
+            "assessment": "The scene directly writes the error message into a valid draft. The production submit handler instead calls creation_options and displays a caught real validation error. This capture does not demonstrate a production validator bug.",
+            "minimal_action": "Supply a visibly incomplete row and invoke the real submit/validation path before marking ready; retain invalid input and visible error, without dismissing or executing SQL. Assert the exact missing field and real no-result validation state, rather than copying a notice string."
+          },
+          {
+            "scene": "create-table-schema",
+            "png_sha256": "9bdaec00fb3f48a0e6b36c364e2cc6a2342f41de35dfa3e8dc19f7b007ccff1d",
+            "classification": "ambiguous_production_checkbox_visual; incorrect_boolean_state_not_proven",
+            "observation": "All three labels sayFalseand a dim X-shaped off-state glyph remains visible. The screenshot is visually ambiguous, but no true value is established.",
+            "source": [
+              "analytics_toolkit/sql_explorer/create_table_screen.py:108-115,167-175,250-253",
+              "Textual0.73widgets/_toggle_button.py:112-119,186-209"
+            ],
+            "assessment": "Compose passes the same bool to the label and Checkbox.value, and Changed updates labels from actual value. Textual's default inner glyph isXfor both states and changes color forFalse. Therefore the prior wording that Xnecessarily meanschecked overstates the evidence. Ambiguous off appearance remains worth correcting for clear acceptance; changing actual booleans to match a presumed Xwould be wrong.",
+            "minimal_action": "Use a local create-table checkbox presentation with unmistakable empty/off versus marked/on indicators, for example ASCII[ ]/[x], preserving native Checkbox value, keyboard/event/disabled semantics and labels. Keep disabled insert_data visibly distinct in schema mode. No global boolean behavior change.",
+            "regression": "MountFalse/Trueand toggle via normal keyboard/click; verify visible marker,label,actualvalue and values()agree. Retain skip/drop mutual exclusion and disabled schema insert_data behavior across supportedTextualfamilies."
+          },
+          {
+            "scene": "create-table-sql",
+            "png_sha256": "1b3a42c494e4d428a379cb617ad5177179e2217be62ec23c4cc8597f4b0f1e3c",
+            "classification": "same_checkbox_presentation_issue_as_schema; no_additional_boolean_bug_proven",
+            "observation": "The from_sql panel fits, but the same dim X/False ambiguity appears on enabled flags.",
+            "source": [
+              "analytics_toolkit/sql_explorer/create_table_screen.py:108-115,152-158,167-175"
+            ],
+            "minimal_action": "Apply the same local off/on visual clarification and independently verify enabled SQL-mode toggles. Do not alter selected source mode or creation option defaults."
+          },
+          {
+            "scene": "create-table-types",
+            "png_sha256": "be46532ac9ae5f00247fb04fa6808ccb185714a5e88c431f524cd5f7c9012fa8",
+            "classification": "proven_production_suggestion_placement_defect",
+            "observation": "Focused first-row type field containsB, yet the full-widthBIGINT/BOOLEANlist starts below the second row at the column-name left edge. Its field association is unclear.",
+            "source": [
+              "analytics_toolkit/sql_explorer/create_table_screen.py:62-72,101-105,178-214",
+              "agent_tools/sql_explorer_visual_scene.py:391-394"
+            ],
+            "assessment": "The one shared OptionList is composed after the entire schema container and _show_types updates only content/display, so ordinary use gets the same flow placement. This is not merely an inconsistent fake SQL fixture.",
+            "minimal_action": "Anchor the shared suggestion list to the currently focused type input, with matching field width and below/above placement clamped within the dialog/scroll viewport. Reposition on focus, form scrolling, row changes and resize. Preserve Up/Down/Enter/Escape, mouse selection, accepted-type suppression and the existing keyboard mixin; reuse established overlay patterns where appropriate.",
+            "regression": "Focus different rows and typeB; assert menu x/width and y relate to that exact field, not the entire form. Exercise scrolling/narrow height, bounded flip, acceptance/cancel and no hidden/duplicate focus target."
+          },
+          {
+            "scene": "find-replace",
+            "png_sha256": "57054a4cc1335b24f4f0d9c87cc336f546e0dbbba04f0a79c3b6eeaff0eb4b70",
+            "classification": "proven_rendered_highlight_gap_with_strong_source_explanation",
+            "observation": "Found3is correct for order_id,daily_orders,order_date, but order_idon current editor line is not yellow while the other two are. The caret is at the firstcharacter ofSELECT, so caret occlusion does not explain the missing match.",
+            "source": [
+              "analytics_toolkit/sql_explorer/editor.py:525-543,594-640",
+              "tests/sql/explorer/widgets.py:12-38",
+              "Textual0.73widgets/_text_area.py:1048-1064"
+            ],
+            "assessment": "SqlEditor.get_line adds match spans, then base TextArea.render_line calls get_line and appends cursor_line_style over the whole current line. Existing regression inspects get_line spans before this final rendered-line treatment, so it misses the visible gap. This is a display-layer issue; count/navigation/replacement are not shown incorrect.",
+            "minimal_action": "Ensure search highlights survive current-line styling in the final rendered strip while retaining caret/selection precedence and horizontal-scroll/tab/wide-character alignment. Localize to SqlEditor; do not remove matches or change count merely to agree with a broken render. Avoid copying an entire upstream renderer.",
+            "regression": "Inspect final render_line segments at every match on current and noncurrent rows while find input owns focus. Include moving caret between rows, next/current replacement, horizontal scrolling,tabs/wide characters and selected match/caret contrast. get_line-only assertions are insufficient."
+          },
+          {
+            "scene": "help-movement",
+            "png_sha256": "a5ee954f7c151316f44a906d7f1a240a2df7b26886905152fb0799b4e2a753a0",
+            "classification": "proven_production_message_width_layout_defect",
+            "observation": "The pane spans almost the whole viewport but the reference wraps near80columns, leaving commandandDalone at its far left.",
+            "source": [
+              "analytics_toolkit/sql_explorer/panes.py:29-45",
+              "analytics_toolkit/sql_explorer/help_text.py:MOVEMENT_HELP",
+              "analytics_toolkit/sql_explorer/app.py:479-490,731-742"
+            ],
+            "assessment": "ResultMessage writes Text into RichLog without an explicit render width/expand request. LocalTextual0.73measures with app.console.options and defaults expandFalse, so content can be prewrapped at the console's narrower measured width despite a larger widget. The screenshot directly demonstrates underused width; exact installed historical dependency bytes are not attested.",
+            "minimal_action": "Make ResultMessage write using the current actual scrollable viewport width, expanding to it and reflowing after resize, preserving complete text and scrolling. Start with the smallest supported RichLog.write width/expand change. If genuinely narrow panes still break command/description association, use hanging continuation indentation for help rows without changing command syntax or dropping text.",
+            "regression": "Inspect emitted RichLog lines, not render()'s unwrapped source. At208columns require completeDselection syntax andcommandcontinuation on the description side with usable width; at narrow/resized widths retain all text and readable continuation. Preserve help-movement-endscroll coverage and arbitrary error-message wrapping."
+          },
+          {
+            "scene": "help-shortcuts",
+            "png_sha256": "d82aa6afac4a32011305deb62526fe238c8e49b144ca23a89b4d5d788dcc3cc4",
+            "classification": "same_production_message_width_defect_as_movement",
+            "observation": "Escape'seditor/commandandF8'sdisabled)wrap into the shortcut column despite a wide empty pane.",
+            "source": [
+              "analytics_toolkit/sql_explorer/panes.py:37-45",
+              "analytics_toolkit/sql_explorer/help_text.py:SHORTCUTS_HELP"
+            ],
+            "minimal_action": "Use the same viewport-aware rendering fix and test these two exact long rows. Retain every shortcut and full description; do not shorten away functionality merely to satisfy a screenshot."
+          },
+          {
+            "scene": "mutation-confirm",
+            "png_sha256": "bae040c52a69fcc339f3e01753bdf05e23eff815e5f5677a72ede059c1af82e2",
+            "classification": "proven_contradictory_fixture; production_wrong_query_confirmation_not_demonstrated",
+            "observation": "Background isSELECTdailyorders while the confirmation shows an unrelatedDELETE.",
+            "source": [
+              "agent_tools/sql_explorer_visual_scene.py:118-126,295-305"
+            ],
+            "assessment": "The scene directly builds and pushes a DELETE plan without changing the common SELECT editor. It is not a capture of actual query submission choosing the wrong SQL.",
+            "minimal_action": "Populate the editor with the exact destructive statement and derive the displayed execution plan from that same text/session backend through the normal planning/confirmation path. Keep the confirmation open and assert no execution; no real databases. Preserve all destructive safety decisions and buttons."
+          },
+          {
+            "scene": "result-success",
+            "png_sha256": "9c9dae3f12f48243fbdf2131e0dc6eb9251cd2edc933b55e43916089a1f82966",
+            "classification": "proven_contradictory_fixture_and_additional_result_count_inconsistency",
+            "observation": "Editor displays repeatedSELECTrow_number/wide_valuebut grid hasorder_id/customer_name/revenue/long_note. Source separately reports20displayed rows while the shown dataframe has60rows.",
+            "source": [
+              "agent_tools/sql_explorer_visual_scene.py:245-275"
+            ],
+            "assessment": "The harness separately injects unrelated editor text, empty last_run_result.dataframe,20displayed rows and60table rows. The repeated SELECTlines are also not joined into a valid single SQL statement. This does not establish that the runtime associates results with the wrong query.",
+            "minimal_action": "Use one coherent fake execution result for status and table, with matching displayed rows/dataframe length/truncation/total. Make the visible valid query select the actual four columns. Preserve wide and long-editor stress using valid SQL plus comments or other semantically consistent text, rather than dropping the original stress coverage. Query succeededmust correspond to this fake result.",
+            "regression": "Assert exact editor projection names/table headers, table row count==displayed_rows==len(result.dataframe), total>=displayed, truncation semantics and status. Keep both wide result and long-editor scroll coverage. Do not add automatic production result clearing on every edit: users can legitimately edit SQL while prior results remain."
+          },
+          {
+            "scene": "results-resized",
+            "png_sha256": "e9f8370e88b2a3ddc4fd50f726bb6273767ba2c1cc5e699d9e0398b3ede80f92",
+            "classification": "proven_contradictory_fixture",
+            "observation": "SELECTorder_id/customer_name/revenuecontradicts thecustomer/revenuetable, although resize geometry is contained.",
+            "source": [
+              "agent_tools/sql_explorer_visual_scene.py:118-126,335-337"
+            ],
+            "minimal_action": "Set a valid visible query with projectioncustomer,revenueor supply matching three-column fake data; use the same coherent fixture for both layout scenes while retaining the explicit shrink4operation and its geometry assertions."
+          },
+          {
+            "scene": "results-vertical",
+            "png_sha256": "30a08a2fb6941f9f797c4ebcb241c05084c7252f97815c532e3fd786d95c1e04",
+            "classification": "same_fixture_inconsistency_as_results_resized",
+            "observation": "The vertical split is contained but the same SELECTprojection and two-column table disagree.",
+            "source": [
+              "agent_tools/sql_explorer_visual_scene.py:335-337"
+            ],
+            "minimal_action": "Share the corrected coherent result fixture, retaining actual results switchbehavior and visible vertical split, right scrollbar and keyboard/cell interactions."
+          },
+          {
+            "scene": "save-changes",
+            "png_sha256": "9feaee6b2680e4edf0a54b5aa7afda448a61259f057ef8761d86aad66632b415",
+            "classification": "proven_contradictory_fixture; production_wrong_document_save_not_demonstrated",
+            "observation": "Active tab isUntitled1while the dialog asks aboutquarterly_report.sql.",
+            "source": [
+              "agent_tools/sql_explorer_visual_scene.py:310-315",
+              "analytics_toolkit/sql_explorer/tabs.py:245-257",
+              "analytics_toolkit/sql_explorer/workspace.py:203-213"
+            ],
+            "assessment": "The fixture pushes a hard-coded title. Production dirty-tab close constructs SaveChangesScreen from that workspace.file_label. It already binds the title to the chosen workspace, so no production save-title fix is established.",
+            "minimal_action": "Configure the target workspace current_file/saved_text/dirty content, refresh the actual tab, then open its normal close/save prompt or use its actual file_label. Assert the tab and dialog identify the same workspace, preserving Save/Don'tSave/Cancel semantics."
+          },
+          {
+            "scene": "save-changes-cancel",
+            "png_sha256": "d51c99387d25fa7b595e8c90795b3d2f4797108cf45f2e2510b829afbfcab383",
+            "classification": "confirmed_scene_focus_readiness_failure; production_button_style_failure_not_proven",
+            "observation": "Saveis amber andCancelneutral, contrary to the scene's requested Cancel focus. The same title/tab inconsistency is present.",
+            "source": [
+              "agent_tools/sql_explorer_visual_scene.py:310-315,619-627",
+              "agent_tools/sql_explorer_visual_capture.py:55-64",
+              "analytics_toolkit/sql_explorer/tabs.py:124-125",
+              "tests/sql/explorer/button_styles.py:45-67"
+            ],
+            "assessment": "Production on_mount intentionally focusesSave; the harness schedulesCancelfrom the parent after-refresh callback and marks the scene generally ready without requiring that final focus. The generic color assertion computes expected color from whichever button currently has_focus, so it can pass withSavefocused. This proves the capture did not reach the specified state, not that the CSS paints the wrong focused button. Existing button-style tests also deliberately focus every button.",
+            "minimal_action": "EstablishCancelfocus after modal mount using deterministic screen-owned setup/readiness, then assert actual screen.focused/app.focused is theCancelbutton at the exact exported frame. Do not force a pass or change SaveChangesScreen's normal default. Add a targeted race/lifecycle regression; expand production focus work only if normal user left/right/tab navigation independently fails. Correct the title via the same workspace-bound fixture."
+          }
+        ],
+        "minimal_implementation_scope": {
+          "production_files": [
+            "analytics_toolkit/sql_explorer/editor.py: localized final search highlight ordering and, only after focused reproduction, editor scrollbar lifecycle synchronization",
+            "analytics_toolkit/sql_explorer/create_table_screen.py: focused type-menu anchoring and local unambiguous checkbox presentation preserving booleans",
+            "analytics_toolkit/sql_explorer/panes.py: current-viewport RichLog rendering/reflow"
+          ],
+          "fixture_and_assertion_files": [
+            "agent_tools/sql_explorer_visual_scene.py: coherent invalid/mutation/result/save fixtures, deterministic modal ready state and semantic state assertions",
+            "agent_tools/sql_explorer_visual_capture.py only if needed for an exact-frame readiness invariant; preserve full process/diagnostic work owned byPR37"
+          ],
+          "focused_existing_regression_files": [
+            "tests/sql/explorer/column_ruler.py",
+            "tests/sql/explorer/widgets.py",
+            "tests/sql/explorer/create_table.py",
+            "tests/sql/explorer/results_layout.py",
+            "tests/sql/explorer/button_styles.py",
+            "tests/agent_tools/visual.py"
+          ],
+          "conditional_small_support_scope": "Use a cohesive new focused test module if existing test size limits require it. help_text.py may need continuation-format support only if width-correct rendering still loses command/description association in narrow panes. Update relevant SQLExplorer module docs only for changed public appearance/behavior, add one uniquely owned changelog fragment and additive exact parent/provenance evidence through mandatory normal workflow.",
+          "not_justified_by_current_evidence": [
+            "No change to query execution, mutation safety, creation bool defaults, save-target ownership, stale-result lifetime or SaveChangesScreen default focus solely from these fixture captures.",
+            "No global Textual upgrade, copied upstream renderer, screenshot pixel baseline, changed scene dimensions, reduced scene count, suppressed findings, modified visual-required predicate or fabricated receipt.",
+            "No edits to the active exporter-prerequisite branch/worktree or handed-off PR37. New work is a separate fresh session/branch/dependency after required startup revalidation, not a correction pushed into someone else's ownership."
+          ]
+        },
+        "ordered_plan": [
+          "Preserve this exact evidence/rejection and independently selected separate-repair scope in a fresh feature/task context with full original question/options/answer chain and explicitPR37dependency. Let the root's unrelated six-file exporter prerequisite finish unchanged. Before implementation run normal repository startup/routing/impact and revalidate these source hashes against fresh dev; changed source requires plan reassessment.",
+          "Add focused meaningful failing regressions at real UI/fixture boundaries for the rendered highlight, first-layout scrollbar model, type-menu anchor, viewport-aware help, final Cancel focus and coherent scene metadata. Use fake sessions only; no database/service or source-spelling assertions. Explicitly distinguish computed get_line spans from final rendered strips and RichLog source text from emitted wrapped lines.",
+          "Implement the three localized production-file changes and coherent harness fixtures above. Prefer small compatibility-preserving changes; retain all original stress coverage, query/result/mutation/save semantics and full text. Explain checkbox presentation as ambiguity rather than claiming the observedFalsevalues were secretlyTrue. Do not alter production safety/authority to satisfy constructed scenes.",
+          "Strengthen exact scene assertions: source-state consistency for invalid input, mutation SQL equality, query/result headers and row/status metadata, save workspace identity, expectedCancel focus, scrollbar model alignment and anchored menu region. Assertions must observe real final state; a generic has_focus-to-current-color check cannot substitute for expected scene focus. Keep existing geometry and all literal widget-ID coverage.",
+          "Use repository recommended focused checks and mandatory precommit through MCP. Cover Textual0.73on supported older Python and0.89.1on newer Python in existing supported matrix, with bounded normal headless UI tests; treat warnings as failures to resolve. No Pi tests/programs/scenes and no local SQL integration are required by this UI repair.",
+          "Every proposed production UI, visual harness/capture, scene or related test change retains the full visual requirement. Capture all46manifest scenes at208x47and1280x800via normal visual_workflow on the current validation host or normal isolated GitHub correction path, verify every automated geometry/state check, open all46fullPNGindividually and record fresh exact-content verdicts. Review all previously passing scenes too, especially help-movement-end, create-table-advanced, multicursor/command-caret/completion and other modal focus states. Reject stale, partial or non-green evidence.",
+          "Publish the separate signedPRwith fresh independent source/complete-feature review and exact-head checks through normal workflow. After its successful dev merge, Pi reconcilesPR37with dev while preserving its full process-output changes and context; PR37then needs its own fresh complete candidate-bound visual capture/review, exact final head/base/task review and CI. Do not reuse the repair's screenshot receipt for changedPR37bytes or declare the original rejected capture passed. Continue all qualifyingPRs and downstream repairs to actual successful dev merge, retaining protected main activation/approval gates where applicable."
+        ],
+        "acceptance": [
+          "No review finding is closed by relabeling its old image or replacing its old verdict. Fresh coherent scenes and actual rendering regressions address the observed defects.",
+          "All46scenes remain in the manifest with full independent PNGreview and geometry/state acceptance; current14old scenes remain rejected pending that evidence.",
+          "PR37remains open/Pi-owned with full failed-capture process and available-file transport obligations; new evidence does not recover missing historical stdout/stderr or attest historical installed dependency bytes.",
+          "Preserve lifecycle labels/notification filtering/Q+A/context/checkpoints, tenworkers/singleton30minute orchestration, all real owner facts/holds/protected decisions, relevant self_host scope and PR9-to-PR10actualdev-merge ancestry gates. This UI plan does not itself satisfy any of them."
+        ],
+        "authority_limits": {
+          "source_edits": false,
+          "tests_programs_imports_builds_services_or_scenes_executed": false,
+          "network_or_pi_operations": false,
+          "github_telegram_or_other_messages_posted": false,
+          "private_state_or_existing_rejection_changed": false,
+          "only_requested_local_report_written": true,
+          "source_plan_or_visual_receipt_fabricated": false,
+          "protected_approval": false,
+          "runtime_activation": false,
+          "pr37_or_parent_scope_complete": false,
+          "all_relevant_prs_merged": false
+        }
+      }
+    },
+    "pr37-rev1-independent-recommended-resolution.json": {
+      "sha256": "e703c8dae024c55c7de0eff48bce2845ebb0a5739fd6e5de5eb94ba4f13191be",
+      "record": {
+        "schema_version": 1,
+        "reviewer": "/root/resolve_pr29_compact_test_question",
+        "reviewed_at_utc": "2026-10-17T16:48:05.894358+00:00",
+        "decision": "approve",
+        "scope": "Independent full-task scope resolution of the two recommended choices only.",
+        "bindings": {
+          "question_snapshot_path": "/private/tmp/pr37-rev1-current-question-snapshot.json",
+          "question_snapshot_sha256": "b8dfec6ebc100068923d5ab6c722ccdf9ed89f6d1024d1aa0f17a0b05baf2eb0",
+          "request": {
+            "id": "ec9537598105",
+            "revision": 1,
+            "status": "waiting",
+            "stage": "plan"
+          },
+          "declared_request_value_sha256": "0a7e197218251a520484ef57dba1c8be4102b4d68e815da5fbd84d393bab1454",
+          "questions_canonical_sha256": "86d2594596b7f151c4795aa1d7ebc827fa74da72be4128daa92a8102e5b41714",
+          "snapshot_head": null,
+          "parent_supplied_current_pr37_head": "0986c4c16965b34806b1924e8b264d62cdd43888",
+          "pr37_original_published_head": "35949732eb3a9f1d9dfe0c7ba8016ecb8f64f503",
+          "task_digest": "b9f9a00ab7b6d4b975bd5e3c7b04a1336800595ffa0af540deeec0add49c948b",
+          "published_parent_path": "agent_tools/task_evidence/28bfc78bd15a454a8463b5f859c8206a/parent-objective.json",
+          "published_parent_raw_sha256": "768b64e908176300faac4c37cc8b2cb8a9eb85ed106bf6b6ed5b5ab186f261e9",
+          "published_parent_matches_complete_nested_record": true,
+          "current_local_prerequisite_parent_path": "agent_tools/task_evidence/1253260b20f14ee680edd15d01547757/parent-objective.json",
+          "current_local_prerequisite_parent_sha256": "f82f22fc824e9bda5f828e9485be5c7bb54c2786464de2279d0f6536c147b023",
+          "rejected_visual_verdict_path": "/private/tmp/pr37-0986-rejected-visual-verdict.json",
+          "rejected_visual_verdict_sha256": "54fd61bb92a4d0ef8cb90f837e94f1f88a2400f7757c4b3d0a75483e27774ecb",
+          "complete_request_path": "/private/tmp/pr37-current-complete-private-request-value.json",
+          "complete_request_file_sha256": "3983e9ba32e2f31557df6b8ec822f8488aee7094724a5bd8a520de6bfe6f90c7",
+          "actual_request_value_sha256": "0a7e197218251a520484ef57dba1c8be4102b4d68e815da5fbd84d393bab1454",
+          "request_value_digest_recomputed": true,
+          "actual_captured_request_head": "0986c4c16965b34806b1924e8b264d62cdd43888",
+          "base": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+          "producer_id": "author:9f5b96ccd210401db8125c6f987ca9c2",
+          "native_request_id": 1406,
+          "native_item_id": "call_039fdeaca35f4886b24db702a858f5ab",
+          "native_questions": [
+            {
+              "id": "original_task_scope",
+              "header": "1. Task scope",
+              "question": "1. What does “it” in the original request refer to? The PR’s added task record describes failed visual-capture diagnostic delivery across analytics_toolkit and self_host, plus inherited lifecycle-label and relevant-PR merge obligations; that record is candidate evidence, not an authenticated user answer.",
+              "isOther": true,
+              "isSecret": false,
+              "options": [
+                {
+                  "label": "Complete retained objective (Recommended)",
+                  "description": "Finish diagnostic delivery and preserve the recorded parent obligations, subject to independent verification and existing approval gates."
+                },
+                {
+                  "label": "Diagnostic delivery only",
+                  "description": "Limit this task to retaining failed-capture evidence and delivering it to fresh planning; identify inherited work as separate."
+                }
+              ]
+            },
+            {
+              "id": "visual_correction_scope",
+              "header": "2. Visual scope",
+              "question": "2. How should the plan handle the 14 rejected SQL Explorer scenes? I inspected every affected PNG and confirmed the cited scene-fixture code is unchanged from pinned dev; fixing application behavior or fixtures would add work beyond diagnostic transport.",
+              "isOther": true,
+              "isSecret": false,
+              "options": [
+                {
+                  "label": "Separate aligned repair (Recommended)",
+                  "description": "Preserve this PR’s diagnostic changes and plan the visual fixes as a separately reviewed dependency, retaining the full visual acceptance gate."
+                },
+                {
+                  "label": "Include visual fixes here",
+                  "description": "Explicitly extend this correction to the demonstrated fixture and UI defects, with focused regressions and a new complete GitHub visual review."
+                }
+              ]
+            }
+          ],
+          "actual_runtime_readback_path": "/private/tmp/failed-capture-actual-resumed-readback-1792255628972176000.json",
+          "actual_runtime_readback_sha256": "e2ba92cc40d5b805f2db7f33d80beffd7493cdb9ffb2d9371f5dd3200d94df1d"
+        },
+        "questions_and_all_options_verbatim": [
+          "1. What does “it” in the original request refer to? The PR’s added task record describes failed visual-capture diagnostic delivery across analytics_toolkit and self_host, plus inherited lifecycle-label and relevant-PR merge obligations; that record is candidate evidence, not an authenticated user answer.\nComplete retained objective (Recommended): Finish diagnostic delivery and preserve the recorded parent obligations, subject to independent verification and existing approval gates.\nDiagnostic delivery only: Limit this task to retaining failed-capture evidence and delivering it to fresh planning; identify inherited work as separate.",
+          "2. How should the plan handle the 14 rejected SQL Explorer scenes? I inspected every affected PNG and confirmed the cited scene-fixture code is unchanged from pinned dev; fixing application behavior or fixtures would add work beyond diagnostic transport.\nSeparate aligned repair (Recommended): Preserve this PR’s diagnostic changes and plan the visual fixes as a separately reviewed dependency, retaining the full visual acceptance gate.\nInclude visual fixes here: Explicitly extend this correction to the demonstrated fixture and UI defects, with focused regressions and a new complete GitHub visual review."
+        ],
+        "selections": [
+          {
+            "question": 1,
+            "option": "Complete retained objective (Recommended)",
+            "decision": "approve",
+            "reason": "The exact current owner instruction and standing repair/all-PR-dev-merge instructions authorize completing demonstrated tooling defects without discarding retained parent responsibilities. Verified published parent bytes preserve original label/companion feature and chronological decisions; they are provenance evidence, not themselves a new human instruction."
+          },
+          {
+            "question": 2,
+            "option": "Separate aligned repair (Recommended)",
+            "decision": "approve",
+            "reason": "A separately reviewed explicit dependency preserves useful diagnostic changes and the full visual acceptance gate while assigning the fourteen substantive scene defects to focused normally reviewed work. The defect origin does not justify a pass, task closure or silently abandoned work."
+          }
+        ],
+        "full_scope_retained": [
+          "Complete cross-repository failed-capture retention and normal immutable task/candidate/base/checkpoint/run/attempt-bound delivery to fresh planning, including original full process-output guarantees retained in PR37.",
+          "Preserve full original lifecycle-label and feature work, truthful exclusive phase/needs-user labels, necessary companion integration, notification filtering, actual Q+A/options/context/checkpoints and independent recommendation resolution.",
+          "Preserve ten-worker concurrency, one global orchestrator every30minutes while qualifyingPR exists, no-work exit and both-repository maintenance. self_host relevance remains GitHub-agent functionality only.",
+          "Keep PR37 open and Pi-owned. Separate exporter prerequisite and separately reviewed visual repair remain additive dependencies, not a replacement/narrowing of the parent feature.",
+          "All fourteen rejected scenes remain unresolved until actual focused corrections plus fresh complete candidate-bound capture, all geometry checks and individual full-PNG verdicts pass. No false visual receipt or bypass of visual-required predicates.",
+          "Retain all source/provenance/authenticated question/owner fact/veto/cancellation/protected exact-head approval, fresh independent plan/source/feature review, CI, paired compatibility, isolated rehearsal, controlled deployment and live-verification gates.",
+          "PR9 visual/tool-access recovery remains distinct. PR10 requires actual PR9 dev merge and pinned ancestry; no early hold release.",
+          "Collection of all available bytes does not prove full process streams. Null remains unknown; a new run cannot recover missing historical artifacts or prove historic installed dependency identity.",
+          "No candidate programs/tests/installs/builds/scenes on Pi. Preserve audited state, context, holds and answers during separate naturally drained reviewed deployment.",
+          "Continue every qualifying PR and all resulting repairs through successful dev merge, with required protected main allowlist activation verified separately."
+        ],
+        "verified_source_references": [
+          {
+            "head": "35949732eb3a9f1d9dfe0c7ba8016ecb8f64f503",
+            "path": "agent_tools/task_evidence/28bfc78bd15a454a8463b5f859c8206a/parent-objective.json",
+            "bytes": 32094,
+            "sha256": "768b64e908176300faac4c37cc8b2cb8a9eb85ed106bf6b6ed5b5ab186f261e9",
+            "nested_record_equal": true
+          },
+          {
+            "head": "35949732eb3a9f1d9dfe0c7ba8016ecb8f64f503",
+            "path": ".github/agent/capture_artifact.py",
+            "sha256": "e93a6ca62f5c5201e1312559640a09d05052e49b6c7ed3626f4175da792c2c7b",
+            "matches_current_prerequisite_local_bytes": true
+          },
+          {
+            "head": "35949732eb3a9f1d9dfe0c7ba8016ecb8f64f503",
+            "path": ".github/workflows/agent-visual.yml",
+            "sha256": "07ad275c1131744a16ce0bceac2200d430e323205e3bdf7c04c4f7116ba7e5da",
+            "matches_current_prerequisite_local_bytes": true
+          }
+        ],
+        "visual_facts": {
+          "approved": false,
+          "alignment": "uncertain",
+          "capture_run": 39048373793,
+          "distinct_rejected_scenes": 14,
+          "actual_findings_verbatim": [
+            "column-ruler-scrolled: The ruler, caret, and status agree on column 252, and the layout has no obvious clipping or overlap. However, the horizontal scrollbar contradicts the scrolled editor state.",
+            "column-ruler-scrolled: The horizontal scrollbar thumb remains at the far left (approximately x=17–836), while the visible ruler starts near column 55. The thumb should be offset to reflect the current horizontal scroll position.",
+            "create-table-invalid: The dialog fits within the scene without obvious clipping or overlap, but its validation state conflicts with the visible inputs.",
+            "create-table-invalid: The error says “Each column needs a name and SQL type,” yet both visible columns are complete: customer_id / BIGINT and revenue / NUMERIC(18,2). No missing or invalid field is identified, so the invalid state is unexplained.",
+            "create-table-schema: The scene fails state consistency despite generally sound layout.",
+            "create-table-schema: The insert_data, skip_if_exists, and drop_if_exists controls appear X-marked while each displays False. Their checkbox appearance should match the displayed boolean state.",
+            "create-table-schema: The modal fits within the viewport, with no obvious clipping or unintended overlap.",
+            "create-table-sql: The scene fails state consistency. Dialog geometry is contained, with no obvious clipping or overlap, and the main text is readable.",
+            "create-table-sql: The insert_data, skip_if_exists, and drop_if_exists controls appear X-marked while each label says False. Their checkbox indicators should agree with the displayed values.",
+            "create-table-types: The scene fails because the active type dropdown is misaligned with its input.",
+            "create-table-types: The BIGINT/BOOLEAN menu starts around x401, y389, while the focused type input starts around x582, y323 and ends near y348. The menu extends beneath the column-name field and appears below the revenue row, obscuring which field it belongs to. Align it directly beneath the focused type input.",
+            "find-replace: The scene fails find-and-replace state consistency. Layout is contained, with no obvious clipping or overlapping controls.",
+            "find-replace: The status reports 3 occurrences of “order,” but only two matches are visibly highlighted. The occurrence in “order_id” on line 1 has no visible match highlight.",
+            "help-movement: The scene fails because movement-help text wraps prematurely despite ample horizontal space. Other visible geometry and editor state appear consistent.",
+            "help-movement: In the help pane around y=470–530, wrapping leaves “command” and “D” alone at the left margin. This breaks the command/description alignment and makes selection syntax harder to follow. Wrap descriptions within their column or use the available pane width.",
+            "help-shortcuts: The scene fails on help-text layout. The remaining geometry, controls, and editor content appear intact.",
+            "help-shortcuts: The Escape and F8 descriptions wrap back into the shortcut column: “editor/command” and “disabled)” appear at the far left on separate lines. This disrupts shortcut-to-description alignment despite ample unused horizontal space.",
+            "help-shortcuts: No other visible clipping, overlap, or inconsistent state was found.",
+            "mutation-confirm: The dialog geometry passes, but the scene fails state consistency.",
+            "mutation-confirm: The editor shows a SELECT query while the confirmation proposes DELETE FROM analytics.daily_orders. The scene fixture supplies this unrelated DELETE directly, so the destructive action does not match the visible editor state.",
+            "mutation-confirm: The dialog is centered, its text and buttons are legible, and no clipping or unintended overlap is visible.",
+            "result-success: Geometry, clipping, overlap, and legibility pass, but the successful result does not match the visible query.",
+            "result-success: The editor selects row_number and wide_value, while the result grid shows order_id, customer_name, revenue, and long_note. The “Query succeeded” state provides no indication that these results belong to a previous query.",
+            "results-resized: The scene passes geometry and containment checks, but fails query/result state consistency.",
+            "results-resized: The query selects order_id, customer_name, and revenue, while the results show only customer and revenue. The missing order_id and renamed customer column make the displayed results inconsistent with the query.",
+            "results-resized: No obvious unintended clipping, overlap, or off-screen controls. Text is small but legible, and the resized results pane contains its header and visible row.",
+            "results-vertical: Geometry appears sound, but the query and displayed results are inconsistent.",
+            "results-vertical: The query selects order_id, customer_name, and revenue, while the result grid shows only customer and revenue. The missing order_id column and renamed customer column are unexplained.",
+            "results-vertical: No visible clipping, overlapping controls, or pane-boundary problems. Text is small but readable at the supplied resolution.",
+            "save-changes: The scene fails state consistency. Geometry, clipping, overlap, and dialog legibility otherwise appear acceptable.",
+            "save-changes: The active tab reads “Untitled 1,” but the dialog asks to save changes to “quarterly_report.sql.” These conflicting document names make it unclear which file will be saved.",
+            "save-changes-cancel: The scene fails state consistency: Save is highlighted although this scene requires Cancel to be focused.",
+            "save-changes-cancel: Cancel has no visible focus indicator; Save carries the orange highlight. The scene source explicitly requests Cancel focus (agent_tools/sql_explorer_visual_scene.py:310–315).",
+            "save-changes-cancel: Dialog geometry, spacing, and foreground labels pass: no visible clipping or overlap. Background dimming is consistent with an active modal."
+          ],
+          "scope_effect": "Substantive unresolved review feedback; no visual pass or completion inferred."
+        },
+        "limitations": [
+          "The complete captured request value was subsequently supplied, fully read and its raw UTF-8 SHA256 recomputed as0a7e197218251a520484ef57dba1c8be4102b4d68e815da5fbd84d393bab1454. Request id/revision/status/stage, exact questions/options, turn_revision and github_reply_head match the projection and parent-supplied current0986 head. This verifies the captured snapshot, not unchanged future live state.",
+          "Verified exact local Git object bytes and nested retained-record equality, not an independent cryptographic revalidation of the original enrolled-machine signature or current remote state.",
+          "The current0986 commit object is not in this local clone. A read-only diff attempt returned bad object. The planner-reported unchanged-scene comparison was not independently reproduced; its truth is not needed to accept a separately gated repair.",
+          "This review read the full supplied signed-task record, chronological corrections/Q+A/plans, producer-retention plan, current prerequisite plan and substantive visual-rejection findings. It did not inspect PNGs independently or certify any visual/source correctness.",
+          "Subsequently read the exact supplied resumed operational report SHA256e2ba92cc40d5b805f2db7f33d80beffd7493cdb9ffb2d9371f5dd3200d94df1d: worker8b0191d3fea63770ddf4d18bfbd3a60b85802a55 is recorded active, paused state null and healthy ready, with21runtime/4controller files,54bundles,226versions,26source generations,1083historical entries and112unchanged checkpoints. This resolver did not query Pi or re-execute the operation. Producer activation/new-run assignment are still pending.",
+          "Only this scope-resolution report is written. No GitHub reply, state change, protected approval, source approval, CI success, task completion or hold release is issued."
+        ],
+        "transparent_reply_draft": "Exact questions and options retained for context:\n\n1. What does “it” in the original request refer to? The PR’s added task record describes failed visual-capture diagnostic delivery across analytics_toolkit and self_host, plus inherited lifecycle-label and relevant-PR merge obligations; that record is candidate evidence, not an authenticated user answer.\nComplete retained objective (Recommended): Finish diagnostic delivery and preserve the recorded parent obligations, subject to independent verification and existing approval gates.\nDiagnostic delivery only: Limit this task to retaining failed-capture evidence and delivering it to fresh planning; identify inherited work as separate.\n\n2. How should the plan handle the 14 rejected SQL Explorer scenes? I inspected every affected PNG and confirmed the cited scene-fixture code is unchanged from pinned dev; fixing application behavior or fixtures would add work beyond diagnostic transport.\nSeparate aligned repair (Recommended): Preserve this PR’s diagnostic changes and plan the visual fixes as a separately reviewed dependency, retaining the full visual acceptance gate.\nInclude visual fixes here: Explicitly extend this correction to the demonstrated fixture and UI defects, with focused regressions and a new complete GitHub visual review.\n\nResolution and factual limits:\n\nAutomated recommended-option resolution after independent read-only review by /root/resolve_pr29_compact_test_question, under the owner’s standing instructions to answer agents and independently resolve aligned recommended options. This is not a new human answer, source/plan/visual approval, protected-policy approval or hold release.\n\n1. Select Complete retained objective (Recommended). “Implement it” retains the diagnosed failed visual-capture evidence delivery across analytics_toolkit and self_host AND the complete inherited feature/lifecycle-label, notification, authority, activation/live-verification and all-qualifying-PR successful-dev-merge obligations. This interpretation follows the owner’s actual request “implement it on your own if orchestator is not doing that,” standing “fix any issues on the way” and “stop only when ALL of them are merged successfully with dev,” together with the complete retained chronological task. The candidate task record alone is not treated as an authenticated new owner instruction. I verified the full published parent-objective at PR37 original head 35949732eb3a9f1d9dfe0c7ba8016ecb8f64f503 against SHA256 768b64e908176300faac4c37cc8b2cb8a9eb85ed106bf6b6ed5b5ab186f261e9 and its nested retained record. Preserve every original question, option, answer, plan and checkpoint. self_host PRs qualify only when they affect GitHub-agent functionality; PR10 still requires actual PR9 dev merge plus ancestry.\n\n2. Select Separate aligned repair (Recommended). Keep PR37 open with its full process/child-output guarantees and full rejected visual evidence. Plan the fourteen demonstrated scene findings as a separately reviewed, explicitly tracked dependency; do not silently drop them because the fixture code predates the transport patch. After the aligned repair merges, reconcile PR37 against dev and obtain a fresh complete candidate-bound visual capture and individual full-PNG review plus focused regressions, exact-head CI and independent complete-feature review. The rejection is substantive and remains a rejection; this answer supplies no visual pass. If implementation needs to change application, fixture or harness source, the normally required full visual gates still apply.\n\nThe coordinator is separately preparing the independently useful trusted available-file exporter/workflow prerequisite on branch codex/19ac2eeff8284a2f-f532fbf1, preserving the handed-off PR37. Its local exporter/workflow bytes match the original reviewed 35949732 source hashes e93a6ca62f5c5201e1312559640a09d05052e49b6c7ed3626f4175da792c2c7b and 07ad275c1131744a16ce0bceac2200d430e323205e3bdf7c04c4f7116ba7e5da. That split is not completion of PR37 and does not remove its process-output or visual obligations. The prerequisite retains only bytes that actually exist: collection_complete and process_output_complete are distinct; null means full process-output completeness remains unknown. Missing historical stdout/stderr/artifacts are not recovered by this choice. A fresh run is new evidence with its own run/attempt/candidate/task/base/checkpoint binding.\n\nRefreshed runtime evidence: the supplied resumed readback /private/tmp/failed-capture-actual-resumed-readback-1792255628972176000.json, SHA256 e2ba92cc40d5b805f2db7f33d80beffd7493cdb9ffb2d9371f5dd3200d94df1d, records consumer 8b0191d3fea63770ddf4d18bfbd3a60b85802a55 VERIFIED ACTIVE, healthy ready, pause null, exact 21 runtime files and 4 controller files at c425ef4dc7f54511ccf662c89d12129649067fef, with all 1083 historical entries and 112 checkpoints preserved. I read this hash-bound operational report; I did not independently query Pi or rerun deployment. The completed operation must never be rerun. The separate exporter prerequisite remains unpublished, and producer-main activation plus actual new-run artifact assignment remain pending. Do not claim recovered historical bytes or complete producer-to-planner delivery yet. Preserve the reviewed independent deployment sequence, all private holds, real owner questions, veto/cancellation, source/provenance checks, paired producer-consumer checks, protected exact-head authorization and request-bound dependency barriers. Run no candidate programs/tests/scenes on the Pi. Continue PR37, the separate prerequisite/visual repair and all other qualifying PRs through successful dev merge. Record both exact questions, every offered option and this answer together.",
+        "updated_at_utc": "2026-10-17T16:48:54.588155+00:00",
+        "revision_history": [
+          {
+            "previous_report_sha256": "0df3571dbd790585ee89f217dfdebd96df1369ce8db7989b2a61a04c828ea2b9",
+            "change": "Bind complete actual request value and refreshed resumed runtime readback; scope decisions unchanged."
+          }
+        ],
+        "runtime_readback_facts": {
+          "result": "PASS",
+          "phase": "resumed",
+          "worker": "8b0191d3fea63770ddf4d18bfbd3a60b85802a55",
+          "runtime_status": "active",
+          "runtime_files": 21,
+          "controller_head": "c425ef4dc7f54511ccf662c89d12129649067fef",
+          "controller_tree": "64a964cd3dd34aba2b8082d09684396997cc7d6a",
+          "controller_files": 4,
+          "evidence_bundles": 54,
+          "source_versions": 226,
+          "source_generations": 26,
+          "historical_evidence_entries_retained": 1083,
+          "checkpoints_observed": 112,
+          "checkpoints_equal_drained_snapshot": true,
+          "pause": null,
+          "status": {
+            "jobs": [],
+            "last_error": null,
+            "last_reconciled": 1792255489.2240255,
+            "running": 0,
+            "status": "ready"
+          },
+          "proof_sha256": "383f357dd7d2e7062c3cd576fed05b7e451eb53fd9953c94cc88ddc64a914e8f",
+          "authority_limit": "Reviewed the supplied hash-bound operational observation as inert metadata; no independent Pi read or re-execution. Completed operation must not be rerun. Producer-main activation and actual new-run delivery remain pending."
+        }
+      }
+    },
+    "pr37-rev1-current-question-snapshot.json": {
+      "sha256": "b8dfec6ebc100068923d5ab6c722ccdf9ed89f6d1024d1aa0f17a0b05baf2eb0",
+      "record": {
+        "row": {
+          "id": "ec9537598105",
+          "revision": 1,
+          "status": "waiting",
+          "stage": "plan"
+        },
+        "value_sha256": "0a7e197218251a520484ef57dba1c8be4102b4d68e815da5fbd84d393bab1454",
+        "questions": [
+          "1. What does “it” in the original request refer to? The PR’s added task record describes failed visual-capture diagnostic delivery across analytics_toolkit and self_host, plus inherited lifecycle-label and relevant-PR merge obligations; that record is candidate evidence, not an authenticated user answer.\nComplete retained objective (Recommended): Finish diagnostic delivery and preserve the recorded parent obligations, subject to independent verification and existing approval gates.\nDiagnostic delivery only: Limit this task to retaining failed-capture evidence and delivering it to fresh planning; identify inherited work as separate.",
+          "2. How should the plan handle the 14 rejected SQL Explorer scenes? I inspected every affected PNG and confirmed the cited scene-fixture code is unchanged from pinned dev; fixing application behavior or fixtures would add work beyond diagnostic transport.\nSeparate aligned repair (Recommended): Preserve this PR’s diagnostic changes and plan the visual fixes as a separately reviewed dependency, retaining the full visual acceptance gate.\nInclude visual fixes here: Explicitly extend this correction to the demonstrated fixture and UI defects, with focused regressions and a new complete GitHub visual review."
+        ],
+        "question_kind": null,
+        "head": null,
+        "scope_keys": [
+          "id",
+          "prompt",
+          "answers",
+          "plan",
+          "questions",
+          "base",
+          "producer_id",
+          "created",
+          "turn_revision",
+          "correction_task",
+          "original_context",
+          "pr",
+          "github_reply_head",
+          "native_plan",
+          "waiting_notice"
+        ]
+      }
+    },
+    "pr37-rev1-recommended-github-reply-receipt.json": {
+      "sha256": "d668e8ad12603a1671dd4dcf6a432106c0c898f2d44c9d54fb37ead8f852b521",
+      "record": {
+        "url": "https://github.com/Karapsin/analytics_toolkit/pull/37#issuecomment-6237007432",
+        "id": 6237007432,
+        "request": {
+          "revision": 1,
+          "status": "waiting",
+          "stage": "plan",
+          "value_sha256": "0a7e197218251a520484ef57dba1c8be4102b4d68e815da5fbd84d393bab1454",
+          "head": "0986c4c16965b34806b1924e8b264d62cdd43888"
+        },
+        "full_questions_options_and_answer_posted": true,
+        "protected_approval": false,
+        "created_epoch": 1792255850.880121
+      }
+    },
+    "pr37-rev4-approved-plan-snapshot.json": {
+      "sha256": "05ea4173f704376dce195f7ac60f056ef412bceb30ea18a96f69448004c0fb43",
+      "record": {
+        "row": {
+          "id": "ec9537598105",
+          "revision": 4,
+          "status": "running",
+          "stage": "code"
+        },
+        "plan": "# Complete failed-capture delivery and its visual-repair dependency\n\n## Summary\n\nPreserve PR37 and finish reliable failed visual-capture evidence delivery across `analytics_toolkit` and `self_host`. Track the fourteen visual findings as a separate repair dependency. After that repair merges, reconcile PR37 with dev and repeat complete visual validation.\n\nRetain the full inherited lifecycle-label, notification, authority, activation, live-verification, and qualifying-PR dev-merge obligations. The recorded automated resolution establishes planning choices; it grants no source, visual, deployment, or protected-policy approval.\n\n## Implementation\n\n### Capture producer and transport\n\n- Preserve the coordinator’s separate exporter/workflow prerequisite. Verify its final published bytes against the paired consumer fixture before protected main activation; do not treat the split as completion of PR37.\n- Complete PR37’s capture-specific child-output handling in `agent_tools/sql_explorer_visual.py` and its process helper. Retain both raw streams, exit/spawn/timeout outcomes, partial output, and explicit capacity failures. Finalize metadata after owned processes, pipe callbacks, and reader threads stop, including interruption paths.\n- Keep the trusted exporter loaded from the workflow commit, separately from candidate code. Export the owned session and every available regular diagnostic file, including failed-scene geometry whose session paths remain pending.\n- Keep `collection_complete` separate from nullable `process_output_complete`. Empty or unavailable evidence cannot imply a complete collection; unknown process completeness remains `null`. Failed capture or diagnostic export must leave the job failed.\n- Preserve the legacy successful artifact layout. Keep failed diagnostics separate, identified by candidate, run, and attempt. Retain current file/count/aggregate bounds, no-follow path handling, exact membership and hashes; never silently truncate.\n- Update operational documentation and changelog to distinguish available-file preservation, full process-output capture, and verified end-to-end delivery.\n\n### Consumer and durable assignment\n\n- Reuse the existing `capture_archive`, `capture_diagnostics`, `capture_io`, daemon, Intake, and Files interfaces. Change them only where paired validation demonstrates a remaining incompatibility.\n- Validate trusted workflow/run/attempt/artifact identity and bind snapshots to task digest, producer, original head, assigned base, temporary candidate, request revision, and checkpoint patch digest.\n- Preserve immutable raw snapshots and separately identified redacted model views. Deliver complete ordered text continuations and digest-bound inert PNGs through the existing read-only evidence surface.\n- Retain diagnostic history across restart, replanning, and rebasing without relabeling old evidence as current. Owner answers, cancellation, vetoes, and security holds must supersede late results.\n- Preserve legacy log-only fallback and operational retries for unavailable or malformed modern artifacts. Diagnostics must never satisfy visual approval.\n\n### Separate visual repair\n\nUse the existing scene harness and affected SQL Explorer widgets; retain all scene IDs and acceptance gates.\n\n- Synchronize horizontal scrollbar state with editor scrolling and ruler position.\n- Make the invalid-table fixture contain an actually incomplete visible field and obtain its error through normal validation.\n- Make checkbox indicators agree with their boolean values; anchor type suggestions directly beneath the active type input.\n- Keep all three search matches visibly highlighted, including `order_id`.\n- Render movement and shortcut help using available pane width, with continuation lines aligned beneath descriptions.\n- Make mutation confirmation derive from the visible editor SQL. Make successful and resized/vertical result fixtures match their query columns, row counts, and status.\n- Make save-dialog titles match the active document. Apply Cancel focus after modal mounting and verify it persists through capture readiness.\n\nThese changes belong in the scene harness and the editor, creation dialog, help/result pane, and modal styling components. Preserve normal save defaults, SQL execution safeguards, and existing keyboard behavior.\n\n## Compatibility and focused regression coverage\n\nPublic package APIs, supported Python versions, and package version remain unchanged. Evidence interfaces remain additive; historical successful captures and legacy failed-workflow handling remain compatible.\n\nExtend existing repository capture tests and focused Explorer tests:\n\n- Pending failed-scene paths, prior passing scenes, unattempted scenes, both streams, Unicode output beyond 64 KiB, timeout, interruption, spawn failure, descendants, capacity exhaustion, and frozen final metadata.\n- Successful artifact compatibility, incomplete setup/export envelopes, unsafe paths, replacement races, exact file membership, hashes, and boundary limits.\n- Actual producer fixture through consumer download validation, immutable retention, Intake replanning/restart, and Files continuation/image reads.\n- Wrong identities, stale revisions, tampering, malformed archives, unavailable uploads, concurrent owner changes, and rejection of any diagnostic-derived approval.\n- Each visual defect’s behavior or fixture invariant, including scrollbar offset, three highlighted matches, boolean indicators, dropdown anchoring, help wrapping, query/result agreement, document identity, and Cancel focus.\n\nUse fakes and temporary storage for fast regressions. Run no programs, tests, installs, builds, or scenes on the Pi.\n\n## GitHub validation and completion\n\n1. Independently review and validate the exporter prerequisite, including focused tests, quality gates, and exact-head compatibility checks. Obtain required exact-head protected authorization before allowed main synchronization.\n2. Publish the separately reviewed visual repair. Require every manifest scene’s geometry checks and individual full 1280×800 PNG review at the prescribed terminal grid.\n3. After the repair merges into dev, reconcile PR37 without losing its process-output changes, checkpoint, task history, or rejected evidence. Obtain fresh complete candidate-bound visual validation, exact-head fast CI, and independent review of the complete feature.\n4. Validate a new failed GitHub capture through actual artifact download, immutable request assignment, every text continuation, and available full PNG reads in fresh planning and independent review.\n5. Preserve the completed consumer deployment; do not rerun it. Any necessary runtime change requires its own reviewed operation and activation evidence.\n6. Continue coordinator-owned tracking until all qualifying PRs and resulting repairs merge successfully into dev. Retain PR10’s separate requirement for actual PR9 dev merge and ancestry, plus inherited lifecycle-label and live-verification acceptance.\n\n## Evidence limits\n\nThe assigned current head has successful fast checks and a rejected visual review; full feature alignment review remains unfinished. The consumer record identifies active source `8b0191d3…`, while producer activation and actual modern failed-run delivery remain pending.\n\nMissing historical streams or artifacts cannot be reconstructed by this work. Every recapture supplies new evidence with its own bindings. No additional consequential scope choice remains unresolved.\n",
+        "native_plan": {
+          "thread_id": "01a14ab5-9441-7211-b8a3-b47e50a156f7",
+          "base": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+          "toolset_sha256": "b172f32bbdf8cf5aa6c2ca6636670b4cba0a40a398ace2fea6fd63eaca92ffd4",
+          "turn_id": "01a14ac9-aa09-73d0-8ad1-a32d22883e76",
+          "question_request": null,
+          "completed_turn": "01a14ac9-aa09-73d0-8ad1-a32d22883e76",
+          "completed_plan": {
+            "source_kind": "plan",
+            "thread_id": "01a14ab5-9441-7211-b8a3-b47e50a156f7",
+            "turn_id": "01a14ac9-aa09-73d0-8ad1-a32d22883e76",
+            "item_id": "01a14ac9-aa09-73d0-8ad1-a32d22883e76-plan",
+            "text": "# Complete failed-capture delivery and its visual-repair dependency\n\n## Summary\n\nPreserve PR37 and finish reliable failed visual-capture evidence delivery across `analytics_toolkit` and `self_host`. Track the fourteen visual findings as a separate repair dependency. After that repair merges, reconcile PR37 with dev and repeat complete visual validation.\n\nRetain the full inherited lifecycle-label, notification, authority, activation, live-verification, and qualifying-PR dev-merge obligations. The recorded automated resolution establishes planning choices; it grants no source, visual, deployment, or protected-policy approval.\n\n## Implementation\n\n### Capture producer and transport\n\n- Preserve the coordinator’s separate exporter/workflow prerequisite. Verify its final published bytes against the paired consumer fixture before protected main activation; do not treat the split as completion of PR37.\n- Complete PR37’s capture-specific child-output handling in `agent_tools/sql_explorer_visual.py` and its process helper. Retain both raw streams, exit/spawn/timeout outcomes, partial output, and explicit capacity failures. Finalize metadata after owned processes, pipe callbacks, and reader threads stop, including interruption paths.\n- Keep the trusted exporter loaded from the workflow commit, separately from candidate code. Export the owned session and every available regular diagnostic file, including failed-scene geometry whose session paths remain pending.\n- Keep `collection_complete` separate from nullable `process_output_complete`. Empty or unavailable evidence cannot imply a complete collection; unknown process completeness remains `null`. Failed capture or diagnostic export must leave the job failed.\n- Preserve the legacy successful artifact layout. Keep failed diagnostics separate, identified by candidate, run, and attempt. Retain current file/count/aggregate bounds, no-follow path handling, exact membership and hashes; never silently truncate.\n- Update operational documentation and changelog to distinguish available-file preservation, full process-output capture, and verified end-to-end delivery.\n\n### Consumer and durable assignment\n\n- Reuse the existing `capture_archive`, `capture_diagnostics`, `capture_io`, daemon, Intake, and Files interfaces. Change them only where paired validation demonstrates a remaining incompatibility.\n- Validate trusted workflow/run/attempt/artifact identity and bind snapshots to task digest, producer, original head, assigned base, temporary candidate, request revision, and checkpoint patch digest.\n- Preserve immutable raw snapshots and separately identified redacted model views. Deliver complete ordered text continuations and digest-bound inert PNGs through the existing read-only evidence surface.\n- Retain diagnostic history across restart, replanning, and rebasing without relabeling old evidence as current. Owner answers, cancellation, vetoes, and security holds must supersede late results.\n- Preserve legacy log-only fallback and operational retries for unavailable or malformed modern artifacts. Diagnostics must never satisfy visual approval.\n\n### Separate visual repair\n\nUse the existing scene harness and affected SQL Explorer widgets; retain all scene IDs and acceptance gates.\n\n- Synchronize horizontal scrollbar state with editor scrolling and ruler position.\n- Make the invalid-table fixture contain an actually incomplete visible field and obtain its error through normal validation.\n- Make checkbox indicators agree with their boolean values; anchor type suggestions directly beneath the active type input.\n- Keep all three search matches visibly highlighted, including `order_id`.\n- Render movement and shortcut help using available pane width, with continuation lines aligned beneath descriptions.\n- Make mutation confirmation derive from the visible editor SQL. Make successful and resized/vertical result fixtures match their query columns, row counts, and status.\n- Make save-dialog titles match the active document. Apply Cancel focus after modal mounting and verify it persists through capture readiness.\n\nThese changes belong in the scene harness and the editor, creation dialog, help/result pane, and modal styling components. Preserve normal save defaults, SQL execution safeguards, and existing keyboard behavior.\n\n## Compatibility and focused regression coverage\n\nPublic package APIs, supported Python versions, and package version remain unchanged. Evidence interfaces remain additive; historical successful captures and legacy failed-workflow handling remain compatible.\n\nExtend existing repository capture tests and focused Explorer tests:\n\n- Pending failed-scene paths, prior passing scenes, unattempted scenes, both streams, Unicode output beyond 64 KiB, timeout, interruption, spawn failure, descendants, capacity exhaustion, and frozen final metadata.\n- Successful artifact compatibility, incomplete setup/export envelopes, unsafe paths, replacement races, exact file membership, hashes, and boundary limits.\n- Actual producer fixture through consumer download validation, immutable retention, Intake replanning/restart, and Files continuation/image reads.\n- Wrong identities, stale revisions, tampering, malformed archives, unavailable uploads, concurrent owner changes, and rejection of any diagnostic-derived approval.\n- Each visual defect’s behavior or fixture invariant, including scrollbar offset, three highlighted matches, boolean indicators, dropdown anchoring, help wrapping, query/result agreement, document identity, and Cancel focus.\n\nUse fakes and temporary storage for fast regressions. Run no programs, tests, installs, builds, or scenes on the Pi.\n\n## GitHub validation and completion\n\n1. Independently review and validate the exporter prerequisite, including focused tests, quality gates, and exact-head compatibility checks. Obtain required exact-head protected authorization before allowed main synchronization.\n2. Publish the separately reviewed visual repair. Require every manifest scene’s geometry checks and individual full 1280×800 PNG review at the prescribed terminal grid.\n3. After the repair merges into dev, reconcile PR37 without losing its process-output changes, checkpoint, task history, or rejected evidence. Obtain fresh complete candidate-bound visual validation, exact-head fast CI, and independent review of the complete feature.\n4. Validate a new failed GitHub capture through actual artifact download, immutable request assignment, every text continuation, and available full PNG reads in fresh planning and independent review.\n5. Preserve the completed consumer deployment; do not rerun it. Any necessary runtime change requires its own reviewed operation and activation evidence.\n6. Continue coordinator-owned tracking until all qualifying PRs and resulting repairs merge successfully into dev. Retain PR10’s separate requirement for actual PR9 dev merge and ancestry, plus inherited lifecycle-label and live-verification acceptance.\n\n## Evidence limits\n\nThe assigned current head has successful fast checks and a rejected visual review; full feature alignment review remains unfinished. The consumer record identifies active source `8b0191d3…`, while producer activation and actual modern failed-run delivery remain pending.\n\nMissing historical streams or artifacts cannot be reconstructed by this work. Every recapture supplies new evidence with its own bindings. No additional consequential scope choice remains unresolved.\n"
+          }
+        },
+        "reviewed_plan_digest": "23312ddc8cc9b44581e78dfde5a5bbcc3ee098031d05413ec5b6e47759be9e38"
+      }
+    }
+  },
+  "scope": "Independently reviewed separate rendering/fixture dependency for PR37. Full inherited task and all qualifying PR dev merges remain required. PR37 retains full process-output/evidence obligations. No old visual rejection or authority hold is overridden.",
+  "recovered_actual_user_history": {
+    "source": "Actual user-role messages available in this root conversation, transcribed verbatim by the coordinator; selected relevant messages are in their original conversational order below.",
+    "recording_note": "These instructions predate the current resumption prompt. They were recorded later through mandatory task_context append without replacing its original prompt or prior corrections. This is additive recovered context; no original Telegram event, owner button click, independently signed historic transcript or retroactive change to PR37's frozen signed task is asserted.",
+    "selected_messages_in_original_conversational_order": [
+      "check RPI agents, their, especially those who waiting for user approval",
+      "also update rpi agents to ALWAYS use recommended options when they have questions about plan/feature implementation/correction",
+      "and I want to get messages only about user approvals / tg requested feature implemntation status / pr mergres with dev / released / merges with main",
+      "and once you done - monitor PRs until completion, stop only when ALL of them are merged successfully with dev",
+      "fix any issues on the way",
+      "also restart agents who are waiting user's approval so that use this new policy",
+      "also for tg questions, allow respond in github as well",
+      "ok, fix those tooling issues",
+      "one asks me to provide agents.md WTF, looks like a tooling issue as well",
+      "also I've noticed that user answers to agent's question recorded and posted in PR, but agent's question is not visible => not enough context, fix that as well, record both questions and answers",
+      "answer to agents in PRs",
+      "also raise RPI agents concurrency to 10",
+      "do not forget \"agent:writing\" labels",
+      "provide reliable fix so that does not occur again",
+      "for \"ALWAYS use reccomended\" let's just spawn \"plan resolver\" agent on RPI which checks that recommended options and if they are aligned with user request -approves them. Also add \"orchestrator\" agent which is spawned every 30 minutes (no more than 1 such agent) IF at least 1 PR is open and  it basically does what you do now: finds issues in rpi agents toolkit, fixes them, etc. still no heavy checks on rpi. but it may edit atk and self host dirs. If nothng to fix - that agent ceases to exist",
+      "if it is not addressing it - fix it so it does that",
+      "PR in self_host is considered relevant only if it affects github agents functionality"
+    ],
+    "task_context_receipt": {
+      "ok": true,
+      "tool": "task_context",
+      "input": {
+        "action": "append"
+      },
+      "summary": "User task context recorded.",
+      "result": {
+        "task_id": "04c60facc8294087b55ffdd496a4de82",
+        "digest": "e1c68be0700274b0a7a68c2dba6d0d11c7c47e6818691347c8517c00107d8e5f",
+        "correction_count": 17
+      },
+      "command_results": [],
+      "blockers": [],
+      "next_actions": [],
+      "telemetry": {
+        "response_budget_bytes": 3000,
+        "within_budget": true,
+        "response_bytes": 441,
+        "truncated": false
+      }
+    },
+    "refinement": "The later independent alignment-review requirement governs the earlier ALWAYS recommendation wording. Retain the complete original and subsequent scope, all protected gates and actual merge/dependency obligations.",
+    "parent_bindings": {
+      "pr": 37,
+      "original_task": "28bfc78bd15a454a8463b5f859c8206a",
+      "original_digest": "b9f9a00ab7b6d4b975bd5e3c7b04a1336800595ffa0af540deeec0add49c948b",
+      "current_rejected_head": "0986c4c16965b34806b1924e8b264d62cdd43888"
+    },
+    "delivery_obligation": "Publish this additive exact history in the separate repair signed task attachment and explicitly assign/correlate the complete attachment to orchestrator and relevant successor planning/review sessions. A GitHub explanation alone is insufficient. Preserve PR37's original signed task and all rejected evidence."
+  },
+  "later_independent_recommended_resolutions": {
+    "source_snapshot_sha256": "32074437852a1022590cc095f8ec2ce2c3a57880b85d996cfb9146052db58f32",
+    "request_id": "ec9537598105",
+    "revision": 12,
+    "status": "queued",
+    "stage": "plan",
+    "answers": [
+      {
+        "questions": [
+          "1. How should the separate visual repair make result-success consistent while retaining its existing stress coverage?\nAlign SQL to grid (Recommended): Use valid SQL selecting the displayed four columns; retain long editor content, wide rows, truncation and scrolling coverage."
+        ],
+        "response": "success_scene_consistency: Align SQL to grid (Recommended)\nReason: The full result-success PNG and pinned fixture confirm that the editor selects row_number and wide_value while the grid displays order_id, customer_name, revenue and long_note. Using valid SQL selecting those four columns while retaining long editor content, wide rows, truncation and scrolling addresses the rejected inconsistency within the authorized separate visual repair. All fourteen findings, complete fresh GitHub visual review, focused regressions, exact-head CI, independent review, parent monitoring and successful-dev-merge obligations remain required; this choice grants no plan, source, visual or protected-policy approval.",
+        "source": "recommended-option-policy",
+        "resolver_receipt": {
+          "resolver_id": "plan-resolver:acf269ce0617427d824566119f4754fe",
+          "input_sha256": "d9f65c2ae173a1d2a79b8b7406674c8f68ddbc8cb8f7d210b50c464d39e621fc",
+          "dev_base": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+          "decisions": [
+            {
+              "id": "success_scene_consistency",
+              "choice": "Align SQL to grid (Recommended)",
+              "alignment": "aligned",
+              "reason": "The full result-success PNG and pinned fixture confirm that the editor selects row_number and wide_value while the grid displays order_id, customer_name, revenue and long_note. Using valid SQL selecting those four columns while retaining long editor content, wide rows, truncation and scrolling addresses the rejected inconsistency within the authorized separate visual repair. All fourteen findings, complete fresh GitHub visual review, focused regressions, exact-head CI, independent review, parent monitoring and successful-dev-merge obligations remain required; this choice grants no plan, source, visual or protected-policy approval."
+            }
+          ],
+          "decision": "approve",
+          "summary": "The recommended choice aligns with the recorded repair scope and preserves stress coverage and existing gates."
+        }
+      },
+      {
+        "questions": [
+          "2. For the rejected create-table-invalid scene, should the repair also make the real dialog’s invalid submission state explicit?\nDisable invalid Create (Recommended): Reuse existing validation to show the current error and visibly incomplete field, disable Create while invalid, and enable it when corrected; retain submit-time validation."
+        ],
+        "response": "invalid_create_action: Disable invalid Create (Recommended)\nReason: The authenticated correction authorizes a separate repair of the demonstrated visual defects, including application changes. The inspected full create-table-invalid PNG shows complete fields alongside an unexplained error; source confirms the fixture injects that error and the real dialog already validates on submission. Showing a genuinely incomplete field, deriving the error and disabled state from existing validation, enabling Create after correction, and retaining submit-time validation align with that repair. All fourteen findings, fresh complete candidate-bound GitHub capture and individual full-PNG review, focused regressions, exact-head CI, independent review, full parent monitoring and successful-dev-merge obligations remain required. Existing owner holds, dependency barriers and protected exact-head approval gates remain intact; the completed deployment must not be rerun. This choice grants no plan, source, visual or protected-policy approval.",
+        "source": "recommended-option-policy",
+        "resolver_receipt": {
+          "resolver_id": "plan-resolver:49fe0c7554fc4686a8dc149214db14f0",
+          "input_sha256": "8804527aa21b05e61f4130ebba6b1dbd5954325456e20abb0210fdc96135ad30",
+          "dev_base": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+          "decisions": [
+            {
+              "id": "invalid_create_action",
+              "choice": "Disable invalid Create (Recommended)",
+              "alignment": "aligned",
+              "reason": "The authenticated correction authorizes a separate repair of the demonstrated visual defects, including application changes. The inspected full create-table-invalid PNG shows complete fields alongside an unexplained error; source confirms the fixture injects that error and the real dialog already validates on submission. Showing a genuinely incomplete field, deriving the error and disabled state from existing validation, enabling Create after correction, and retaining submit-time validation align with that repair. All fourteen findings, fresh complete candidate-bound GitHub capture and individual full-PNG review, focused regressions, exact-head CI, independent review, full parent monitoring and successful-dev-merge obligations remain required. Existing owner holds, dependency barriers and protected exact-head approval gates remain intact; the completed deployment must not be rerun. This choice grants no plan, source, visual or protected-policy approval."
+            }
+          ],
+          "decision": "approve",
+          "summary": "The recommended choice aligns with the authorized separate visual repair and preserves the complete parent objective and validation gates."
+        }
+      }
+    ],
+    "code_replan_history": [
+      {
+        "request_id": "ec9537598105",
+        "revision": 11,
+        "head": "0986c4c16965b34806b1924e8b264d62cdd43888",
+        "dev_base": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+        "task_context_digest": "b349880eff42804b725eb180392bf051b835daace7da0186e2d7915b158ccec6",
+        "checkpoint_sha256": "453d7087909f35faf40847afb85bf53971f9aa9ab0c53511937f7c7735f9e59a",
+        "summary": "Operational replan required: the assigned workspace and immutable feedback identify PR #37, head 0986c4c16965b34806b1924e8b264d62cdd43888 against dev 1f7ff62aeba3c27a307a606b80459bca78b2dfd5. Its existing changes are the diagnostic producer/process patch. The approved plan explicitly requires a separate visual-repair dependency to merge before reconciling PR #37. This source_files-only invocation provides no separate dependency workspace or publication target; applying visual repairs here would combine the work contrary to that requirement.\n\nRead the companion manifest through every continuation, its complete ordered pr_checks payload and embedded comments/reviews, and the visual manifest, rejection receipt and capture through their continuations. Inspected all fifteen relevant full PNGs. Current evidence retains successful fast CI and substantive visual rejection; it supplies no subsequent visual approval or completed feature review.\n\nPreserve every repair finding: column-ruler-scrolled scrollbar disagrees with horizontal scrolling; create-table-advanced/schema/sql checkbox indicators contradict False; create-table-invalid shows complete fields beside an unexplained error and enabled Create; checkbox/delete controls lack contrast; create-table-types suggestions are detached from the active input; find-replace hides the selected order_id match; help-movement and help-shortcuts lose description alignment when wrapping; mutation-confirm disagrees with visible SQL; result-success SQL, data and counts must agree while retaining stress coverage; results-resized/vertical need matching three-column data; save-changes and save-changes-cancel have conflicting document identities, and Cancel lacks requested focus.\n\nCoordinator handoff: provision the separate visual-repair workspace/task and record its dependency on PR #37. Fresh planning and independent review should bind the approved repair scope to that concrete target and immutable base, without reopening the completed parent plan-review gate unnecessarily. Implement focused regressions, readiness/geometry assertions, relevant documentation and its owned single-line changelog fragment there. Require the complete GitHub 208×47 capture, full 1280×800 PNG review, exact-head CI and independent implementation review before merging the repair. Then reconcile PR #37, preserve its process/child-output guarantees and rejected evidence, refresh producer–consumer compatibility and repeat complete candidate-bound validation.\n\nRetain the separate exporter prerequisite, protected exact-head authorization, all private holds and provenance/dependency barriers. Do not rerun the completed consumer deployment or claim missing historical bytes recovered. Producer activation and genuine new-run delivery remain pending. Preserve lifecycle-label, notification, authority and all-qualifying-PR successful-dev-merge obligations, including PR #10’s actual PR #9 dev-merge and ancestry requirement. No source files were changed and no programs, tests or scenes were executed.",
+        "planning": {
+          "plan": "# Complete diagnostic delivery and its separate visual repair\n\n## Summary and retained scope\n\nPreserve PR #37’s diagnostic and process-output changes. Complete the visual corrections in a separately reviewed dependency, merge that repair into dev, then reconcile and revalidate PR #37.\n\nRetain the complete lifecycle-label, notification, authority, activation/live-verification and all-qualifying-PR successful-dev-merge objective. Preserve every original question, option, response, resolver decision, plan and checkpoint with its provenance.\n\nPlanning baseline: dev `1f7ff62aeba3c27a307a606b80459bca78b2dfd5`. Assigned feedback covers published head `0986c4c16965b34806b1924e8b264d62cdd43888`: fast CI passed, visual review rejected it, and full feature alignment review remains incomplete. Unpublished changes require fresh validation.\n\n## Implementation changes\n\n### Separate SQL Explorer repair\n\nKeep every scene ID and existing stress coverage. Address all fourteen originally rejected scenes plus the demonstrated shared checkbox defect in `create-table-advanced`.\n\n- **Editor:** In `analytics_toolkit/sql_explorer/editor.py`, synchronize horizontal scrollbar position with actual editor scrolling. Keep ruler, caret and status consistent at column 252. Ensure all search matches remain visibly highlighted, including the selected `order_id` match while focus is in Find.\n- **Create-table dialog:** In `create_table_screen.py`, make unchecked/checked indicators unambiguous and improve checkbox and row-delete contrast. Anchor type suggestions beneath the active type field, tracking row, scrolling and resize. Reuse existing validation to display the current error, disable invalid Create, and enable it after correction; retain submit-time validation and existing option semantics.\n- **Help:** Update `help_text.py` and its result-pane presentation to use available width and keep wrapped descriptions beneath their description column. Preserve command wording and navigation.\n- **Fixtures:** In `agent_tools/sql_explorer_visual_scene.py`, replace the manually injected invalid-form error with a genuinely incomplete visible field. Derive mutation confirmation from the visible DELETE statement. For `result-success`, use valid SQL selecting `order_id`, `customer_name`, `revenue` and `long_note`, retaining long editor content, wide results, truncation and scrolling. Make dataframe contents, displayed counts and status agree. Supply matching three-column data for resized/vertical results. Bind save prompts and tab titles to the same document, and establish Cancel focus after mounting and before capture readiness.\n- Extend scene readiness and geometry assertions to detect these state inconsistencies without weakening existing checks.\n\n### Diagnostic producer and consumer\n\nPreserve the separately prepared available-file exporter/workflow prerequisite and its provenance. Its publication does not complete PR #37.\n\n- Retain `.github/agent/capture_artifact.py`, `agent-visual.yml`, and the visual process helper’s complete bounded stdout/stderr, execution outcome, timeout/interruption and cleanup guarantees.\n- Export actual run-owned session, geometry, PNGs and diagnostic sidecars, including failed scenes whose session paths remain pending. Preserve explicit attempted, failed and unattempted scene states.\n- Keep `collection_complete` distinct from `process_output_complete`; unknown process completeness remains `null`. Capacity loss, missing files and failed finalization must be explicit. Upload failure diagnostics without turning a failed capture green.\n- Refresh paired consumer fixtures against the final producer bytes; historical exporter hashes do not validate changed source.\n- Reuse the existing self_host capture archive/diagnostic/IO, daemon, intake and Files interfaces. Verify exact workflow/run/attempt/artifact identity and bind immutable evidence to task, producer, original head, candidate, base, checkpoint and file digests.\n- Verify durable assignment through fresh planning, independent review, restart and rebase. Preserve raw private bytes separately from redacted model views and ordered text parts. Historical evidence retains its original binding.\n- Preserve legacy log-only fallback, operational retry classifications and authority-preserving state transitions. Diagnostics cannot create approvals, visual passes or release holds.\n\nUpdate focused operational documentation and owned changelog fragments. Public package signatures, versions and existing passing-capture formats remain compatible.\n\n## Focused fast regression coverage\n\nRun these checks on GitHub or an authorized development host, never on the Pi:\n\n- Extend Explorer tests for scrollbar/ruler agreement, visible search styling, checkbox value/indicator agreement, control contrast, dropdown anchoring, live invalid-to-valid submission, aligned help wrapping, document identity and stable Cancel focus.\n- Exercise repaired scene configuration with fake sessions. Assert SQL/result columns and counts agree, confirmation matches editor SQL, invalid fields produce real validation, and stress coverage remains present.\n- Extend repository capture tests for pending failed-scene evidence, both output streams, nonzero exit, timeout, interruption, descendant cleanup, export failure and passing-capture compatibility.\n- Exercise the final producer fixture through actual consumer validation, immutable publication and Files list/read/image APIs, including every continuation.\n- Cover malformed archives, unsafe paths, duplicate entries, tampering, capacity boundaries, wrong identity bindings, interrupted retries and concurrent owner answer/veto/cancellation. Assert checkpoint/history preservation and no authority gains.\n- Retain lifecycle-label and notification regressions: exclusive phases, truthful `needs-user`, closed/reopened transitions, stale heads, API retry and genuine protected holds.\n\n## GitHub validation and completion\n\n1. Obtain independent review of this complete plan before implementation. Revalidate affected source against refreshed dev; preserve handed-off branches and use coordinator-owned corrections.\n2. Publish and validate the independent exporter prerequisite through its signed workflow. Require source review, exact-head checks and required owner exact-head protected authorization before allowed main synchronization.\n3. Validate the separate visual repair using the complete GitHub scene manifest at **208×47 cells**, with full **1280×800 PNGs**. Independently inspect every full PNG and require every geometry check and individual verdict to pass before feature publication.\n4. After the repair merges into dev, reconcile PR #37 without losing process-output changes, checkpoint or rejected evidence. Require fresh complete capture, individual PNG review, focused regressions, required compatibility/quality checks and independent complete-feature review bound to the final head, base and task digest.\n5. Have the coordinator obtain and verify the cited resumed runtime report. Do not rerun the completed consumer deployment. Refresh final producer–consumer compatibility, activate only reviewed protected producer bytes, and verify a genuinely new failed-run artifact reaches normal fresh planning and independent review through every required file continuation and PNG.\n6. Maintain a coordinator inventory of all qualifying analytics_toolkit PRs, GitHub-agent-related self_host PRs and resulting repairs. Track current heads, request revisions, dependencies, holds, checks and merge commits through successful dev merge. PR #10 requires actual PR #9 dev merge and ancestry.\n7. Verify live lifecycle labels and notification filtering while preserving all owner questions, vetoes, cancellations, provenance/security holds and request-bound dependency barriers.\n\n## Evidence limits and chosen defaults\n\nBoth recorded implementation choices apply: align success-scene SQL to its grid, and disable invalid Create using existing validation. They grant no plan, source, visual or protected-policy approval.\n\nThe coordinator owns missing evidence retrieval. No historical missing stdout, stderr or artifacts are considered recovered. A recapture is new evidence with its own binding. This read-only session performed no edits, tests, rendering, deployment or live Pi verification; findings remain bounded to the assigned snapshot.\n",
+          "native_plan": {
+            "thread_id": "01a14aed-2bf9-7d32-9c5f-cf4c6e00519c",
+            "base": "1f7ff62aeba3c27a307a606b80459bca78b2dfd5",
+            "toolset_sha256": "b172f32bbdf8cf5aa6c2ca6636670b4cba0a40a398ace2fea6fd63eaca92ffd4",
+            "turn_id": "01a14aff-7ee4-7413-8eb7-72076f0d775e",
+            "question_request": null,
+            "completed_turn": "01a14aff-7ee4-7413-8eb7-72076f0d775e",
+            "completed_plan": {
+              "source_kind": "plan",
+              "thread_id": "01a14aed-2bf9-7d32-9c5f-cf4c6e00519c",
+              "turn_id": "01a14aff-7ee4-7413-8eb7-72076f0d775e",
+              "item_id": "01a14aff-7ee4-7413-8eb7-72076f0d775e-plan",
+              "text": "# Complete diagnostic delivery and its separate visual repair\n\n## Summary and retained scope\n\nPreserve PR #37’s diagnostic and process-output changes. Complete the visual corrections in a separately reviewed dependency, merge that repair into dev, then reconcile and revalidate PR #37.\n\nRetain the complete lifecycle-label, notification, authority, activation/live-verification and all-qualifying-PR successful-dev-merge objective. Preserve every original question, option, response, resolver decision, plan and checkpoint with its provenance.\n\nPlanning baseline: dev `1f7ff62aeba3c27a307a606b80459bca78b2dfd5`. Assigned feedback covers published head `0986c4c16965b34806b1924e8b264d62cdd43888`: fast CI passed, visual review rejected it, and full feature alignment review remains incomplete. Unpublished changes require fresh validation.\n\n## Implementation changes\n\n### Separate SQL Explorer repair\n\nKeep every scene ID and existing stress coverage. Address all fourteen originally rejected scenes plus the demonstrated shared checkbox defect in `create-table-advanced`.\n\n- **Editor:** In `analytics_toolkit/sql_explorer/editor.py`, synchronize horizontal scrollbar position with actual editor scrolling. Keep ruler, caret and status consistent at column 252. Ensure all search matches remain visibly highlighted, including the selected `order_id` match while focus is in Find.\n- **Create-table dialog:** In `create_table_screen.py`, make unchecked/checked indicators unambiguous and improve checkbox and row-delete contrast. Anchor type suggestions beneath the active type field, tracking row, scrolling and resize. Reuse existing validation to display the current error, disable invalid Create, and enable it after correction; retain submit-time validation and existing option semantics.\n- **Help:** Update `help_text.py` and its result-pane presentation to use available width and keep wrapped descriptions beneath their description column. Preserve command wording and navigation.\n- **Fixtures:** In `agent_tools/sql_explorer_visual_scene.py`, replace the manually injected invalid-form error with a genuinely incomplete visible field. Derive mutation confirmation from the visible DELETE statement. For `result-success`, use valid SQL selecting `order_id`, `customer_name`, `revenue` and `long_note`, retaining long editor content, wide results, truncation and scrolling. Make dataframe contents, displayed counts and status agree. Supply matching three-column data for resized/vertical results. Bind save prompts and tab titles to the same document, and establish Cancel focus after mounting and before capture readiness.\n- Extend scene readiness and geometry assertions to detect these state inconsistencies without weakening existing checks.\n\n### Diagnostic producer and consumer\n\nPreserve the separately prepared available-file exporter/workflow prerequisite and its provenance. Its publication does not complete PR #37.\n\n- Retain `.github/agent/capture_artifact.py`, `agent-visual.yml`, and the visual process helper’s complete bounded stdout/stderr, execution outcome, timeout/interruption and cleanup guarantees.\n- Export actual run-owned session, geometry, PNGs and diagnostic sidecars, including failed scenes whose session paths remain pending. Preserve explicit attempted, failed and unattempted scene states.\n- Keep `collection_complete` distinct from `process_output_complete`; unknown process completeness remains `null`. Capacity loss, missing files and failed finalization must be explicit. Upload failure diagnostics without turning a failed capture green.\n- Refresh paired consumer fixtures against the final producer bytes; historical exporter hashes do not validate changed source.\n- Reuse the existing self_host capture archive/diagnostic/IO, daemon, intake and Files interfaces. Verify exact workflow/run/attempt/artifact identity and bind immutable evidence to task, producer, original head, candidate, base, checkpoint and file digests.\n- Verify durable assignment through fresh planning, independent review, restart and rebase. Preserve raw private bytes separately from redacted model views and ordered text parts. Historical evidence retains its original binding.\n- Preserve legacy log-only fallback, operational retry classifications and authority-preserving state transitions. Diagnostics cannot create approvals, visual passes or release holds.\n\nUpdate focused operational documentation and owned changelog fragments. Public package signatures, versions and existing passing-capture formats remain compatible.\n\n## Focused fast regression coverage\n\nRun these checks on GitHub or an authorized development host, never on the Pi:\n\n- Extend Explorer tests for scrollbar/ruler agreement, visible search styling, checkbox value/indicator agreement, control contrast, dropdown anchoring, live invalid-to-valid submission, aligned help wrapping, document identity and stable Cancel focus.\n- Exercise repaired scene configuration with fake sessions. Assert SQL/result columns and counts agree, confirmation matches editor SQL, invalid fields produce real validation, and stress coverage remains present.\n- Extend repository capture tests for pending failed-scene evidence, both output streams, nonzero exit, timeout, interruption, descendant cleanup, export failure and passing-capture compatibility.\n- Exercise the final producer fixture through actual consumer validation, immutable publication and Files list/read/image APIs, including every continuation.\n- Cover malformed archives, unsafe paths, duplicate entries, tampering, capacity boundaries, wrong identity bindings, interrupted retries and concurrent owner answer/veto/cancellation. Assert checkpoint/history preservation and no authority gains.\n- Retain lifecycle-label and notification regressions: exclusive phases, truthful `needs-user`, closed/reopened transitions, stale heads, API retry and genuine protected holds.\n\n## GitHub validation and completion\n\n1. Obtain independent review of this complete plan before implementation. Revalidate affected source against refreshed dev; preserve handed-off branches and use coordinator-owned corrections.\n2. Publish and validate the independent exporter prerequisite through its signed workflow. Require source review, exact-head checks and required owner exact-head protected authorization before allowed main synchronization.\n3. Validate the separate visual repair using the complete GitHub scene manifest at **208×47 cells**, with full **1280×800 PNGs**. Independently inspect every full PNG and require every geometry check and individual verdict to pass before feature publication.\n4. After the repair merges into dev, reconcile PR #37 without losing process-output changes, checkpoint or rejected evidence. Require fresh complete capture, individual PNG review, focused regressions, required compatibility/quality checks and independent complete-feature review bound to the final head, base and task digest.\n5. Have the coordinator obtain and verify the cited resumed runtime report. Do not rerun the completed consumer deployment. Refresh final producer–consumer compatibility, activate only reviewed protected producer bytes, and verify a genuinely new failed-run artifact reaches normal fresh planning and independent review through every required file continuation and PNG.\n6. Maintain a coordinator inventory of all qualifying analytics_toolkit PRs, GitHub-agent-related self_host PRs and resulting repairs. Track current heads, request revisions, dependencies, holds, checks and merge commits through successful dev merge. PR #10 requires actual PR #9 dev merge and ancestry.\n7. Verify live lifecycle labels and notification filtering while preserving all owner questions, vetoes, cancellations, provenance/security holds and request-bound dependency barriers.\n\n## Evidence limits and chosen defaults\n\nBoth recorded implementation choices apply: align success-scene SQL to its grid, and disable invalid Create using existing validation. They grant no plan, source, visual or protected-policy approval.\n\nThe coordinator owns missing evidence retrieval. No historical missing stdout, stderr or artifacts are considered recovered. A recapture is new evidence with its own binding. This read-only session performed no edits, tests, rendering, deployment or live Pi verification; findings remain bounded to the assigned snapshot.\n"
+            }
+          },
+          "plan_digest": "34c658e169ca689c29febbe4926ac461665bd486e9e789bc02a4b29383f6a009",
+          "reviewed_plan_digest": "34c658e169ca689c29febbe4926ac461665bd486e9e789bc02a4b29383f6a009",
+          "reviewer_id": "plan-reviewer:fa2581140c6c4fc592b521962ec5a833"
+        }
+      }
+    ],
+    "plan_findings": "Correction author requested a revised plan: Operational replan required: the assigned workspace and immutable feedback identify PR #37, head 0986c4c16965b34806b1924e8b264d62cdd43888 against dev 1f7ff62aeba3c27a307a606b80459bca78b2dfd5. Its existing changes are the diagnostic producer/process patch. The approved plan explicitly requires a separate visual-repair dependency to merge before reconciling PR #37. This source_files-only invocation provides no separate dependency workspace or publication target; applying visual repairs here would combine the work contrary to that requirement.\n\nRead the companion manifest through every continuation, its complete ordered pr_checks payload and embedded comments/reviews, and the visual manifest, rejection receipt and capture through their continuations. Inspected all fifteen relevant full PNGs. Current evidence retains successful fast CI and substantive visual rejection; it supplies no subsequent visual approval or completed feature review.\n\nPreserve every repair finding: column-ruler-scrolled scrollbar disagrees with horizontal scrolling; create-table-advanced/schema/sql checkbox indicators contradict False; create-table-invalid shows complete fields beside an unexplained error and enabled Create; checkbox/delete controls lack contrast; create-table-types suggestions are detached from the active input; find-replace hides the selected order_id match; help-movement and help-shortcuts lose description alignment when wrapping; mutation-confirm disagrees with visible SQL; result-success SQL, data and counts must agree while retaining stress coverage; results-resized/vertical need matching three-column data; save-changes and save-changes-cancel have conflicting document identities, and Cancel lacks requested focus.\n\nCoordinator handoff: provision the separate visual-repair workspace/task and record its dependency on PR #37. Fresh planning and independent review should bind the approved repair scope to that concrete target and immutable base, without reopening the completed parent plan-review gate unnecessarily. Implement focused regressions, readiness/geometry assertions, relevant documentation and its owned single-line changelog fragment there. Require the complete GitHub 208×47 capture, full 1280×800 PNG review, exact-head CI and independent implementation review before merging the repair. Then reconcile PR #37, preserve its process/child-output guarantees and rejected evidence, refresh producer–consumer compatibility and repeat complete candidate-bound validation.\n\nRetain the separate exporter prerequisite, protected exact-head authorization, all private holds and provenance/dependency barriers. Do not rerun the completed consumer deployment or claim missing historical bytes recovered. Producer activation and genuine new-run delivery remain pending. Preserve lifecycle-label, notification, authority and all-qualifying-PR successful-dev-merge obligations, including PR #10’s actual PR #9 dev-merge and ancestry requirement. No source files were changed and no programs, tests or scenes were executed.",
+    "implementation_scope": "Preserve every prior record. Apply aligned result SQL and live invalid-to-valid Create choices in this separate root-owned repair. PR37 remains its own process-output correction and depends on this repair merging, then fresh candidate validation. Planner filenames and suggested column counts do not replace complete original acceptance requirements.",
+    "additional_regression_evidence": {
+      "managed_reproduction_log": ".rag_index/tool_logs/1792260633420403000-e2d95bb9a4.log",
+      "observed": "At60 columns the Escape continuation was cursors, then toggle editor/command at left margin; narrow targeted managed run failed exactly this assertion while both live-validation tests passed.",
+      "fix": "Help-reference-only hanging continuation formatting, preserving original words and ordinary styled error rendering. No generic message formatting change."
+    }
+  },
+  "provisioned_separate_target_resolution": {
+    "question_options_answer": {
+      "request_id": "ec9537598105",
+      "revision": 13,
+      "head": "0986c4c16965b34806b1924e8b264d62cdd43888",
+      "questions": [
+        "1. How should the coordinator supply the missing separate visual-repair target before this plan is finalized?\nProvision separate target (Recommended): Coordinator creates and assigns a distinct repair workspace/task and dev PR target with immutable base and PR #37 dependency; fresh planning binds the retained repair scope to it, preserving the completed parent review gate."
+      ],
+      "response": "Select Provision separate target (Recommended), after independent read-only alignment review by /root/resolve_pr29_compact_test_question under the standing delegated recommended-option policy.\n\nThe coordinator has already provisioned a distinct coordinator-owned visual-repair target:\n- Workspace: /Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f\n- Task: 04c60facc8294087b55ffdd496a4de82\n- Branch: codex/19ac2eeff8284a2f-925e2915\n- Immutable starting dev base: 1f7ff62aeba3c27a307a606b80459bca78b2dfd5\n- Intended publication: a separate signed PR to dev, explicitly linked as PR #37's visual-repair dependency.\n\nThere is no published repair PR number yet. Bind planning to this concrete task/branch/base now, then record the actual PR and final head after mandatory validation and publication. This does not claim the current PR37 source_files invocation can write that separate workspace. The coordinator owns that separate implementation and publication.\n\nIndependent repair plan SHA256 603fe3a816bfc9597a7784650eca4abcdccafd76876a96ffbcf88b9577388b66 retains all fourteen rejected-scene findings and shared checkbox finding, complete manifest and stress coverage. The separate source implements the aligned SQL/grid choice and later live invalid-to-valid Create choice, plus a reproduced narrow-help wrapping fix and safe deferred callbacks after dialog cancellation. Focused regressions passed. Fresh final source review, exact-content mandatory checks and a fresh complete 46-scene capture with every full PNG individually reviewed remain publication gates; previous visual receipts are stale after the later scope additions. This answer supplies none of those approvals.\n\nPreserve the completed parent plan-review record and bind fresh dependency planning/review to this concrete target without unnecessarily reopening unchanged parent scope. Keep PR37 open and Pi-owned with its complete process/child-output patch, checkpoint and rejection evidence. After the separate repair merges into dev, reconcile PR37 against dev and obtain its own fresh complete candidate-bound validation and independent complete-feature review.\n\nRetain exporter prerequisite PR38, paired final-producer/consumer proof, protected exact-head authorization and allowed main activation, and actual new failed-run evidence delivery for PR15. All original context, questions/options/answers, plans, checkpoints, owner questions, veto/cancel and private security/provenance/authority holds remain intact. A new capture is new evidence; missing historical bytes remain missing. Never rerun the completed consumer deployment or edit handed-off branches from this local target.\n\nContinue the complete lifecycle-label, notification, authority and all-qualifying-PR successful-dev-merge objective. self_host qualifies only for GitHub-agent functionality; PR10 still requires actual PR9 merge and included ancestry. This is an automated aligned implementation-choice resolution and factual resource description, not a new human answer, protected approval, visual pass, hold release or completion claim.",
+      "source": "coordinator-factual-target-and-independent-recommended-option-resolution",
+      "independent_reviewer": "/root/resolve_pr29_compact_test_question",
+      "question_snapshot_sha256": "2d83f9491846bc0a08e4c1c4c22c17021cac4e2e60f88911a1074276b547842d",
+      "published_pr_yet": false
+    },
+    "github_reply_receipt": {
+      "comment_id": 6238458239,
+      "url": "https://github.com/Karapsin/analytics_toolkit/pull/37#issuecomment-6238458239",
+      "head": "0986c4c16965b34806b1924e8b264d62cdd43888",
+      "request": "ec9537598105",
+      "revision": 13,
+      "body_sha256": "dbed4b772a3d46eba7904cb69d6489ed96cf139564057bfa8e267a060d896ac7"
+    },
+    "provenance_limit": "Independent recommended-option resolution and coordinator resource facts; not a new owner fact, approval or completed validation."
+  }
+}

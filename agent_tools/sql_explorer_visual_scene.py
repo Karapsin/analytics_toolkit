@@ -16,12 +16,14 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import sqlglot
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.connections import ConnectionsRestart
 from analytics_toolkit.sql_explorer.connections_picker import (
     ConnectionsPickerApp,
     ConnectionsPickerScreen,
 )
+from analytics_toolkit.sql_explorer.create_table import creation_options
 from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from analytics_toolkit.sql_explorer.discovery import DiscoveryProgress
 from analytics_toolkit.sql_explorer.exports import ConfirmExportScreen
@@ -46,7 +48,7 @@ from analytics_toolkit.sql_explorer.widgets import (
 from textual.app import ScreenStackError
 from textual.color import Color
 from textual.css.query import NoMatches
-from textual.widgets import Button, Collapsible, Input, OptionList, Static
+from textual.widgets import Button, Checkbox, Collapsible, Input, OptionList, Static
 
 if TYPE_CHECKING:
     from textual.app import App
@@ -107,7 +109,8 @@ class VisualExplorerApp(SqlExplorerApp):
         self.visual_manifest_path = manifest_path
         self.creation_scene_ready = not (
             scene_id.startswith(("create-table", "journal-"))
-            or scene_id in {"command-completion", "database-completion"}
+            or scene_id
+            in {"command-completion", "database-completion", "save-changes", "save-changes-cancel"}
         )
         super().__init__(VisualSession())
 
@@ -115,7 +118,7 @@ class VisualExplorerApp(SqlExplorerApp):
         super().on_mount()
         self.call_after_refresh(self._configure_visual_scene)
 
-    def _configure_visual_scene(self) -> None:  # noqa: C901, PLR0912
+    async def _configure_visual_scene(self) -> None:  # noqa: C901, PLR0912
         workspace = self.active_workspace
         workspace.editor.text = "\n".join(
             (
@@ -243,9 +246,9 @@ class VisualExplorerApp(SqlExplorerApp):
             )
             self._update_status(workspace)
         elif scene == "result-success":
-            workspace.editor.text = "\n".join(
-                f"SELECT {index} AS row_number, '{'x' * 80}' AS wide_value"
-                for index in range(1, 45)
+            workspace.editor.text = (
+                "SELECT order_id, customer_name, revenue, long_note\nFROM analytics.daily_orders;\n"
+                + "\n".join(f"-- review note {index}: {'x' * 80}" for index in range(1, 45))
             )
             workspace.session.last_query = ExplorerQueryState(
                 "sql_explorer run=visual",
@@ -254,15 +257,7 @@ class VisualExplorerApp(SqlExplorerApp):
                 10.128,
                 "completed",
             )
-            workspace.last_run_result = ExplorerRunResult(
-                route=ExecutionRoute.READ,
-                dataframe=pd.DataFrame(),
-                displayed_rows=20,
-                total_rows=1_248,
-                truncated=True,
-                status="Showing the first 20 of 1,248 rows.",
-            )
-            self.show_dataframe(
+            self._show_visual_result(
                 pd.DataFrame(
                     {
                         "order_id": range(1, 61),
@@ -270,7 +265,8 @@ class VisualExplorerApp(SqlExplorerApp):
                         "revenue": [index * 12.75 for index in range(1, 61)],
                         "long_note": ["priority order / reviewed" * 4 for _ in range(60)],
                     }
-                )
+                ),
+                total=1_248,
             )
             self._update_status(workspace)
         elif scene == "result-message":
@@ -293,12 +289,12 @@ class VisualExplorerApp(SqlExplorerApp):
         elif scene == "new-file":
             self.push_screen(NewSqlFileScreen())
         elif scene == "mutation-confirm":
+            workspace.editor.text = (
+                "DELETE FROM analytics.daily_orders WHERE order_date < CURRENT_DATE - 90"
+            )
             self.push_screen(
                 ConfirmMutationScreen(
-                    build_execution_plan(
-                        "DELETE FROM analytics.daily_orders WHERE order_date < CURRENT_DATE - 90",
-                        "gp",
-                    ),
+                    workspace.session.plan(workspace.editor.text),
                     db_key="gp",
                     backend="gp",
                 )
@@ -308,11 +304,14 @@ class VisualExplorerApp(SqlExplorerApp):
         elif scene == "connections-switch-save":
             self._request_exit(restart=ConnectionsRestart(Path("/Users/analyst/new/.connections")))
         elif scene in {"save-changes", "save-changes-cancel"}:
-            self.push_screen(SaveChangesScreen("quarterly_report.sql"))
+            workspace.current_file = Path("quarterly_report.sql")
+            workspace.saved_text = ""
+            self._refresh_tab(workspace)
+            screen = SaveChangesScreen(workspace.file_label)
+            await self.push_screen(screen)
             if scene == "save-changes-cancel":
-                self.call_after_refresh(
-                    lambda: self.screen.query_one("#save-changes-cancel", Button).focus()
-                )
+                screen.query_one("#save-changes-cancel", Button).focus()
+            self.creation_scene_ready = True
         elif scene == "export-confirm":
             self.push_screen(
                 ConfirmExportScreen(
@@ -333,7 +332,10 @@ class VisualExplorerApp(SqlExplorerApp):
             workspace.editor.text = "select " + "x" * 300
             workspace.editor.cursor_location = (0, 251)
         elif scene in {"results-vertical", "results-resized"}:
-            self.show_dataframe(pd.DataFrame({"customer": ["Ada", "Lin"], "revenue": [125, 240]}))
+            workspace.editor.text = "SELECT customer, revenue FROM analytics.daily_orders;"
+            self._show_visual_result(
+                pd.DataFrame({"customer": ["Ada", "Lin"], "revenue": [125, 240]})
+            )
             self._command_results(["switch"] if scene == "results-vertical" else ["shrink", "4"])
         elif scene in {"help-shortcuts", "help-movement", "help-movement-end"}:
             self._command_help(["shortcuts" if scene == "help-shortcuts" else "movement"])
@@ -344,6 +346,21 @@ class VisualExplorerApp(SqlExplorerApp):
 
         self.call_after_refresh(self._refresh_visual_evidence)
         self.set_interval(0.2, self._refresh_visual_evidence)
+
+    def _show_visual_result(self, dataframe: pd.DataFrame, *, total: int | None = None) -> None:
+        count = len(dataframe)
+        total = count if total is None else total
+        self.active_workspace.last_run_result = ExplorerRunResult(
+            route=ExecutionRoute.READ,
+            dataframe=dataframe,
+            displayed_rows=count,
+            total_rows=total,
+            truncated=total > count,
+            status=f"Showing the first {count} of {total:,} rows."
+            if total > count
+            else f"Returned {count} rows.",
+        )
+        self.show_dataframe(dataframe)
 
     def _switch_visual_database(self) -> None:
         self._activate_tab("2")
@@ -382,27 +399,25 @@ class VisualExplorerApp(SqlExplorerApp):
                 "from analytics.orders\ngroup by customer_id"
             ),
         }
+        if scene == "create-table-invalid":
+            draft["rows"] = [("customer_id", "BIGINT"), ("revenue", "")]
         screen = CreateTableScreen("gp", "gp", draft)
         self.push_screen(screen)
 
-        def configure() -> None:
-            if not screen.is_mounted:
-                return
-            if scene == "create-table-types":
-                field = screen.query(".create-column-type").first(Input)
-                field.focus()
-                field.value = "B"
-            elif scene == "create-table-advanced":
-                advanced = screen.query_one("#create-table-advanced", Collapsible)
-                advanced.collapsed = False
-                advanced.scroll_visible(top=True, animate=False)
-            elif scene == "create-table-invalid":
-                screen.query_one("#create-table-notice", Static).update(
-                    "Each column needs a name and SQL type."
-                )
-            self.creation_scene_ready = True
+        self.set_timer(0.3, lambda: self._configure_creation_scene(screen, scene))
 
-        self.set_timer(0.3, configure)
+    def _configure_creation_scene(self, screen: CreateTableScreen, scene: str) -> None:
+        if not screen.is_mounted:
+            return
+        if scene == "create-table-types":
+            field = screen.query(".create-column-type").first(Input)
+            field.focus()
+            field.value = "B"
+        elif scene == "create-table-advanced":
+            advanced = screen.query_one("#create-table-advanced", Collapsible)
+            advanced.collapsed = False
+            advanced.scroll_visible(top=True, animate=False)
+        self.creation_scene_ready = True
 
     def _open_visual_completion(self) -> None:
         self._open_completion(
@@ -521,6 +536,29 @@ def _pane_gaps(workspace: Any, panes: list[Any]) -> bool:
     return all(right.region.y - left.region.bottom == 1 for left, right in zip(panes, panes[1:]))
 
 
+def _completion_geometry_assertions(workspace: Any) -> dict[str, bool]:
+    """Check the outer popup, including its border, against the rendered row."""
+    menu = workspace.completion_menu
+    editor = workspace.editor
+    bounds = editor.scrollable_content_region
+    row = bounds.y + editor.cursor_render_offset[1] - int(editor.scroll_y)
+    region = menu.region
+    parent = menu.parent.content_region
+    return {
+        "completion_active_row_visible": (
+            menu.is_open
+            and bounds.y <= row < bounds.bottom
+            and (region.bottom <= row or region.y >= row + 1)
+        ),
+        "completion_contained": (
+            menu.is_open
+            and parent.x <= region.x < region.right <= parent.right
+            and parent.y <= region.y < region.bottom <= parent.bottom
+            and bounds.y <= region.y < region.bottom <= bounds.bottom
+        ),
+    }
+
+
 def _write_evidence(
     app: App[Any],
     scene_id: str,
@@ -581,6 +619,8 @@ def _write_evidence(
             workspace.query_state in {"running", "cancelling"}
         )
         _assert_changed_controls(app, scene_id, assertions)
+        if "#completion-menu" in required:
+            assertions.update(_completion_geometry_assertions(workspace))
 
         panes = [workspace.query_one(".query-pane")]
         if workspace.results_open:
@@ -595,6 +635,7 @@ def _write_evidence(
                 )
 
     assertions.update(_button_color_assertions(app))
+    assertions.update(_scene_state_assertions(app, scene_id))
 
     payload = {
         "schema_version": 1,
@@ -624,6 +665,120 @@ def _button_color_assertions(app: App[Any]) -> dict[str, bool]:
         assertions[f"button_focus_color:{button.id}"] = button.styles.background == Color.parse(
             color
         )
+    return assertions
+
+
+def _scene_state_assertions(app: App[Any], scene: str) -> dict[str, bool]:
+    if not isinstance(app, VisualExplorerApp):
+        return {}
+    return {
+        **_creation_scene_assertions(app, scene),
+        **_modal_scene_assertions(app, scene),
+        **_result_scene_assertions(app, scene),
+        **_editor_scene_assertions(app, scene),
+    }
+
+
+def _creation_scene_assertions(app: VisualExplorerApp, scene: str) -> dict[str, bool]:
+    assertions: dict[str, bool] = {}
+    if scene.startswith("create-table") and isinstance(app.screen, CreateTableScreen):
+        screen = app.screen
+        assertions["creation_flags_match_values"] = all(
+            checkbox.render().plain.startswith("[x]" if checkbox.value else "[ ]")
+            and str(checkbox.value) in checkbox.label.plain
+            for checkbox in screen.query(Checkbox)
+        )
+        if scene == "create-table-invalid":
+            assertions["invalid_create_disabled"] = screen.query_one(
+                "#create-table-submit", Button
+            ).disabled
+            try:
+                creation_options(screen.values(), screen.backend)
+            except ValueError as exc:
+                assertions["visible_invalid_draft"] = str(exc) == str(
+                    screen.query_one("#create-table-notice", Static).renderable
+                )
+            else:
+                assertions["visible_invalid_draft"] = False
+        if scene == "create-table-types":
+            field, menu = screen.type_input, screen.query_one("#create-type-options")
+            assertions["types_anchor_to_active_field"] = bool(
+                field is not None
+                and field.has_focus
+                and menu.display
+                and menu.region.x == field.region.x
+                and menu.region.width == field.region.width
+                and (menu.region.y == field.region.bottom or menu.region.bottom == field.region.y)
+            )
+    return assertions
+
+
+def _modal_scene_assertions(app: VisualExplorerApp, scene: str) -> dict[str, bool]:
+    workspace = app.active_workspace
+    editor = workspace.editor
+    assertions: dict[str, bool] = {}
+    if scene in {"save-changes", "save-changes-cancel"}:
+        assertions["save_targets_active_document"] = (
+            isinstance(app.screen, SaveChangesScreen) and app.screen.title == workspace.file_label
+        )
+        expected = "save-changes-cancel" if scene.endswith("-cancel") else "save-changes-save"
+        assertions["expected_save_button_focused"] = app.focused is app.screen.query_one(
+            f"#{expected}", Button
+        )
+    if scene == "mutation-confirm":
+        assertions["mutation_matches_editor"] = (
+            isinstance(app.screen, ConfirmMutationScreen)
+            and app.screen.plan.user_sql == editor.text
+        )
+        assertions["mutation_not_executed"] = workspace.session.last_query is None
+    return assertions
+
+
+def _result_scene_assertions(app: VisualExplorerApp, scene: str) -> dict[str, bool]:
+    workspace = app.active_workspace
+    editor = workspace.editor
+    assertions: dict[str, bool] = {}
+    if scene in {"result-success", "results-resized", "results-vertical"}:
+        result, table = workspace.last_run_result, workspace.result_table
+        assertions["result_rows_match_status"] = bool(
+            result is not None
+            and result.dataframe is not None
+            and table.row_count == result.displayed_rows == len(result.dataframe)
+            and result.total_rows is not None
+            and result.total_rows >= result.displayed_rows
+            and result.truncated == (result.total_rows > result.displayed_rows)
+        )
+        columns = [str(column.label) for column in table.ordered_columns]
+        projection = sqlglot.parse(editor.text, read="postgres")[0]
+        assertions["result_columns_match_query"] = [
+            item.alias_or_name for item in projection.expressions
+        ] == columns
+    return assertions
+
+
+def _editor_scene_assertions(app: VisualExplorerApp, scene: str) -> dict[str, bool]:
+    workspace = app.active_workspace
+    editor = workspace.editor
+    assertions: dict[str, bool] = {}
+    if scene == "column-ruler-scrolled":
+        assertions["horizontal_thumb_matches_editor"] = (
+            editor.horizontal_scrollbar.position == round(editor.scroll_x) > 0
+        )
+    if scene == "find-replace":
+        matches = []
+        for start, _end in editor._search_matches:  # noqa: SLF001 - capture validates actual cached search state.
+            offset = editor.wrapped_document.location_to_offset(start)
+            x = offset.x - int(editor.scroll_x) + editor.gutter_width
+            strip = editor.render_line(offset.y - int(editor.scroll_y)).crop(x, x + 1)
+            matches.append(
+                any(
+                    segment.style
+                    and segment.style.bgcolor
+                    and segment.style.bgcolor.name == "bright_yellow"
+                    for segment in strip
+                )
+            )
+        assertions["all_three_search_matches_visible"] = len(matches) == 3 and all(matches)
     return assertions
 
 

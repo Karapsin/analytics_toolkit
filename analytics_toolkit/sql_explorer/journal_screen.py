@@ -156,12 +156,12 @@ class JournalScreen(ModalScreen[Optional[str]]):
             options.add_option(Option(Text(label), id=str(index)))
         self.cursor = page.cursor
         self.query_one("#journal-more", Button).disabled = self.cursor is None
-        status = (
+        status = page.warning or (
             f"Page {len(self._pages)} · {len(self.records)} entries."
             if self.records
             else "No matching journal entries."
         )
-        self.query_one("#journal-status", Static).update(f"{status} {page.warning}")
+        self.query_one("#journal-status", Static).update(status)
         if self.records and options.highlighted is None:
             options.highlighted = 0
         if self.records and options.highlighted is not None:
