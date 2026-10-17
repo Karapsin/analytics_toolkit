@@ -168,8 +168,18 @@ protected controller support before this companion path; older controllers retai
 a blocking compatibility pause rather than silently leaving a dependency ungated.
 Explicit cancellation retains its stop-and-close behavior. Coordinator evidence
 cannot replace the independent authority needed to resolve an existing hold.
-Invalid task context also fails closed. Older trusted
-App repairs can inherit the standing integration-repair task, bound to their
+Invalid task context also fails closed. The exact host-owned task-context mismatch
+notice directs the coordinator to restore and verify matching authenticated context.
+It requests no new owner answer or resume command, and retains the private provenance
+pause. The additive `coordinator_blocked` field lets the compatible renderer show
+awaiting coordinator verification without claiming corrections were queued.
+Missing or false values retain legacy presentation. Rendering grants no delivery,
+recovery or approval authority. Genuine missing owner input retains its authenticated
+answer path. Cancellation and veto are owner decisions that stop work, not unanswered
+questions; neither coordinator guidance nor an unrelated factual answer resumes them.
+This notice change does not settle broader public label mapping or PR discovery.
+
+Older trusted App repairs can inherit the standing integration-repair task, bound to their
 immutable signed head; owner-authored PRs must attach their task.
 
 Telegram sends brief change descriptions and links for PR merges into dev, dev
@@ -224,17 +234,94 @@ branches; dirty worktrees, backups and private task/audit records are retained.
 
 ## Updating trusted automation
 
-The companion worker dependency is staged, not active, at
-[self_host commit 0c1f1abea3f70955f63d6fbca7b06e4cc3386dde](https://github.com/Karapsin/self_host/commit/0c1f1abea3f70955f63d6fbca7b06e4cc3386dde).
-Require successful exact-commit Repository Checks, immutable source/test evidence,
-a fresh independent review and the isolated worker rollout rehearsal before host
-activation. It includes the complete checkpoint, question/answer, label, capacity,
-notification and evidence fixes from `40707720a5e1b4ac8c03ec6a6d96546a5ebc10e4`;
-no companion features or private task records may be discarded.
+Companion PR #15 merged as `d0a34f3512de338d6d641568e9a95e1a7a863ca1`.
+The supplied runtime pin is
+[self_host `bfb4ba70ff85369292d347ab60a840d9bed133f6`](https://github.com/Karapsin/self_host/commit/bfb4ba70ff85369292d347ab60a840d9bed133f6),
+indexed by the private immutable source and activation receipt
+`operator/worker-replay-replan-20261017-v1-active.json`.
+Its history retains the `05d5b826ae2e4879ba50debbd7f9ab1c3c48dd25` delivery
+repair, clause routing, compatible renderer and prompt paging. The historical
+`4e0db77e720d4df36dd1d0ed60a432402f266c0e` activation established rendering/paging
+only; use the current source map and exact source paths rather than an obsolete
+whole-source snapshot. Preserve subsequent runtime changes, all companion features
+and private task records.
 
-The activation includes the backward-compatible task-context reader from PR #15
-before the worker starts. Legacy signed tasks remain valid; new plan/image evidence
-uses its own signed digest, and questions remain visible beside owner answers.
+The supplied companion `test_current_notification_delivery.py` exercises the
+actual producer through SQLite outbox, trusted eligibility, renderer and transport.
+Its immutable `agent_tools/tests/fixtures/pr29_notification_producer.json` pins ATK
+head `7e9770dbc1abc8ca4a2a3d1df5efd438ca9521d7` and controller SHA256
+`6ea78c044de96ae3442e84feac92d9a0932dc5929a47c0bde0e196500c575156`.
+That older producer does not validate this controller reconciled with current dev.
+The orchestrator must refresh the pairing against the final immutable ATK commit
+and module hash, retaining historical fixtures and rechecking the current authority
+behavior. Existing source, CI and activation receipts do not clear that final-pair
+dependency or any unrelated hold.
+
+Controller pause, routine rejection and policy-approval producers add
+`notification_category` (`paused`, `coordinator_blocked`, `review_rejection` or
+`owner_approval`) and `request_origin` to the existing serialized payload.
+`request_origin.branch` is the exact PR branch, or null when unavailable;
+`request_origin.task_digest` is the event's task digest when available, otherwise
+null. A pause does not borrow the current enrollment digest: its task context
+may be the very binding in dispute. Existing repository, PR number and head
+fields identify the event. These fields are lookup hints, not authenticated
+Telegram origin, an owner-question classification, or permission to deliver.
+In particular, `paused` includes cancellation and security holds; it does not
+declare that an owner question exists.
+
+The companion must resolve request identity and revision from trusted host
+records, verifying repository, branch, available task digest and PR/head bindings against
+the authenticated request. Branch prefixes, payload assertions and model output
+cannot prove Telegram origin. A null or absent optional task-digest hint may derive only from
+a matching authenticated private binding; concrete conflicting or malformed hints
+remain unresolved. A coordinator hold for a verified Telegram feature
+may qualify as feature status while retaining coordinator wording and all holds.
+Legacy queued events must be reconciled against that trusted state before
+rendering, stale-event retry handling or network calls. Missing or conflicting
+bindings remain durably held for coordinator reconciliation, never delivered by
+default. Confirmed suppressed maintenance events retain their original event and
+deduplication key, with an atomic terminal audit disposition and reason, no
+delivery receipt, and no retries across restart or duplicate enqueue. Eligible
+events retain durable chunk progress, retry and deduplication.
+
+ATK source preparation is permitted after independent plan review. ATK merge,
+controller activation and paired-repair completion remain blocked until the
+orchestrator verifies the final reconciled producer against the complete companion contract:
+
+- Enforce outbound eligibility separately in companion `telegram.py`: permit owner
+  approvals/questions, Telegram-requested feature implementation status, merges
+  with dev/main and releases; suppress coordinator-only maintenance alerts.
+- Preserve durable audit records and eligible-event retry, restart and deduplication.
+  Suppression must be terminal, with no Telegram calls or recurring retries.
+- Test the actual controller producer through serialized outbox, renderer and
+  delivery for maintenance and Telegram-feature branches using mocked transport.
+  Bind producer fixtures to an immutable controller commit and content hash and
+  verify that they match the paired ATK implementation. Renderer tests alone prove
+  neither outbound eligibility nor delivery or activation.
+- Correct companion tests/docs that prescribe misleading public labels. Preserve
+  provenance holds, cancellation/veto, genuine owner questions and exact-head gates.
+- Route verified workspace-capability and coordinator evidence-access deficits
+  through the existing question-policy/intake/native-planning path to coordinator
+  tooling work. Retain every original question verbatim and record routing for each
+  question and factual clause, including mixed clauses within a single string.
+  Preserve the full task, checkpoints and genuine owner questions in mixed batches.
+  Unknown factual clauses stay unresolved. Resume tooling-blocked work only after
+  coordinator verification of repaired access, preserving all unrelated holds.
+  Credentials, owner facts, original evidence, veto/cancellation and protected
+  approvals retain their authenticated handling; routing cannot supply answers,
+  approve a plan, fabricate access or bypass independent recommendation review.
+- Obtain fresh independent source review, successful exact-commit Repository Checks,
+  isolated rollout rehearsal and verified activation of the complete contract,
+  recording deployed revision/file hashes and preservation of private state.
+
+Final-head ATK `fast-checks`, fresh independent review and authenticated owner
+exact-head protected approval remain required. Historical activation and older producer regressions
+are insufficient to clear the refreshed final-pair dependency. Broader truthful label mapping and
+complete PR discovery remain separately tracked unresolved work.
+
+The merged companion includes the backward-compatible task-context reader from
+PR #15. Legacy signed tasks remain valid; new plan/image evidence uses its own
+signed digest, and questions remain visible beside owner answers.
 Missing actual plan/image bindings still require authenticated evidence; reader
 compatibility does not fabricate them. Long v2 records use a lossless compressed
 hidden payload while retaining all visible messages, plans, questions and answers.
