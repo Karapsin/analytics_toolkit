@@ -739,13 +739,52 @@ retains these complete sources, reviews and CI records. It records worker
 
 This patch's exact source hashes and historical evidence paths are appended to
 [the parent-objective evidence](../agent_tools/task_evidence/29adce308110491580e26a80f16fbb4a/parent-objective.json).
-The coordinator owns the new immutable successor fixture, real producer/recovery
-and pure shared-caller regressions, independent review and successful exact-commit
-CI for these changed bytes. Before final acceptance, bind that evidence to the signed
-candidate and verify the fresh reviewer's actual immutable manifest includes every
-precise source, test, review and CI record. A catalogue entry or comment is insufficient.
-Metadata publication changing controller bytes requires another paired refresh.
-This source checkpoint claims no unexecuted successor validation, protected approval,
-deployment or successful all-relevant-PR merge completion.
+The refresh-required record at this checkpoint remains historical. The following
+successor delivery supplies its paired validation; final publication still needs
+signed-context and fresh reviewer delivery verification.
+
+### Successor paired evidence delivery
+
+For published head `3a8f1dc5072c4638df02c2da600168251e522c00`, the assigned immutable
+successor sources now contain self_host `bfb4ba70ff85369292d347ab60a840d9bed133f6`,
+`coordinator_replay_code6.json` and `test_coordinator_replay_checkpoint.py`.
+The complete embedded controller sources equal the retained controller bytes:
+`4ad12163c313fa3d8a05682081954ebc03ddb01052a65765cc908558572f5e4e` and
+`d5ec1e6bcba4666eaa83171be5fbfd97ad16b297c348d98979c233bcf63be71f`.
+The fixture binds request `2eac395a9e9b`, coding revision 6, observed publication
+revision 7, the original task digest, checkpoint manifest and patch. Complete
+bindings, source inventories, independent source/checkpoint review reports and
+successful exact-commit [Repository Checks 39024553657](https://github.com/Karapsin/self_host/actions/runs/39024553657)
+are appended as `delivery_evidence.successor_evidence_delivery` in
+[the retained parent objective](../agent_tools/task_evidence/29adce308110491580e26a80f16fbb4a/parent-objective.json).
+Earlier questions, answers, plans, receipts and the refresh-required record remain intact.
+
+The companion regression uses actual intake to commit renewal and lose its response
+before request advancement, restarts with fresh readers, and retries successfully.
+It replays hold N after queued N+1 and asserts the dependency stays absent before
+another renewal. Replacement bindings, head/digest mismatches, veto/provenance holds,
+unchanged checkpoint/context and refusal to merge the earlier green head remain
+covered. Inherited producer tests select the same pair and exercise the actual pure
+shared status caller. The fast archival-evidence regression checks source, review,
+request and CI consistency without executing archived companion code.
+
+The assigned activation receipt
+`operator/worker-replay-replan-20261017-v1-active.json`
+(SHA256 `4c6a65479122638575d31c4546a7c3c459c533d592edbcc6798d9b9d2e1b6a25`)
+records that companion worker active, preserving 107 checkpoints and the schedule.
+The trusted controller remains `13f0043b89d805ac5267d25fc0f4fdec7250f083`;
+PR #33's proposed controller pair has not been activated. Historical source-only
+review flags in the receipt remain historical, rather than new activation claims.
+
+Every required envelope and the complete source/review/CI receipt are present in
+this author assignment. The coordinator must attach the appended bindings to the
+signed successor context and verify precise source, test, review and CI delivery in
+the actual fresh reviewer assignment after publication. This assignment does not
+prove future delivery. Metadata publication changing controller bytes requires
+another paired refresh. Starting-head fast CI succeeded; the final successor still
+requires its own fast CI, complete independent implementation review, real owner
+exact-head protected approval and guarded controller activation. Dependency holds
+and the all-relevant-PR successful-dev-merge objective remain in force. No programs
+or tests were executed by this private worker.
 
 [Documentation overview](README.md)
