@@ -91,6 +91,9 @@ Generated from package version bumps and recent commit history.
 - Preserve SQL spaces and expanded tabs beneath primary and secondary thin carets, including completion separators, wrapping, and scrolling.
 - Preserve SQL Explorer cell colors beneath focused thin carets after CSS resolution, strengthen real-renderer regressions, and reconcile dev documentation and changelog history.
 - Normalize SQL Explorer caret regression signatures and assertions without changing rendering coverage.
+- Preserve available failed visual capture artifacts through the trusted workflow without changing candidate harnesses or treating unknown stream coverage as complete.
+- Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
+- Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
 
 ## 1.3.12.5 - 2026-10-14
 
