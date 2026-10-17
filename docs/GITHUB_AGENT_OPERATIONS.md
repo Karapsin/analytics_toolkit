@@ -493,6 +493,19 @@ findings without increasing lint or format debt baselines, then require successf
 `fast-checks` on the final published head. Preserve regression assertions and retry
 behavior when simplifying test fixtures.
 
+The protected visual capture workflow loads its artifact exporter from the exact
+trusted workflow commit, separately from the candidate checkout. A failed capture
+uploads a separate diagnostics artifact identified by candidate, run and attempt;
+the job remains failed. It retains every regular file in the run-owned evidence
+directory, including a failed scene whose session entry is still pending. Visual
+child stdout, stderr and timeout/exit metadata are retained separately. Explicit
+file, count and total limits reject oversized evidence without claiming that a
+truncated collection is complete. Setup or provider failure can leave evidence
+unavailable; a later capture is a new run, not a reconstruction of missing bytes.
+These diagnostics are untrusted data and never substitute for complete geometry
+checks, individual full PNG review, independent review or exact-head approval.
+The worker consumer requires separate reviewed compatibility and activation.
+
 After reviewed activation, correlate every inventoried item with its current PR
 head and request revision. Observe each eligible review/correction advance or
 complete, or record an explicit authenticated owner, provenance or allowance hold.
