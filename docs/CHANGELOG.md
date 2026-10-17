@@ -61,7 +61,9 @@ Generated from package version bumps and recent commit history.
 - Route nontrivial protected conflict publications to fresh correction planning while retaining sensitive-path denial and exact-head approval gates.
 - Preserve actionable context-blocked owner correction notices alongside waiting questions while suppressing local status retries and retaining delivery evidence.
 - Preserve replacement authority holds and late vetoes through shared atomic publication and correction-question recovery.
-- Preserve durable coordinator dependency and feature amendment holds through replanning and publication; deliver complete routing, source inventory and notification recovery.
+- Preserve durable coordinator dependency and feature amendment holds through replanning and publication; bind separately delivered companion routing, source inventory and notification recovery evidence.
+- Preserve newer owner decisions during policy approval comment recovery in both pause and merge authorization checks.
+- Share exact-snapshot policy-comment recovery across pause and authorization checks, preserving newer owner decisions and active holds without private-approval fallback.
 
 ## 1.3.12.5 - 2026-10-14
 

@@ -1,0 +1,14 @@
+{
+  "kind": "agent-authored-provenance-note",
+  "parent_objective": "Monitor and fix all relevant RPI GitHub-agent PRs through successful dev merge, including resulting repairs.",
+  "exact_user_messages": [
+    "implement it on your own if orchestator is not doing that",
+    "fix any issues on the way",
+    "and once you done - monitor PRs until completion, stop only when ALL of them are merged successfully with dev"
+  ],
+  "related_pr": "https://github.com/Karapsin/analytics_toolkit/pull/33",
+  "leaf_scope": "Preserve newer owner authority during policy-comment recovery; independent source repair, no handed-off branch edits.",
+  "task_ledger_note": "Correction entry 1 was accidentally passed to task_context as an agent-authored scope summary, not a verbatim user message. It grants no additional authority. The original starting prompt and correction entry 2 are exact user messages. This note preserves the mistake transparently rather than rewriting private task history.",
+  "owner_answer": false,
+  "policy_approval": false
+}

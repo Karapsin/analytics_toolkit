@@ -32,5 +32,497 @@
     "self_host_patch_sha256": "cc74f2d3e27b1313c0074cbec617236d8df209dba5f7315ab2a39bb7d56d2ec8",
     "scope": "Literal Git paths and explicit repository-relative source directories; focused regressions and documentation.",
     "prior_review_status": "rejected for formatting; semantic review incomplete"
+  },
+  "delivery_evidence": {
+    "evidence_is_not_owner_answer_or_approval": true,
+    "toolkit": {
+      "dev_base": "c125af22b47bff350686b5bd05ad226b7d307a8c",
+      "previous_head": "b822989acfd5bba65736ca55b4e5f7f9d1625f46",
+      "previous_head_checks": {
+        "bytes": 66701,
+        "files": [
+          "pr-checks/b822989acfd5bba65736ca55b4e5f7f9d1625f46/e80c92e2a6041f61c45e7e42e9a5670136d6e58f664eba636306dc5bab82eb34-0.json"
+        ],
+        "format": "ordered-utf8-json-parts-v1",
+        "head_sha": "b822989acfd5bba65736ca55b4e5f7f9d1625f46",
+        "repository": "Karapsin/analytics_toolkit",
+        "sha256": "e80c92e2a6041f61c45e7e42e9a5670136d6e58f664eba636306dc5bab82eb34"
+      },
+      "previous_head_fast_checks": "success; historical only, successor validation required",
+      "previous_head_review": "failure; missing companion implementation evidence",
+      "controller_support": "source proposal only; final independent review, exact-successor fast CI and real owner exact-head protected approval required before activation"
+    },
+    "companion": {
+      "repository": "Karapsin/self_host",
+      "observed_active_commit": "a6e713ddf02c176babde546a69b6b954c3d0df36",
+      "activation_receipt": {
+        "path": "operator/worker-retained-gate-a6e713ddf02c-active.json",
+        "sha256": "6f0b944c4072b94146d53fd50273892910752a1eb4a71c1f956ac137e6ef7024"
+      },
+      "previous_activation": {
+        "path": "operator/worker-coordinator-087a24fe0131-active.json",
+        "sha256": "534c5e0ccb2be793e446d8c620f832ebf34ea1c0f8c9e3e59247c25a08e80742",
+        "commit": "087a24fe01311e6a8e65cf73e36f2475e266239d"
+      },
+      "candidate_only_history": {
+        "path": "operator/self-host-candidate-ae8333b5/index.json",
+        "sha256": "f2c89ec7272e10afbd5784704c31958152b87920ad2c685592f6ddbe19ed06e0",
+        "commit": "ae8333b513fca174c5409f17ec05d7f6d3d3005a",
+        "status": "historical candidate; not the current deployed revision"
+      },
+      "source_bundle_format": "utf8-lines-v1",
+      "source_bundles": [
+        {
+          "path": "operator/self-host-capture-failure-d5ce3fe2-complete-source.json",
+          "sha256": "1b85cb8b444a9fc59cf2c7a724d56a05d7ed8feb163ba6d4577a536554fd698c"
+        },
+        {
+          "path": "operator/self-host-complete-checks-4d19d290-complete-source.json",
+          "sha256": "f1df5a7a3fe6af3d51ede58a84bf77b4e053be94e6b4e0fc6f971b9e09570a20"
+        },
+        {
+          "path": "operator/self-host-coordinator-087a24fe-complete-source-000.json",
+          "sha256": "4edbe41d11a1bdb0c6b9464e69c7be484e8381f20317aa874161bc4282e1b6f6"
+        },
+        {
+          "path": "operator/self-host-coordinator-8050fee1-complete-source-000.json",
+          "sha256": "0c94a87d2cfb93bf02485bd687770895c5e4e700d211a7bb74021b6282c3778d"
+        },
+        {
+          "path": "operator/self-host-coordinator-983c5c22-complete-source-000.json",
+          "sha256": "9a63e2dcd66065543766fbd707b0e2768b9234b32527a1c0d2cd031c0f4bab84"
+        },
+        {
+          "path": "operator/self-host-coordinator-983c5c22-complete-source-001.json",
+          "sha256": "761823ca18f1fdb7ce9bc724619e0c0bd7d8a9d138e28b40d9131f6fa4e3fd45"
+        },
+        {
+          "path": "operator/self-host-coordinator-983c5c22-complete-source-002.json",
+          "sha256": "92fcbfec64a08ffded77a82053db12ba0c452780db851783e70cac31536b1d46"
+        },
+        {
+          "path": "operator/self-host-coordinator-983c5c22-complete-source-003.json",
+          "sha256": "33d53c45c21113a5becf2d9a1f6daad14cb6f46013d8a296cdc77a709c7a6caa"
+        },
+        {
+          "path": "operator/self-host-coordinator-983c5c22-complete-source-004.json",
+          "sha256": "e450dda24c3fa11d784555d3f84724577d2d75a005c54839c1f5837da70b2dcc"
+        },
+        {
+          "path": "operator/self-host-coordinator-b92de4fe-complete-source-000.json",
+          "sha256": "665b4a0a6ec6d23d033afec799aeba6c4ab4860ab2c7e755749f5fa689b6c541"
+        },
+        {
+          "path": "operator/self-host-coordinator-bd95c3f7-complete-source-000.json",
+          "sha256": "b608bd9f41f8ff0778dbd9a3128b5ed33f68c1dda479884e7dd3c92d1e6b6eb6"
+        },
+        {
+          "path": "operator/self-host-coordinator-df672554-complete-source-000.json",
+          "sha256": "76fb86873aed8dc864f1f74bfc9ce3f2f0d526a9c6c113628eb0ababd49109a7"
+        },
+        {
+          "path": "operator/self-host-correction-visual-e3572f36-complete-source.json",
+          "sha256": "c97a9c2f348b3ce8a915ed1448f24923237970d23e9710df81f08bbc38b11871"
+        },
+        {
+          "path": "operator/self-host-current-visual-787c0b43-complete-source.json",
+          "sha256": "4c01de403dcd946538e71d6cfd9af4b038cd6af9b8b64d91e1d3f11134c2b835"
+        },
+        {
+          "path": "operator/self-host-legacy-ae8333b5-complete-source.json",
+          "sha256": "fb21f3d89cd61bdc42bc9d50b80d0472a3461f4dd2fbbd09ba2def570e8eee24"
+        },
+        {
+          "path": "operator/self-host-metadata-publication-11da7bd0-complete-source.json",
+          "sha256": "95a827a5527cfe1d9ce5efbc52d2fa0046bd03fe5ccf07f08a8fe3cdad0dffde"
+        },
+        {
+          "path": "operator/self-host-metadata-starting-head-71a9e44e-complete-source.json",
+          "sha256": "1c6e86e351063ee90f11c532fda5485b6411278c023fe89c2efb83cc8dea553c"
+        },
+        {
+          "path": "operator/self-host-reference-replacements-ab7f83cd-complete-source.json",
+          "sha256": "a43b4c703619ee0e8f1d8f2bbca3b4803c541c9513e3835717fc1e77ccc4b069"
+        },
+        {
+          "path": "operator/self-host-retained-gate-a6e713dd-complete-source-000.json",
+          "sha256": "ca24ba241543b54ef3d75c429f8c679e51845d59950c7bd71a7a1c080e7b71aa"
+        },
+        {
+          "path": "operator/self-host-visual-routing-8dc1d521-complete-source.json",
+          "sha256": "00d06e1e25088396fc38b4804f6a3569a669287628c68e2ea5adb66d304ef57e"
+        }
+      ],
+      "source_chain": [
+        {
+          "commit": "983c5c225afe1d5271fe76090ba38b013e544e05",
+          "base": "d5ce3fe24912490f8d513296e37c497d695c6c68",
+          "independent_review": {
+            "reviewer": "/root/complete_coordinator_proposal_review",
+            "decision": "approve",
+            "completeness": "complete",
+            "sha256": "74a23f5216593da18ac70b6265e47d15d208c4c2c051c3859a958b874afea826"
+          },
+          "ci": {
+            "id": 38986726082,
+            "head_sha": "983c5c225afe1d5271fe76090ba38b013e544e05",
+            "conclusion": "success",
+            "url": "https://github.com/Karapsin/self_host/actions/runs/38986726082"
+          },
+          "files": {
+            "agent_tools/tests/fixtures/controller_recovery_contracts.json": "547874ab78b8f6c9336801cfc8ab1e29f9dbde3cfaf97b4938226eae43bff0fc",
+            "agent_tools/tests/test_capture_diagnostic_choices.py": "1c6ffe6085f15b1b4beffba01c4a02b772baa2722e0a054e067676456f665b9f",
+            "agent_tools/tests/test_coordinator_holds.py": "a5bad3560663cd3f387850f374c36c3c55fa5f9e34610e64acbadda42da4b80a",
+            "agent_tools/tests/test_github_agent.py": "6d380b2ce301bd52112528318956f36a09594cb19dc5fb2aa847290cb6c42514",
+            "agent_tools/tests/test_github_alerts.py": "6f59ac2f9b5e99ea9cf95e90f4a85d8f2d99028132a4cc221de99b748b6ee7ad",
+            "agent_tools/tests/test_metadata_publication_recovery.py": "ac51f86ea60f53213e8ed13496a911c0b675c2f08d131efad35edccb14ab5c64",
+            "agent_tools/tests/test_native_planning.py": "766f302234b59a5d3b5a2b5a64a0a35d5bae1c073684a660b87c6cd2ff904322",
+            "agent_tools/tests/test_source_edit_safety.py": "cb74e4523fd2cbe5b7996439d6c80abfd4091403cc1eb0c6ce1be8b83f7e897d",
+            "agent_tools/tests/test_task_evidence.py": "3fcb5e0220bc9224eed75540428277a0665adefe7b776960348b37dca3c20d54",
+            "agent_tools/tests/test_telegram_presentation.py": "aa4addc982e98869fdc5b1f0ea446fa5d3b1f3df0ba97ea3bf975862c825a97e",
+            "agent_tools/tests/test_worker_roles.py": "30e16ae2a32478eacae4fabc7f6a89398cc5d3915c5d6283b46a464f9b2f7c30",
+            "self_host/services/github_agent/README.md": "8b2b3b1a23aae1b0f1a829d3117d05bbcb19b2d0c6ff413b84d95444377ef0b1",
+            "self_host/services/github_agent/daemon.py": "4a1eec2c66cc923542d7e3cd2ba40bbb77e06183728fcd5261423b7a497b5270",
+            "self_host/services/github_agent/file_tools.py": "8342b6e08b99cb139a2a5bc15cad91bb971da6597517a68e85d53a43cb1414cb",
+            "self_host/services/github_agent/intake.py": "fd521e60e527c5284985f7fd221eba87cda6d58d7596976b1bbc4cb04402f3ca",
+            "self_host/services/github_agent/question_policy.py": "460c2499c1db15661ff5fe4d5042161ace76d59caea4aae8b5e1a0260ea49a91",
+            "self_host/services/github_agent/telegram.py": "86d973ae6cbce7d6e7b5ee90979a1509f85b4b64b06302bb84eb1a651b5fef3a"
+          }
+        },
+        {
+          "commit": "ae8333b513fca174c5409f17ec05d7f6d3d3005a",
+          "base": "983c5c225afe1d5271fe76090ba38b013e544e05",
+          "independent_review": {
+            "reviewer": "/root/complete_coordinator_proposal_review",
+            "decision": "approve",
+            "completeness": "complete",
+            "sha256": "4993ac922a0674103cacbba8491c67fc16c222022e53f55d6168d33cebf19c9d"
+          },
+          "ci": {
+            "repository": "Karapsin/self_host",
+            "sha": "ae8333b513fca174c5409f17ec05d7f6d3d3005a",
+            "branch": "dev",
+            "status": "success",
+            "started": 1792198416.1815019,
+            "workflows": [
+              {
+                "name": "Repository Checks",
+                "status": "completed",
+                "conclusion": "success",
+                "url": "https://github.com/Karapsin/self_host/actions/runs/38988444928"
+              }
+            ]
+          },
+          "files": {
+            "agent_tools/tests/fixtures/legacy_publication_producers.json": "995a63ede8781be6ae072598fcab3eb126c94727bdeb68d1e9baa0bb8f6319df",
+            "agent_tools/tests/test_legacy_publication_delivery.py": "917c0d0b607f87404af40f29978f647bd0f6123498e8eedc7232d1e678ca036e",
+            "self_host/services/github_agent/README.md": "a1ebcb5513d43f915d6f00bbd991042e81e9688952de2994ac109ae46b7ebad0",
+            "self_host/services/github_agent/intake.py": "016373e5c441eb91124c8304a2a3fa6d73ecf601f911e655255122c3ec40f461"
+          }
+        },
+        {
+          "commit": "df672554b3c7eb7163f4249c9095e96b98ab04dd",
+          "base": "ae8333b513fca174c5409f17ec05d7f6d3d3005a",
+          "independent_review": {
+            "sha256": "4067ce5e3a1aed475606de4bc2817efbb854444f0b0ea86f0c5bb03bfdc01240"
+          },
+          "ci": {
+            "repository": "Karapsin/self_host",
+            "sha": "df672554b3c7eb7163f4249c9095e96b98ab04dd",
+            "branch": "dev",
+            "status": "success",
+            "started": 1792201259.892779,
+            "workflows": [
+              {
+                "name": "Repository Checks",
+                "status": "completed",
+                "conclusion": "success",
+                "url": "https://github.com/Karapsin/self_host/actions/runs/38991892068"
+              }
+            ]
+          },
+          "files": {
+            "agent_tools/tests/test_companion_discovery.py": "0ddecb9e59df383814e76192a6641bc3ff49b8e0ba30de53667b3258597f1d9e",
+            "agent_tools/tests/test_worker_roles.py": "39ba2499f2af0dbe11cb7026ec81d46d27082e8a1d01351d5c52607565d72c90",
+            "self_host/services/github_agent/README.md": "1df826b8963f33e6db64bd02e1317c0701d2bc2e72797d05d8e862713725b74b",
+            "self_host/services/github_agent/companion_proposals.py": "1eb8f2318d3078871cb71cdae6d3e62c21d9dc942988d55fbbbb9320571c58a9",
+            "self_host/services/github_agent/daemon.py": "111ea3bd55a79f49b0a3a2de1097fb4648aaebc8c95676fb95e54f4696715fe9",
+            "self_host/services/github_agent/orchestrator.py": "6391d2ffd4de4c89907e212db6223cabe1813b1efbfc507e363e7efa9ff36f9c"
+          }
+        },
+        {
+          "commit": "8050fee15a67abc9f77450b181bea7d3304ed657",
+          "base": "df672554b3c7eb7163f4249c9095e96b98ab04dd",
+          "independent_review": {
+            "reviewer": "/root/review_owner_attention_pair",
+            "sha256": "7fc170f8e0b5077ac2bb543cd61ff938663b5975866788685b7dded677efd4b1"
+          },
+          "ci": {
+            "repository": "Karapsin/self_host",
+            "sha": "8050fee15a67abc9f77450b181bea7d3304ed657",
+            "branch": "dev",
+            "status": "success",
+            "started": 1792203616.953818,
+            "workflows": [
+              {
+                "name": "Repository Checks",
+                "status": "completed",
+                "conclusion": "success",
+                "url": "https://github.com/Karapsin/self_host/actions/runs/38994520147"
+              }
+            ]
+          },
+          "files": {
+            "agent_tools/tests/fixtures/owner_attention_controller.json": "fb73583aed016b944237987b8e62770cfe823a9a731c08578e476a2bada4f787",
+            "agent_tools/tests/test_owner_attention.py": "dc77e354e73ef76f6fd3852359361d88d0b5bd00083102cb71ea249f6a934319",
+            "self_host/services/github_agent/README.md": "01a7fc7ac8c84a8715c5282cb7b33251e3c85823eae10e3a8286170279868de3",
+            "self_host/services/github_agent/companion_proposals.py": "ebbc2564cf16b35c9cb3bb184d69cff17cef7ee09d5708c57c4784e793d11f4c",
+            "self_host/services/github_agent/intake.py": "3f594ec02f06db27b4b2a62c1a53880759e9dedeafc19cb489fe03ce466be7ae",
+            "self_host/services/github_agent/labels.py": "0cd77673c3811b3b682b87b58876f8b5457cc894ba5294878c1aed90b08518dc"
+          }
+        },
+        {
+          "commit": "b92de4feb5646bf97b82cfd72acd8dd5ce5449a5",
+          "base": "8050fee15a67abc9f77450b181bea7d3304ed657",
+          "independent_review": {
+            "reviewer": "/root/review_rejected_capture_handoff",
+            "sha256": "c7f343d5aba762e533a825b89b6d3a7ac27140410d47af0f911bf405250fbfc4"
+          },
+          "ci": {
+            "repository": "Karapsin/self_host",
+            "sha": "b92de4feb5646bf97b82cfd72acd8dd5ce5449a5",
+            "branch": "dev",
+            "status": "success",
+            "started": 1792204532.199208,
+            "workflows": [
+              {
+                "name": "Repository Checks",
+                "status": "completed",
+                "conclusion": "success",
+                "url": "https://github.com/Karapsin/self_host/actions/runs/38995527242"
+              }
+            ]
+          },
+          "files": {
+            "agent_tools/tests/test_rejected_visual_handoff.py": "4dd0e962e0b19391360f99d4afef9e1f37745dd55c349582adf422d2808fc13f",
+            "self_host/services/github_agent/README.md": "ff158e78db3a4b35f33a64e1f856ca8654fd78a5314b6a4f1c13bcfd5c5c58b0",
+            "self_host/services/github_agent/companion_proposals.py": "65a6144aa432cd3924ed023ea1d4e6f923f549f92c8c72838b8120d294a64ec5",
+            "self_host/services/github_agent/daemon.py": "7324133fb4459db6aee446c99125edf37198ae1f2f48cc26316ef3726986f73a",
+            "self_host/services/github_agent/visual_evidence.py": "fc687afbe01de858057f08cff1e85538ea0d336e7ca04a16744c0672d97692e4"
+          }
+        },
+        {
+          "commit": "bd95c3f7997047966220b8b870fba6a68ed10ca4",
+          "base": "b92de4feb5646bf97b82cfd72acd8dd5ce5449a5",
+          "independent_review": {
+            "reviewer": "/root/review_current_coordinator_routing",
+            "decision": "approve",
+            "completeness": "complete",
+            "sha256": "ca9992c074dc0fe47572706e9363c99b4d026839e41611d5aea35fcf3bd247d6"
+          },
+          "ci": {
+            "repository": "Karapsin/self_host",
+            "sha": "bd95c3f7997047966220b8b870fba6a68ed10ca4",
+            "branch": "dev",
+            "status": "success",
+            "started": 1792204988.2275069,
+            "workflows": [
+              {
+                "name": "Repository Checks",
+                "status": "completed",
+                "conclusion": "success",
+                "url": "https://github.com/Karapsin/self_host/actions/runs/38996017293"
+              }
+            ]
+          },
+          "files": {
+            "agent_tools/tests/fixtures/coordinator_current_questions.json": "8e431d1c274f613edcd8a34fc154ddbcc9dbd4b21d2ffe8f83c25e8aac53b3a0",
+            "agent_tools/tests/test_coordinator_observed_questions.py": "9100b16b55e30da97c66413379541f7671431879b2a5c6cfa809af6b9dc83393",
+            "self_host/services/github_agent/README.md": "d0fdb262d2ae6d4d4cb828c87961f823752325d3b65fb4e4e5b132a6ee888210",
+            "self_host/services/github_agent/companion_proposals.py": "e87eedab414fdaafd7b39fae12e58729f6a097309405305f96e3b11a57660066",
+            "self_host/services/github_agent/question_policy.py": "480fbc5993452a5b4bbdea7d0ad9084677a86a8e21857ff666b9ae1c7860960d"
+          }
+        },
+        {
+          "commit": "087a24fe01311e6a8e65cf73e36f2475e266239d",
+          "base": "bd95c3f7997047966220b8b870fba6a68ed10ca4",
+          "independent_review": {
+            "reviewer": "/root/review_capture_failure_rollout",
+            "decision": "approve",
+            "sha256": "747bc340a97cacc9a4f95467dff969b3f283b8c3409f0edf5941f7b121c572e2"
+          },
+          "ci": {
+            "repository": "Karapsin/self_host",
+            "sha": "087a24fe01311e6a8e65cf73e36f2475e266239d",
+            "branch": "dev",
+            "status": "success",
+            "started": 1792205772.633166,
+            "workflows": [
+              {
+                "name": "Repository Checks",
+                "status": "completed",
+                "conclusion": "success",
+                "url": "https://github.com/Karapsin/self_host/actions/runs/38996843903"
+              }
+            ]
+          },
+          "files": {
+            "agent_tools/tests/test_coordinator_holds.py": "c7adb08c739b74f4f0fda2d2cf32524e95978d46bfb31683f94e385486b94d87",
+            "self_host/services/github_agent/README.md": "b82a23247b7a9c12f39296baf8999ee5cd8a01d64e03da240d692d88ce4263df",
+            "self_host/services/github_agent/intake.py": "db672a705036aa800f411e89a43abca314e53d6cbca842fbaf336aaa684a30b5"
+          }
+        },
+        {
+          "commit": "a6e713ddf02c176babde546a69b6b954c3d0df36",
+          "base": "087a24fe01311e6a8e65cf73e36f2475e266239d",
+          "independent_review": {
+            "reviewer": "/root/review_current_coordinator_routing",
+            "decision": "approve",
+            "completeness": "complete",
+            "sha256": "d4bfb7cd197f99db3c6f22a86035609e0d8da72bfbf677033ddf53318e32edcf"
+          },
+          "ci": {
+            "repository": "Karapsin/self_host",
+            "sha": "a6e713ddf02c176babde546a69b6b954c3d0df36",
+            "branch": "dev",
+            "status": "success",
+            "started": 1792208991.921225,
+            "workflows": [
+              {
+                "name": "Repository Checks",
+                "status": "completed",
+                "conclusion": "success",
+                "url": "https://github.com/Karapsin/self_host/actions/runs/39000272860"
+              }
+            ]
+          },
+          "files": {
+            "agent_tools/tests/fixtures/retained_approval_choices.json": "a7270549602828a8a3e7a378d784d65df47078f45becf69c4f0493c33529359a",
+            "agent_tools/tests/test_retained_gate_choices.py": "643a1a82226bc759f2b941194357758a9634ed351fd7163dc18b6b4f3cecbc08",
+            "self_host/services/github_agent/README.md": "75ad539e6514a09fdf01018b63f4fa1145cb61ab2677a392e21e64cd2738ea59",
+            "self_host/services/github_agent/companion_proposals.py": "fff9abb63000036cf574b872038d5aded189146183095d55d63798ce8d84ff18",
+            "self_host/services/github_agent/intake.py": "d2202a9cfdd17c1bbd0241b60ebe9358ac9c84f2636165e7522fdcf60bcaba65",
+            "self_host/services/github_agent/question_policy.py": "deb6b16be44900f5337c283df9c9b92d80cd8f6c2a6a864a98f35033a4ca8485"
+          }
+        },
+        {
+          "commit": "bde64ba6c7026e37991397e59dda3da67eb550c5",
+          "base": "a6e713ddf02c176babde546a69b6b954c3d0df36",
+          "runtime_change": false,
+          "independent_review": {
+            "path": "operator/paired-fixtures-bde64ba6c702/review.json",
+            "sha256": "676f83404042fe3b103226d85be9c12e9840b8c9cefead33e49b329aeadcb7c4",
+            "reviewer": "/root/review_owner_attention_pair",
+            "decision": "approve",
+            "scope": "Companion fixture/test refresh only"
+          },
+          "ci": {
+            "id": 39002462254,
+            "head_sha": "bde64ba6c7026e37991397e59dda3da67eb550c5",
+            "conclusion": "success",
+            "url": "https://github.com/Karapsin/self_host/actions/runs/39002462254"
+          },
+          "files": {
+            "agent_tools/tests/fixtures/controller_recovery_contracts.json": "d93575fe4a92ef419cc06e57a0d1ab12544d2dd90b219fd0cccbb0d57be17f8a",
+            "agent_tools/tests/fixtures/owner_attention_controller.json": "be31bdf32aebb072526b5cabe5e4a51724f62aab069a8f9961e88725c11cfa47",
+            "agent_tools/tests/test_coordinator_holds.py": "29eb8612a9ae4622ecd5965110aa17d763dc1197c878acff7d048df921f1fe5b",
+            "agent_tools/tests/test_owner_attention.py": "8aa1b2eda0af8b1c19fb2179f93cf1b003f3173380080435e1d030cfb6d45d6f",
+            "self_host/services/github_agent/README.md": "3cb3cee1607a3582507c63b86fb896763a6346cf5e74948afdb7d64907a9194f"
+          }
+        }
+      ],
+      "controller_compatibility": {
+        "controller": "ceff9e7a188784313809f6a251f01950648dc604",
+        "limitations": [
+          "No hold_coordinator or renew_coordinator API is active: coordinator dependencies must stay held and cannot be declared repaired or automatically resumed.",
+          "No attention_snapshot, attention_hint or owner_attention API is active: new owner-attention display hints are skipped and conservative old-controller labels remain.",
+          "The active controller publish signature lacks renewal_hold. Linked-feature amended publication with a renewal pause calls that keyword and fails closed into retained queued publication retry. This capability remains unavailable until its protected controller contract is active, or must be explicitly guarded.",
+          "PR33 and PR35 remain proposed source; this assessment does not activate their APIs or supply protected-policy approval. The bound ceff controller includes PR34 policy-comment recovery, whose controller/review_control changes match the supplied reviewed PR34 diff; task-context/archive bytes remain unchanged."
+        ]
+      }
+    },
+    "paired_validation": {
+      "status": "validated-retained-controller-checkpoint; final-successor-review-CI-and-activation-required",
+      "historical_companion_test": "agent_tools/tests/test_coordinator_holds.py:CoordinatorHoldTests.test_real_producer_verified_recovery_restart_and_merge_without_worker",
+      "historical_fixture": "agent_tools/tests/fixtures/controller_recovery_contracts.json:coordinator_handoff_candidate",
+      "historical_fixture_base": "8955054742d6df6c4700c6e9db815ff3cb9efc3b",
+      "historical_fixture_hashes": {
+        "controller": "1b097f026361bfea8845f50de486fbd45eda78be1d752e0f4fe14ef197d39beb",
+        "control": "05de38e17cdac6ec290f2c758fb051a7071cb2f8f00458fc1c4e50cf0a4db7f0"
+      },
+      "evidence_index": {
+        "path": "operator/paired-fixtures-bde64ba6c702/index.json",
+        "sha256": "f47dc39b22d51ba317886814ebbe319fd943d74ef0ca8bfd3b5f2a479c132d10"
+      },
+      "repository": "Karapsin/self_host",
+      "companion_commit": "bde64ba6c7026e37991397e59dda3da67eb550c5",
+      "fixture": "agent_tools/tests/fixtures/controller_recovery_contracts.json:coordinator_checkpoint_candidate",
+      "companion_test": "agent_tools/tests/test_coordinator_holds.py:CoordinatorHoldTests.test_real_producer_verified_recovery_restart_and_merge_without_worker",
+      "controller_checkpoint": {
+        "candidate_id": "request:33:40ee14810aba:8:code",
+        "dev_base": "c125af22b47bff350686b5bd05ad226b7d307a8c",
+        "previous_head": "b822989acfd5bba65736ca55b4e5f7f9d1625f46",
+        "request_revision": 8,
+        "waiting_request_revision": 9,
+        "source_hashes": {
+          ".github/agent/controller.py": "081f2f38beb3a9fd5c9de23d08bc272b38f88de6445afabae65a52febb38eb0f",
+          ".github/agent/review_control.py": "a675e4f6c9b21b9b7a8d869c2fd0fe63d52125350cce92440c8430445d8b1790"
+        },
+        "complete_checkpoint_patch_sha256": "01532ed8e03d0232291a54a7b09318830591499be55b3f4b004220027a3cca65",
+        "complete_checkpoint_patch_bytes": 56891,
+        "binding_note": "The final independent review's complete checkpoint binding supersedes the pre-edit plan's tracked-diff digest; controller bytes are unchanged. The checkpoint is not a final published successor."
+      },
+      "source_hashes": {
+        "agent_tools/tests/fixtures/controller_recovery_contracts.json": "d93575fe4a92ef419cc06e57a0d1ab12544d2dd90b219fd0cccbb0d57be17f8a",
+        "agent_tools/tests/fixtures/owner_attention_controller.json": "be31bdf32aebb072526b5cabe5e4a51724f62aab069a8f9961e88725c11cfa47",
+        "agent_tools/tests/test_coordinator_holds.py": "29eb8612a9ae4622ecd5965110aa17d763dc1197c878acff7d048df921f1fe5b",
+        "agent_tools/tests/test_owner_attention.py": "8aa1b2eda0af8b1c19fb2179f93cf1b003f3173380080435e1d030cfb6d45d6f",
+        "self_host/services/github_agent/README.md": "3cb3cee1607a3582507c63b86fb896763a6346cf5e74948afdb7d64907a9194f"
+      },
+      "independent_review": {
+        "path": "operator/paired-fixtures-bde64ba6c702/review.json",
+        "sha256": "676f83404042fe3b103226d85be9c12e9840b8c9cefead33e49b329aeadcb7c4",
+        "reviewer": "/root/review_owner_attention_pair",
+        "decision": "approve",
+        "scope": "Five-file companion fixture/test refresh and exact retained controller caller compatibility; not a full final ATK implementation verdict."
+      },
+      "ci": {
+        "id": 39002462254,
+        "head_sha": "bde64ba6c7026e37991397e59dda3da67eb550c5",
+        "conclusion": "success",
+        "url": "https://github.com/Karapsin/self_host/actions/runs/39002462254",
+        "evidence": {
+          "path": "operator/paired-fixtures-bde64ba6c702/ci.json",
+          "sha256": "28ba7917c0b32c5b3634dab036bf6d108767b71907a5f03c99a687c85ec0e521"
+        }
+      },
+      "local_prepush": {
+        "fingerprint": "f0b50d6f3078480fa5d734f4b69863650bcb1632eb5648dc39d4a4c66d4bf285",
+        "level": "prepush",
+        "python": "3.14.3 (main, Feb  3 2026, 15:32:20) [Clang 17.0.0 (clang-1700.6.3.2)]",
+        "ok": true
+      },
+      "runtime_change": false,
+      "owner_answer": false,
+      "policy_approval": false,
+      "deployment_approval": false,
+      "authority_limits": "Fixture validation does not require activating the controller APIs it validates. Historical fixture sections and amendment/publication regressions remain retained. Any changed controller bytes require refreshed exact source bindings, independent companion review and exact-commit Repository Checks. Final toolkit review, exact-successor fast CI, genuine owner exact-head protected approval, activation and all-relevant-PR merge acceptance remain separate gates."
+    },
+    "companion_discovery_delivery": {
+      "status": "delivered-and-validated-in-companion-chain; operational-acceptance-remains-separate",
+      "commit": "df672554b3c7eb7163f4249c9095e96b98ab04dd",
+      "source_bundle": {
+        "path": "operator/self-host-coordinator-df672554-complete-source-000.json",
+        "sha256": "76fb86873aed8dc864f1f74bfc9ce3f2f0d526a9c6c113628eb0ababd49109a7"
+      },
+      "source_chain_record": "delivery_evidence.companion.source_chain",
+      "regressions": [
+        "agent_tools/tests/test_companion_discovery.py",
+        "agent_tools/tests/test_worker_roles.py"
+      ],
+      "activation_record": "delivery_evidence.companion.activation_receipt",
+      "authority_limits": "The retained a6e713dd activation receipt covers the delivered runtime chain; bde64ba6 is a fixture-only refresh. Neither record activates PR33 or separately owned PR35 controller APIs, supplies owner approval, or proves all-relevant-PR merge completion. Fresh operational evidence remains required."
+    },
+    "pending_operational_acceptance": "PR35 owner-attention APIs remain separately owned. Neither PR33 activation nor all-relevant-PR completion is claimed. Monitor only orchestrator actions after startup; intervene for demonstrated malfunction; stop operator monitoring only after verified successful merges drain all qualifying PRs and repairs; retain the scheduler."
   }
 }

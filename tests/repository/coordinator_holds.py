@@ -95,8 +95,9 @@ def test_verified_dependency_cannot_retire_other_requests_or_owner_authority(
         assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
 
 
+@pytest.mark.parametrize("restart", [False, True])
 def test_amendment_publication_capability_cannot_bypass_dependency(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path, monkeypatch: Any, restart: bool
 ) -> None:
     monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
     controls = controller.trusted_module("review_control")
@@ -107,6 +108,9 @@ def test_amendment_publication_capability_cannot_bypass_dependency(
         amendment = dict(db.execute("SELECT * FROM pauses").fetchone())
     binding = {"request_id": "companion", "revision": 3, "repository": gh.repository}
     controls.hold_coordinator(gh, gh.pr, binding)
+    if restart:
+        monkeypatch.delitem(controller.MODULES, "review_control")
+        controls = controller.trusted_module("review_control")
     client, _ = _discovery_client(gh, monkeypatch)
     task = {
         "kind": "feature",
@@ -123,6 +127,11 @@ def test_amendment_publication_capability_cannot_bypass_dependency(
     assert controls.release_coordinator(gh, gh.pr, binding)
     assert controller.publication_authority(client, task, renewal_hold=amendment) == gh.pr
     assert controls.paused(gh, gh.pr)
+    with controls.connect() as db:
+        # Releasing the dependency grants publication capability only; the exact
+        # amendment must still gate discovery/merge until successor verification.
+        assert dict(db.execute("SELECT * FROM pauses").fetchone()) == amendment
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize(
