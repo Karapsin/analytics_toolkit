@@ -127,8 +127,28 @@ Local cleanup prunes remote references and deletes only proven merged, unused
 branches reachable from dev. Unknown, active and squash-only unique local work
 is preserved and reported; the Pi safely cleans verified merged remote branches.
 Each reviewer is a fresh read-only session separate from the candidate authors.
-Reviewer rejection posts detailed plain-text alerts and starts a fresh Pi
-correction agent followed by independent review, repeating until approved.
+Confirmed reviewer defects start a fresh Pi correction agent followed by
+independent review, repeating until approved. An unfinished source assessment
+continues in fresh read-only invocations of the same immutable assignment; it
+does not request code changes or owner approval. Typed source protocol 1 binds
+the full task, head, dev base, producer, companion inventory, complete capture
+and individual scene evidence to durable assessment checkpoints. The host
+records served pages separately from substantive file/evidence assessments.
+Every changed source, required current companion item and original full PNG
+must be assessed, followed by an independent whole-task and cross-file judgment.
+Both the controller's private pending record and the host's durable pending
+registry prevent a queued or interrupted review from merging. Terminal
+publication recovers missing check/comment/correction side effects using exact
+decision identities and correction-row compare-and-set; newer findings and
+owner/coordinator holds remain authoritative. Legacy five-field verdicts cannot
+establish source completeness. The separately reviewed worker adapter supports
+only the pinned approved legacy controller closure during bootstrap, retaining
+its host merge exclusion until the complete independent result is reconciled.
+Material PR feedback is observed again before final publication and retirement.
+New input creates an explicit pending generation, preserving the earlier
+assessment history. An exact completed decision may be superseded only with
+its bound receipt while the host still owns the pending publication; this
+grants no approval and cannot replay a retired generation transition.
 Only genuine user questions, owner veto/cancel, invalid provenance or subscription
 and authentication limits pause work. Rejection messages have no approval buttons.
 Fast CI, independent review and protected exact-head owner approval still apply.

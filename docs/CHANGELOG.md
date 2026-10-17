@@ -6,6 +6,7 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Restore meaningful merge-readiness regression coverage with isolated private state and a healthy baseline before independently blocking stale reviews, wrong review Apps, failed fast checks and active writers.
 - Direct host-owned task-context mismatch notices to coordinator verification with an additive rendering status, preserving provenance holds and owner approval gates; controller activation and paired completion still require verified companion delivery eligibility.
 - Preserve a durable correction gate when verified coordinator dependencies return to planning, blocking earlier green heads through unavailable workers and restart; resolve restored controller conflicts without weakening pause retirement.
 
@@ -79,6 +80,7 @@ Generated from package version bumps and recent commit history.
 - Preserve available failed visual capture artifacts through the trusted workflow without changing candidate harnesses or treating unknown stream coverage as complete.
 - Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
 - Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
+- Resume incomplete independent source reviews with immutable assessment checkpoints, durable merge exclusion and replay-safe terminal publication.
 
 ## 1.3.12.5 - 2026-10-14
 
