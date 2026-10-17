@@ -60,6 +60,7 @@ Generated from package version bumps and recent commit history.
 - Declare Pillow in GitHub and tox test environments and format supersampling regressions without changing their assertions.
 - Preserve replacement authority holds and late vetoes through shared atomic publication and correction-question recovery.
 - Bound SQL Explorer cursor snapshots to live undo/redo history across editing, indentation, history eviction, and document resets, with focused lifecycle regressions.
+- Fix SQL Explorer document resets to clear obsolete multicursors, preferred columns and history; cover reset rendering and editing and complete history/idle test fixtures.
 
 ## 1.3.12.5 - 2026-10-14
 
