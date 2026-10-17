@@ -76,6 +76,7 @@ Generated from package version bumps and recent commit history.
 - Split paired-evidence digest assertions to satisfy Ruff PT018 while preserving both validation checks.
 - Reconcile coordinator mismatch notices and notification lookup metadata with current controller authority, preserve hold regressions and require refreshed final-source companion delivery validation before merge or activation.
 - Apply canonical formatting to the provenance-hold regression while preserving all cases and assertions within the 700-line test-module limit.
+- Retain complete failed GitHub visual capture diagnostics and both child output streams without granting visual approval
 
 ## 1.3.12.5 - 2026-10-14
 
