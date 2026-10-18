@@ -80,6 +80,7 @@ Generated from package version bumps and recent commit history.
 - Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
 - Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
 - Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
+- Add receipt-bound transactional coordinator authority renewal with strict replay checks
 
 ## 1.3.12.5 - 2026-10-14
 
