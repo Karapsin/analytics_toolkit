@@ -82,6 +82,7 @@ Generated from package version bumps and recent commit history.
 - Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
 - Isolate candidate visual installation and capture from the GitHub runner and retain bounded host-owned diagnostics.
 - Preserve native capture failure diagnostics, produced renderer artifacts and safe post-cleanup evidence without weakening glyph or isolation checks.
+- Repair native capture font selection and fixed-color environment; retain SQL Explorer completion, rendering and scene-state corrections
 
 ## 1.3.12.5 - 2026-10-14
 
