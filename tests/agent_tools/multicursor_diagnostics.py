@@ -206,7 +206,9 @@ def test_missing_layer_and_lost_style_are_observed_separately(layer: str, damage
     if damage == "lost_underline":
         assert not result["missing"]
         assert caret[layer]["spans"][0]["flags"]["underline"] is False
-        assert result["multicursor"]["findings"] == [f"multicursor:caret:0:{layer}:caret_mark_absent"]
+        assert result["multicursor"]["findings"] == [
+            f"multicursor:caret:0:{layer}:caret_mark_absent"
+        ]
     else:
         assert result["missing"]
         assert not result["multicursor"]["findings"]
