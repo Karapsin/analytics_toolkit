@@ -71,6 +71,21 @@ approval. Protected exact-head review/approval and authorized main activation
 remain separate requirements; scene geometry and every full-PNG verdict remain
 mandatory for SQL Explorer repairs.
 
+Native probe failure artifacts retain per-phase observations even when an import,
+install, network check or rendering assertion fails. Capture records its actual
+renderer versions and invocation, full font inventory and inspection results,
+exact SVG, produced PNG and geometry/color observations before asserting glyph
+presence. The phase record preserves the original exception and traceback;
+unexecuted stages remain incomplete. Default renderer options and the nonempty
+glyph assertion stay unchanged, so diagnostic retention does not imply native
+acceptance or establish a font-selection cause.
+
+Available probe files are collected after failed runs only when cleanup succeeded,
+all owned containers are absent, no resource mutation is uncertain and upload
+writers are safe. Missing or unsafe evidence remains a failed/incomplete result.
+Owned firewall counters are sampled before cleanup even after a phase failure;
+counter failures are recorded separately from the original error.
+
 ## Scheduling and status
 
 Airflow owns `github_agent_reconcile` (every minute) and
