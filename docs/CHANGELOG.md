@@ -95,6 +95,7 @@ Generated from package version bumps and recent commit history.
 - Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
 - Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
 - Reconcile SQL Explorer with current dev capture safeguards, preserving exporter regressions, operations guidance and complete feature changelog history.
+- Preserve SQL Explorer ruler presentation and add bounded multicursor state, caret-layer and lossless export diagnostics with focused regressions for independent visual reassessment.
 
 ## 1.3.12.5 - 2026-10-14
 
