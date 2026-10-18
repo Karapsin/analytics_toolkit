@@ -1,0 +1,13 @@
+{
+  "kind": "static-quality-corrections-without-baseline-change",
+  "original_static_log": ".rag_index/tool_logs/1792345773408242000-537fe20771.log",
+  "original_static_log_sha256": "c9f3fe758587e7eb9d8374505e5332ecac96cc8011badfd1b794321e00dbe698",
+  "fixes": [
+    "Preserve SAME CompletionMenu and OptionList re-export objects via private-module assignments instead of useless self-alias imports flaggedPLC0414; classbody unchanged.",
+    "Factor exact current-row visibility assertion into cohesive helper tostayunder50statements; retain true/falsewidthresize/offscreenclosure cases andallrectangle/narrow/stalecallback assertions.",
+    "Sort imports andformat the two preexisting long journal assertionlines; no journaltestbehavior change."
+  ],
+  "baseline": "release_routines/quality baseline and currentcoveragefloors untouched",
+  "targeted_managed_result": "PASS after thesechanges",
+  "no_suppressions_or_weakened_assertions": true
+}

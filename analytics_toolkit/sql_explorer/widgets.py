@@ -3,13 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Optional, cast
 
+from textual import widgets as _textual_widgets
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.coordinate import Coordinate
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Input, OptionList, Static, Tree
+from textual.widgets import Button, DataTable, Input, Static, Tree
 
+from . import completion_menu as _completion_menu
 from .cells import _format_cell
 from .cells import copy_cell as _copy_cell
 from .editor import SqlEditor
@@ -26,6 +28,8 @@ if TYPE_CHECKING:
     from .statements import ExplorerExecutionPlan
 
 _MAX_CONFIRMATION_PREVIEW_LENGTH = 2_000
+CompletionMenu = _completion_menu.CompletionMenu
+OptionList = _textual_widgets.OptionList
 
 
 class ResultTable(DataTable[Any]):
@@ -548,55 +552,6 @@ class FileNavigationScreen(ModalScreen[Optional[Path]]):
             event.prevent_default()
             return
         await super()._on_key(event)
-
-
-class CompletionMenu(OptionList):
-    """Cursor-adjacent SQL completion overlay."""
-
-    BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("escape", "close", "Close completion", show=False),
-        Binding("enter", "accept", "Accept completion", show=False),
-    ]
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.suggestions: tuple[str, ...] = ()
-
-    @property
-    def is_open(self) -> bool:
-        return self.styles.display != "none"
-
-    def open(self, suggestions: tuple[str, ...]) -> None:
-        self.suggestions = suggestions
-        self.clear_options()
-        self.add_options(suggestions)
-        self.highlighted = 0 if suggestions else None
-        self.styles.display = "block" if suggestions else "none"
-        self.styles.height = min(12, len(suggestions) + 2)
-
-    def move_highlight(self, offset: int) -> None:
-        if not self.suggestions:
-            return
-        current = self.highlighted if self.highlighted is not None else 0
-        self.highlighted = max(0, min(current + offset, len(self.suggestions) - 1))
-
-    def selected_suggestion(self) -> str | None:
-        if self.highlighted is None:
-            return None
-        return self.suggestions[self.highlighted]
-
-    def action_close(self) -> None:
-        from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
-
-        self.styles.display = "none"
-        self.suggestions = ()
-        workspace = workspace_for(self)
-        workspace.completion_allow_empty_columns = False
-        cast("SqlExplorerApp", self.app)._cancel_completion_request(workspace)  # noqa: SLF001
-        workspace.editor.focus()
-
-    def action_accept(self) -> None:
-        cast("SqlExplorerApp", self.app).action_complete()
 
 
 class FindReplaceBar(Vertical):

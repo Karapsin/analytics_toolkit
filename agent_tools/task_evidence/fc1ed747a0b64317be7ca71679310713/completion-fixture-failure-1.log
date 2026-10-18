@@ -1,0 +1,297 @@
+command: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/sql
+returncode: 1
+
+[stdout]
+........................................................................ [  1%]
+........................................................................ [  3%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 13%]
+........................................................................ [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+........................................................................ [ 25%]
+........................................................................ [ 27%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+........................................................................ [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 43%]
+........................................................................ [ 45%]
+........................................................................ [ 47%]
+........................................................................ [ 49%]
+........................................................................ [ 51%]
+........................................................................ [ 53%]
+........................................................................ [ 55%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 65%]
+.............................]52;c;c2VsZWN0IDE=]52;c;c2VsZWN0IDE=.....]52;c;Zmlyc3QKc2Vjb25k.......]52;c;............................... [ 67%]
+........................................................................ [ 69%]
+..................................................F..F.F................ [ 71%]
+........................................................................ [ 73%]
+...........................]52;c;YQpi............................................. [ 75%]
+..................................]52;c;Y29weSBtZQ==]52;c;Y29weSBtZQ==...................................... [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 83%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 98%]
+.....................................                                    [100%]
+=================================== FAILURES ===================================
+__________ test_completion_repositions_on_scroll_resize_and_narrowing __________
+
+    def test_completion_repositions_on_scroll_resize_and_narrowing() -> None:
+        async def exercise() -> None:
+            app = SqlExplorerApp(FakeSession())
+            async with app.run_test(size=(100, 30)) as pilot:
+                stub = _install_stub(app)
+                stub.table_cache = ("customer_id", "customer_name", "customer_number")
+                workspace = app.active_workspace
+                editor = workspace.editor
+                editor.text = "\n".join(["-- " + "x" * 140] * 40 + ["select * from customer"])
+                editor.cursor_location = (40, len("select * from customer"))
+                await pilot.pause()
+                editor.scroll_to(x=5, y=35, animate=False)
+                await pilot.press("ctrl+space")
+                await pilot.pause()
+                assert editor.scroll_x > 0
+                assert editor.scroll_y > 0
+                assert all(_completion_geometry_assertions(workspace).values())
+                _assert_popup_rectangle(workspace)
+                editor.scroll_to(x=10, y=36, animate=False)
+                await pilot.pause()
+                assert all(_completion_geometry_assertions(workspace).values())
+                _assert_popup_rectangle(workspace)
+                await pilot.resize_terminal(60, 24)
+                await pilot.pause()
+                assert all(_completion_geometry_assertions(workspace).values())
+                _assert_popup_rectangle(workspace)
+                assert (
+                    workspace.completion_menu.region.right
+                    <= workspace.query_one(".query-pane").content_region.right
+                )
+                workspace.completion_candidates = stub.table_cache
+                await pilot.press("_", "n", "a")
+                await pilot.pause()
+                assert workspace.completion_menu.suggestions == ("customer_name",)
+                assert workspace.completion_menu.region.height == 3
+                assert all(_completion_geometry_assertions(workspace).values())
+                _assert_popup_rectangle(workspace)
+                await pilot.press("escape")
+                await pilot.resize_terminal(90, 28)
+                await pilot.pause()
+                assert not workspace.completion_menu.is_open
+    
+>       asyncio.run(exercise())
+
+/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/tests/sql/explorer/completion_placement.py:152: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(100, 30)) as pilot:
+            stub = _install_stub(app)
+            stub.table_cache = ("customer_id", "customer_name", "customer_number")
+            workspace = app.active_workspace
+            editor = workspace.editor
+            editor.text = "\n".join(["-- " + "x" * 140] * 40 + ["select * from customer"])
+            editor.cursor_location = (40, len("select * from customer"))
+            await pilot.pause()
+            editor.scroll_to(x=5, y=35, animate=False)
+            await pilot.press("ctrl+space")
+            await pilot.pause()
+            assert editor.scroll_x > 0
+            assert editor.scroll_y > 0
+            assert all(_completion_geometry_assertions(workspace).values())
+            _assert_popup_rectangle(workspace)
+            editor.scroll_to(x=10, y=36, animate=False)
+            await pilot.pause()
+            assert all(_completion_geometry_assertions(workspace).values())
+            _assert_popup_rectangle(workspace)
+            await pilot.resize_terminal(60, 24)
+            await pilot.pause()
+>           assert all(_completion_geometry_assertions(workspace).values())
+E           AssertionError: assert False
+E            +  where False = all(dict_values([False, False]))
+E            +    where dict_values([False, False]) = <built-in method values of dict object at 0x12efe8040>()
+E            +      where <built-in method values of dict object at 0x12efe8040> = {'completion_active_row_visible': False, 'completion_contained': False}.values
+E            +        where {'completion_active_row_visible': False, 'completion_contained': False} = _completion_geometry_assertions(SqlExplorerWorkspace(id='workspace-1'))
+
+/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/tests/sql/explorer/completion_placement.py:134: AssertionError
+________ test_completion_clamps_right_edge_and_closes_without_row_space ________
+
+    def test_completion_clamps_right_edge_and_closes_without_row_space() -> None:
+        async def exercise() -> None:
+            app = SqlExplorerApp(FakeSession())
+            async with app.run_test(size=(80, 30)) as pilot:
+                stub = _install_stub(app)
+                stub.table_cache = ("sample_one", "sample_two")
+                workspace = app.active_workspace
+                editor = workspace.editor
+                editor.text = "select " + " " * 45 + "* from sample"
+                editor.cursor_location = (0, len(editor.text))
+                await pilot.press("ctrl+space")
+                await pilot.pause()
+                menu = workspace.completion_menu
+                assert menu.region.right == workspace.query_one(".query-pane").content_region.right
+                assert all(_completion_geometry_assertions(workspace).values())
+                _assert_popup_rectangle(workspace)
+                workspace.query_one(".query-pane").styles.height = 6
+                await pilot.pause()
+                assert not menu.is_open
+                assert editor.text.endswith("* from sample")
+    
+>       asyncio.run(exercise())
+
+/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/tests/sql/explorer/completion_placement.py:255: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 30)) as pilot:
+            stub = _install_stub(app)
+            stub.table_cache = ("sample_one", "sample_two")
+            workspace = app.active_workspace
+            editor = workspace.editor
+            editor.text = "select " + " " * 45 + "* from sample"
+            editor.cursor_location = (0, len(editor.text))
+            await pilot.press("ctrl+space")
+            await pilot.pause()
+            menu = workspace.completion_menu
+>           assert menu.region.right == workspace.query_one(".query-pane").content_region.right
+E           AssertionError: assert 78 == 79
+E            +  where 78 = Region(x=46, y=5, width=32, height=4).right
+E            +    where Region(x=46, y=5, width=32, height=4) = CompletionMenu(id='completion-menu').region
+E            +  and   79 = Region(x=1, y=3, width=78, height=19).right
+E            +    where Region(x=1, y=3, width=78, height=19) = QueryPane().content_region
+E            +      where QueryPane() = query_one('.query-pane')
+E            +        where query_one = SqlExplorerWorkspace(id='workspace-1').query_one
+
+/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/tests/sql/explorer/completion_placement.py:247: AssertionError
+_______ test_deferred_completion_layout_ignores_inactive_workspace[True] _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x12ea00410>
+unmount = True
+
+    @pytest.mark.parametrize("unmount", [False, True])
+    def test_deferred_completion_layout_ignores_inactive_workspace(
+        monkeypatch: pytest.MonkeyPatch, unmount: bool
+    ) -> None:
+        async def exercise() -> None:
+            app = SqlExplorerApp(FakeSession())
+            async with app.run_test(size=(100, 30)) as pilot:
+                stub = _install_stub(app)
+                stub.table_cache = ("sample_one", "sample_two")
+                workspace = app.active_workspace
+                workspace.editor.text = "select * from sample"
+                workspace.editor.cursor_location = (0, len(workspace.editor.text))
+                await pilot.press("ctrl+space")
+                await pilot.pause()
+                _assert_popup_rectangle(workspace)
+                pending: list[Callable[[], None]] = []
+                with monkeypatch.context() as patch:
+                    patch.setattr(app, "call_after_refresh", pending.append)
+                    app._schedule_completion_position(workspace)
+                assert len(pending) == 1
+                await pilot.press("ctrl+t")
+                await pilot.pause()
+                other = app.active_workspace
+                if unmount:
+                    app._remove_workspace(workspace.tab_id)
+                    await pilot.pause()
+                    assert not workspace.is_mounted
+                # A stale callback must return before looking up or placing its menu.
+                pending[0]()
+                app._position_completion(workspace)
+                app._schedule_completion_position(workspace)
+                assert app.active_workspace is other
+                assert not other.completion_menu.is_open
+                assert other.editor.text == ""
+    
+>       asyncio.run(exercise())
+
+/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/tests/sql/explorer/completion_placement.py:293: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(100, 30)) as pilot:
+            stub = _install_stub(app)
+            stub.table_cache = ("sample_one", "sample_two")
+            workspace = app.active_workspace
+            workspace.editor.text = "select * from sample"
+            workspace.editor.cursor_location = (0, len(workspace.editor.text))
+            await pilot.press("ctrl+space")
+            await pilot.pause()
+            _assert_popup_rectangle(workspace)
+            pending: list[Callable[[], None]] = []
+            with monkeypatch.context() as patch:
+                patch.setattr(app, "call_after_refresh", pending.append)
+                app._schedule_completion_position(workspace)
+            assert len(pending) == 1
+            await pilot.press("ctrl+t")
+            await pilot.pause()
+            other = app.active_workspace
+            if unmount:
+                app._remove_workspace(workspace.tab_id)
+                await pilot.pause()
+>               assert not workspace.is_mounted
+E               AssertionError: assert not True
+E                +  where True = SqlExplorerWorkspace(id='workspace-1').is_mounted
+
+/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/tests/sql/explorer/completion_placement.py:284: AssertionError
+=========================== short test summary info ============================
+FAILED tests/sql/explorer/completion_placement.py::test_completion_repositions_on_scroll_resize_and_narrowing
+FAILED tests/sql/explorer/completion_placement.py::test_completion_clamps_right_edge_and_closes_without_row_space
+FAILED tests/sql/explorer/completion_placement.py::test_deferred_completion_layout_ignores_inactive_workspace[True]
+3 failed, 3634 passed, 209 deselected in 235.83s (0:03:55)
+
+
+[stderr]
+

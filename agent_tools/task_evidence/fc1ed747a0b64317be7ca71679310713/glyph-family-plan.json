@@ -1,0 +1,50 @@
+{
+  "schema": "native-glyph-family-correction-plan/v1",
+  "exact_user_prompt": "implement it on your own if orchestator is not doing that",
+  "parent": {
+    "pr": 44,
+    "current_head": "441a9bd825e88414c9215f7e0717e97179c77539",
+    "task_digest": "040fc56843b3ff28d5a706dce9c17efa6a82963e99110fc6f0cf9e6eb57ec3c2",
+    "ancestry": "retain complete PR43+44 ancestry and full signed current/prior context; fresh feature/task; no handed-off branch edits"
+  },
+  "evidence": {
+    "actual_native_run": 39148304576,
+    "head": "441a9bd825e88414c9215f7e0717e97179c77539",
+    "artifacts": [
+      12144004170,
+      12144645474
+    ],
+    "actual_failure": "both capture glyph stages fail; six readable DejaVu fonts, no Liberation, exactly1280x800 all-black PNG e72a331d095874c9de691fbbb523f13c589b1bc2be0c5a33d7c6ba5ee3183010; cleanup/isolated evidence retained",
+    "controlled_experiment": {
+      "path": "/private/tmp/native-glyph-font-experiment/actual-font-family-controlled-experiment.json",
+      "sha256": "e7d6a56b0b48f4da9a06002227d6b54116493d148ec6fba73c154c2aa5b5d2ac",
+      "scope": "actual macOS resvg0.5.0 same native SVG/font, isolated font db; only missing-vs-present family changes. Missing reproduces exact native black bytes; DejaVu emits visible text. Not native positive."
+    },
+    "independent_experiment": {
+      "path": "/private/tmp/native-glyph-font-family-independent-experiment-v1.json",
+      "sha256": "272742eb1086b217a51c3fb4b6e8429b92901cf145ac50b5dba10da3877c1eba"
+    },
+    "upstream_fonts_url": "https://resvg-py.readthedocs.io/en/latest/fonts.html"
+  },
+  "implementation": [
+    "Add tiny stdlib-only agent_tools/sql_explorer_visual_render.py rendering-options helper. On Linux with exact fixed /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf present, set monospace_family=DejaVu Sans Mono and explicitly load that font_files entry. Preserve defaults on other platforms and Linux without that file. Keep other system fonts enabled. No new dependency/font download or installation in product.",
+    "Use exactly the helper in production exporter and fixed contained infrastructure probe. Probe imports trusted /trusted/agent_tools helper inside container only via importlib spec, with source hash in native provenance; no PR code execution on credentialed host. Same real SVG,1280x800 and visible-glyph assertions remain.",
+    "Actual contained-program tests must load real shared helper; meaningful present/absent/nonLinux policy and invocation tests. Preserve all prior retention/isolation/cleanup/firewall/network and security tests.",
+    "Update focused operational documentation, fresh unique fragment and full signed parent task/evidence binding. No public package or README version changes."
+  ],
+  "delivery": [
+    "New helper is an explicit trusted-main delivery dependency before native controller activation. Dev merge alone never establishes main presence. Declare exact file/hash in source/provenance and prerequisite contract; separately reviewed owner-authorized automation-only main projection must include it before activation. No main mutation in this source task.",
+    "Successor is a fresh descendant of actual PR44 current head; preserve parent contexts and all failure originals. Do not transfer old protected approval."
+  ],
+  "validation": [
+    "Focused managed tests; mandatory full SQL Explorer current-host46scene capture; open every full PNG and individual visual_review pass plus geometry complete.",
+    "Managed all4stage precommit and fresh independent complete source review before managed signed publication.",
+    "Once source-published head stable and independently verified, one opt-in native3.11/3.13 run must actually pass; no source/controlled experiment treated as native acceptance. Native failure creates another new correction, never weakens assertions."
+  ],
+  "non_actions": [
+    "No Pi tests/builds/rendering/installs",
+    "No policy approval, merge or activation inferred by plan approval",
+    "No owner question answer or hold clearance",
+    "No changes to isolation/network/mount/capability/credential boundaries"
+  ]
+}

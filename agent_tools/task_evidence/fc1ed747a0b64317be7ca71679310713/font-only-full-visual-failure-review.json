@@ -1,0 +1,785 @@
+{
+  "schema": "independent-full-image-review/glyph-family-correction-v1",
+  "reviewer": "/root/review_separate_visual_repair_full_images",
+  "review_id": "review-7a76f641449a",
+  "content_fingerprint": "e1d119e51a08c8a8509243a6aba8f3fb5391ef6d5ad39f9b6ed6be4461f63b37",
+  "host": {
+    "python": "3.12.13",
+    "system": "Darwin"
+  },
+  "decision": "visual_gate_not_green_due_to_12_actual_scene_defects",
+  "scene_count": 46,
+  "pass_count": 34,
+  "product_defect_count": 12,
+  "all_46_full_images_opened_individually": true,
+  "created_at_utc": "2026-10-18T17:24:43.616970+00:00",
+  "method": "Every full1280x800PNG was opened individually using view_image(detail=original). No thumbnails/contactsheet/hash-only substitution. Session membership and all hashes verified after visual inspection.",
+  "session": {
+    "path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/sessions/review-7a76f641449a.json",
+    "sha256_before_all_managed_verdicts": "56797a97951d9a9b275b51d8f640b5ba646821188fd3a84d8a3cf15ab0f142b9",
+    "capture": {
+      "status": "pass",
+      "workspace_removed": true
+    }
+  },
+  "source_age_context": "Parent reports branchcodex/19ac2eeff8284a2f-17d3108f on currentdevf66 with productionUIunchanged. These observed states resemble known PR39 separateUIrepair findings; source age is context, not a waiver or proof that this glyph helper introduced defects. No additional source searches or production execution were performed by this reviewer.",
+  "scenes": [
+    {
+      "scene_id": "column-ruler-scrolled",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/column-ruler-scrolled.png",
+      "png_sha256": "92ca878a14eca83134a19810c8f897159926c0d859e5c3cd8d4b87fb86f56c1d",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "Ruler starts around55 and status/caret show252, but the amber horizontal scrollbar thumb starts at the left edge. Its position contradicts the visibly scrolled editor state.",
+      "likely_source_from_existing_plan_only": "analytics_toolkit/sql_explorer/editor.py / agent_tools/sql_explorer_visual_scene.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent full original PNG inspection: ruler starts around55 and status/caret show column252, but the amber horizontal scrollbar thumb is at the left edge. This contradicts the visible scrolled editor state. Inherited-looking current-dev defect is not a waiver; no claim that glyph-family helper caused it."
+    },
+    {
+      "scene_id": "command-completion",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/command-completion.png",
+      "png_sha256": "a1fb033157c0fc342e2ca39fc3f08e02dd76614614139a13b60db1b795db774c",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The command input owns a visible caret and the square completion popup opens immediately above it; cancel is visibly selected and all seven visible choices fit without clipping.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The command input owns a visible caret and the square completion popup opens immediately above it; cancel is visibly selected and all seven visible choices fit without clipping."
+    },
+    {
+      "scene_id": "completion-columns",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/completion-columns.png",
+      "png_sha256": "41a373806f3de5f6903f5325ada5563484cd00c596913ee4acceeafed06ada0a",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The column popup is anchored beneath the c. projection position; customer_id, customer_name and created_at are legible and the selected row contrasts clearly.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The column popup is anchored beneath the c. projection position; customer_id, customer_name and created_at are legible and the selected row contrasts clearly."
+    },
+    {
+      "scene_id": "completion-cte-names",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/completion-cte-names.png",
+      "png_sha256": "34dbf73835f77821f7087d4a25b29301c6ab0140d3904c66286f892ad135480f",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The recent_ popup sits directly below the active FROM token; both recent_customers and recent_orders fit, with a clear selected row and no panel overflow.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The recent_ popup sits directly below the active FROM token; both recent_customers and recent_orders fit, with a clear selected row and no panel overflow."
+    },
+    {
+      "scene_id": "completion-empty-columns",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/completion-empty-columns.png",
+      "png_sha256": "c2a4220f1e90840557e1213e751fac77e13389a0efc0c2ec66f32563a78e9077",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The blank projection position has a local column menu beneath the insertion point; three column names fit and the editor/status remain readable.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The blank projection position has a local column menu beneath the insertion point; three column names fit and the editor/status remain readable."
+    },
+    {
+      "scene_id": "completion-narrowed",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/completion-narrowed.png",
+      "png_sha256": "245776267b855d61c805d892810c0a0a92ea0b9d5b58a9c315128559a74e740d",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The customer_name-only suggestion sits beneath the typed customer_na prefix and retains a visible selected row without excessive menu height.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The customer_name-only suggestion sits beneath the typed customer_na prefix and retains a visible selected row without excessive menu height."
+    },
+    {
+      "scene_id": "completion-where-alias",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/completion-where-alias.png",
+      "png_sha256": "883247acca6019f5fc5ac2050fde3065cba4035b80d96721cce9845f43642671",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The WHERE c. popup is attached to the active third line; the column names are readable and the menu does not cover the command/status area.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The WHERE c. popup is attached to the active third line; the column names are readable and the menu does not cover the command/status area."
+    },
+    {
+      "scene_id": "completion",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/completion.png",
+      "png_sha256": "be8737325b28e74b68f8940f23c28c04e5f96131d0cf5d6f652ad3a69666d223",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The four customer-prefixed suggestions form a contained square popup below the active prefix, with one unambiguous amber selection.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The four customer-prefixed suggestions form a contained square popup below the active prefix, with one unambiguous amber selection."
+    },
+    {
+      "scene_id": "connections-empty",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/connections-empty.png",
+      "png_sha256": "f7e15d7a55ba2c2f12398cf267ce4cccc4cbdf5511c6521417d31e74dbec6803",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The centered picker shows a genuinely empty list, an explanatory no-files notice, focused path input and complete keyboard guidance; none of the controls is clipped.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The centered picker shows a genuinely empty list, an explanatory no-files notice, focused path input and complete keyboard guidance; none of the controls is clipped."
+    },
+    {
+      "scene_id": "connections-error",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/connections-error.png",
+      "png_sha256": "0aa29f0497fc774ccb9a5427e3de0942706123ed4a88fb59d5516e422b19e259",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The three candidate paths remain visible while the error notice explains that the chosen file has no valid SQL connections; the focused alternative path input is available.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The three candidate paths remain visible while the error notice explains that the chosen file has no valid SQL connections; the focused alternative path input is available."
+    },
+    {
+      "scene_id": "connections-picker",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/connections-picker.png",
+      "png_sha256": "3f7f08c7f83fa9f2f4a9b9ff8575b90ac3912f665c38a5d12e1cb450d45b0074",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "All three connection-file paths and the selected first row fit inside the centered list; discovery count, path field and keyboard hints remain distinct.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: All three connection-file paths and the selected first row fit inside the centered list; discovery count, path field and keyboard hints remain distinct."
+    },
+    {
+      "scene_id": "connections-searching",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/connections-searching.png",
+      "png_sha256": "74d0dba3b175935e46896d2d3df6188f93af5a512d7602c9677aa052e7c8dffc",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The searching notice reports the directory/file counts below the visible list; the modal, path field and footer fit coherently while discovery is in progress.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The searching notice reports the directory/file counts below the visible list; the modal, path field and footer fit coherently while discovery is in progress."
+    },
+    {
+      "scene_id": "connections-switch-save",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/connections-switch-save.png",
+      "png_sha256": "9011be9f46624af135c43b5e35f594d6db3383f1f31bcd8bc7a14fb51be015f7",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The centered save prompt identifies Untitled 1 consistently with the background tab and shows three separate buttons with Save selected.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The centered save prompt identifies Untitled 1 consistently with the background tab and shows three separate buttons with Save selected."
+    },
+    {
+      "scene_id": "create-table-advanced",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/create-table-advanced.png",
+      "png_sha256": "7d312545c29f674816d6e8f5f7a7bca1c53b882da057d41d644615de02dda712",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The intentionally scrolled Advanced form contains all four labeled advanced inputs, its scrollbar and fixed Cancel/Create footer. Dim X-shaped native checkbox indicators accompany explicit False labels. That off-state presentation can be ambiguous, but the image does not establish a wrong boolean; no checkbox interaction was tested.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The intentionally scrolled Advanced form contains all four labeled advanced inputs, its scrollbar and fixed Cancel/Create footer. Dim X-shaped native checkbox indicators accompany explicit False labels. That off-state presentation can be ambiguous, but the image does not establish a wrong boolean; no checkbox interaction was tested."
+    },
+    {
+      "scene_id": "create-table-invalid",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/create-table-invalid.png",
+      "png_sha256": "91eda5ce053137dc76a586a5cad15e501978025060329496c7341163291d9eaa",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "Both schema rows are complete: customer_id/BIGINT and revenue/NUMERIC(18,2), yet the notice says each column needs a name and SQL type. The displayed input and validation error contradict each other. This proves an incoherent captured state, not a production validator fault.",
+      "likely_source_from_existing_plan_only": "agent_tools/sql_explorer_visual_scene.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: Both schema rows are complete: customer_id/BIGINT and revenue/NUMERIC(18,2), yet the notice says each column needs a name and SQL type. The displayed input and validation error contradict each other. This proves an incoherent captured state, not a production validator fault."
+    },
+    {
+      "scene_id": "create-table-schema",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/create-table-schema.png",
+      "png_sha256": "99e2d461f42f3bfff5a647705a2bc935fdbcf15afc181c1a7be3717ebb7ac118",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "Both schema rows and action controls fit. Native dim X-shaped off markers accompany explicit False labels. Their presentation is ambiguous; the screenshot does not prove True values or a functional checkbox fault. This is a bounded presentation observation, not an attestation of event semantics.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: Both schema rows and action controls fit. Native dim X-shaped off markers accompany explicit False labels. Their presentation is ambiguous; the screenshot does not prove True values or a functional checkbox fault. This is a bounded presentation observation, not an attestation of event semantics."
+    },
+    {
+      "scene_id": "create-table-sql",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/create-table-sql.png",
+      "png_sha256": "10d79f58e463fadb5c9effdace34275c20141214e4bfb377569a4cdc13134dc3",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The from_sql query and form controls are contained and legible. Dim native X-shaped markers accompany False labels; visual ambiguity is recorded without inferring wrong booleans or event behavior.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The from_sql query and form controls are contained and legible. Dim native X-shaped markers accompany False labels; visual ambiguity is recorded without inferring wrong booleans or event behavior."
+    },
+    {
+      "scene_id": "create-table-types",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/create-table-types.png",
+      "png_sha256": "40870a5dee132f7eb7baa0417a09fe3cb2cb7d9e62aaef381209e1f5da49a8b9",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "The focused first-row type input contains B, while BIGINT/BOOLEAN suggestions start below the second schema row and span from the name-field edge across the form. The menu is detached from the field it completes.",
+      "likely_source_from_existing_plan_only": "analytics_toolkit/sql_explorer/create_table_screen.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The focused first-row type input contains B, while BIGINT/BOOLEAN suggestions start below the second schema row and span from the name-field edge across the form. The menu is detached from the field it completes."
+    },
+    {
+      "scene_id": "database-completion",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/database-completion.png",
+      "png_sha256": "fd13643af2450ef64e90c83f335d36e56c2aecc618f44bf17f6861090e4eb9e2",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The warehouse/warehouse_dev popup sits immediately above the db wa command input; the first choice and insertion caret are clear and the Run button remains visible.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The warehouse/warehouse_dev popup sits immediately above the db wa command input; the first choice and insertion caret are clear and the Run button remains visible."
+    },
+    {
+      "scene_id": "database-picker",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/database-picker.png",
+      "png_sha256": "01d208dd03c2abbde9964482ea1a6d4efd1d2531efb0f07afc99217217d0f66d",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The centered square picker contains the full Select a .connections database key heading, gp/lake/events choices and Enter/Esc footer. No erased c is established by this original image; no native Linux font fidelity is inferred from the Darwin capture.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The centered square picker contains the full Select a .connections database key heading, gp/lake/events choices and Enter/Esc footer. No erased c is established by this original image; no native Linux font fidelity is inferred from the Darwin capture."
+    },
+    {
+      "scene_id": "directory-armed",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/directory-armed.png",
+      "png_sha256": "71114bfa24e34389ecacd738a275119220525e23e92975687dcf01871634c415",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The destination-directory dialog contains the focused path input, expanded checkout tree, scrollbar, selection button and complete two-line footer; the tree scroll viewport contains the longer listing.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The destination-directory dialog contains the focused path input, expanded checkout tree, scrollbar, selection button and complete two-line footer; the tree scroll viewport contains the longer listing."
+    },
+    {
+      "scene_id": "discard-confirm",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/discard-confirm.png",
+      "png_sha256": "6e00a675d75489a9f57896e7ecb9186d975e6c3563258382fd806a866e1c1577",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The centered confirmation clearly distinguishes discarding unsaved current work to open quarterly_report.sql from keeping editing; both buttons and the full question fit.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The centered confirmation clearly distinguishes discarding unsaved current work to open quarterly_report.sql from keeping editing; both buttons and the full question fit."
+    },
+    {
+      "scene_id": "editor-command-caret",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/editor-command-caret.png",
+      "png_sha256": "5c35f60ceb4730896a2b0396285af26f28d6edec67d622ae7bff5dacb5a6ddd2",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The mv 2 15 command input has a visible insertion caret, while the editor has a corresponding visible marker on line 2 and status/ruler indicate column 15. Both remain distinct and contained.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The mv 2 15 command input has a visible insertion caret, while the editor has a corresponding visible marker on line 2 and status/ruler indicate column 15. Both remain distinct and contained."
+    },
+    {
+      "scene_id": "editor-ready",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/editor-ready.png",
+      "png_sha256": "061c8ddbc6dde7929c52c0fa3aca0ae451ac46545bafa85d55f6eba2794b4c99",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The initial SQL, visible caret, ruler, line/column status and Run/command controls are coherent and contained. A thin yellow line under the tab strip is visible; the first tab alone has the filled active treatment.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The initial SQL, visible caret, ruler, line/column status and Run/command controls are coherent and contained. A thin yellow line under the tab strip is visible; the first tab alone has the filled active treatment."
+    },
+    {
+      "scene_id": "export-confirm",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/export-confirm.png",
+      "png_sha256": "3ea68374e1fba2a4d7febc9cabfa5cc7fd127808673593a5524273d4812fd962",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The full warning that saving all query result rows may rerun the query is visible above separate Save all and Cancel buttons; the centered modal is unclipped.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The full warning that saving all query result rows may rerun the query is visible above separate Save all and Cancel buttons; the centered modal is unclipped."
+    },
+    {
+      "scene_id": "file-open",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/file-open.png",
+      "png_sha256": "9f49c4b1ba2624f49f2fc28098587f04c170eadb70239b8324f717fc52c572a3",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The open-file dialog contains the focused path field and expanded tree, with the full visible listing and navigation/open/cancel guidance inside the viewport.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The open-file dialog contains the focused path field and expanded tree, with the full visible listing and navigation/open/cancel guidance inside the viewport."
+    },
+    {
+      "scene_id": "find-replace",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/find-replace.png",
+      "png_sha256": "373dddfc20dc566eb0ffbab4990cef3218f91ad47f6b97208ea5f03657c4f0cf",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "Found3matches the query, but order_id on the first/current line lacks the visible yellow highlight shown on daily_orders and order_date. The caret is at SELECT, so it does not obscure that missing match highlight.",
+      "likely_source_from_existing_plan_only": "analytics_toolkit/sql_explorer/editor.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: Found3matches the query, but order_id on the first/current line lacks the visible yellow highlight shown on daily_orders and order_date. The caret is at SELECT, so it does not obscure that missing match highlight."
+    },
+    {
+      "scene_id": "formatted-sql",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/formatted-sql.png",
+      "png_sha256": "9ccd3054d5fc11994580356851c1b42bbd4e4267e96690c459c5c77b705307db",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The two formatted SQL statements have coherent indentation and line numbers; the command/status message reports Formatted SQL and the final insertion caret is visible without clipping.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The two formatted SQL statements have coherent indentation and line numbers; the command/status message reports Formatted SQL and the final insertion caret is visible without clipping."
+    },
+    {
+      "scene_id": "help-movement-end",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/help-movement-end.png",
+      "png_sha256": "1c8cb2ed472afaa72d9410fcdc26f558f4876c7b281160d26068b0f167f5cb03",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The output is scrolled to its last movement instructions. Paragraphs wrap near80columns, including short wrapping./targets. continuations, but complete final instructions and the lower scrollbar end are visible without clipping. The separate command-column row defects are recorded on help-movement/help-shortcuts.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The output is scrolled to its last movement instructions. Paragraphs wrap near80columns, including short wrapping./targets. continuations, but complete final instructions and the lower scrollbar end are visible without clipping. The separate command-column row defects are recorded on help-movement/help-shortcuts."
+    },
+    {
+      "scene_id": "help-movement",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/help-movement.png",
+      "png_sha256": "fe0e369664e234551bf4b298a6de52b50fd71da4ff94dfa2060b7a8a455c23f2",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "The wide output pane wraps near80columns; the continuation command and the selection-end D appear alone in the left command column. Their association with the corresponding syntax/description is visually broken.",
+      "likely_source_from_existing_plan_only": "analytics_toolkit/sql_explorer/panes.py / analytics_toolkit/sql_explorer/help_text.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The wide output pane wraps near80columns; the continuation command and the selection-end D appear alone in the left command column. Their association with the corresponding syntax/description is visually broken."
+    },
+    {
+      "scene_id": "help-shortcuts",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/help-shortcuts.png",
+      "png_sha256": "cf667cedc4ccd4bd47c22e14543d322e01ff3321e67ae7ff71fd3f16751aa22c",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "Escape continuation editor/command and F8 continuation disabled) wrap into the left shortcut column while most of the wide output pane is unused. The reference rows are visually misassociated.",
+      "likely_source_from_existing_plan_only": "analytics_toolkit/sql_explorer/panes.py / analytics_toolkit/sql_explorer/help_text.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: Escape continuation editor/command and F8 continuation disabled) wrap into the left shortcut column while most of the wide output pane is unused. The reference rows are visually misassociated."
+    },
+    {
+      "scene_id": "journal-empty",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/journal-empty.png",
+      "png_sha256": "755e09a000e4c61c2f1d349a54450fcfbf64cc463953ecaf19bd28aad0c7892b",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The empty journal presents a blank entry list and SQL pane, a clear no-matching-entries notice, appropriately dim unavailable actions and readable remaining controls without overlap.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The empty journal presents a blank entry list and SQL pane, a clear no-matching-entries notice, appropriately dim unavailable actions and readable remaining controls without overlap."
+    },
+    {
+      "scene_id": "journal-error",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/journal-error.png",
+      "png_sha256": "744bf622f8b3571db4c0d830f3204163f15001f85e535fdf91fc1e494fcefb06",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The journal error explicitly states that the file is not a database; the empty list/SQL state and dim unavailable actions remain coherent and contained.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The journal error explicitly states that the file is not a database; the empty list/SQL state and dim unavailable actions remain coherent and contained."
+    },
+    {
+      "scene_id": "journal-populated",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/journal-populated.png",
+      "png_sha256": "0091b19ff2536242547fc5d5a8416440e7ec2fd8185da89d2d79f0021e4c7dd9",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The selected completed journal entry, source file/object metadata and three-line user-visible SQL agree visually; the split panes, navigation/export actions and footer fit inside the modal.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The selected completed journal entry, source file/object metadata and three-line user-visible SQL agree visually; the split panes, navigation/export actions and footer fit inside the modal."
+    },
+    {
+      "scene_id": "keyboard-multicursor",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/keyboard-multicursor.png",
+      "png_sha256": "92e2644f05c374547296209cdba71cfa6da9a41e460c1e38cca7b934e41c63c8",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "Three distinct insertion markers align vertically across the three SQL lines, with keyboard mode on shown in both status and message area; the ruler/status and editor remain contained.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: Three distinct insertion markers align vertically across the three SQL lines, with keyboard mode on shown in both status and message area; the ruler/status and editor remain contained."
+    },
+    {
+      "scene_id": "mutation-confirm",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/mutation-confirm.png",
+      "png_sha256": "3d82b792339170808caf71a6d15e76fd0401cabc0c90524f9118039bd148e657",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "The editor shows SELECT order_id, customer_name, revenue FROM analytics.daily_orders, while the modal asks to execute DELETE FROM analytics.daily_orders WHERE order_date < CURRENT_DATE -90. The visible query and its claimed confirmation do not agree. This is captured fixture inconsistency, not proof of production executing wrong SQL.",
+      "likely_source_from_existing_plan_only": "agent_tools/sql_explorer_visual_scene.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The editor shows SELECT order_id, customer_name, revenue FROM analytics.daily_orders, while the modal asks to execute DELETE FROM analytics.daily_orders WHERE order_date < CURRENT_DATE -90. The visible query and its claimed confirmation do not agree. This is captured fixture inconsistency, not proof of production executing wrong SQL."
+    },
+    {
+      "scene_id": "new-file",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/new-file.png",
+      "png_sha256": "46e3277a4b24829bf138cb4bf84137508d4f34c669668bb86f2a2ac73078a3d1",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The compact square new-file dialog has a complete filename requirement label, focused query.sql input and separate Choose directory/Cancel controls, all fully within the viewport.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The compact square new-file dialog has a complete filename requirement label, focused query.sql input and separate Choose directory/Cancel controls, all fully within the viewport."
+    },
+    {
+      "scene_id": "query-running",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/query-running.png",
+      "png_sha256": "9e548729496e1a85870c922a2eff8da4218aa7163be9422f90c27417a5bc6291",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The running status, elapsed time, optimization notice and red Stop control fit on the command strip without obscuring the SQL editor; the long-running state is visually unambiguous.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The running status, elapsed time, optimization notice and red Stop control fit on the command strip without obscuring the SQL editor; the long-running state is visually unambiguous."
+    },
+    {
+      "scene_id": "result-message",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/result-message.png",
+      "png_sha256": "830acf62b798f2c295df2791e38d2e1d4900d22fab6574b79fad43d58f83a6ad",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The output pane displays the complete PermissionError about daily_orders, coherently accompanied by the Query failed status and duration. Its close control and lower command area remain available.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The output pane displays the complete PermissionError about daily_orders, coherently accompanied by the Query failed status and duration. Its close control and lower command area remain available."
+    },
+    {
+      "scene_id": "result-success",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/result-success.png",
+      "png_sha256": "677bee9e4328c6e7bbaecb4dd7964c2485cd4bc215234cc0c7e276323c2be696",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "Editor projections are row_number and wide_value in repeated SELECT lines, but the grid headers are order_id, customer_name, revenue and long_note. The succeeded capture pairs unrelated visible SQL and data; status says20of1,248rows. Image alone cannot count offscreen rows.",
+      "likely_source_from_existing_plan_only": "agent_tools/sql_explorer_visual_scene.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: Editor projections are row_number and wide_value in repeated SELECT lines, but the grid headers are order_id, customer_name, revenue and long_note. The succeeded capture pairs unrelated visible SQL and data; status says20of1,248rows. Image alone cannot count offscreen rows."
+    },
+    {
+      "scene_id": "results-resized",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/results-resized.png",
+      "png_sha256": "229c2164908efbbdca4d3af7de54efe3ff6da85480fdc8b20147c6f2541ab676",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "The SELECT projects order_id/customer_name/revenue but the displayed grid has customer/revenue. The contained shallow layout does not resolve this visible query/result mismatch.",
+      "likely_source_from_existing_plan_only": "agent_tools/sql_explorer_visual_scene.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The SELECT projects order_id/customer_name/revenue but the displayed grid has customer/revenue. The contained shallow layout does not resolve this visible query/result mismatch."
+    },
+    {
+      "scene_id": "results-vertical",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/results-vertical.png",
+      "png_sha256": "aacd0f65e2a0fae8f8083f22c3607e4c235b7d4eae10199c771f9321dc32ffdc",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "The left SELECT projects order_id/customer_name/revenue but the right grid has customer/revenue. The vertical split is contained, but the captured query/result state is inconsistent.",
+      "likely_source_from_existing_plan_only": "agent_tools/sql_explorer_visual_scene.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The left SELECT projects order_id/customer_name/revenue but the right grid has customer/revenue. The vertical split is contained, but the captured query/result state is inconsistent."
+    },
+    {
+      "scene_id": "save-changes-cancel",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/save-changes-cancel.png",
+      "png_sha256": "4add19364ed0c43efc0aba0e7351206e914857f45c51c453a2a2c1cd6cc6bb46",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "Cancel is correctly amber and the other actions neutral, but the active dirty tab is Untitled1while the prompt names quarterly_report.sql. Requested focus is now visually correct; workspace identity remains inconsistent.",
+      "likely_source_from_existing_plan_only": "agent_tools/sql_explorer_visual_scene.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: Cancel is correctly amber and the other actions neutral, but the active dirty tab is Untitled1while the prompt names quarterly_report.sql. Requested focus is now visually correct; workspace identity remains inconsistent."
+    },
+    {
+      "scene_id": "save-changes",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/save-changes.png",
+      "png_sha256": "53a5a01b183d2cad33979a002e884aba81d244b4b8221d528b00dca7d093ab45",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "product_defect",
+      "notes": "The active dirty tab is Untitled1, while the prompt asks Save changes to quarterly_report.sql?. The dialog and visible workspace identity disagree. Save is correctly amber; the defect is identity consistency.",
+      "likely_source_from_existing_plan_only": "agent_tools/sql_explorer_visual_scene.py",
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The active dirty tab is Untitled1, while the prompt asks Save changes to quarterly_report.sql?. The dialog and visible workspace identity disagree. Save is correctly amber; the defect is identity consistency."
+    },
+    {
+      "scene_id": "tab-database-change",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/tab-database-change.png",
+      "png_sha256": "1dfdaf9ddeb1dd65ad15040ed3c91bd8c7aad75cd97ffa6cf652745f701b1c85",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The new active tab explicitly carries warehouse_connection and Untitled 2; the empty editor and switch-status message agree with the changed database context, while the original gp tab remains visible.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The new active tab explicitly carries warehouse_connection and Untitled 2; the empty editor and switch-status message agree with the changed database context, while the original gp tab remains visible."
+    },
+    {
+      "scene_id": "tabs-overflow",
+      "png_path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.rag_index/sql-explorer-visual/review-7a76f641449a/screenshots/tabs-overflow.png",
+      "png_sha256": "fa22eca4ae9a551a13b5193a0509aa7e60570b9bb878125fc260145547245797",
+      "dimensions": [
+        1280,
+        800
+      ],
+      "opened_individually": true,
+      "display_detail": "original",
+      "verdict": "pass",
+      "notes": "The tab strip intentionally overflows horizontally with its amber scrollbar. The first tab has the filled active treatment; neighbors and close marks remain readable. The yellow strip/line is visible but does not by itself demonstrate a second selected tab or content occlusion; no source cause is inferred.",
+      "likely_source_from_existing_plan_only": null,
+      "managed_verdict_recorded": true,
+      "managed_notes": "Independent complete original PNG inspection by /root/review_separate_visual_repair_full_images: The tab strip intentionally overflows horizontally with its amber scrollbar. The first tab has the filled active treatment; neighbors and close marks remain readable. The yellow strip/line is visible but does not by itself demonstrate a second selected tab or content occlusion; no source cause is inferred."
+    }
+  ],
+  "authority_limits": {
+    "native_linux_positive": false,
+    "glyph_linux_installed_family_attestation": false,
+    "source_approval": false,
+    "full_visual_gate_approved": false,
+    "source_edits": false,
+    "candidate_programs_tests_scenes_executed": false,
+    "github_telegram_or_pi_touched": false,
+    "workflow_complete_called": false
+  },
+  "managed_verdicts": {
+    "all_46_individually_recorded_through_repository_visual_review": true,
+    "counts": {
+      "product_defect": 12,
+      "pass": 34
+    },
+    "pending": 0,
+    "session_sha256_after_all_verdicts": "a01329e02159bc8536374d62e6e606de72fe503187b2d541ced51045c8357146",
+    "content_current_after_last_tool": true,
+    "workflow_complete_not_called": true
+  }
+}

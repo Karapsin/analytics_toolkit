@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from xml.etree import ElementTree as ET
 
 from agent_tools.sql_explorer_visual import TERMINAL_COLUMNS, TERMINAL_ROWS, VIEWPORT
+from agent_tools.sql_explorer_visual_render import render_options
 from agent_tools.sql_explorer_visual_scene import _write_evidence, create_scene
 
 if TYPE_CHECKING:
@@ -33,7 +34,7 @@ def _write_png(svg: str, destination: Path) -> None:
     import resvg_py  # noqa: PLC0415 - optional agent capture dependency.
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(resvg_py.svg_to_bytes(svg_string=_frame_svg(svg)))
+    destination.write_bytes(resvg_py.svg_to_bytes(svg_string=_frame_svg(svg), **render_options()))
 
 
 def _geometry_ready(evidence: Path) -> bool:
@@ -75,6 +76,7 @@ def main() -> int:
     os.environ["TEXTUAL_COLOR_SYSTEM"] = "256"
     os.environ["SQL_EXPLORER_VISUAL_REQUIRE_COLOR_256"] = "1"
     os.environ.pop("COLORTERM", None)
+    os.environ.pop("NO_COLOR", None)
     asyncio.run(capture_scene(args.scene, args.evidence, args.manifest, args.screenshot))
     return 0
 

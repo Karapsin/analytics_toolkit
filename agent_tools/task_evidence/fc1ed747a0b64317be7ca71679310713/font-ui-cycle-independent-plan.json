@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "kind": "independent-read-only-font-and-existing-ui-dependency-cycle-plan",
+  "reviewer": "/root/review_separate_visual_repair_final_source",
+  "decision": "approve_combined_prerequisite_plan_with_required_boundaries",
+  "source_approval": false,
+  "visual_approval": false,
+  "bindings": {
+    "repository": "Karapsin/analytics_toolkit",
+    "actual_dev_supplied_by_parent": "f66a80ebe4b3c28dbca17fbc58c2d6ffe464bb01",
+    "current_private_branch": "codex/19ac2eeff8284a2f-17d3108f",
+    "current_private_head": "441a9bd825e88414c9215f7e0717e97179c77539",
+    "current_task_read_from_active_record": "fc1ed747a0b64317be7ca71679310713",
+    "current_task_starting_prompt": "implement it on your own if orchestator is not doing that",
+    "native_foundation_commits": [
+      "21ce0928372f23302a6d313d9a69d80a94e5fba3",
+      "1b6b877ea6f1271df89d97bd0c67cfc8934f6a30"
+    ],
+    "pr39_actual_local_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+    "pr39_latest_head_task_digest": "52de9fb5558271cb3998a058daf80739478aebf30a7c70e0b40f3b68b31d0873",
+    "pr39_latest_head_producer": "author:fcf3831985b14c2dacec997e4f8d2946",
+    "pr39_original_source_commit": "b2fd32245ab10454ff6f7c41f6b7c5a03c6d31c7",
+    "pr39_original_source_task": "04c60facc8294087b55ffdd496a4de82",
+    "pr39_original_commit_task_digest": "1861a62e0271010e781626dec3cbd12e64bdc49abe511c4aebc91fa60fd0faf2",
+    "original_complete_source_review": "/private/tmp/separate-visual-repair-final-independent-source-review-v6.json",
+    "original_complete_source_review_sha256": "d7275e19f8a5c8c787b2659aa8460b749007dbf34d34485cf3e0873b8c18275a",
+    "current_capture_supplied_by_parent": "review7a76e1d119; six inherited UI defects already identified; complete individual review still proceeding"
+  },
+  "read_only_limits": "No startup synchronization, source edits, candidate imports/programs/tests/scenes, network calls, remote comments, approvals or Pi operations performed. The initial76eb object was absent; after the parent fetched the exact PR39 object, it was inspected locally. Actual live dev and active PR9 writer facts are parent-supplied, not independently queried. Findings are bound to inspected local objects and current dirty private font source.",
+  "cycle_assessment": "A full visual gate correctly blocks a font/exporter-only candidate containing inherited visible UI defects. PR39 contains the UI repairs but depends on native capture/font infrastructure. The user's complete tooling-repair and all-qualifying-PR merge request authorizes a fresh coherent prerequisite combining these already requested behaviors; it does not authorize declaring either side passed without validation. A fresh combined candidate removes the circular prerequisite while retaining the same full acceptance gate.",
+  "actual_source_alignment": {
+    "original_reviewed_core": "Independently verified b2fd's editor, creation dialog, pane, help, scene, rendered-state tests, scene-negative tests and module docs against the exact previously reviewed hashes. All eight paths are unchanged between original dev1f7ff62a… and current font parent441a9bd8…, so the original core does not require guessing about intervening source edits.",
+    "core_hashes": {
+      "analytics_toolkit/sql_explorer/editor.py": "92cbb3da7337075d450d2bebf737b20b7aa354de2f927cf96470d6d5d4dfe763",
+      "analytics_toolkit/sql_explorer/create_table_screen.py": "3369b5f734f6d879467ea12d9eea4adc4604395311580acc5caa989c7b522b95",
+      "analytics_toolkit/sql_explorer/panes.py": "0489415e6e8b6fd6701d77cd525c7364269d65229694cc5ca73be469e3d70cf3",
+      "analytics_toolkit/sql_explorer/help_text.py": "3ff2bb9a1e13057883a15ea21573430649a9570972746177bab026c8dd873cbe",
+      "agent_tools/sql_explorer_visual_scene.py": "7ba2862cb113b839fb6ccf8bb7aada649e2910cde3508e226d1ec44d3bd2ed5f",
+      "tests/sql/explorer/rendered_states.py": "3097c6ab3281ac9dac5f9741aa8a2d737d2ee61f123055865b89e961c4869bcc",
+      "tests/agent_tools/visual_scene_states.py": "8d34ae7589c7a29751f1c3ab41fbfb64a9b7818f81b24f50f427c629b2be1c10",
+      "docs/modules/sql_explorer/index.md": "2d090e2d4db0f89e4828f8b605404fa2a90d1e45a6b56d65038518ce6438ea62"
+    },
+    "actual_current39_extensions": "Compared b2fd to actual76eb. The four production core files and rendered-state tests remain byte-identical. Later corrections add completion popup positioning with parent/editor clipping, scroll/ruler/tab-aware offsets, deferred tab/menu/epoch guards and resize watchers; journal warning-only status; paired tests and stronger completion geometry guards. These later files are not covered by the old d727 source approval. Their bounded production/scene diffs were read for planning; implementation adoption requires fresh complete source review and validation.",
+    "current39_evidence_correction": "Its additive evidence explicitly withdraws the old database-picker character-loss allegation and disclaims historical renderer/font provenance from SVG comparisons. Preserve that correction. The present font change must remain bound to the parent's actual controlled native font/glyph evidence, not revive that withdrawn picker allegation.",
+    "stale_base_hazard": "Actual76eb is based on older7142aac… metadata. Whole-tree comparison to current devf66 shows reverse protected review_control.py changes and deletion of newer task601907e377c7423ab83726d86de50186 evidence and tests/repository/coordinator_scope.py. Those are stale-base differences and are NOT required UI changes. Never restore the PR39 tree wholesale or apply its full base diff over current dev. The parent also reports the PR API cached base7142 while actual REST dev ref isf66; retain that discrepancy and use actual dev for revalidation."
+  },
+  "recommended_smallest_complete_plan": [
+    "Retain the fresh unhanded-off font branch/task as the coordinator-owned combined prerequisite. Before adding UI source, use normal MCP task-context/routing/impact workflows to append the exact retained user instructions, independent recommendations, all Q/options/A, parent plans and current cycle-resolution plan. Current active task contains only fix-any-issues beyond the terse original prompt; do not assume that alone carries the full parent. Preserve PR39's exact signed task/head/digest and original04c… evidence as immutable historical provenance; do not rewrite or reuse its signature or approvals.",
+    "Carry ONLY the coherent UI/test/module-doc semantic subset listed below from actual current39 into the current fresh tree, preserving current f66/PR43/PR44 controller, isolation, diagnostic and native-probe boundaries. Use per-path source reconciliation or a narrow reviewed patch, not whole-tree checkout, old-base patch application or a cherry-pick of metadata/history commits. Existing font capture/exporter changes do not edit these UI paths, so the intended union is explicit.",
+    "Prefer the complete current39 UI subset, including later completion/journal corrections with their paired tests and final-state guards, so the combined prerequisite does not silently leave already demonstrated shared full-scene blockers unresolved. It is a single coherent dependency for the same full46scene acceptance, not new multicursor feature work. If the root intentionally chooses the smaller eight-path b2fd core instead, retain and explicitly assign the later completion/journal work to PR39 and accept that any such defect found in this candidate still blocks publication; no narrow scene reduction or inherited-defect pass is allowed.",
+    "Do not copy PR39's folded CHANGELOG, old uniquely owned fragment, old task record as the new active context, controller reverse diff or deleted newer provenance/tests. Add the current task's own fragment and additive complete parent-source provenance. Keep current dev coverage floors and let mandatory checks monotonically ratchet the exact combined tree; PR39's unmerged higher measurements are historical evidence, not an exact-tree validation receipt, and no existing floor may be lowered.",
+    "Have a fresh independent reviewer inspect the final complete union: font/helper/probe behavior plus current UI source and all paired regressions. Re-run focused and full mandatory exact-tree checks, then capture all46manifest scenes at208x47/1280x800 and inspect every full PNG individually. Confirm real glyphs, every six currently observed defect, live invalid-to-valid Create, checkbox/save/result state, completion row/border containment and journal-error truthfulness. Old d727 and font-only1303 source reviews are provenance, not approval of the union; no stale receipt is reused.",
+    "Publish through normal signed git_workflow to dev as a new reviewed prerequisite/successor. The current branch includes the unmerged PR43/44 foundation commits: record this ancestry and genuine prerequisite state explicitly; do not claim those PRs merged or authorizations transferred. Any controller-required exact-head policy approval follows fresh independent complete-feature review and exact checks through the existing delegated/owner path, never this plan.",
+    "After successful combined dev merge, promote ONLY the explicit reviewed workflow/controller/capture infrastructure allowlist to main through its normal exact-head gate. New render policy helper and its caller must be activated together if they belong in the allowlist; if the existing promotion allowlist lacks a required helper, make that narrow protected list change explicit and review it. No package UI, module docs or unrelated files may reach main outside release. Candidate package UI is supplied from the separately checked-out candidate, not smuggled into trusted main.",
+    "Let the Pi reconcile actual PR39 against the merged prerequisite, preserve its full task and all later corrections, run its own exact final-head/base/task independent review and full capture, and actually merge it to dev. Do not close it as a substitute while reporting merged. If duplicate source produces a no-change candidate, use normal independently reviewed dependency/provenance handling and report that state honestly; no fake successful merge or transplanted approval. PR37 and other successors likewise get fresh reconciliation and candidate-bound checks.",
+    "Preserve the existing active PR9 visual-correction writer086rev9; do not create a second writer, edit its branch or copy this branch's partial work into it. The Pi owns later conflict reconciliation if PR9 merges first or shares widget/completion paths. PR10's actual PR9 dev merge plus ancestry, protected holds, all-relevant-PR successful dev merges, live labels/notifications and producer-to-planner evidence delivery remain unchanged. No heavy work on Pi."
+  ],
+  "current39_ui_semantic_paths": [
+    "analytics_toolkit/sql_explorer/editor.py",
+    "analytics_toolkit/sql_explorer/create_table_screen.py",
+    "analytics_toolkit/sql_explorer/panes.py",
+    "analytics_toolkit/sql_explorer/help_text.py",
+    "analytics_toolkit/sql_explorer/completion_commands.py",
+    "analytics_toolkit/sql_explorer/journal_screen.py",
+    "analytics_toolkit/sql_explorer/styles.py",
+    "analytics_toolkit/sql_explorer/widgets.py",
+    "analytics_toolkit/sql_explorer/workspace.py",
+    "agent_tools/sql_explorer_visual_scene.py",
+    "tests/sql/explorer/rendered_states.py",
+    "tests/sql/explorer/completion_placement.py",
+    "tests/sql/explorer/journal_screen.py",
+    "tests/agent_tools/visual_scene_states.py",
+    "docs/modules/sql_explorer/index.md"
+  ],
+  "path_count_note": "15 semantic source/test/doc paths are listed; coverage_targets is the16th validation-generated consideration, not a source transplant. Do not count the old CHANGELOG fold or stale controller differences as UI work.",
+  "material_risks_and_controls": [
+    "Current39's added completion/journal source has not received my original full source approval; fresh review must cover its scheduling/lifecycle and Textual0.73/0.89 compatibility. The stronger scene assertion refactor must retain every old check rather than drop guards.",
+    "The parent font branch is based on PR44 metadata441a, not yet actual devf66. The new PR must clearly retain or supersede genuine foundation dependencies through normal controller rules; no direct PR44 edits or copied exact-head approval.",
+    "A whole-tree stale-base import would reverse protected coordinator safeguards and delete provenance/tests. Positive per-path reconciliation and final diff inventory are mandatory.",
+    "Full glyph visibility may expose further actual UI defects. Treat them truthfully and repair through bounded cause-specific work; no pass based merely on geometry or synthetic native-font probe.",
+    "A dev merge containing package UI does not authorize package promotion to main. Exact infrastructure-only promotion needs its own membership, hashes, caller/helper pairing and authorization.",
+    "PR9 is an active independent writer and may change the same editor/widget/completion paths. Freeze root ownership to the fresh prerequisite and let normal Pi head/base-aware conflict correction preserve both tasks."
+  ],
+  "authority_limits": {
+    "only_this_plan_report_written": true,
+    "source_edits_or_git_mutations": false,
+    "candidate_programs_tests_or_scenes_executed": false,
+    "network_or_pi_operations": false,
+    "remote_comments_or_approvals": false,
+    "source_ci_visual_or_owner_approval": false,
+    "runtime_or_main_activation": false,
+    "historical_rejection_changed": false,
+    "parent_scope_complete": false,
+    "all_prs_merged": false
+  }
+}

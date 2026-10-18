@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "kind": "independent-exact-completion-scene-readiness-regression-plan",
+  "reviewer": "/root/review_combined_native_ui_source",
+  "created_at_utc": "2026-10-18T18:02:16.007367+00:00",
+  "decision": "approve_exact_test_only_event_readiness_plan",
+  "completeness": "complete",
+  "findings": [],
+  "binding": {
+    "prior_freeze_sha256": "ae29a699d609373859df03a92a2214c6f8eadbf32cc6fa8147043c054c1c349b",
+    "prior_complete_source_review_sha256": "795e90ed003dadcd7d603ec01b694e0e1465a416c61b934dbcc2029945a538af",
+    "task_digest": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+    "failed_coverage_log": ".rag_index/tool_logs/1792346377575825000-b21a529eab.log",
+    "failed_coverage_log_sha256": "3bed03ffe1e9666c54cdddef697fe72bda24cd08db1bedc4512f32a6176913f8",
+    "test_source_sha256": "3c7aca632785e77b9a42d12cb92f9352cb941309872259c591967cfd475bc411",
+    "scene_source_sha256": "367bdd181eee589dcc48a1db2b49ad90b4c353531320e396f7854c086a97567e"
+  },
+  "demonstrated_facts": [
+    "Actual coverage run failed only the initial positive geometry guard in test_completion_geometry_guard_rejects_overlapping_popup, before any deliberately broken menu geometry.6507passed1skipped209deselected317subtests remain the actual partial validation result; fullprecommit did not pass.",
+    "The selected completion-columns scene schedules actual _open_completion using a0.3second timer after _configure_visual_scene. The test only awaits pilot.pause then calls placement; it has no happens-before readiness edge from actual completion opening. Calling position on a closed menu deliberately returns.",
+    "The failure log does not record timer firing timestamps or actual is_open, so it does not by itself prove exact interleaving or exclude every other cause. The proposed fix adds the missing real readiness precondition while retaining all positive/negative assertions; any remaining source/geometry defect still fails."
+  ],
+  "approved_implementation": [
+    "Add test-domain helper tests/agent_tools/_support/visual.py with only stdlib runtime imports. observe_completion_open(monkeypatch,app) allocates asyncio.Event in the current async exercise, captures actual bound app._open_completion, installs an instance-only monkeypatch wrapper before app.run_test and returns the event.",
+    "Wrapper forwards every original positional/keyword argument, calls the real original method exactly once, sets event only after successful return, returns the original result unchanged and propagates all exceptions. Do not construct/replace menu contents, call original early, patch geometry or suppress failures.",
+    "Add pytest monkeypatch fixture to the existing negative-geometry test. Before run_test, install observer; inside, await asyncio.wait_for(event.wait(),timeout=5), then pilot.pause to drain layout. Preserve original app._position_completion(workspace), following pause, and every initial positive guard unchanged.",
+    "Keep intentional repair-scheduler freeze, exact overlap injection and final assertions: completion_active_row_visible mustFalse while completion_contained remainsTrue. Do not skip/xfail/widen rectangles, reduce scenes, remove assertions or replace guard with a stub.",
+    "Bounded event wait replaces missing synchronization, not a fixed sleep or polling loop. If the original method never executes or raises, the test must fail rather than set fake readiness. Monkeypatch lifecycle restores original instance state."
+  ],
+  "after_edit_gates": [
+    "Preserve full original coverage failure/log and previoussource/freezes. Freeze changed helper/test plus any additive provenance and obtain fresh independent complete source review.",
+    "Execute affected managed focused regressions; then all4 exact-tree mandatory stages. Any unchanged failure requires a changed/evidenced correction before rerun, never a claimed pass.",
+    "Refresh final full46scene geometry and individual fullPNG review under exact managed content fingerprint. Existing46green remains old-content history.",
+    "Keep signed published-head verification, actual native3.11/3.13 success, fresh CI/protected decision and separately reviewed trusted-main helper delivery. Preserve complete parent task/no-Pi/security/actualdevmerge requirements."
+  ],
+  "authority_limits": {
+    "source_mutation_by_reviewer": false,
+    "candidate_execution_by_reviewer": false,
+    "production_harness_change_approved": false,
+    "tests_visual_ci_native_success_claim": false,
+    "owner_protected_or_runtime_activation": false
+  }
+}

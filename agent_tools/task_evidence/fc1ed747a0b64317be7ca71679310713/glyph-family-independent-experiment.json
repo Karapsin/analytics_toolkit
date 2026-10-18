@@ -1,0 +1,61 @@
+{
+  "independent_reviewer": "/root/review_failed_capture_producer_source",
+  "host": "darwin",
+  "python": "3.12.13 (main, Jun  4 2026, 20:14:05) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "resvg_py": "0.5.0",
+  "font_sha256": "0f5db4f1749979d961019838b160bec74abdf7f9eca69553fe1aa856bbff49a4",
+  "svg_sha256": "c8650fff8b03cf00240ed45b8a8681f2c3a057865c71aed0e6b4c9ccf4503540",
+  "constant_options": {
+    "skip_system_fonts": true,
+    "font_files": [
+      "/private/tmp/native-glyph-font-experiment/DejaVuSansMono.ttf"
+    ]
+  },
+  "results": [
+    {
+      "family": "Liberation Mono",
+      "image_size": [
+        1280,
+        800
+      ],
+      "extrema": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "png_sha256": "e72a331d095874c9de691fbbb523f13c589b1bc2be0c5a33d7c6ba5ee3183010"
+    },
+    {
+      "family": "DejaVu Sans Mono",
+      "image_size": [
+        1280,
+        800
+      ],
+      "extrema": [
+        [
+          0,
+          255
+        ],
+        [
+          0,
+          255
+        ],
+        [
+          0,
+          255
+        ]
+      ],
+      "png_sha256": "ff19a6b3e12e84eb5fba70dcd011a8af96e1b22e32147c58b01f2b21d51f51b2"
+    }
+  ],
+  "limits": "Local controlled same-font-data/different-family experiment only. No candidate source executed, no Pi/Docker activity, no native Linux positive acceptance."
+}

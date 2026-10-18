@@ -4,14 +4,17 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from time import monotonic
 from typing import TYPE_CHECKING, Any, ClassVar, Tuple, cast
 
+from rich.cells import cell_len
 from rich.segment import Segment
 from rich.style import Style
 from textual import events
 from textual.binding import Binding, BindingType
 from textual.document._document import Document, Selection
+from textual.geometry import Offset, Size
 from textual.strip import Strip
 from textual.widgets import TextArea
 from typing_extensions import TypeAlias
@@ -593,6 +596,7 @@ class SqlEditor(TextArea):
 
     def render_line(self, y: int) -> Strip:
         strip = super().render_line(y)
+        strip = self._render_search_matches(strip, y)
         cursor_x, cursor_y = self.cursor_render_offset
         x = cursor_x - int(self.scroll_x) + self.gutter_width
         if (
@@ -610,6 +614,94 @@ class SqlEditor(TextArea):
                 [before, Strip(Segment.apply_style(cursor, post_style=style)), after]
             )
         return strip
+
+    def _visible_search_cells(self, row: int, start: int, end: int) -> dict[int, tuple[int, int]]:
+        cells: dict[int, tuple[int, int]] = {}
+        offset = int(self.scroll_x)
+        limit = offset + self.scrollable_content_region.width - self.gutter_width
+        cell = 0
+        line = self.document[row]
+        widths = iter(self.wrapped_document.get_tab_widths(row)[line[:start].count("\t") :])
+        for column in range(start, end):
+            character = line[column]
+            width = next(widths) if character == "\t" else cell_len(character)
+            if cell + width > offset:
+                cells[column] = (
+                    cell - offset + self.gutter_width,
+                    cell + width - offset + self.gutter_width,
+                )
+            cell += width
+            if cell >= limit:
+                break
+        return cells
+
+    def _search_exclusions(self, row: int) -> list[tuple[int, int]]:
+        blocked = []
+        for selection in self.cursor_selections:
+            start, end = sorted(selection)
+            if start[0] <= row <= end[0] and start != end:
+                blocked.append(
+                    (
+                        start[1] if start[0] == row else 0,
+                        end[1] if end[0] == row else len(self.document[row]),
+                    )
+                )
+            if selection.end[0] == row:
+                blocked.append((selection.end[1], selection.end[1] + 1))
+        return blocked
+
+    def _visible_search_ranges(self, row: int, low: int, high: int) -> list[tuple[int, int]]:
+        ranges: list[tuple[int, int]] = []
+        blocked = self._search_exclusions(row)
+        first = bisect_left(self._search_matches, ((row, 0), (row, 0)))
+        last = bisect_left(self._search_matches, ((row + 1, 0), (row + 1, 0)))
+        for start, end in self._search_matches[first:last]:
+            remaining = [(max(start[1], low), min(end[1], high))]
+            for left, right in blocked:
+                remaining = [
+                    (a, b)
+                    for lo, hi in remaining
+                    for a, b in ((lo, min(hi, left)), (max(lo, right), hi))
+                    if a < b
+                ]
+            ranges.extend((a, b) for a, b in remaining if a < b)
+        return ranges
+
+    def _render_search_matches(self, strip: Strip, y: int) -> Strip:
+        # One bounded cell scan of this visual row, then interval overlays.
+        # TextArea paints the current-line background after get_line; selections
+        # and every cursor retain precedence over these final search cells.
+        document = self.wrapped_document
+        visual_y = y + int(self.scroll_y)
+        if not self._search_matches or not 0 <= visual_y < document.height:
+            return strip
+        row, start = document.offset_to_location(Offset(0, visual_y))
+        first = bisect_left(self._search_matches, ((row, 0), (row, 0)))
+        if first == len(self._search_matches) or self._search_matches[first][0][0] != row:
+            return strip
+        end = next(
+            (column for column in document.get_offsets(row) if column > start),
+            len(self.document[row]),
+        )
+        cells = self._visible_search_cells(row, start, end)
+        if not cells:
+            return strip
+        for low, high in self._visible_search_ranges(row, min(cells), max(cells) + 1):
+            left = max(self.gutter_width, cells[low][0])
+            right = min(self.scrollable_content_region.width, strip.cell_length, cells[high - 1][1])
+            if right > left:
+                match = Strip(
+                    Segment.apply_style(strip.crop(left, right), post_style=_SEARCH_MATCH_STYLE)
+                )
+                strip = Strip.join([strip.crop(0, left), match, strip.crop(right)])
+        return strip
+
+    def _scroll_update(self, virtual_size: Size) -> None:
+        super()._scroll_update(virtual_size)
+        # A document/cursor update can scroll before the bar becomes visible.
+        # The base watcher then sees an unchanged offset during first layout.
+        if self.show_horizontal_scrollbar:
+            self.horizontal_scrollbar.position = round(self.scroll_x)
 
     def get_line(self, line_index: int) -> Text:
         line = super().get_line(line_index)

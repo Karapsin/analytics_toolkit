@@ -33,6 +33,76 @@ redacted, paged model view. Publication, runtime activation and actual request
 assignment require their own verified gates; merging this exporter alone does
 not establish that a blocked agent has received the evidence.
 
+## Isolated capture execution
+
+The capture transport keeps the Actions checkout pristine and copies the exact
+candidate into a private run-owned directory. Candidate installation and rendering
+execute in two disposable nonroot containers using the same resolved image ID
+and `/work/.venv`. Only installation has public network access. Owned firewall
+rules reject private, metadata and host destinations; rendering uses no network.
+Both containers have a read-only root, temporary storage, dropped capabilities,
+no new privileges and fixed resource limits. Host credentials, Actions command
+files, Git configuration and the Docker socket are not mounted or forwarded.
+
+Trusted host code runs with isolated Python outside the writable candidate. It
+does not import candidate modules or run candidate Git after execution starts.
+Both containers must be removed before descriptor-based collection copies regular
+files into fresh host-owned artifact directories. Symlinks, hardlinks, changing
+trees and oversized collections fail collection. Setup, timeout and cleanup
+failures remain failures even when their diagnostics upload succeeds.
+
+Install and capture stdout/stderr are retained separately with byte counts and
+hashes, within a combined 100 MiB limit. Overflow or an unfinished reader is
+explicitly incomplete. Unfinished writers are quarantined outside the uploaded
+directories. A durable resource journal records mutation intent before Docker or
+firewall requests. An uncertain response prevents collection and guard release;
+it cannot become a successful cleanup claim. The disposable GitHub runner owns
+any resources that cannot be safely confirmed and removed.
+
+Before activating this protected workflow, run the separately reviewed optional
+`visual_isolation_probe` in the `tests` workflow on the exact reviewed source.
+This mode runs only the probe matrix; ordinary CI retains its usual triggers.
+Its Python 3.11 and 3.13 jobs check real container identities, Git/venv permissions,
+public package installation, host/private/metadata rejection, network-free
+rendering, fonts and PNG generation. Retain its exact source, image, run/attempt,
+firewall counters and cleanup evidence. Unit fakes do not prove these native
+properties. The probe uses synthetic data and grants no SQL Explorer visual
+approval. Protected exact-head review/approval and authorized main activation
+remain separate requirements; scene geometry and every full-PNG verdict remain
+mandatory for SQL Explorer repairs.
+
+Native probe failure artifacts retain per-phase observations even when an import,
+install, network check or rendering assertion fails. Capture records its actual
+renderer versions and invocation, full font inventory and inspection results,
+exact SVG, produced PNG and geometry/color observations before asserting glyph
+presence. The phase record preserves the original exception and traceback;
+unexecuted stages remain incomplete. Diagnostic retention alone does not imply
+native acceptance or establish a font-selection cause.
+
+The probe and SQL Explorer exporter share a rendering-options helper. On Linux,
+when the standard Debian DejaVu Sans Mono file exists, both explicitly load that
+file and select its family for generic monospace. This handles resvg-py's Linux
+default of Liberation Mono when only DejaVu is installed. Other platforms and
+Linux hosts without that file retain the renderer defaults. System font loading,
+the full dimensions and nonempty glyph assertion remain enabled. The probe
+records the exact helper hash and options; its tests execute the real helper.
+Before trusted-main activation, the separately authorized automation projection
+must also deliver and verify `agent_tools/sql_explorer_visual_render.py` at its
+reviewed hash. Its presence on dev alone is insufficient. Full local scene review
+and actual native Python 3.11/3.13 success remain separate requirements.
+
+The fixed-color headless scene command clears inherited `NO_COLOR` before
+creating the application, alongside its existing 256-color terminal settings.
+This keeps CLI and MCP captures on the same application palette. Interactive
+SQL Explorer still honors the user's terminal preferences. The regression
+checks actual exported application text colors, excluding window decorations.
+
+Available probe files are collected after failed runs only when cleanup succeeded,
+all owned containers are absent, no resource mutation is uncertain and upload
+writers are safe. Missing or unsafe evidence remains a failed/incomplete result.
+Owned firewall counters are sampled before cleanup even after a phase failure;
+counter failures are recorded separately from the original error.
+
 ## Scheduling and status
 
 Airflow owns `github_agent_reconcile` (every minute) and

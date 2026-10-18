@@ -1,0 +1,32 @@
+{
+  "kind": "genuine-local-focused-failure-and-cause-specific-test-fixture-correction",
+  "historical_full_SQL": "3failed3634passed209deselected; full3failureoriginal retained",
+  "full_failure_logs": [
+    {
+      "path": "completion-fixture-failure-1.log",
+      "sha256": "450f856c02334f67588ea38d2681e172674b311a3a018fa483553f9d30ed803e",
+      "bytes": 17542
+    },
+    {
+      "path": "completion-fixture-failure-2.log",
+      "sha256": "122ed9d1b86bb5469bf88eb398ccff950327bfe3565fbfa84edb3755f5409f5f",
+      "bytes": 7230
+    },
+    {
+      "path": "completion-fixture-failure-3.log",
+      "sha256": "7a7026ceb8a367d270c276a85258c1afb575522f0490a85f91ba106626ccbb36",
+      "bytes": 7112
+    }
+  ],
+  "demonstrated_resize": "row4+40-26=18 visiblein[4,19), thenoffscreen[4,13) onheightshrink; actualproductionclosedcorrectly. Addedexplicitlivewidthresize/allgeometry/exactrectangle thenoffscreen+closed negative andscroll/userreopen/narrow contract.",
+  "rightedge": "Strict equality to actual editor viewport intersect parent; old parentright79 included outside viewport right78.",
+  "removal": "Lifetimeis_mounted neverclears inTextual0.73/0.89; assertnotis_attached +registryabsence+DOMabsence andpreservestale callbacks/otherworkspace assertions.",
+  "production_changed": false,
+  "targeted_managed_check": {
+    "command": "PYTEST_ADDOPTS='-k completion_placement -x' agent_tools/mcp_tool.sh run-checks --area sql --level focused",
+    "exit_code": 0,
+    "log": ".rag_index/tool_logs/1792345676780393000-e2d95bb9a4.log",
+    "log_sha256": "71d962c2a82142cf5ec611bded86ac32e48d34bc5891ca3c6fdd799cabcbce02"
+  },
+  "fresh_full_checks_and_visual_required": true
+}

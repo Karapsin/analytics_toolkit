@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "kind": "independent-cause-specific-completion-regression-correction-plan",
+  "reviewer": "/root/review_combined_native_ui_source",
+  "created_at_utc": "2026-10-18T17:46:46.067497+00:00",
+  "decision": "approve_exact_test_only_correction_plan",
+  "completeness": "complete",
+  "findings": [],
+  "prior_plan_sha256": "c825eb36a3a4b965d22e686f2d52806a07232f623571a8d9fed8010f36299a57",
+  "diagnostic_log": {
+    "path": ".rag_index/tool_logs/1792345529989908000-e2d95bb9a4.log",
+    "sha256": "7a7026ceb8a367d270c276a85258c1afb575522f0490a85f91ba106626ccbb36",
+    "result": "1 failed,3845 deselected; retained original assertion, no result relaxation"
+  },
+  "demonstrated_resize_cause": {
+    "before": {
+      "viewport": [
+        2,
+        4,
+        95,
+        15
+      ],
+      "scroll": [
+        10,
+        26
+      ],
+      "cursor": [
+        40,
+        22
+      ],
+      "render_offset": [
+        22,
+        40
+      ]
+    },
+    "after": {
+      "viewport": [
+        2,
+        4,
+        55,
+        9
+      ],
+      "scroll": [
+        10,
+        26
+      ],
+      "cursor": [
+        40,
+        22
+      ],
+      "render_offset": [
+        22,
+        40
+      ],
+      "menu_open": false,
+      "menu_region": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "calculation": "The rendered row remains4+40-26=18. It is visible before resize inside[4,19), then outside the shrunken[4,13) viewport. Production explicitly closes when the active row leaves bounds. The test incorrectly required an open popup in this demonstrated offscreen state. This is a fixture/expectation mismatch, not evidence of a product placement bug."
+  },
+  "approved_changes": [
+    {
+      "area": "width-only live resize",
+      "plan": "Retain original initial open, both-axis scroll, all geometry booleans and independently computed exact rectangle. Then resize to60x30 while row40 remains visible with usable space. Explicitly calculate/assert that visibility precondition, require popup stays open with all geometry guards and exact expected rectangle/right viewport intersection. This preserves a genuine open-menu resize/clamp test."
+    },
+    {
+      "area": "height shrink negative",
+      "plan": "Next resize to60x24. Calculate actual rendered row from actual viewport/render offset/scroll; assert it is outside actual editor/parent intersection and assert popup closes. Optionally require both guard valuesFalse in the deliberately closed state. Keep this as an additional explicit offscreen closure regression, not a replacement for the open resize test."
+    },
+    {
+      "area": "genuine reopen and original narrowing",
+      "plan": "Use actual editor.scroll_cursor_visible(animate=False), settle through pilot, assert row is now within the actual viewport, and issue actual Ctrl+Space to reopen as a new user request. Require all original geometry guards, exact independent rectangle, right containment and actual suggestions. Keep the original typed narrowing to customer_name, height3, all geometry/exact rectangle, Escape then resize staying closed. Do not force menu state/epoch or call placement directly to fake success."
+    },
+    {
+      "area": "right edge",
+      "plan": "Apply v1 proven strict equality target min(editor.scrollable_content_region.right,pane.content_region.right); retain entire rectangle, containment, row visibility, no-space closure and SQL text assertions. No <= substitute for the former strict equality."
+    },
+    {
+      "area": "removed workspace",
+      "plan": "Apply v1 proven live detachment assertions: not workspace.is_attached, removed tab_id absent from app._workspaces, and no matching DOM widget. Keep inactive and removal variants, pending callback/direct positioning/scheduling probes, other active workspace identity/menu/text invariants. Do not alter lifetime is_mounted or production lifecycle to make that incorrect expectation pass."
+    }
+  ],
+  "scope": "tests/sql/explorer/completion_placement.py only for behavior correction, plus additive exact evidence/provenance. No production/harness/manifest change is justified by these failures. Diagnostic-only assertion-message changes are preserved in original log/history; no old failure is overwritten.",
+  "why_not_assertion_weakening": "The original meaningful contracts are retained in the correct states: open popup repositions during a resize that keeps its anchor visible; deliberate offscreen shrink must close; real scroll/reopen then narrowing/acceptance remains strict. The right bound is the production/docs/harness editor\u2229parent intersection, and unmount is checked by actual DOM/owner registry instead of a lifetime completion flag. Added negative state is stronger than the prior contradictory assumption.",
+  "required_after_edit": [
+    "Freeze exact changed source and all unchanged38 feature files, then fresh independent source review; no b0a336 approval transfer to edited bytes.",
+    "Run bounded affected completion regressions; then full mandatory exact-tree validation and all normal publication/native/protected/main-delivery gates. Preserve actual failing logs and truthful executed/reused/cancelled stage status.",
+    "Keep full46-scene receipt bound to its exact unchanged visual content; if managed fingerprint includes changed tests/evidence it must be regenerated, not re-labelled. Every required geometry/PNG verdict remains.",
+    "Preserve complete parent/current39 context, all unrelated source/assertions/quality/coverage baselines, PR9 writer exclusion, no-Pi execution and all-PR actual dev-merge objective."
+  ],
+  "authority_limits": {
+    "reviewer_source_edits": false,
+    "reviewer_candidate_execution": false,
+    "production_change_approved": false,
+    "test_visual_ci_native_success_attestation": false,
+    "protected_owner_approval_or_activation": false
+  }
+}
