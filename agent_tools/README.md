@@ -329,13 +329,32 @@ tab, focused-widget identity and remembered-focus identity. Callbacks retain the
 original scheduler, arguments, return values, exception behavior and execution
 count. Probe failures and event/byte overflow explicitly mark incomplete traces.
 
-Each ruler/editor `strip_observation` records the already collected widget strip,
-the compositor crop, original and resulting character/cell lengths, requested
-crop width and exact original segment text/styles, including trailing padding.
-Segment evidence has a separate 8 KiB bound and explicit omission state. The
-existing strict focus and widget/compositor equality assertions remain in force;
-failure reports retain the first snapshot and its trace without recollection.
-These observations select no focus, padding or ruler presentation repair.
+Each ruler/editor `strip_observation` records the already collected raw widget
+strip and compositor crop, their original and resulting character/cell lengths,
+requested crop width and exact original segment text/styles, including trailing
+padding. Existing `widget_row` and `strip_observation.widget` fields retain their
+raw `render_line` meaning and source-fidelity assertions. Additive
+`styled_widget_row` and `styled_widget_observation` fields record native
+`render_lines` output for the widget-local content-region clip, mapped once to
+screen coordinates. Native rendering accounts for border, padding and styles;
+the harness never synthesizes padding or trims trailing whitespace. The strict
+comparison uses this styled row and the corresponding compositor crop: complete
+text, cell lengths, coordinates, resolved colors and style flags must match.
+Segment evidence retains its separate 8 KiB bound; unavailable rows, cell limits
+and omissions explicitly mark incomplete evidence. Failure reports retain the
+first snapshot and its trace without recollection.
+
+The tab/database scene stays unconfigured during initialization. It activates
+the target workspace and switches its database once, delegates production
+deferred focus restoration unchanged, then queues one command-focus request
+after the restoration's queued focus application. A subsequent queued
+continuation marks configuration complete after command focus applies.
+Readiness observes workspace, database, initialization and current focus;
+later focus loss blocks capture without another focus request. The bounded
+callback trace also records these initialization boundaries. Production tab
+restoration and ruler presentation remain unchanged. GitHub regressions cover
+ordering, production focus restoration, observation non-mutation and strict
+raw/styled/compositor comparisons; fresh CI and full visual review remain required.
 
 The `new-file` scene records actual mounted screen/subclass identity, computed
 alignment/layout styles, dialog and viewport geometry, ancestor clips and exact

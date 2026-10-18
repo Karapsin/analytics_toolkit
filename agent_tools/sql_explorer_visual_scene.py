@@ -19,11 +19,13 @@ import pandas as pd
 from agent_tools.sql_explorer_lifecycle_trace import RulerLifecycleTrace
 from agent_tools.sql_explorer_render_diagnostics import (
     SELECTOR_SCENES,
+    rendered_rows_equal,
     ruler_lifecycle_snapshot,
     ruler_strip_observation,
     selector_readiness_assertions,
     selector_readiness_snapshot,
     strip_record,
+    styled_content_row,
 )
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.connections import ConnectionsRestart
@@ -124,6 +126,7 @@ class VisualExplorerApp(SqlExplorerApp):
                 "directory-armed",
                 "save-changes",
                 "save-changes-cancel",
+                "tab-database-change",
             }
         )
         self.scene_configured = self.creation_scene_ready
@@ -131,6 +134,8 @@ class VisualExplorerApp(SqlExplorerApp):
             SaveChangesScreen | CreateTableScreen | FileNavigationScreen | None
         ) = None
         self._directory_scene_initialized = False
+        self._visual_database_switch_started = False
+        self._visual_database_restore_pending = False
         super().__init__(VisualSession())
         self.ruler_trace: RulerLifecycleTrace | None = None
         if scene_id == "tab-database-change":
@@ -439,9 +444,35 @@ class VisualExplorerApp(SqlExplorerApp):
         self.call_after_refresh(self._mark_scene_ready)
 
     def _switch_visual_database(self) -> None:
+        if self._visual_database_switch_started:
+            return
+        self._visual_database_switch_started = True
+        self._visual_database_restore_pending = True
         self._activate_tab("2")
         self._command_database(["warehouse_connection"])
+
+    def _restore_active_focus(self) -> None:
+        # Delegate the real restoration, including its queued Widget.focus application.
+        super()._restore_active_focus()
+        if self._visual_database_restore_pending:
+            self._visual_database_restore_pending = False
+            self.call_later(self._focus_visual_database_command)
+
+    def _focus_visual_database_command(self) -> None:
+        # This app callback follows the restoration's app.call_later(set_focus).
+        if self.ruler_trace is not None:
+            self.ruler_trace.record("initialization", "restored_focus_applied")
         self.active_workspace.command_input.focus()
+        if self.ruler_trace is not None:
+            self.ruler_trace.record("initialization", "command_focus_requested")
+        self.call_later(self._finish_visual_database_scene)
+
+    def _finish_visual_database_scene(self) -> None:
+        # Widget.focus queued its application before this one-shot continuation.
+        self.scene_configured = True
+        if self.ruler_trace is not None:
+            self.ruler_trace.record("initialization", "command_focus_applied")
+        self._poll_scene_readiness()
 
     def _configure_pending_scene(self) -> None:
         if self.scene_configured or self._pending_scene_screen is None:
@@ -684,6 +715,14 @@ def _scene_control_readiness(app: Any, screen: Any, details: dict[str, Any]) -> 
         _save_readiness(app, screen, details)
     elif scene == "directory-armed":
         _directory_readiness(app, screen, details)
+    elif scene == "tab-database-change":
+        workspace = app.active_workspace
+        details["conditions"].update(
+            initialization_complete=app.scene_configured,
+            active_workspace=workspace.tab_id == "2",
+            database=workspace.session.database.connection_key == "warehouse_connection",
+            requested_focus=app.focused is workspace.command_input,
+        )
     elif scene.startswith("create-table"):
         _creation_readiness(screen, scene, details)
     elif scene.startswith("completion"):
@@ -957,7 +996,10 @@ def _ruler_evidence(app: VisualExplorerApp) -> dict[str, Any]:
         composed_crop = composed_original.crop(region.x, region.right)
         widget_row = strip_record(original, x=region.x, y=region.y, width=region.width)
         compositor_row = strip_record(composed_crop, x=region.x, y=region.y, width=region.width)
+        styled = styled_content_row(widget)
         rows[name] = {
+            "styled_widget_row": styled["row"],
+            "styled_widget_observation": styled,
             "region": _widget_geometry(widget),
             "widget_row": widget_row,
             "compositor_row": compositor_row,
@@ -1005,11 +1047,17 @@ def _ruler_evidence_assertions(evidence: dict[str, Any]) -> dict[str, bool]:
     label = str(evidence["active_column"])
     screen_x = evidence["active_column_screen_x"]
     label_visible = all(
-        0 <= screen_x - row["x"] < row["cells"]
+        row is not None
+        and 0 <= screen_x - row["x"] < row["cells"]
         and row["text"][screen_x - row["x"] - len(label) + 1 : screen_x - row["x"] + 1] == label
-        for row in (ruler["widget_row"], ruler["compositor_row"])
+        for row in (ruler["widget_row"], ruler["styled_widget_row"], ruler["compositor_row"])
     )
     return {
+        "ruler:styled_layers_equal": all(
+            entry["styled_widget_observation"]["complete"]
+            and rendered_rows_equal(entry["styled_widget_row"], entry["compositor_row"])
+            for entry in (ruler, editor)
+        ),
         "ruler:separate_rows": (
             ruler_region["height"] == 1
             and ruler_region["bottom"] == editor_region["y"]
@@ -1025,9 +1073,10 @@ def _ruler_evidence_assertions(evidence: dict[str, Any]) -> dict[str, bool]:
             and label_visible
         ),
         "ruler:first_gutter_separate": all(
-            row["text"][: evidence["gutter_width"]].strip() == "1"
+            row is not None
+            and row["text"][: evidence["gutter_width"]].strip() == "1"
             and row["y"] > ruler["compositor_row"]["y"]
-            for row in (editor["widget_row"], editor["compositor_row"])
+            for row in (editor["widget_row"], editor["styled_widget_row"], editor["compositor_row"])
         ),
         "ruler:empty_workspace": (
             evidence["active_workspace"] == "2"

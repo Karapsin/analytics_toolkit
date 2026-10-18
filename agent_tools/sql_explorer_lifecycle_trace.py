@@ -24,7 +24,11 @@ _SCHEDULERS = ("call_after_refresh", "call_later", "set_timer")
 def _identity(widget: Any) -> dict[str, Any] | None:
     if widget is None:
         return None
-    return {"class": type(widget).__name__, "id": getattr(widget, "id", None), "identity": id(widget)}
+    return {
+        "class": type(widget).__name__,
+        "id": getattr(widget, "id", None),
+        "identity": id(widget),
+    }
 
 
 def _focus_state(app: Any) -> dict[str, Any]:

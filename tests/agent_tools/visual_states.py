@@ -105,6 +105,17 @@ def test_query_and_result_fixtures_describe_the_same_operation(scene: str, tmp_p
     asyncio.run(exercise())
 
 
+def _ruler_state(app: scenes.VisualExplorerApp) -> tuple[Any, ...]:
+    editor = app.active_workspace.editor
+    return (
+        app.focused,
+        editor.text,
+        editor.cursor_selections,
+        editor.scroll_offset,
+        dict(editor._cursor_preferences),
+    )
+
+
 def test_tab_database_ruler_evidence_observes_separate_widget_and_compositor_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -112,76 +123,135 @@ def test_tab_database_ruler_evidence_observes_separate_widget_and_compositor_row
         evidence_path = tmp_path / "evidence.json"
         manifest = REPO_ROOT / sql_explorer_visual.MANIFEST
         app = scenes.VisualExplorerApp("tab-database-change", evidence_path, manifest)
-        switched = asyncio.Event()
-        switch_database = app._switch_visual_database
+        initialized = asyncio.Event()
+        finish = app._finish_visual_database_scene
+        before_finish = []
+        assert not app.scene_configured
+        assert not app.creation_scene_ready
 
-        @wraps(switch_database)
-        def observe_switch() -> None:
-            switch_database()
-            switched.set()
+        @wraps(finish)
+        def observe_initialized() -> None:
+            before_finish.append((app.scene_configured, app.focused))
+            finish()
+            initialized.set()
 
-        monkeypatch.setattr(app, "_switch_visual_database", observe_switch)
+        monkeypatch.setattr(app, "_finish_visual_database_scene", observe_initialized)
         async with app.run_test(size=(208, 47)) as pilot:
-            await asyncio.wait_for(switched.wait(), timeout=5)
+            await asyncio.wait_for(initialized.wait(), timeout=5)
             await pilot.pause()
-            workspace = app.active_workspace
-            editor = workspace.editor
-            original = (
-                app.focused,
-                editor.text,
-                editor.cursor_selections,
-                editor.scroll_offset,
-            )
+            original = _ruler_state(app)
             scenes._write_evidence(app, "tab-database-change", evidence_path, manifest)
             geometry = json.loads(evidence_path.read_text(encoding="utf-8"))
             snapshot = geometry["ruler_evidence"]
             observation = diagnostics.ruler_lifecycle_snapshot(app, snapshot)
             try:
+                assert before_finish == [(False, app.active_workspace.command_input)]
                 assert geometry["ok"]
-                assert snapshot["active_workspace"] == workspace.tab_id == "2"
-                assert snapshot["cursor_location"] == list(editor.cursor_location) == [0, 0]
-                assert snapshot["active_column"] == 1
-                assert snapshot["document_empty"]
-                assert snapshot["cursor_render_offset"] == list(editor.cursor_render_offset)
-                assert snapshot["scroll_x"] == int(editor.scroll_x) == 0
-                assert snapshot["scroll_y"] == int(editor.scroll_y) == 0
-                assert snapshot["gutter_width"] == editor.gutter_width
-                assert snapshot["gutter_left"] == editor.gutter.left
-                assert snapshot["active_column_screen_x"] == (
-                    editor.content_region.x + editor.gutter_width
-                )
-                assert snapshot["ruler"]["region"]["bottom"] == snapshot["editor"]["region"]["y"]
-                assert snapshot["ruler"]["region"]["height"] == 1
+                _assert_ruler_workspace(app, snapshot)
                 _assert_ruler_rows(app, snapshot)
-                assert snapshot["ruler"]["widget_row"]["text"].strip() == "1"
-                assert (
-                    snapshot["editor"]["widget_row"]["text"][: editor.gutter_width].strip() == "1"
-                )
-                assert (
-                    snapshot["editor"]["widget_row"]["text"][editor.gutter_width :].strip() == "│"
-                )
-                assert app.focused is workspace.command_input
-                assert original == (
-                    app.focused,
-                    editor.text,
-                    editor.cursor_selections,
-                    editor.scroll_offset,
-                )
+                _assert_scene_initialization(app, snapshot)
+                assert original == _ruler_state(app)
                 assert all(scenes._ruler_evidence_assertions(snapshot).values())
             except AssertionError as error:
                 failure = {"lifecycle": observation, "ruler_evidence": snapshot}
                 raise AssertionError(json.dumps(failure, sort_keys=True)) from error
 
             _assert_ruler_negative_controls(snapshot)
-
-            # A final export owns the observed rows just as it owns other diagnostics.
-            geometry["render_diagnostics"] = {"frame": "owned"}
-            evidence_path.write_text(json.dumps(geometry), encoding="utf-8")
-            owned = evidence_path.read_bytes()
-            scenes._write_evidence(app, "tab-database-change", evidence_path, manifest)
-            assert evidence_path.read_bytes() == owned
+            _assert_owned_ruler_frame(app, geometry, evidence_path, manifest)
+            await _assert_ruler_focus_loss(app, pilot, tmp_path, manifest)
 
     asyncio.run(exercise())
+
+
+def _assert_ruler_workspace(app: scenes.VisualExplorerApp, snapshot: dict[str, Any]) -> None:
+    workspace = app.active_workspace
+    editor = workspace.editor
+    assert snapshot["active_workspace"] == workspace.tab_id == "2"
+    assert snapshot["cursor_location"] == list(editor.cursor_location) == [0, 0]
+    assert snapshot["active_column"] == 1
+    assert snapshot["document_empty"]
+    assert snapshot["cursor_render_offset"] == list(editor.cursor_render_offset)
+    assert snapshot["scroll_x"] == int(editor.scroll_x) == 0
+    assert snapshot["scroll_y"] == int(editor.scroll_y) == 0
+    assert snapshot["gutter_width"] == editor.gutter_width
+    assert snapshot["gutter_left"] == editor.gutter.left
+    assert snapshot["active_column_screen_x"] == editor.content_region.x + editor.gutter_width
+    assert snapshot["ruler"]["region"]["bottom"] == snapshot["editor"]["region"]["y"]
+    assert snapshot["ruler"]["region"]["height"] == 1
+    assert snapshot["ruler"]["widget_row"]["text"].strip() == "1"
+    assert snapshot["editor"]["widget_row"]["text"][: editor.gutter_width].strip() == "1"
+    assert snapshot["editor"]["widget_row"]["text"][editor.gutter_width :].strip() == "│"
+    assert app.focused is workspace.command_input
+
+
+def _assert_scene_initialization(app: scenes.VisualExplorerApp, snapshot: dict[str, Any]) -> None:
+    trace = snapshot["callback_trace"]
+    assert trace["complete"]
+    assert not trace["omissions"]
+    events = trace["events"]
+    initialized = [event for event in events if event["phase"] == "initialization"]
+    assert [event["callback"] for event in initialized] == [
+        "restored_focus_applied",
+        "command_focus_requested",
+        "command_focus_applied",
+    ]
+    editor = app.active_workspace.editor
+    command = app.active_workspace.command_input
+    assert initialized[0]["state"]["focused"]["identity"] == id(editor)
+    assert initialized[1]["state"]["focused"]["identity"] == id(editor)
+    assert initialized[2]["state"]["focused"]["identity"] == id(command)
+    switches = [
+        event
+        for event in events
+        if event["phase"] == "before" and event["callback"] == "_switch_visual_database"
+    ]
+    databases = [
+        event
+        for event in events
+        if event["phase"] == "before" and event["callback"] == "_command_database"
+    ]
+    restorations = [
+        event
+        for event in events
+        if event["phase"] == "after" and event["callback"] == "_restore_active_focus"
+    ]
+    assert len(switches) == len(databases) == 1
+    assert len(restorations) == 2
+    assert switches[0]["sequence"] < databases[0]["sequence"]
+    assert databases[0]["sequence"] < restorations[-1]["sequence"]
+    assert restorations[-1]["sequence"] < initialized[0]["sequence"]
+    assert app.scene_configured
+    assert app.creation_scene_ready
+    assert app._scene_state_ready()
+
+
+def _assert_owned_ruler_frame(
+    app: scenes.VisualExplorerApp, geometry: dict[str, Any], evidence_path: Path, manifest: Path
+) -> None:
+    # A final export owns the observed rows just as it owns other diagnostics.
+    geometry["render_diagnostics"] = {"frame": "owned"}
+    evidence_path.write_text(json.dumps(geometry), encoding="utf-8")
+    owned = evidence_path.read_bytes()
+    scenes._write_evidence(app, "tab-database-change", evidence_path, manifest)
+    assert evidence_path.read_bytes() == owned
+
+
+async def _assert_ruler_focus_loss(
+    app: scenes.VisualExplorerApp, pilot: Any, tmp_path: Path, manifest: Path
+) -> None:
+    trace = app.ruler_trace.snapshot()
+    app.active_workspace.editor.focus()
+    await pilot.pause()
+    app._refresh_visual_evidence()
+    assert not app.creation_scene_ready
+    assert not app._scene_state_ready()
+    assert not app.scene_readiness_details()["conditions"]["requested_focus"]
+    with pytest.raises(RuntimeError, match="not ready for final capture"):
+        sql_explorer_visual_capture._capture_frame(
+            app, "tab-database-change", tmp_path / "lost.json", manifest, tmp_path / "unused.png"
+        )
+    assert app.focused is app.active_workspace.editor
+    assert app.ruler_trace.snapshot() == trace
 
 
 def _assert_ruler_rows(app: scenes.VisualExplorerApp, snapshot: dict[str, Any]) -> None:
@@ -192,17 +262,27 @@ def _assert_ruler_rows(app: scenes.VisualExplorerApp, snapshot: dict[str, Any]) 
         region = widget.content_region
         entry = snapshot[name]
         assert entry["region"] == scenes._widget_geometry(widget)
-        for layer in ("widget_row", "compositor_row"):
+        for layer in ("widget_row", "styled_widget_row", "compositor_row"):
             row = entry[layer]
             assert row["x"] == region.x
             assert row["y"] == region.y
             assert row["cells"] <= 208
             assert not row["truncated"]
-        assert entry["widget_row"]["text"] == widget.render_line(0).crop(0, region.width).text
+        raw = widget.render_line(0)
+        assert entry["widget_row"] == diagnostics.strip_record(
+            raw, x=region.x, y=region.y, width=region.width
+        )
+        assert entry["widget_row"]["text"] == raw.crop(0, region.width).text
+        assert entry["strip_observation"]["widget"] == diagnostics.ruler_strip_observation(
+            raw, entry["widget_row"], width=region.width
+        )
         assert entry["compositor_row"]["text"] == (
             composed[region.y].crop(region.x, region.right).text
         )
-        assert entry["widget_row"]["text"] == entry["compositor_row"]["text"]
+        assert entry["styled_widget_observation"]["complete"]
+        assert entry["styled_widget_row"]["cells"] == region.width
+        assert entry["styled_widget_row"]["text"] == entry["compositor_row"]["text"]
+        assert diagnostics.rendered_rows_equal(entry["styled_widget_row"], entry["compositor_row"])
 
 
 def _assert_ruler_negative_controls(snapshot: dict[str, Any]) -> None:
@@ -220,6 +300,24 @@ def _assert_ruler_negative_controls(snapshot: dict[str, Any]) -> None:
         " " * snapshot["editor"]["widget_row"]["cells"]
     )
     assert not scenes._ruler_evidence_assertions(lost_gutter)["ruler:first_gutter_separate"]
+    _assert_styled_negative_controls(snapshot)
+
+
+def _assert_styled_negative_controls(snapshot: dict[str, Any]) -> None:
+    for name in ("ruler", "editor"):
+        for damage in ("trailing_cell", "foreground", "background", "underline", "missing"):
+            altered = deepcopy(snapshot)
+            row = altered[name]["styled_widget_row"]
+            if damage == "trailing_cell":
+                row["cells"] -= 1
+                row["text"] = row["text"][:-1]
+            elif damage in {"foreground", "background"}:
+                row["spans"][-1][damage] = "#123456"
+            elif damage == "underline":
+                row["spans"][-1]["flags"]["underline"] = True
+            else:
+                altered[name]["styled_widget_row"] = None
+            assert not scenes._ruler_evidence_assertions(altered)["ruler:styled_layers_equal"]
 
 
 def _armed_app() -> tuple[SimpleNamespace, Mock, dict[str, Mock]]:

@@ -725,6 +725,66 @@ def _layout_observation(widget: Any) -> dict[str, Any]:
     return values
 
 
+def styled_content_row(widget: Any) -> dict[str, Any]:
+    """Observe the first content row through Textual's native styles cache."""
+    try:
+        content, outer = widget.content_region, widget.region
+        clip = Region(
+            content.x - outer.x,
+            content.y - outer.y,
+            min(content.width, MAX_CELLS),
+            1,
+        )
+        strips = widget.render_lines(clip)
+        strip = strips[0]
+        row = strip_record(strip, x=content.x, y=content.y, width=content.width)
+        observation = ruler_strip_observation(strip, row, width=content.width)
+        omissions = list(observation["omissions"])
+        if content.width > MAX_CELLS:
+            omissions.append("styled_widget:cell_limit")
+        if row["cells"] != clip.width:
+            omissions.append("styled_widget:row_width")
+        snapshot = {
+            "complete": observation["complete"] and not omissions and not row["truncated"],
+            "row": row,
+            "widget_local_clip": _region_record(clip),
+            "strip_observation": observation,
+            "omissions": omissions,
+        }
+    except (AttributeError, IndexError, RuntimeError, TypeError, ValueError) as error:
+        return {
+            "complete": False,
+            "row": None,
+            "missing": [f"styled_widget:{type(error).__name__}"],
+            "omissions": [],
+        }
+    return snapshot
+
+
+def _styled_characters(row: dict[str, Any]) -> list[tuple[Any, ...]]:
+    characters = []
+    for span in row["spans"]:
+        offset = span["x"]
+        style = (
+            span["foreground"],
+            span["background"],
+            tuple(span["flags"][flag] for flag in FLAGS),
+        )
+        for character in span["text"]:
+            characters.append((character, offset, *style))
+            offset += cell_len(character)
+    return characters
+
+
+def rendered_rows_equal(left: dict[str, Any] | None, right: dict[str, Any] | None) -> bool:
+    """Compare complete positioned text and resolved styles, ignoring segment splits."""
+    if left is None or right is None or left["truncated"] or right["truncated"]:
+        return False
+    return all(left[key] == right[key] for key in ("x", "y", "cells", "text")) and (
+        _styled_characters(left) == _styled_characters(right)
+    )
+
+
 def ruler_strip_observation(strip: Any, row: dict[str, Any], *, width: int) -> dict[str, Any]:
     """Describe the already collected input and crop; never render or pad a strip."""
     try:
