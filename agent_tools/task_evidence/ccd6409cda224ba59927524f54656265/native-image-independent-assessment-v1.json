@@ -1,0 +1,38 @@
+{
+  "schema": "capture-receiver-native-image-binding-independent-assessment/v1",
+  "reviewer": "/root/review_checked_authority_source_v1",
+  "decision": "factual_clarification_with_existing_fixed_profile_binding",
+  "new_approval_granted": false,
+  "question": "Does matching supported real native profile require exact image identity before the fixed sentinel, and what already approved binding can supply it without widening the wire?",
+  "bindings": {
+    "unit_plan": {"path": "/private/tmp/capture-receiver-first-protected-unit-concrete-plan-v2.json", "sha256": "05b6ce5bd5d4adbf84c33efaea781e052d360033a23e1af879a48aa33ef2a0df"},
+    "wire": {"path": "/private/tmp/capture-receiver-first-unit-wire-schema-v2.json", "sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba"},
+    "normative_global_plan": {"path": "/private/tmp/capture-prerequisite-positive-verifier-concrete-plan-v3.json", "sha256": "5ad935c7fd8e34283db0a5803467a5ddafbdaca7878ed0d3724024c26a11ad4c"},
+    "unchanged_sandbox_source": {"path": "/private/tmp/capture-positive-verifier-design-sources-v1/.github_agent_capture_sandbox.py.source", "sha256": "4dc6c61dc7da17f24fd6d038cfe0865f50085f1de3c330b590f39490a58fefae"},
+    "actual_native_acceptance": {"path": "/private/tmp/pr45-head467-independent-actual-native-acceptance-review-v1.json", "sha256": "877a2eab49fb6506c9acfb6e454a81308e30e4bb2659caab0ef90f1032053ca4"}
+  },
+  "evidence": [
+    "Unit plan global_contract explicitly imports all globalV3 native/source constraints; unique_workflow_order fixes rehearsal python_version3.11 and requires actual immutable image matching supported real native profile.",
+    "GlobalV3 closed_native_parser.image_contract explicitly requires each python_line to equal its independently accepted actual immutable image ID in actual_positive_wire.artifacts. A changed tag/image is profile_contract_pending until independently reviewed actual native/source contract update; a journal arbitrary sha256 alone cannot extend the accepted set.",
+    "GlobalV3 actual_positive_wire records accepted3.11 ID sha256:bf91cbbb4f6b3105745c0526dc4bfc7226d8bd39e5df5f59882c8bca3f787b8f and distinct3.13 ID sha256:2a66f41838f79d3cd5c7eb749304d18d6660d0cf8547f6f38a258ffa2854ed4e. The independent actual467 native review confirms those identities alongside full run/artifact/source/phase/firewall/cleanup evidence.",
+    "Sandbox IMAGES maps3.11 to python:3.11-bookworm. setup pulls that tag, inspects an immutable .Id into self.image and verifies only sha256 grammar before resource setup. create uses self.image, while validate_container checks actual Docker Image and Config.Image equal that same resolved value. It does not compare to an independently accepted native profile ID.",
+    "Closed source envelope contains profile_id, source_set_sha256, expected_trusted_head, source_tag and source_deployment_receipt_sha256. It has no expected_image_id or downloadable native-proof body field. The later private source-deployment intent separately contains native_core_proof_sha256, but a digest alone cannot supply remote proof content or establish current native acceptance."
+  ],
+  "conclusion": {
+    "required_check": "Yes. For this first fixed3.11 rehearsal profile, the receiver must refuse before sentinel creation/start if the actually resolved Sandbox.image differs from the already accepted fixed3.11 native profile ID. Official tag provenance plus any syntactically immutable ID is insufficient for the stated fixed native profile. Existing Sandbox behavior supplies the observation, not the accepted expected value.",
+    "existing_binding": "The already approved normative globalV3 actual_positive_wire.artifacts3.11 image and closed_native_parser.image_contract supply the expected literal. The receiver may implement that fixed negative guard in the already planned protected capture_receiver.py source, with its provenance documented and tests bound to the exact global contract. The receiver's protected source/source_set_sha256/expected_trusted_head then bind that fixed profile policy. No envelope field, caller-selected image, arbitrary private-proof retrieval or bare author assertion is needed.",
+    "implementation_boundary": "Keep unchanged Sandbox construction/setup and supported3.11 official tag behavior. After setup yields its actual immutable ID, compare against the fixed accepted profile literal before create or starting the sentinel; retain exact observation and perform normal owned-resource cleanup on mismatch. Do not overwrite Sandbox.image, relax its own validate_container checks, accept arbitrary images from a receipt, invent a new sandbox phase or change tag/digest execution behavior under this clarification.",
+    "private_proof_boundary": "The separately reviewed source-operation helper still must resolve and validate its actual native_core_proof original, final source/head/task/run/artifact obligations and current controls before it can issue real rehearsal admission. Remote fixed-image equality is an additional negative guard, not proof that the hash-only private native proof was verified. Missing genuine private/native/source authority remains pending; this unit cannot mint it.",
+    "future_profile_change": "If a later actual final-head native contract approves another image, update the explicit fixed source/profile/native contract through genuine separate reviewed source/authority procedures. A changed official tag resolution is honest pending now, even if a new image seems reasonable. Dynamic proof-based expected-image selection or a new transmitted proof/image field would require a narrow independently reviewed plan/wire amendment; neither exists in the current closed interface.",
+    "no_native_acceptance_inference": "Even exact image equality establishes only membership in the fixed accepted image policy. It supplies no fresh native acceptance, font/dependency/render proof, final-head CI, product visual pass, receiver capability acceptance or production Gate satisfaction. The real later pinned-source positive/negative rehearsal and independent actual evidence review remain mandatory."
+  },
+  "meaningful_test_requirements": [
+    "Use unchanged actual Sandbox administrative command fixture: approved3.11 tag resolves to the fixed accepted ID; only after exact comparison may the real create(capture) call path be reached.",
+    "Have the same official tag resolve to a different valid sha256 ID; assert no sentinel create/start, no successful result, truthful observed image retained and exact owned resource cleanup attempted/confirmed or explicitly pending on cleanup failure.",
+    "Malformed/missing/wrong Python-line image policy, mismatched container image and genuine missing private authority remain refusals; the3.13 accepted image is not a valid3.11 substitute.",
+    "Keep mock provenance honest: unit command fixtures do not count as actual GitHub/native acceptance. No candidate/sentinel program execution on the Pi."
+  ],
+  "gates": "This is an evidence-based interpretation of already approved fixed profile semantics, not a new plan/source/operation/protected approval. Exact final implementation still needs whole-source independent review and managed checks. Dynamic new profile transport or behavior needs an explicit narrow plan amendment. No source file, sandbox, receipt, runtime, tag, workflow or private state was changed by this reviewer.",
+  "programs_or_tests_executed": [],
+  "production_actions": []
+}

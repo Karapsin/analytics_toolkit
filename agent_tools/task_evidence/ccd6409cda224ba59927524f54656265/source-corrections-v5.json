@@ -1,0 +1,39 @@
+{
+  "schema": "capture-receiver-abnormal-lifecycle-correction/v5",
+  "complete_v4_review_sha256": "947942778be4871a488f1e12699119fab9fa57c22059d233062609e20aeb2540",
+  "prior_v4_inventory_sha256": "042fe97d13fb98144f73c6741866947722fcf6f9f9a8cab297a6f2722fd6cc33",
+  "finding": "RECEIVER-V4-ABNORMAL-HTTP-EXIT-LOSES-OBSERVATION",
+  "scope": "One in-contract lifecycle retention correction; no new external interfaces/authority or receiver/transport outcome wire changes. All earlier parent/plan/question/answer and complete rejection records preserved.",
+  "implementation": [
+    "All abnormal read/open exceptions and interruptions converge on bounded observed facts and private retention.",
+    "Close failure cannot escape finally or replace a genuinely known status withnull; original pre-close error is retained independently.",
+    "Unexpected/interrupted/close-failed actions cannot be accepted; generic safe Pending follows retained private originals.",
+    "Private storage failures yield private_retained=false/pending-unavailable, preserving safe actual observed status/bytes/hash without claiming persistence.",
+    "Token-taint filtering, opaque-text exclusion, joint budget, immutable started/intent and no secondPOST remain enforced."
+  ],
+  "regressions": [
+    "Actual HTTP+Journal full-body closeOSError; partial/readTimeout plus closeOSError.",
+    "Actual prefix then KeyboardInterrupt/SystemExit/RuntimeError/TypeError, both secret-bearing and ordinary bodies.",
+    "Before-status interruption retains genuinelynull status/empty body.",
+    "Private persistence fault truthfully unavailable; restart/same-intent cannot repost; synthetic credential text never public."
+  ],
+  "prior_check_history": [
+    {
+      "session": 51284,
+      "status": "failed_static_only",
+      "log": ".rag_index/tool_logs/1792359924222087000-537fe20771.log",
+      "reason": "Five test-only Ruff findings; corrected via exact V3-to-V4 assertion-preserving refactor."
+    },
+    {
+      "session": 89588,
+      "status": "explicitly_interrupted",
+      "exit_code": 143,
+      "static": "passed",
+      "coverage": "interrupted_NOT_PASSED",
+      "artifact": "not_run",
+      "python_matrix": "not_run",
+      "cancel_receipt_sha256": "22f6fbee93f3393dd980478cc8ffb8c90a4ec6c7bf76aaa8ed911cf32def5222"
+    }
+  ],
+  "gates": "New final focused/full mandatory validation and fresh complete source review required; no publication, CI, policy approval, source/main/runtime operation or parent completion is claimed."
+}
