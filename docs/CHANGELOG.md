@@ -103,6 +103,7 @@ Generated from package version bumps and recent commit history.
 - Preserve SQL Explorer caret diagnostic text and styles with focused Unicode regressions, retain bounded dialog/ruler evidence, and distinguish journal read failures from empty results.
 - Preserve SQL Explorer multicursors and dev safeguards; add bounded callback-order and original-strip evidence for ruler diagnosis with focused regressions and diagnostic lint/format corrections.
 - Order SQL Explorer tab/database scene focus initialization and compare native styled rows with compositor output while preserving raw diagnostics and production behavior.
+- Fix SQL Explorer diagnostic regression import ordering and formatting while preserving multicursor, clipboard, caret, and capture coverage.
 
 ## 1.3.12.5 - 2026-10-14
 
