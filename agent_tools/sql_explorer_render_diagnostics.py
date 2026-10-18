@@ -321,45 +321,46 @@ def selector_readiness_assertions(snapshot: dict[str, Any]) -> dict[str, bool]:
 
 def _targets(app: Any, scene: str) -> list[tuple[str, Any, int]]:
     if scene == "database-picker":
-        return [("heading", app.screen.query_one("#database-picker-title"), 3)]
-    if scene == "find-replace":
-        return [("find-matches", app.active_workspace.editor, 6)]
-    if scene in {"keyboard-multicursor", "editor-command-caret"}:
-        return [
+        targets = [("heading", app.screen.query_one("#database-picker-title"), 3)]
+    elif scene == "find-replace":
+        targets = [("find-matches", app.active_workspace.editor, 6)]
+    elif scene in {"keyboard-multicursor", "editor-command-caret"}:
+        targets = [
             ("multicursor-editor", app.active_workspace.editor, 3),
             ("multicursor-ruler", app.active_workspace.query_one("#column-ruler"), 1),
         ]
-    if scene == "new-file":
+    elif scene == "new-file":
         dialog = app.screen.query_one("#new-file-dialog")
-        return [
+        targets = [
             ("new-file-dialog", dialog, max(1, dialog.region.height)),
             ("new-file-name", app.screen.query_one("#new-file-name"), 3),
         ]
-    if scene == "completion-columns":
-        return [
+    elif scene == "completion-columns":
+        targets = [
             ("completion-anchor", app.active_workspace.editor, 3),
             ("completion-popup", app.active_workspace.completion_menu, 5),
         ]
-    if scene == "column-ruler-scrolled":
+    elif scene == "column-ruler-scrolled":
         editor = app.active_workspace.editor
-        return [
+        targets = [
             ("ruler", app.active_workspace.query_one("#column-ruler"), 1),
             ("horizontal-scrollbar", editor.horizontal_scrollbar, 1),
         ]
-    targets = [
-        (name, app.screen.query_one(f"#create-{name}"), 1)
-        for name in ("insert_data", "skip_if_exists", "drop_if_exists")
-    ]
-    viewport = app.screen.query_one("#create-table-fields").scrollable_content_region
-    targets.extend(
-        (f"remove-column-{index}", widget, 1)
-        for index, widget in enumerate(app.screen.query(".remove-column"))
-        if widget.display
-        and widget.region.width
-        and widget.region.height
-        and widget.region.y < viewport.bottom
-        and widget.region.bottom > viewport.y
-    )
+    else:
+        targets = [
+            (name, app.screen.query_one(f"#create-{name}"), 1)
+            for name in ("insert_data", "skip_if_exists", "drop_if_exists")
+        ]
+        viewport = app.screen.query_one("#create-table-fields").scrollable_content_region
+        targets.extend(
+            (f"remove-column-{index}", widget, 1)
+            for index, widget in enumerate(app.screen.query(".remove-column"))
+            if widget.display
+            and widget.region.width
+            and widget.region.height
+            and widget.region.y < viewport.bottom
+            and widget.region.bottom > viewport.y
+        )
     return targets
 
 
@@ -724,6 +725,33 @@ def _layout_observation(widget: Any) -> dict[str, Any]:
     return values
 
 
+def ruler_strip_observation(strip: Any, row: dict[str, Any], *, width: int) -> dict[str, Any]:
+    """Describe the already collected input and crop; never render or pad a strip."""
+    try:
+        snapshot = {
+            "complete": True,
+            "omissions": [],
+            "original_lengths": {"characters": len(strip.text), "cells": strip.cell_length},
+            "requested_crop_width": width,
+            "effective_crop_width": min(width, MAX_CELLS),
+            "result_lengths": {"characters": len(row["text"]), "cells": row["cells"]},
+            "segments": [
+                {"text": segment.text, "style": str(segment.style), "control": str(segment.control)}
+                for segment in strip
+            ],
+        }
+        if len(json.dumps(snapshot, ensure_ascii=True).encode("utf-8")) > MAX_LIFECYCLE_BYTES:
+            snapshot.pop("segments")
+            snapshot.update(complete=False, omissions=["strip_observation_byte_limit"])
+    except (AttributeError, RuntimeError, TypeError, ValueError) as error:
+        return {
+            "complete": False,
+            "missing": [f"strip_observation:{type(error).__name__}"],
+            "omissions": [],
+        }
+    return snapshot
+
+
 def ruler_lifecycle_snapshot(app: Any, rows: dict[str, Any]) -> dict[str, Any]:
     """Observe the failing ruler frame without rendering rows or changing lifecycle."""
     workspace = app.active_workspace
@@ -739,6 +767,15 @@ def ruler_lifecycle_snapshot(app: Any, rows: dict[str, Any]) -> dict[str, Any]:
             "identity": id(app.focused),
         },
         "widgets": {name: _layout_observation(widget) for name, widget in widgets.items()},
+        "editor_mapping": {
+            name: _observed_attribute(workspace.editor, name)
+            for name in (
+                "gutter_width",
+                "gutter",
+                "show_horizontal_scrollbar",
+                "show_vertical_scrollbar",
+            )
+        },
         "row_lengths": {
             name: {
                 layer: {"characters": len(row["text"]), "cells": row["cells"]}

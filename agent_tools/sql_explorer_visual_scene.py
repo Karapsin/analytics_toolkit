@@ -16,9 +16,11 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+from agent_tools.sql_explorer_lifecycle_trace import RulerLifecycleTrace
 from agent_tools.sql_explorer_render_diagnostics import (
     SELECTOR_SCENES,
     ruler_lifecycle_snapshot,
+    ruler_strip_observation,
     selector_readiness_assertions,
     selector_readiness_snapshot,
     strip_record,
@@ -130,6 +132,15 @@ class VisualExplorerApp(SqlExplorerApp):
         ) = None
         self._directory_scene_initialized = False
         super().__init__(VisualSession())
+        self.ruler_trace: RulerLifecycleTrace | None = None
+        if scene_id == "tab-database-change":
+            self.ruler_trace = RulerLifecycleTrace(self)
+            self.ruler_trace.install()
+
+    def on_unmount(self) -> None:
+        if self.ruler_trace is not None:
+            self.ruler_trace.close()
+        super().on_unmount()
 
     def on_mount(self) -> None:
         super().on_mount()
@@ -941,17 +952,26 @@ def _ruler_evidence(app: VisualExplorerApp) -> dict[str, Any]:
     rows = {}
     for name, widget in (("ruler", ruler), ("editor", editor)):
         region = widget.content_region
+        original = widget.render_line(0)
+        composed_original = composed[region.y]
+        composed_crop = composed_original.crop(region.x, region.right)
+        widget_row = strip_record(original, x=region.x, y=region.y, width=region.width)
+        compositor_row = strip_record(composed_crop, x=region.x, y=region.y, width=region.width)
         rows[name] = {
             "region": _widget_geometry(widget),
-            "widget_row": strip_record(
-                widget.render_line(0), x=region.x, y=region.y, width=region.width
-            ),
-            "compositor_row": strip_record(
-                composed[region.y].crop(region.x, region.right),
-                x=region.x,
-                y=region.y,
-                width=region.width,
-            ),
+            "widget_row": widget_row,
+            "compositor_row": compositor_row,
+            "strip_observation": {
+                "widget": ruler_strip_observation(original, widget_row, width=region.width),
+                "compositor": ruler_strip_observation(
+                    composed_crop, compositor_row, width=region.width
+                ),
+                "compositor_screen_lengths": {
+                    "characters": len(composed_original.text),
+                    "cells": composed_original.cell_length,
+                },
+                "compositor_crop": [region.x, region.right],
+            },
         }
     return {
         "active_workspace": workspace.tab_id,
@@ -970,6 +990,11 @@ def _ruler_evidence(app: VisualExplorerApp) -> dict[str, Any]:
         ),
         "document_empty": editor.text == "",
         "lifecycle": ruler_lifecycle_snapshot(app, rows),
+        "callback_trace": (
+            app.ruler_trace.snapshot()
+            if app.ruler_trace is not None
+            else {"complete": False, "unavailable": "trace_not_installed"}
+        ),
         **rows,
     }
 

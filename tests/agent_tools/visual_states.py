@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from copy import deepcopy
+from functools import wraps
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
@@ -114,6 +115,7 @@ def test_tab_database_ruler_evidence_observes_separate_widget_and_compositor_row
         switched = asyncio.Event()
         switch_database = app._switch_visual_database
 
+        @wraps(switch_database)
         def observe_switch() -> None:
             switch_database()
             switched.set()
@@ -167,7 +169,8 @@ def test_tab_database_ruler_evidence_observes_separate_widget_and_compositor_row
                 )
                 assert all(scenes._ruler_evidence_assertions(snapshot).values())
             except AssertionError as error:
-                raise AssertionError(json.dumps(observation, sort_keys=True)) from error
+                failure = {"lifecycle": observation, "ruler_evidence": snapshot}
+                raise AssertionError(json.dumps(failure, sort_keys=True)) from error
 
             _assert_ruler_negative_controls(snapshot)
 

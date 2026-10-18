@@ -321,6 +321,22 @@ attaches a separately bounded 8 KiB pre-assert observation on failure, preservin
 the command-focus and exact-row assertions. Unavailable probes and byte omissions
 are explicit; collection never drains queues or forces focus, width or timing.
 
+For GitHub diagnosis, this scene installs harness-only callback wrappers before
+configuration and restores them on unmount. `ruler_evidence.callback_trace` keeps
+the first 64 events within 8 KiB, recording scheduling, entry and exit for tab
+activation, database switching and deferred focus restoration, with actual active
+tab, focused-widget identity and remembered-focus identity. Callbacks retain their
+original scheduler, arguments, return values, exception behavior and execution
+count. Probe failures and event/byte overflow explicitly mark incomplete traces.
+
+Each ruler/editor `strip_observation` records the already collected widget strip,
+the compositor crop, original and resulting character/cell lengths, requested
+crop width and exact original segment text/styles, including trailing padding.
+Segment evidence has a separate 8 KiB bound and explicit omission state. The
+existing strict focus and widget/compositor equality assertions remain in force;
+failure reports retain the first snapshot and its trace without recollection.
+These observations select no focus, padding or ruler presentation repair.
+
 The `new-file` scene records actual mounted screen/subclass identity, computed
 alignment/layout styles, dialog and viewport geometry, ancestor clips and exact
 widget/compositor rows, together with parsed SVG positions from the final export.
