@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional
 
+from rich.text import Text
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
@@ -40,6 +41,16 @@ class ColumnRow(Horizontal):
         yield Button("\u00d7", classes="remove-column", tooltip="Remove column")
 
 
+class CreationCheckbox(Checkbox):
+    """Keep native toggle behavior with an unambiguous off/on marker."""
+
+    @property
+    def _button(self) -> Text:
+        return Text(
+            "[x]" if self.value else "[ ]", style=self.get_component_rich_style("toggle--button")
+        )
+
+
 class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str, Any]]]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel", priority=True),
@@ -69,7 +80,10 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
     #create-from-sql { height: 7; border: solid $panel-lighten-2; }
     #create-basic-flags { height: auto; }
     #create-basic-flags Checkbox { height: 1; padding: 0; border: none; }
-    #create-type-options { height: auto; max-height: 5; border: none; color: $accent; }
+    #create-type-options {
+        overlay: screen; height: auto; max-height: 5; border: none;
+        color: $accent; background: $surface;
+    }
     #create-table-actions { height: 3; align-horizontal: right; margin-top: 1; }
     #create-table-actions Button { margin-left: 1; }
     .create-advanced-field { height: 3; }
@@ -86,6 +100,7 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
 
     def compose(self) -> ComposeResult:
         with Vertical(id="create-table-dialog"):
+            yield OptionList(id="create-type-options", wrap=False)
             yield Static(f"Create table · {self.db_key}", id="create-table-title", markup=False)
             with VerticalScroll(id="create-table-fields"):
                 yield EditableInput(
@@ -102,12 +117,11 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
                 with Vertical(id="create-table-schema"):
                     for name, data_type in self.draft.get("rows", [("", "")]):
                         yield ColumnRow(name, data_type)
-                yield OptionList(id="create-type-options", wrap=False)
                 yield Button("+ column", id="create-add-column")
                 yield TextArea(str(self.draft.get("from_sql", "")), id="create-from-sql")
                 with Vertical(id="create-basic-flags"):
                     for name in ("insert_data", "skip_if_exists", "drop_if_exists"):
-                        yield Checkbox(
+                        yield CreationCheckbox(
                             f"{name}: {bool(self.draft.get(name, False))}",
                             bool(self.draft.get(name, False)),
                             id=f"create-{name}",
@@ -148,12 +162,28 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
     def on_mount(self) -> None:
         self._update_source()
         self.query_one("#create-table-name", Input).focus()
+        self.call_after_refresh(self._refresh_validation)
+
+    def _refresh_validation(self) -> None:
+        """Show the same structural error that submission would reject."""
+        # InvokeLater can be forwarded to the next screen after this one closes.
+        if self not in self.app.screen_stack:
+            return
+        try:
+            creation_options(self.values(), self.backend)
+        except (ValueError, TypeError) as exc:
+            error = str(exc)
+        else:
+            error = ""
+        self.query_one("#create-table-submit", Button).disabled = bool(error)
+        self.query_one("#create-table-notice", Static).update(error)
 
     def _update_source(self) -> None:
         sql_mode = self.query_one("#create-table-source", Select).value == "from_sql"
         self.query_one("#create-table-schema").display = not sql_mode
         self.query_one("#create-add-column").display = not sql_mode
-        self.query_one("#create-type-options").display = not sql_mode
+        self.type_matches = ()
+        self._show_types()
         self.query_one("#create-from-sql").display = sql_mode
         self.query_one("#create-insert_data", Checkbox).disabled = not sql_mode
         for widget in self.query(".create-advanced-label, .create-advanced-field"):
@@ -163,6 +193,7 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "create-table-source":
             self._update_source()
+        self.call_after_refresh(self._refresh_validation)
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         name = (event.checkbox.id or "")[len("create-") :]
@@ -173,8 +204,10 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
         }
         if event.value and event.checkbox.id in opposites:
             self.query_one(f"#{opposites[event.checkbox.id]}", Checkbox).value = False
+        self.call_after_refresh(self._refresh_validation)
 
     def on_input_changed(self, event: Input.Changed) -> None:
+        self.call_after_refresh(self._refresh_validation)
         if event.input.has_class("create-column-type"):
             self.type_input = event.input
             if event.value == self.accepted_type:
@@ -188,6 +221,9 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
             self.type_index = 0
             self._show_types()
 
+    def on_text_area_changed(self) -> None:
+        self.call_after_refresh(self._refresh_validation)
+
     def _show_types(self) -> None:
         menu = self.query_one("#create-type-options", OptionList)
         menu.can_focus = False
@@ -195,6 +231,37 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
         menu.add_options(self.type_matches)
         menu.highlighted = self.type_index if self.type_matches else None
         menu.display = bool(self.type_matches)
+        self.call_after_refresh(self._position_types)
+
+    def on_idle(self) -> None:
+        # Also follow form scrolling, row layout and terminal resizing.
+        if self.is_mounted and self.type_matches:
+            self._position_types()
+
+    def _position_types(self) -> None:
+        if self not in self.app.screen_stack:
+            return
+        menu = self.query_one("#create-type-options", OptionList)
+        field = self.type_input
+        if field is None or not field.is_mounted or not self.type_matches:
+            menu.display = False
+            return
+        viewport = self.query_one("#create-table-fields").scrollable_content_region
+        region = field.region
+        below, above = viewport.bottom - region.bottom, region.y - viewport.y
+        visible = region.y >= viewport.y and region.bottom <= viewport.bottom
+        menu.display = visible and max(below, above) > 0
+        if not menu.display:
+            return
+        height = min(5, len(self.type_matches), max(below, above))
+        top = region.bottom if below >= height else region.y - height
+        menu.styles.width = region.width
+        menu.styles.height = height
+        origin = self.query_one("#create-table-dialog").content_region
+        menu.styles.offset = (
+            region.x - origin.x,
+            top - origin.y,
+        )
 
     def on_descendant_focus(self, event: events.DescendantFocus) -> None:
         if isinstance(event.widget, Input) and event.widget.has_class("create-column-type"):
@@ -273,15 +340,18 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
             row = ColumnRow()
             await self.query_one("#create-table-schema").mount(row)
             row.query_one(".create-column-name", Input).focus()
+            self._refresh_validation()
         elif event.button.has_class("remove-column"):
             parent = event.button.parent
             if isinstance(parent, ColumnRow):
                 await parent.remove()
+                self._refresh_validation()
         elif event.button.id == "create-table-submit":
             draft = self.values()
             try:
                 options = creation_options(draft, self.backend)
             except (ValueError, TypeError) as exc:
+                event.button.disabled = True
                 self.query_one("#create-table-notice", Static).update(str(exc))
             else:
                 self.draft.clear()

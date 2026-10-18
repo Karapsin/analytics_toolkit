@@ -1,0 +1,23 @@
+{
+  "kind": "actual-fixed-color-capture-environment-diagnosis",
+  "environment_at_monochrome_capture": {
+    "TERM": "dumb",
+    "NO_COLOR": "1",
+    "COLORTERM": ""
+  },
+  "actual_capture_review": "review-1ea05b61fc54",
+  "fingerprint": "c6cc1ff26a5b703da5ba5355611cf500549a40e9a2014571a7bd468ab9bf7989",
+  "all46_geometry": "pass",
+  "all46_independent_visual_verdicts": "product_defect unintended application monochrome",
+  "actual_framework": "0.73.0",
+  "mechanism": "Installed Textual App.__init__ adds a Monochrome line filter whenever inherited NO_COLOR is present, including empty. Capture.main fixed terminal/256 settings but did not remove this input.",
+  "controlled_managed_regression": {
+    "before": "NO_COLOR absent passed; empty failed actual application-text palette assertions with all RGB triples grayscale. -x stopped before1; do not claim1 failed in that run.",
+    "before_log_sha256": "ede88cd41d1738ee5a96a92d2708d594be67b58b16902f299bd4ebd7964d0317",
+    "after": "Absent,empty,1 all passed plus Event readiness negative geometry test under managed focused run.",
+    "scope": "Real CLI argparse/main, actual headless application/export_screenshot; only final optional PNG-renderer boundary intercepted. SVG application terminal matrix text checked; colored frame/chrome excluded."
+  },
+  "change": "Only capture CLI removes NO_COLOR before application construction; interactive application source/preferences unchanged.",
+  "old_results_retained": true,
+  "native_Linux_success_claim": false
+}

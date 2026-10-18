@@ -1,0 +1,11 @@
+{
+  "kind": "explicit-owned-V4-precommit-cancellation",
+  "epoch": 1792347224.897898,
+  "reason": "Fresh independent V4 PNG review discovered inherited NO_COLOR monochrome capture. Stop exact-owned coverage before planned capture-only normalization/regression changes; do not claim fullprecommit pass.",
+  "session": 88559,
+  "pid": 82723,
+  "command": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.venv/bin/python /Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/.venv/bin/tox -e coverage",
+  "source_freeze_sha256": "7aeaea6b6e49ddea67dddd61171b452fbfbd1049f3fa6f54595518808e765716",
+  "signal": "SIGINT",
+  "phase": "coverage; static previously passed"
+}

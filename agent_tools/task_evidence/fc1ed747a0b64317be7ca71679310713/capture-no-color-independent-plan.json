@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "kind": "independent-exact-capture-only-inherited-no-color-correction-plan",
+  "reviewer": "/root/review_combined_native_ui_source",
+  "created_at_utc": "2026-10-18T18:14:45.416235+00:00",
+  "decision": "approve_minimal_capture_main_environment_and_real_export_regression_plan",
+  "completeness": "complete",
+  "findings": [],
+  "binding": {
+    "current_frozen_source": "7aeaea6b6e49ddea67dddd61171b452fbfbd1049f3fa6f54595518808e765716",
+    "current_independent_source_review": "e01d461f3ba3a876e1668ade4dea5c225e95a796b0abf31fdd014d52100719b5",
+    "complete_task_digest": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+    "source_reads": [
+      {
+        "path": "agent_tools/sql_explorer_visual_capture.py",
+        "sha256": "ff1df98dbc5a7bbea4de6eaf91f03c56d3c94234cb6ba5c5b1c7e7ed0f2e3f69"
+      },
+      {
+        "path": ".venv/lib/python3.12/site-packages/textual/app.py",
+        "sha256": "5813d10c8606d3db059767e258add7eab404b356b53f75efe48222c2dc0d6089"
+      },
+      {
+        "path": ".venv/lib/python3.12/site-packages/rich/_export_format.py",
+        "sha256": "448d3ca52ae6e6d052ccf32f9db4ea6c3f5621a95a3a837977833545398bab56"
+      },
+      {
+        "path": "tests/agent_tools/visual_render.py",
+        "sha256": "46a1589de8685ba3dfc77e3fdec15bb7153372da2d4d42868b27adf62f6ce560"
+      }
+    ]
+  },
+  "cause_assessment": {
+    "independently_read_facts": [
+      "Actual installed Textual0.73 App.__init__ copies environment, pops NO_COLOR with defaultNone, then adds Monochrome iff the returned value isnotNone. Emptystring is sufficient to activate filter.",
+      "Current capture.main explicitly sets TERM=xterm-256color,TEXTUAL_COLOR_SYSTEM=256 and SQL_EXPLORER_VISUAL_REQUIRE_COLOR_256=1, removes COLORTERM, then creates actualapp via capture_scene. It does not remove NO_COLOR. A console256 geometry assertion therefore does not establish absence of a monochrome filter.",
+      "Actual App.export_screenshot creates a truecolor Richconsole but exports the already filtered actual compositor render. RichSVG includes independently colored windowchrome; those colors must not be mistaken for colored application cells."
+    ],
+    "parent_reported_evidence": "Fresh V4 CLIcapture inherited NO_COLOR=1/TERM=dumb; fullimage reviewer saw monochrome application tabs/editor/menu/Run/scrollbar with colored trafficlights despite passedgeometry, whereas earlier MCPdirectcapture of identical UI source was colored. This reviewer didnot independently inspect those images/environmentcapture in this turn and doesnot attest visualpass.",
+    "inference": "The independently verified presence-triggered filter explains this capture-environment discrepancy and supports a bounded capture-entrypoint correction. Actual new regression and fullfresh PNG acceptance are still required; oldimage/geometryresults are not converted to green."
+  },
+  "approved_source_change": [
+    "Only in agent_tools/sql_explorer_visual_capture.py main(), add os.environ.pop(\"NO_COLOR\",None) alongside existing fixed headlesscapture environment setup, before actual app creation/asyncio capture_scene.",
+    "Do not alter product app/theme/filter definitions or interactive SQL Explorer NO_COLOR behavior; do not globally mutate environment at import, change fonts/renderer/dependencies/color geometry constraints or weaken assertions."
+  ],
+  "approved_regression": [
+    "Exercise actual synchronous capture.main entrypoint with real argparse argv and real capture_scene/VisualExplorerApp editor-ready/App.export_screenshot. Place argv/environment boundary setup in nearest domain testsupport helper per repository policy. Use fakeVisualSession only; no real connections.",
+    "Parameterize inherited NO_COLOR absent,emptystring,and\"1\". Use pytest monkeypatch lifecycle for environment/argv restoration. Include the inherited neutralTERM case; main must establish its documented fixed capture environment. Do not set actual NO_COLOR clear in the test before main; that would hide the defect.",
+    "Intercept only _write_png as renderer boundary and retain actual SVG argument/destination. Do not stub create_scene,capture_scene,_write_evidence,app constructor/theme/compositor/export_screenshot or colorfilter. Require one actual frame, correct screenshot target, actual SELECT text and passing actual208x47 geometry.",
+    "Parse actual emitted SVG/XML and actual terminal matrix text/background style fills. Require demonstrable application amber/blue palette using verified emitted expected values or robust semanticRGB/style checks grounded in actual output and source palette. Exclude windowchrome/trafficlight/title decorations from color evidence: any-colored-element is insufficient.",
+    "Before choosing exact palette assertions, inspect a genuine emitted editor-ready SVG/style and source palette, not source spelling or assumed serialization. Assert semantic style associations/colors rather than brittle class numbering,CSS order,SVGhashes or rawsource snippets. If selected editor-ready scene doesnot genuinely emit a proposed blue value, choose a truthful contract/scene with independent evidence rather than inventing it.",
+    "Old code under empty/1 NO_COLOR must fail the applicationpalette assertion, while absent control remainsvalid; this provides a meaningful quick regression for the actual rendering/filter failure. No need additional source-mirroring tests."
+  ],
+  "docs_and_evidence": [
+    "Document the fixed agent headlesscapture environment clearing inherited NO_COLOR; distinguish this from interactive product preference. Keep tinyopsdocs amendment and fresh unique task-ownedfragment as normalworkflowrequires.",
+    "Retain complete original46monochrome capture and each actualproductdefect verdict, private allowlisted environmentdiagnostic and priorcolored originals. Include hash/provenance as appropriate, without exposing unrelatedenvironmentsecrets. New source cannot relabel old acceptance."
+  ],
+  "validation_and_remaining_gates": [
+    "Root may stop its own in-flight88559 stalevalidation before changing source; preserve actualstage/exit/cancellation/log receipts. Do not claim completion or reuse changedtree stages without managedexactmatchreceipt.",
+    "After editing, freeze allcurrentfeature files/context and obtain a new complete independent source decision. Run meaningful focusedactualmain regression and all4 mandatoryexacttree precommit stages.",
+    "Capture all46 scenes through the real managed CLI path and inherited environment conditions after correction. Require allgeometry and everyfull1280x800 PNG independently opened with truthful color/glyph/layout verdicts; complete managedreceipt at currentfingerprint.",
+    "Preserve signedpublishedhead/task verification, actualnative3.11/3.13 success, exactCI/independentreview/protecteddecision and separately authorized trusted-main exporter/helper pairing. Thisplan grants none of those.",
+    "Keep fulloriginal/current39 context and user no-heavy-Pi/monitor-through-actualdevmerges scope, currentdev controller/provenance/quality/coverage and activePR9writer boundaries."
+  ],
+  "authority_limits": {
+    "reviewer_source_edits": false,
+    "reviewer_candidate_execution_tests_or_rendering": false,
+    "visual_test_ci_native_success": false,
+    "interactive_product_no_color_change_approved": false,
+    "owner_protected_approval_hold_clearance_or_activation": false
+  }
+}

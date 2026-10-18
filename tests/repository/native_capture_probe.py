@@ -124,9 +124,17 @@ def test_actual_capture_program_retains_original_failure_and_produced_png(
         assert report["image_size"] == list(dimensions)
         assert report["rgb_extrema"] == ([[0, 0]] * 3 if fault == "black" else [[255, 255]] * 3)
     if calls:
-        assert set(calls[0]) == {"svg_string"}
+        assert set(calls[0]) == {"svg_string", "monospace_family", "font_files"}
+        assert calls[0]["monospace_family"] == "DejaVu Sans Mono"
+        assert calls[0]["font_files"] == [str(fonts / "fixture.ttf")]
         assert (output / "infrastructure-only.svg").read_text() == calls[0]["svg_string"]
-        assert report["render_options"] == {"svg_string": "infrastructure-only.svg"}
+        assert report["render_options"] == {
+            "svg_string": "infrastructure-only.svg",
+            "monospace_family": "DejaVu Sans Mono",
+            "font_files": [str(fonts / "fixture.ttf")],
+        }
+        policy = fixtures.REPO_ROOT / "agent_tools/sql_explorer_visual_render.py"
+        assert report["render_policy_sha256"] == hashlib.sha256(policy.read_bytes()).hexdigest()
         assert (
             report["font_files"][str(fonts / "fixture.ttf")]
             == hashlib.sha256(b"unparseable inspection fixture").hexdigest()

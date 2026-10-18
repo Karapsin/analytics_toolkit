@@ -1,0 +1,17 @@
+{
+  "kind": "complete-parent-context-restoration-for-fresh-combined-prerequisite",
+  "fresh_task_id": "fc1ed747a0b64317be7ca71679310713",
+  "prior_active_sha256": "8ff93808842226c2aefe1b4266f496fa01a070c04cd7954bb1dc9c682daee308",
+  "source_parent_file": "agent_tools/task_evidence/faa4cbdd169c4dba82096ef5b86f4c0d/parent-task.json",
+  "source_parent_digest": "b26559025548e5e04d9b1c23c8c4a6139a44e17908dd4c0fac8582f1b6ab5e6c",
+  "original_parent_task": "6c55e5559ba84e33a764d78025e0e315",
+  "restored_digest": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+  "changes": "Only fresh task/producer IDs differ from complete signed historical context; exact starting prompt, all corrections/Q/options/A/plans/decisions/images preserved. Current two user messages already present, no fabricated human input.",
+  "additional_current_pr39_context": {
+    "file": "/private/tmp/pr39-current-full-signed-context-76eb-recovered-v1.json",
+    "sha256": "813e95fe9b37968b03c3a016c0992531c4413807cc334ffe03f9e942a20e8b18",
+    "legacy_signed_trailer": "52de9fb5558271cb3998a058daf80739478aebf30a7c70e0b40f3b68b31d0873",
+    "head": "76eb8481734ec4ffb77d71ce300787caff21b860"
+  },
+  "authority_limits": "No historical plan/source/visual/protected approval transfers; newly approved concrete429f and cycleca876 plans plus new fullsource/visual/CI reviews required. Signature-matching source provenance only; no new enrollment registry proof."
+}

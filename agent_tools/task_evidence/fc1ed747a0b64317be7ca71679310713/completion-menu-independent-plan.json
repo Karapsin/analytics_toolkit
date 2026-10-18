@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "kind": "independent-read-only-narrow-plan-amendment",
+  "reviewer": "/root/review_separate_visual_repair_final_source",
+  "decision": "approve_plan",
+  "findings": [],
+  "parent_plan": {
+    "path": "/private/tmp/font-ui-dependency-cycle-independent-resolution-plan.json",
+    "sha256": "ca87678e2039a0dc3023828fc619cfaf41bf76011ca7c3060f5808b9526572ea"
+  },
+  "reason": "The adopted currentPR39 CompletionMenu watcher additions put widgets.py above the routed900line budget. A cohesive single-class extraction removes that implementation-size blocker without expanding the requested UI/font behavior.",
+  "approved_change": [
+    "Move the complete current CompletionMenu class body unchanged into analytics_toolkit/sql_explorer/completion_menu.py.",
+    "Import only its required runtime typing names Any/ClassVar/cast, Binding/BindingType and OptionList, plus TYPE_CHECKING SqlExplorerApp. Preserve all existing lazy workspace_for imports inside methods; adding a module-level workspace import would introduce a workspace→widgets→completion_menu→workspace cycle.",
+    "Re-export the one class object from widgets with `from .completion_menu import CompletionMenu as CompletionMenu`. Preserve widgets.__all__, its public import facade and all callers. Keep the class name, CSS identity, inheritance, bindings, constructor and every method/watch/callback guard unchanged.",
+    "Preserve the pre-existing widgets.OptionList module attribute with an explicit re-export alias if it becomes otherwise unused; do not expand __all__ merely for lint. No additional watcher, lifecycle, placement, assertion or UI behavior change belongs in this mechanical extraction.",
+    "Verify the resulting widgets module meets its existing size budget. The existing completion, overlay, placement and public-facade regressions already exercise the actual imported class; no source-mirroring test is required."
+  ],
+  "inspection": "Read the current widgets imports, complete CompletionMenu body, __all__ and focused import usages. CompletionMenu currently imports workspace_for lazily; workspace imports CompletionMenu through widgets, so preserving that boundary is necessary. Existing tests import CompletionMenu from the public widgets facade.",
+  "scope_and_authority": "Routine implementation organization within the already authorized coherent font/UI prerequisite. No new owner ambiguity or separate owner decision is needed. This plan grants no source, CI, visual, protected-policy or deployment approval.",
+  "remaining_gates": [
+    "Fresh final-source review must verify the moved class body and single-object re-export against this plan; it is not approved here as already implemented.",
+    "All focused and mandatory exact-tree checks, full46scene geometry and individual full PNG review remain required after the combined content settles. Prior stopped/stale font-only runs and captures remain historical, not successes for this tree.",
+    "All original parent context, explicit foundation dependencies, newer controller/provenance safeguards, separate main promotion boundaries, activePR9writer exclusion and actual qualifyingPRdev merges remain unchanged."
+  ],
+  "authority_limits": {
+    "only_requested_local_plan_report_written": true,
+    "source_edits": false,
+    "candidate_programs_tests_imports_or_scenes_executed": false,
+    "network_pi_remote_comments_or_approvals": false,
+    "source_ci_visual_owner_or_runtime_approval": false,
+    "parent_complete": false
+  }
+}

@@ -15,6 +15,7 @@ import zlib
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from tests._support.paths import REPO_ROOT
 from tests.repository.github_agent import controller
 
 if TYPE_CHECKING:
@@ -172,7 +173,15 @@ def configure_capture(tmp_path: Path, monkeypatch: Any, fault: str) -> Any:
             raise ValueError(message)
         return png
 
-    roots = {"/work/probe-evidence": output, "/usr/share/fonts": fonts, "/sys/class/net": net}
+    roots = {
+        "/work/probe-evidence": output,
+        "/usr/share/fonts": fonts,
+        "/sys/class/net": net,
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf": fonts / "fixture.ttf",
+        "/trusted/agent_tools/sql_explorer_visual_render.py": REPO_ROOT
+        / "agent_tools/sql_explorer_visual_render.py",
+    }
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setitem(sys.modules, "pathlib", SimpleNamespace(Path=lambda value: roots[value]))
     monkeypatch.setitem(sys.modules, "resvg_py", SimpleNamespace(svg_to_bytes=render))
     monkeypatch.setitem(sys.modules, "PIL", pillow_fixture(dimensions, level))

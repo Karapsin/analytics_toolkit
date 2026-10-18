@@ -1,0 +1,129 @@
+command: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/sql
+returncode: 1
+
+[stdout]
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f
+configfile: pyproject.toml
+plugins: platformdirs-4.13.0, timeout-2.4.0, anyio-4.15.1
+collected 3846 items / 3845 deselected / 1 selected
+
+tests/sql/explorer/completion_placement.py F
+
+=================================== FAILURES ===================================
+__________ test_completion_repositions_on_scroll_resize_and_narrowing __________
+
+    def test_completion_repositions_on_scroll_resize_and_narrowing() -> None:
+        async def exercise() -> None:
+            app = SqlExplorerApp(FakeSession())
+            async with app.run_test(size=(100, 30)) as pilot:
+                stub = _install_stub(app)
+                stub.table_cache = ("customer_id", "customer_name", "customer_number")
+                workspace = app.active_workspace
+                editor = workspace.editor
+                editor.text = "\n".join(["-- " + "x" * 140] * 40 + ["select * from customer"])
+                editor.cursor_location = (40, len("select * from customer"))
+                await pilot.pause()
+                editor.scroll_to(x=5, y=35, animate=False)
+                await pilot.press("ctrl+space")
+                await pilot.pause()
+                assert editor.scroll_x > 0
+                assert editor.scroll_y > 0
+                assert all(_completion_geometry_assertions(workspace).values())
+                _assert_popup_rectangle(workspace)
+                editor.scroll_to(x=10, y=36, animate=False)
+                await pilot.pause()
+                assert all(_completion_geometry_assertions(workspace).values())
+                _assert_popup_rectangle(workspace)
+                await pilot.resize_terminal(60, 24)
+                await pilot.pause()
+                assert all(_completion_geometry_assertions(workspace).values()), {
+                    "menu_open": workspace.completion_menu.is_open,
+                    "menu_region": workspace.completion_menu.region,
+                    "editor_viewport": editor.scrollable_content_region,
+                    "cursor": editor.cursor_location,
+                    "render_offset": editor.cursor_render_offset,
+                    "scroll": (editor.scroll_x, editor.scroll_y),
+                    "pane": workspace.query_one(".query-pane").content_region,
+                }
+                _assert_popup_rectangle(workspace)
+                assert (
+                    workspace.completion_menu.region.right
+                    <= workspace.query_one(".query-pane").content_region.right
+                )
+                workspace.completion_candidates = stub.table_cache
+                await pilot.press("_", "n", "a")
+                await pilot.pause()
+                assert workspace.completion_menu.suggestions == ("customer_name",)
+                assert workspace.completion_menu.region.height == 3
+                assert all(_completion_geometry_assertions(workspace).values())
+                _assert_popup_rectangle(workspace)
+                await pilot.press("escape")
+                await pilot.resize_terminal(90, 28)
+                await pilot.pause()
+                assert not workspace.completion_menu.is_open
+    
+>       asyncio.run(exercise())
+
+/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/tests/sql/explorer/completion_placement.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/karapsin_de/.pyenv/versions/3.12.13/lib/python3.12/asyncio/base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(100, 30)) as pilot:
+            stub = _install_stub(app)
+            stub.table_cache = ("customer_id", "customer_name", "customer_number")
+            workspace = app.active_workspace
+            editor = workspace.editor
+            editor.text = "\n".join(["-- " + "x" * 140] * 40 + ["select * from customer"])
+            editor.cursor_location = (40, len("select * from customer"))
+            await pilot.pause()
+            editor.scroll_to(x=5, y=35, animate=False)
+            await pilot.press("ctrl+space")
+            await pilot.pause()
+            assert editor.scroll_x > 0
+            assert editor.scroll_y > 0
+            assert all(_completion_geometry_assertions(workspace).values())
+            _assert_popup_rectangle(workspace)
+            editor.scroll_to(x=10, y=36, animate=False)
+            await pilot.pause()
+            assert all(_completion_geometry_assertions(workspace).values())
+            _assert_popup_rectangle(workspace)
+            await pilot.resize_terminal(60, 24)
+            await pilot.pause()
+>           assert all(_completion_geometry_assertions(workspace).values()), {
+                "menu_open": workspace.completion_menu.is_open,
+                "menu_region": workspace.completion_menu.region,
+                "editor_viewport": editor.scrollable_content_region,
+                "cursor": editor.cursor_location,
+                "render_offset": editor.cursor_render_offset,
+                "scroll": (editor.scroll_x, editor.scroll_y),
+                "pane": workspace.query_one(".query-pane").content_region,
+            }
+E           AssertionError: {'menu_open': False, 'menu_region': Region(x=0, y=0, width=0, height=0), 'editor_viewport': Region(x=2, y=4, width=55, height=9), 'cursor': (40, 22), ...}
+E           assert False
+E            +  where False = all(dict_values([False, False]))
+E            +    where dict_values([False, False]) = <built-in method values of dict object at 0x13747b5c0>()
+E            +      where <built-in method values of dict object at 0x13747b5c0> = {'completion_active_row_visible': False, 'completion_contained': False}.values
+E            +        where {'completion_active_row_visible': False, 'completion_contained': False} = _completion_geometry_assertions(SqlExplorerWorkspace(id='workspace-1'))
+
+/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f/tests/sql/explorer/completion_placement.py:134: AssertionError
+=========================== short test summary info ============================
+FAILED tests/sql/explorer/completion_placement.py::test_completion_repositions_on_scroll_resize_and_narrowing
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+====================== 1 failed, 3845 deselected in 1.53s ======================
+
+
+[stderr]
+

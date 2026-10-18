@@ -1,0 +1,54 @@
+{
+  "reviewer": "/root/review_failed_capture_producer_source",
+  "kind": "independent exact concrete cause-specific plan review",
+  "decision": "approve_exact_plan_with_required_boundaries",
+  "findings": [],
+  "input_plan": "/private/tmp/native-glyph-family-correction-concrete-plan-v1.json",
+  "basis": {
+    "pr": 44,
+    "source_head": "441a9bd825e88414c9215f7e0717e97179c77539",
+    "dev": "f66a80ebe4b3c28dbca17fbc58c2d6ffe464bb01",
+    "native_run": 39148304576,
+    "artifacts": [
+      12144004170,
+      12144645474
+    ],
+    "inert_originals_independently_verified": "All9 retained file byte sizes/hashes in each original manifest were independently rechecked. Installer exits0, capture exits1 complete, readers stopped/logs safe, cleanup_complete true, uncertain_operations empty, failed capture evidence_collected true. Both capture.json record resvg0.5.0, six readable DejaVu fonts/no Liberation, exact SVGc865, PNG e72a allblack1280x800 and preserved glyph assertion.",
+    "original_manifests_sha256": [
+      "dbbd0ba12ce5e2a660b815863b1062ad486089c1975351a04647cfabfa360893",
+      "886cbe30cedb1a8a110394aca6a3502e0a6b2e5583236bac0fd059b34dbe7ba8"
+    ],
+    "primary_documentation": "https://resvg-py.readthedocs.io/en/latest/fonts.html",
+    "documented_fact": "Official0.5.0 documentation maps Linux generic monospace to Liberation Mono and supports monospace_family/font_files overrides. Current upstream source independently inspected agrees; documentation/versioned runtime evidence carries the version claim, not an assumption that current master equals installed source.",
+    "independent_experiment": "/private/tmp/native-glyph-font-family-independent-experiment-v1.json",
+    "independent_experiment_sha256": "272742eb1086b217a51c3fb4b6e8429b92901cf145ac50b5dba10da3877c1eba",
+    "experiment_fact": "Reviewer actually invoked resvg0.5.0 locally, not candidate code: constant exact native SVGc865 and Debian DejaVuSansMono font0f5db with skip_system_fonts=True/font_files fixed in both controls. Only generic family changes. Missing Liberation Mono reproduces exact native black PNGe72a; present DejaVu Sans Mono produces visible glyph PNGff19 at1280x800 with RGB maxima255. Both parent full PNGs opened individually and inspected.",
+    "font_data_provenance": "Official Debian fonts-dejavu-core_2.37-6_all.deb downloaded as inert data only, never installed/executed; font SHA0f5db4f1749979d961019838b160bec74abdf7f9eca69553fe1aa856bbff49a4 exactly matches both native capture inventories.",
+    "cause_assessment": "The missing generic-family mapping mechanism is experimentally demonstrated using exact native font/SVG/runtime version and reproduces the exact native failure PNG. Combined native inventory and documented Linux defaults strongly establish the cause-specific correction target. This is still a controlled macOS isolated-font experiment, not successful actual Linux-container acceptance or proof that every real SQL Explorer glyph is currently wrong."
+  },
+  "concrete_plan": [
+    "Start a fresh session-owned successor rooted in actual current PR44 source/ancestry with complete original b265 parent context, fresh leaf/task/fragment and all recorded questions/options/answers/plans/decisions. Preserve old diagnostics/reviews and all qualified PR39/37/9/10/user obligations. No handed-off branch mutation or old authority transfer.",
+    "Add small stdlib-only agent_tools/sql_explorer_visual_render.py with render_options(). If sys.platform is Linux and fixed /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf is a file, return monospace_family=DejaVu Sans Mono and font_files containing that exact fixed file. Otherwise return empty options, preserving current macOS/Windows/non-Linux and Linux-without-that-font behavior. No scanning/downloading/installing fonts, no new dependencies, no fake success, no overriding unrelated SVG explicit families or system font discovery.",
+    "Actual production agent_tools/sql_explorer_visual_capture.py _write_png must use this shared function in the existing resvg_py.svg_to_bytes invocation on the unchanged framed SVG. Retain full geometry and actual visual acceptance. Do not fix only the synthetic probe or replace its SVG with an explicit family to hide default behavior.",
+    "Fixed native contained CAPTURE loads the same reviewed helper from fixed /trusted/agent_tools/sql_explorer_visual_render.py only inside its existing restricted container. Host code never imports candidate/source helper or evaluates candidate code. Preserve all containment/credential/firewall/cleanup/collector/reader policies and unchanged nonempty-glyph/1280x800 assertions.",
+    "Native provenance includes exact helper source hash, actual selected render options and selected font path/hash plus existing full font inventory/toolchain/SVG/PNG facts. Missing/helper-load/renderer failures retain earlier stage records and real nonzero exit; do not claim policy equality without recording the helper identity.",
+    "Add meaningful service-free helper cases for Linux present/absent fixed path and non-Linux preservation. Exercise actual exporter invocation with shared returned options, actual contained CAPTURE/helper loading under controlled boundaries, and existing black/geometry/import/render/failure retention controls. A fake/duplicated policy must not be the only assertion that probe and exporter agree.",
+    "Treat production visual exporter/shared sql_explorer_visual-prefixed helper as harness changes: require a complete fresh46-scene capture, automated geometry and every original full1280x800 PNG individually opened and truthfully reviewed before local commit/publication. Retain exact heading/selection/interaction/manifest/scene/API/quality/coverage guards; no changed expectations that mask rendering defects.",
+    "Run exact final focused and full mandatory managed precommit. Obtain fresh complete frozen source review and signed published-head independent review. Dispatch actual reviewed successor native3.11/3.13 opt-in matrix, preserving complete raw evidence and requiring visible glyphs plus existing actual security/counter/cleanup checks. Native failures remain failures and trigger evidence-based review.",
+    "Account explicitly for trusted helper delivery wherever /trusted source is loaded. Dev merge alone does not prove authorized main contains the helper; preserve explicit protected bootstrap/main allowlist and source/digest/authority gates rather than silently broadening deployment. Actual approved source+helper must be delivered before activation, and completed operations must not be repeated."
+  ],
+  "scope_limits": "No package/public API/version/dependency changes, no heavy font package/runtime installation, no Pi programs/tests/builds/scenes, no unrelated glyph-coverage promise. Keep macOS/Windows defaults and absent-font behavior. Native/full visual evidence, source review, CI, private provenance, protected decisions and guarded activation remain separate.",
+  "completion": "Every relevant actual PR and successor must merge successfully into dev, retaining actual PR43/44 ancestry and PR10/PR9 merge constraints. This bounded plan or successful synthetic glyph probe cannot establish parent completion.",
+  "review_operations": "Only inert metadata/source/image reads, official documentation lookup, an explicitly requested local controlled third-party renderer experiment and external review report writes. No candidate source execution, Pi/Docker operations, repo edits, dispatch, approval or activation.",
+  "input_plan_sha256": "f44d25f6e990e615f2daeab58fca8c37c194eb1acd6383f55ab06cb4083f02fa",
+  "prior_cause_assessment_sha256": "551177a447eebd01cfaadb5063d35db72f40b0a71fbb7d9acd92fc62a48f6319",
+  "exact_plan_assessment": "Read complete exact f44d plan. Its evidence/source lineage, small fixed-present-font Linux rule, shared real exporter+trusted contained probe, actual-helper tests, platform preservation, helper hash provenance, explicit trusted-main dependency, all46 truthful visual gates, managed checks/fresh independent reviews, signed fresh descendant and native acceptance requirements align with the independently demonstrated mechanism and complete parent objective. No blocking finding. Additional explicit CI/private provenance/protected/main/operational and actual all-PR merge boundaries below remain binding.",
+  "required_remaining_gates": [
+    "Current dev/head and complete original context must be revalidated through normal startup/task workflow; material changes require renewed review. Full original b265 archive and all PR39/37/9/10/user obligations remain bound.",
+    "All46 full PNGs must actually be opened individually; pass only when truthful. A failed/unresolved geometry or image verdict stays failed and requires correction, never blanket pass.",
+    "Fresh exact frozen source review and all4 mandatory precommit stages, signed successor publication, actual current-head GitHub CI and independent complete published-head review remain mandatory.",
+    "Native actual3.11/3.13 positive validates the chosen shared policy on actual isolated images; controlled local reproduction does not replace that gate or prove every product scene.",
+    "Helper delivery to trusted main is an explicit separately authorized source/hash dependency and projection boundary, not satisfied by dev merge. Applicable exact-head protected owner/delegated authority and operational safety/provenance/freeze/drain conditions remain separate before activation.",
+    "Verify actual successful dev merges for all qualifying PRs and successors, preserving exact PR43/44 and PR9/10 ancestry. This plan is not completion or authority transfer."
+  ]
+}

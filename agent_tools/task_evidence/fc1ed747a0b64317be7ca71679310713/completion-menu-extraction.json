@@ -1,0 +1,11 @@
+{
+  "kind": "mechanical-completion-menu-module-budget-extraction",
+  "reviewer_plan": "/root/review_separate_visual_repair_final_source explicitly approved narrow extraction beforeedit",
+  "old_total_lines": 911,
+  "new_widgets_lines": 846,
+  "new_module_lines": 78,
+  "class_body_sha256_unchanged": "ba36e9326f884c199f92c14671bf4aae8d7d38c45f5ebd6f7535950eb25b2791",
+  "class_body_lines": 65,
+  "imports": "SameCompletionMenu object reexported fromwidgets; widgets.OptionList retained explicitalias; allworkspace_for imports remainlazy; classbindings/watchers/semantics unchanged",
+  "failed_preedit_line_count_assertion": "Initial audit expected74lines but actual65; no source changed by that failedprecheck. Corrected to measure actualwholeclass body ratherthanassumeitslength."
+}

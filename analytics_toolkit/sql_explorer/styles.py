@@ -178,6 +178,7 @@ Screen {
     border: solid $accent;
     background: $panel;
 }
+#completion-menu { dock: top; }
 .results-split { height: 1fr; }
 #column-ruler { height: auto; layer: base; color: $text-muted; background: $panel; }
 .results-separator { height: 1; background: $panel; display: none; }

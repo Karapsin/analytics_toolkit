@@ -75,7 +75,7 @@ INSTALL = (
 )
 
 CAPTURE = r'''
-import hashlib,io,json,os,pathlib,socket,sys,traceback,importlib.metadata
+import hashlib,io,json,os,pathlib,socket,sys,traceback,importlib.metadata,importlib.util
 settings=json.loads(sys.argv[1]);out=pathlib.Path('/work/probe-evidence')
 out.mkdir(exist_ok=True)
 report={'phase':'capture','stage':'imports','ok':False,'synthetic_infrastructure_only':True,
@@ -104,12 +104,18 @@ try:
   except Exception as error:report['font_metadata'][str(path)]={'inspection_error':type(error).__name__+': '+str(error)}
  assert fonts,'No system fonts available for actual glyph rendering'
  report['completed'].append('fonts');report['stage']='render'
+ policy_path=pathlib.Path('/trusted/agent_tools/sql_explorer_visual_render.py')
+ report['render_policy_sha256']=hashlib.sha256(policy_path.read_bytes()).hexdigest()
+ spec=importlib.util.spec_from_file_location('trusted_visual_render_policy',str(policy_path))
+ if spec is None or spec.loader is None:raise ValueError('Trusted rendering policy is unavailable')
+ policy=importlib.util.module_from_spec(spec);spec.loader.exec_module(policy)
+ options=policy.render_options()
  svg='<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800"><rect width="100%" height="100%" fill="black"/><text x="20" y="50" font-family="monospace" font-size="32" fill="white">Probe glyphs Ag09</text></svg>'
  (out/'infrastructure-only.svg').write_text(svg)
  report.update(svg_sha256=hashlib.sha256(svg.encode()).hexdigest(),renderer='resvg_py.svg_to_bytes',
-               render_options={'svg_string':'infrastructure-only.svg'},
-               renderer_policy='Default font discovery, identical invocation options to the production exporter; no speculative font override.')
- png=resvg_py.svg_to_bytes(svg_string=svg)
+               render_options={'svg_string':'infrastructure-only.svg',**options},
+               renderer_policy='Shared trusted production exporter policy; installed Linux DejaVu monospace with other platform defaults preserved.')
+ png=resvg_py.svg_to_bytes(svg_string=svg,**options)
  (out/'infrastructure-only.png').write_bytes(png)
  report['png_sha256']=hashlib.sha256(png).hexdigest();report['png_bytes']=len(png)
  report['completed'].append('render');report['stage']='decode'
@@ -169,7 +175,8 @@ def main() -> None:
         "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"], "phases": [],
         "source_files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                          for p in (path, Path(__file__), path.with_name("capture_sandbox.py"),
-                                   path.with_name("capture_artifact.py"))}}
+                                   path.with_name("capture_artifact.py"),
+                                   trusted / "agent_tools/sql_explorer_visual_render.py")}}
     identity = {"candidate": os.environ["GITHUB_SHA"], "repository": os.environ["GITHUB_REPOSITORY"],
                 "run_id": int(os.environ["GITHUB_RUN_ID"]), "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"])}
     listener = socket.socket()

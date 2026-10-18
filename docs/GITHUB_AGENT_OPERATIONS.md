@@ -76,9 +76,26 @@ install, network check or rendering assertion fails. Capture records its actual
 renderer versions and invocation, full font inventory and inspection results,
 exact SVG, produced PNG and geometry/color observations before asserting glyph
 presence. The phase record preserves the original exception and traceback;
-unexecuted stages remain incomplete. Default renderer options and the nonempty
-glyph assertion stay unchanged, so diagnostic retention does not imply native
-acceptance or establish a font-selection cause.
+unexecuted stages remain incomplete. Diagnostic retention alone does not imply
+native acceptance or establish a font-selection cause.
+
+The probe and SQL Explorer exporter share a rendering-options helper. On Linux,
+when the standard Debian DejaVu Sans Mono file exists, both explicitly load that
+file and select its family for generic monospace. This handles resvg-py's Linux
+default of Liberation Mono when only DejaVu is installed. Other platforms and
+Linux hosts without that file retain the renderer defaults. System font loading,
+the full dimensions and nonempty glyph assertion remain enabled. The probe
+records the exact helper hash and options; its tests execute the real helper.
+Before trusted-main activation, the separately authorized automation projection
+must also deliver and verify `agent_tools/sql_explorer_visual_render.py` at its
+reviewed hash. Its presence on dev alone is insufficient. Full local scene review
+and actual native Python 3.11/3.13 success remain separate requirements.
+
+The fixed-color headless scene command clears inherited `NO_COLOR` before
+creating the application, alongside its existing 256-color terminal settings.
+This keeps CLI and MCP captures on the same application palette. Interactive
+SQL Explorer still honors the user's terminal preferences. The regression
+checks actual exported application text colors, excluding window decorations.
 
 Available probe files are collected after failed runs only when cleanup succeeded,
 all owned containers are absent, no resource mutation is uncertain and upload

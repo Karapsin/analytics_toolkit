@@ -1,0 +1,16 @@
+{
+  "kind": "authenticated-parent-objective-binding",
+  "parent_pr": 44,
+  "parent_head": "441a9bd825e88414c9215f7e0717e97179c77539",
+  "parent_task_id": "faa4cbdd169c4dba82096ef5b86f4c0d",
+  "parent_task_digest": "040fc56843b3ff28d5a706dce9c17efa6a82963e99110fc6f0cf9e6eb57ec3c2",
+  "parent_task_path": "agent_tools/task_evidence/fc1ed747a0b64317be7ca71679310713/parent-task.json",
+  "original_full_objective": {
+    "path": "agent_tools/task_evidence/faa4cbdd169c4dba82096ef5b86f4c0d/parent-task.json",
+    "digest": "b26559025548e5e04d9b1c23c8c4a6139a44e17908dd4c0fac8582f1b6ab5e6c",
+    "kept_unchanged_in_parent_ancestry": true
+  },
+  "source_provenance": "actual PR44 signed task trailer040f; original43 canonicaltaskb265 and all prior Q/options/A/plans remain complete committed source; actual44run39148304576 retained inert failure evidence",
+  "no_approval_transfer": true,
+  "trusted_main_delivery_dependency": "agent_tools/sql_explorer_visual_render.py must be separately verified in exact authorized automation-only main projection before activating trusted probe; dev presence not sufficient"
+}

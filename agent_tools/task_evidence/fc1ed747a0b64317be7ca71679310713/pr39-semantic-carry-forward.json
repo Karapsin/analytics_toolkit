@@ -1,0 +1,122 @@
+{
+  "kind": "positive-per-path-current-PR39-semantic-carry-forward",
+  "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+  "source_task_legacy_digest": "52de9fb5558271cb3998a058daf80739478aebf30a7c70e0b40f3b68b31d0873",
+  "source_complete_evidence_digest": "813e95fe9b37968b03c3a016c0992531c4413807cc334ffe03f9e942a20e8b18",
+  "approved_independent_plan": "ca87678e2039a0dc3023828fc619cfaf41bf76011ca7c3060f5808b9526572ea",
+  "files": [
+    {
+      "path": "analytics_toolkit/sql_explorer/editor.py",
+      "before_sha256": "10dbdb7ab0982f1674f7b5411c553a4ed50634c438fd07957efc9527ffac33c5",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "92cbb3da7337075d450d2bebf737b20b7aa354de2f927cf96470d6d5d4dfe763",
+      "bytes": 31823
+    },
+    {
+      "path": "analytics_toolkit/sql_explorer/create_table_screen.py",
+      "before_sha256": "9fd067d8130152fa2307d2f6edf24fb23586bf3b56ae97b035974739f84eb386",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "3369b5f734f6d879467ea12d9eea4adc4604395311580acc5caa989c7b522b95",
+      "bytes": 15488
+    },
+    {
+      "path": "analytics_toolkit/sql_explorer/panes.py",
+      "before_sha256": "2cade35cfcda4490a4808c1a7352d94346cc36b65b51fd63217eba12c38f0b09",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "0489415e6e8b6fd6701d77cd525c7364269d65229694cc5ca73be469e3d70cf3",
+      "bytes": 6788
+    },
+    {
+      "path": "analytics_toolkit/sql_explorer/help_text.py",
+      "before_sha256": "f559114b8dcadd05aace59ce901b911af6c733227fda8a61c261f2511cc67cc4",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "3ff2bb9a1e13057883a15ea21573430649a9570972746177bab026c8dd873cbe",
+      "bytes": 6059
+    },
+    {
+      "path": "analytics_toolkit/sql_explorer/completion_commands.py",
+      "before_sha256": "7fbcda355d43246802050c40503f59eb2457f47ffcc8fcffe17a8e338c987402",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "db44d8c67b3be5e83b02d67655bcfccb14fc49cdd3ba58e4702f3bb9ec3f0967",
+      "bytes": 21629
+    },
+    {
+      "path": "analytics_toolkit/sql_explorer/journal_screen.py",
+      "before_sha256": "2d6695b1479482862ad6a35a1ef44aa360b1517ad5350b7b18152614c8ccf4b9",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "f24a24a1f888904c06e791610439a76acad7326c598eeba17a5e1dccf107ffde",
+      "bytes": 13526
+    },
+    {
+      "path": "analytics_toolkit/sql_explorer/styles.py",
+      "before_sha256": "c4aa75517b36e6feb375215d91644ee99f084a3675d7623c38eb12ee3177cb98",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "23b1ef5bb3e1bd066cdef3c07c55d43a01f1beb9bf8aad0d0f735f913ac4d9a4",
+      "bytes": 8731
+    },
+    {
+      "path": "analytics_toolkit/sql_explorer/widgets.py",
+      "before_sha256": "4929606f37c428d85530f6dee99e1627d24b21eafa23604757cdc3495ba4c507",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "c14ac744adcf136996e6b5c649c76b01b622b0490cb37143ab18b0ad89ce01de",
+      "bytes": 34257
+    },
+    {
+      "path": "analytics_toolkit/sql_explorer/workspace.py",
+      "before_sha256": "533e36a13b0af243e359b255f878c064a70ce485485c0419c4184d5815809da6",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "ffe69bed091394a1032fdea7b633001adadba4c1ca27d4050a9b675ac81169b0",
+      "bytes": 9663
+    },
+    {
+      "path": "agent_tools/sql_explorer_visual_scene.py",
+      "before_sha256": "87f6103e4e20385b60a153f3d3ffb8f6547809d6926634311527db59d9a60c63",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "367bdd181eee589dcc48a1db2b49ad90b4c353531320e396f7854c086a97567e",
+      "bytes": 36584
+    },
+    {
+      "path": "tests/sql/explorer/rendered_states.py",
+      "before_sha256": null,
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "3097c6ab3281ac9dac5f9741aa8a2d737d2ee61f123055865b89e961c4869bcc",
+      "bytes": 17139
+    },
+    {
+      "path": "tests/sql/explorer/completion_placement.py",
+      "before_sha256": null,
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "a034c95a9bd55c007200a1fafc32cfc42403df96980a0051bd7a2f3973d13ce6",
+      "bytes": 15018
+    },
+    {
+      "path": "tests/sql/explorer/journal_screen.py",
+      "before_sha256": "b978b9e3acb2db0feb8761a021f47bede0bc55177b469eceb0cd20784fd26e31",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "78a119391e57f83763784c72c29da53fb692a4ff82097eb843dbf4c314a5a87e",
+      "bytes": 16929
+    },
+    {
+      "path": "tests/agent_tools/visual_scene_states.py",
+      "before_sha256": null,
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "3c7aca632785e77b9a42d12cb92f9352cb941309872259c591967cfd475bc411",
+      "bytes": 6133
+    },
+    {
+      "path": "docs/modules/sql_explorer/index.md",
+      "before_sha256": "0244b01721d8985e27c1bb71fda53b0cbeb3e1a6d6e8f04fbdf64d52a9feb51b",
+      "source_head": "76eb8481734ec4ffb77d71ce300787caff21b860",
+      "source_sha256": "3f9b64bba24c221b1f79858fec79d01514927f7f4759a09fb8b757a980feb4de",
+      "bytes": 43889
+    }
+  ],
+  "protected_current_files_preserved": {
+    ".github/agent/review_control.py": "1001a4becfef6683f98355299cf797a7d640da9fe12be1f8515dd7b30b4e11d4",
+    "agent_tools/task_evidence/601907e377c7423ab83726d86de50186/parent-objective.json": "d42f1b239e9ccc960bc52ac3fc9dc26e337babb741a475dcc9caf4f80ec99437",
+    "tests/repository/coordinator_scope.py": "1924e255762f797b5cb9c99dce8cea03ca5205749e268a6bd92a4675440fe21d",
+    "release_routines/coverage_targets.json": "377d726b96187e5224c40de7bcff4860af70524784f80b07cc90701cb35947fc"
+  },
+  "coverage": "Existing current-dev floors unchanged; no unmerged PR39 coverage or validation receipt copied. New full candidate checks may ratchet only monotonically.",
+  "authority": "Exact per-path source adoption only; no source/visual/CI/owner approval transfers; no edit on PR9/39/43/44 handed-off refs; fresh complete combined review required; actual devmerge statuses remain open."
+}

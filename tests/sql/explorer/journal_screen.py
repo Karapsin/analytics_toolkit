@@ -5,6 +5,7 @@ from threading import Event
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
+import pytest
 from analytics_toolkit.sql.execution.observation import observed_connection
 from analytics_toolkit.sql_explorer import journal_screen as module
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
@@ -21,8 +22,6 @@ from tests.sql.explorer.journal import Driver
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 def test_journal_shortcuts_share_ctrl_command_and_fn_parity(tmp_path: Path) -> None:
@@ -78,13 +77,27 @@ def test_journal_filter_search_preview_and_open_preserve_editor(tmp_path: Path) 
             await pilot.pause()
             assert len(screen.records) == 2
             search = screen.query_one("#journal-search", Input)
+            search.value = "no-such-journal-entry"
+            await pilot.pause()
+            await wait_for_ui_workers(pilot, screen.workers)
+            assert not screen.records
+            assert (
+                str(screen.query_one("#journal-status", Static).renderable)
+                == "No matching journal entries."
+            )
             search.value = "orders"
             await pilot.pause()
             await wait_for_ui_workers(pilot, screen.workers)
             await pilot.pause()
             assert len(screen.records) == 1
-            screen._receive_page(-1, JournalPage((), None, "stale"))
+            assert (
+                str(screen.query_one("#journal-status", Static).renderable) == "Page 1 · 1 entries."
+            )
+            screen._receive_page(-1, JournalPage((), None, "Cannot read journal: stale failure"))
             assert len(screen.records) == 1
+            assert (
+                str(screen.query_one("#journal-status", Static).renderable) == "Page 1 · 1 entries."
+            )
             await pilot.click("#journal-open")
             await pilot.pause()
             assert application.active_workspace is not original
@@ -110,6 +123,11 @@ def test_empty_journal_command_and_internal_open(tmp_path: Path) -> None:
             screen = application.screen
             assert isinstance(screen, JournalScreen)
             await wait_for_ui_workers(pilot, screen.workers)
+            assert not session.journal.store("gp").path.exists()
+            assert (
+                str(screen.query_one("#journal-status", Static).renderable)
+                == "No matching journal entries."
+            )
             assert screen.query_one("#journal-open", Button).disabled
             assert screen.query_one("#journal-more", Button).disabled
             await pilot.press("ctrl+f")
@@ -168,6 +186,65 @@ def test_pages_replace_previous_records_and_export_opens_save_dialog(tmp_path: P
             await pilot.pause()
             await wait_for_ui_workers(pilot, screen.workers)
             assert len(screen.records) == 100
+            await pilot.click("#journal-close")
+            assert not isinstance(application.screen, JournalScreen)
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("populated", [False, True])
+def test_corrupt_journal_status_and_refresh_recovery(tmp_path: Path, populated: bool) -> None:
+    async def exercise() -> None:
+        session = FakeSession()
+        session.journal = QueryJournal(tmp_path)
+        store = session.journal.store("gp")
+        store.path.parent.mkdir(parents=True, exist_ok=True)
+        corrupt_bytes = b"invalid SQLite database"
+        store.path.write_bytes(corrupt_bytes)
+        application = SqlExplorerApp(session)
+        async with application.run_test(size=(150, 45)) as pilot:
+            application.action_open_journal()
+            await pilot.pause()
+            screen = application.screen
+            assert isinstance(screen, JournalScreen)
+            await wait_for_ui_workers(pilot, screen.workers)
+            status = str(screen.query_one("#journal-status", Static).renderable)
+            assert status.startswith("Cannot read journal: ")
+            assert "No matching journal entries." not in status
+            assert store.path.read_bytes() == corrupt_bytes
+            assert not screen.records
+            options = screen.query_one("#journal-list", OptionList)
+            assert options.option_count == 0
+            assert options.highlighted is None
+            assert screen.query_one("#journal-sql", TextArea).text == ""
+            for control in (
+                "journal-open",
+                "journal-export-sql",
+                "journal-export-json",
+                "journal-more",
+                "journal-next-sql",
+            ):
+                assert screen.query_one(f"#{control}", Button).disabled
+            assert not screen.query_one("#journal-refresh", Button).disabled
+            assert not screen.query_one("#journal-close", Button).disabled
+            await pilot.press("enter")
+            assert application.screen is screen
+
+            # Simulate external recovery without changing the screen or reader.
+            store.path.unlink()
+            if populated:
+                with session.journal.action("gp", "gp", "user", user_sql="select 1"):
+                    pass
+            else:
+                with store.connect(write=True):
+                    pass
+            await pilot.click("#journal-refresh")
+            await wait_for_ui_workers(pilot, screen.workers)
+            expected = "Page 1 · 1 entries." if populated else "No matching journal entries."
+            assert str(screen.query_one("#journal-status", Static).renderable) == expected
+            assert len(screen.records) == int(populated)
+            assert screen.query_one("#journal-open", Button).disabled is not populated
+            assert session.executed == []
             await pilot.click("#journal-close")
             assert not isinstance(application.screen, JournalScreen)
 
