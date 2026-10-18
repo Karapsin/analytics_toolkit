@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
@@ -17,6 +16,7 @@ from textual.widgets import Static
 
 from agent_tools import sql_explorer_render_diagnostics as diagnostics
 from agent_tools.sql_explorer_visual_scene import VisualSession
+from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
