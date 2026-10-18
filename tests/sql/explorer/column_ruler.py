@@ -144,6 +144,73 @@ def test_ruler_tracks_main_cursor_scroll_and_command_focus() -> None:
     asyncio.run(exercise())
 
 
+def test_tab_database_switch_keeps_ruler_above_separate_gutter() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(208, 47)) as pilot:
+            first = app.active_workspace
+            first.editor.text = "SELECT 1;\nSELECT 2;"
+            first.editor.cursor_location = (1, 4)
+            first.command_input.focus()
+            await pilot.pause()
+            await pilot.press("ctrl+t")
+            await pilot.pause()
+            second = app.active_workspace
+            assert second is not first
+            app._command_database(["warehouse_connection"])
+            second.command_input.focus()
+            await pilot.pause()
+
+            for workspace in (second, first, second):
+                app._activate_tab(workspace.tab_id)
+                await pilot.pause()
+                editor = workspace.editor
+                empty = workspace is second
+                assert app.active_workspace is workspace
+                assert editor.text == ("" if empty else "SELECT 1;\nSELECT 2;")
+                assert editor.cursor_location == ((0, 0) if empty else (1, 4))
+                _assert_tab_ruler_rows(app)
+                assert editor.scroll_x == editor.scroll_y == 0
+                assert app.focused is workspace.command_input
+                position = "SQL  Ln 1, Col 1" if empty else "SQL  Ln 2, Col 5"
+                assert position in str(workspace.query_one("#editor-status").render())
+                assert workspace.session.database.connection_key == (
+                    "warehouse_connection" if empty else "gp"
+                )
+                if empty:
+                    assert str(workspace.query_one("#notice").renderable) == (
+                        "Switched to warehouse_connection (trino)."
+                    )
+                    assert workspace.query_one(ColumnRuler).render().plain.strip() == "1"
+            assert first.editor.text == "SELECT 1;\nSELECT 2;"
+            assert second.editor.text == ""
+
+    asyncio.run(exercise())
+
+
+def _assert_tab_ruler_rows(app: SqlExplorerApp) -> None:
+    editor = app.active_workspace.editor
+    ruler = app.active_workspace.query_one(ColumnRuler)
+    assert ruler.region.height == 1
+    assert ruler.region.bottom == editor.region.y
+    assert ruler.region.x == editor.region.x
+    text_x = editor.content_region.x + editor.gutter_width
+    caret_x = text_x + editor.cursor_render_offset[0]
+    ruler_x = caret_x - ruler.content_region.x
+    label = str(editor.cursor_location[1] + 1)
+    assert ruler.render_line(0).crop(ruler_x, ruler_x + 1).text == label
+    rows = app.screen._compositor.render_strips()
+    assert rows[ruler.content_region.y].crop(caret_x, caret_x + 1).text == label
+    first_row = editor.render_line(0)
+    composed = rows[editor.content_region.y]
+    assert first_row.crop(0, editor.gutter_width).text.strip() == "1"
+    assert composed.crop(editor.content_region.x, text_x).text.strip() == "1"
+    visible_text = "SELECT 1;" if editor.text else "│"
+    text_end = editor.gutter_width + len(visible_text)
+    assert first_row.crop(editor.gutter_width, text_end).text == visible_text
+    assert composed.crop(text_x, text_x + len(visible_text)).text == visible_text
+
+
 def test_delete_command_uses_editor_selections_and_undo() -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())

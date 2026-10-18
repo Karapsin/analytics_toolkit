@@ -281,3 +281,102 @@ def test_timeout_retains_selector_observation_for_failed_state_and_geometry(
     assert result["conditions"] == {"scene_state": False}
     assert result["selector_readiness"] == observation
     assert result["geometry"]["ok"] is False
+
+
+@pytest.mark.parametrize("scene", ["keyboard-multicursor", "find-replace", "editor-ready"])
+def test_multicursor_retains_one_export_inputs_and_processing_atomically(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, scene: str
+) -> None:
+    geometry, screenshot = tmp_path / "scene.json", tmp_path / "scene.png"
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>界e\u0301</text></svg>'
+    exports: list[str] = []
+    renders: list[tuple[str, str | None]] = []
+    observations: list[tuple[str, str, bytes, dict[str, Any]]] = []
+    rasterization: dict[str, Any] = {"observed": "ordinary processing"}
+    incomplete = {"complete": False, "missing": ["combined_svg_byte_limit"]}
+
+    def export(**_kwargs: Any) -> str:
+        exports.append(svg)
+        return svg
+
+    def write_png(raw: str, path: Path, *, framed_svg: str | None = None) -> dict[str, Any]:
+        renders.append((raw, framed_svg))
+        path.write_bytes(b"ordinary png")
+        return rasterization
+
+    def inputs(
+        raw: str, framed: str, png: bytes, *, rasterization: dict[str, Any]
+    ) -> dict[str, Any]:
+        assert json.loads(geometry.read_text()) == {"ok": True}
+        observations.append((raw, framed, png, rasterization))
+        return incomplete
+
+    monkeypatch.setattr(capture, "_scene_ready", lambda _app: True)
+    monkeypatch.setattr(
+        capture, "_write_evidence", lambda *_args: geometry.write_text('{"ok": true}')
+    )
+    monkeypatch.setattr(capture, "terminal_diagnostics", lambda *_args: {})
+    monkeypatch.setattr(capture, "render_diagnostics", lambda *_args: {"complete": False})
+    monkeypatch.setattr(capture, "_write_png", write_png)
+    monkeypatch.setattr(capture, "export_input_evidence", inputs)
+    monkeypatch.setattr(
+        capture,
+        "rasterization_comparisons",
+        lambda *_args, **_kwargs: pytest.fail("multicursor must not add comparison renders"),
+    )
+    capture._capture_frame(
+        cast("Any", SimpleNamespace(export_screenshot=export)),
+        scene,
+        geometry,
+        tmp_path / "manifest",
+        screenshot,
+    )
+    saved = json.loads(geometry.read_text())
+    assert exports == [svg]
+    assert len(renders) == 1
+    assert screenshot.read_bytes() == b"ordinary png"
+    if scene == "keyboard-multicursor":
+        assert observations == [(svg, capture._frame_svg(svg), b"ordinary png", rasterization)]
+        assert saved["export_input_evidence"] == incomplete
+        assert saved["render_diagnostics"] == {"complete": False}
+    else:
+        assert not observations
+        assert "export_input_evidence" not in saved
+    assert "rasterization_comparisons" not in saved
+    assert not geometry.with_suffix(".tmp").exists()
+
+
+@pytest.mark.parametrize("ready", [False, True])
+def test_multicursor_diagnostics_cannot_bypass_capture_gates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ready: bool
+) -> None:
+    geometry = tmp_path / "scene.json"
+    screenshot = tmp_path / "scene.png"
+    geometry.write_text('{"ok": true, "export_input_evidence": {"complete": true}}')
+
+    def rejected(*_args: Any) -> None:
+        geometry.write_text('{"ok": false, "assertions": {"required": false}}')
+
+    def unexpected(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("rejected frame must not collect or export")
+
+    monkeypatch.setattr(capture, "_scene_ready", lambda _app: ready)
+    monkeypatch.setattr(capture, "_write_evidence", rejected)
+    monkeypatch.setattr(capture, "terminal_diagnostics", unexpected)
+    monkeypatch.setattr(capture, "export_input_evidence", unexpected)
+    monkeypatch.setattr(capture, "_write_png", unexpected)
+    with pytest.raises(RuntimeError, match="failed geometry" if ready else "not ready"):
+        capture._capture_frame(
+            cast("Any", SimpleNamespace(export_screenshot=unexpected)),
+            "keyboard-multicursor",
+            geometry,
+            tmp_path / "manifest",
+            screenshot,
+        )
+    assert not screenshot.exists()
+    assert not geometry.with_suffix(".tmp").exists()
+    if ready:
+        assert json.loads(geometry.read_text())["ok"] is False
+        assert "export_input_evidence" not in json.loads(geometry.read_text())
+    else:
+        assert not geometry.exists()

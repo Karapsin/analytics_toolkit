@@ -267,6 +267,47 @@ come from one export; atomic evidence replacement protects that frame from later
 timer refreshes. These diagnostics do not replace geometry checks or individual
 review of every full PNG.
 
+The `keyboard-multicursor` scene additionally records `terminal.multicursor`:
+actual workspace, keyboard mode, focused widget, primary/secondary selection
+identities and endpoints, preferences, scroll offsets, gutter and viewport.
+Each observed caret maps through the wrapped document to content-local,
+widget-local and screen cells. Its text, resolved colors and style flags come
+from the already-collected widget/compositor rows; collection does not move
+cursors, change focus, drain events or refresh the scene. The first three editor
+rows and ruler row share the existing nine-region, 24-row and 208-cell limits.
+Caret records are capped at nine. Missing probes, clipping, missing rows/styles
+and all collection limits explicitly make the reduced evidence incomplete.
+Expected positions `(0,14)`, `(1,14)`, `(2,14)`, primary `(1,14)`, empty
+selections and keyboard mode on remain separate from observations. State
+mismatches and absent caret marks are findings, not a PNG visibility verdict.
+
+Multicursor `export_input_evidence` retains the exact raw, framed and ordinary
+supersampling SVGs from the single final export without comparison renders.
+All three inputs share the 4 MiB lossless SVG budget; overflow omits content
+while preserving lengths/hashes and reports `complete=false`. Its
+`rasterization` record retains the ordinary renderer settings, scale factor,
+intermediate/final dimensions and hashes, Pillow version and reduction filter;
+`svg_input` identifies `inputs.supersampling_svg` as the retained rendering input.
+Verify its final hash and `png_sha256` against the full scene PNG. Parsed styles
+also retain SVG text-decoration attributes. Existing parsed-element and 512 KiB
+limits, atomic publication, readiness and geometry checks stay in force.
+GitHub-only diagnostics support identification of the first failing layer;
+they do not repair or clear the visibility finding. A demonstrated repair
+needs renewed independent planning and review, exact-head CI and all 46
+candidate-bound geometry/full-PNG verdicts.
+
+The `tab-database-change` geometry also records `ruler_evidence`: the active
+workspace, cursor and one-based column, integer scroll offsets, gutter width,
+separate ruler/editor regions, and the ruler and first editor row from both
+widgets and compositor. Each row retains spaces, terminal-cell coordinates and
+styles through the existing 208-cell bound. Collection observes the mounted state
+without changing focus, scrolling or SQL; final-frame ownership and atomic
+publication remain unchanged. Mounted regressions cover tab/database switching
+and reject overlapping rows, shifted column mapping and missing composed labels
+or gutter numbers. This evidence supports independent reassessment of the ruler
+finding; it does not clear a rejected visual gate. Fresh candidate-bound review
+must still inspect every one of the 46 full PNGs and geometry results.
+
 Create-table checkbox entries additionally retain bounded model label/value and
 enabled/focused state, direct Rich render text/styles/spans, computed geometry and
 styles, and ancestor clips. The terminal snapshot records whether Advanced is

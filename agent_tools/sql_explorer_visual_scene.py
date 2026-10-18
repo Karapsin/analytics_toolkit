@@ -20,6 +20,7 @@ from agent_tools.sql_explorer_render_diagnostics import (
     SELECTOR_SCENES,
     selector_readiness_assertions,
     selector_readiness_snapshot,
+    strip_record,
 )
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.connections import ConnectionsRestart
@@ -930,6 +931,85 @@ def _workspace_assertions(app: VisualExplorerApp, scene_id: str) -> dict[str, bo
     return assertions
 
 
+def _ruler_evidence(app: VisualExplorerApp) -> dict[str, Any]:
+    """Observe two separate terminal rows without moving focus, scroll or cursors."""
+    workspace = app.active_workspace
+    editor = workspace.editor
+    ruler = workspace.query_one("#column-ruler", Static)
+    composed = app.screen._compositor.render_strips()  # noqa: SLF001
+    rows = {}
+    for name, widget in (("ruler", ruler), ("editor", editor)):
+        region = widget.content_region
+        rows[name] = {
+            "region": _widget_geometry(widget),
+            "widget_row": strip_record(
+                widget.render_line(0), x=region.x, y=region.y, width=region.width
+            ),
+            "compositor_row": strip_record(
+                composed[region.y].crop(region.x, region.right),
+                x=region.x,
+                y=region.y,
+                width=region.width,
+            ),
+        }
+    return {
+        "active_workspace": workspace.tab_id,
+        "cursor_location": list(editor.cursor_location),
+        "active_column": editor.cursor_location[1] + 1,
+        "cursor_render_offset": list(editor.cursor_render_offset),
+        "scroll_x": int(editor.scroll_x),
+        "scroll_y": int(editor.scroll_y),
+        "gutter_width": editor.gutter_width,
+        "gutter_left": editor.gutter.left,
+        "active_column_screen_x": (
+            editor.content_region.x
+            + editor.gutter_width
+            + editor.cursor_render_offset[0]
+            - int(editor.scroll_x)
+        ),
+        "document_empty": editor.text == "",
+        **rows,
+    }
+
+
+def _ruler_evidence_assertions(evidence: dict[str, Any]) -> dict[str, bool]:
+    ruler, editor = evidence["ruler"], evidence["editor"]
+    ruler_region, editor_region = ruler["region"], editor["region"]
+    label = str(evidence["active_column"])
+    screen_x = evidence["active_column_screen_x"]
+    label_visible = all(
+        0 <= screen_x - row["x"] < row["cells"]
+        and row["text"][screen_x - row["x"] - len(label) + 1 : screen_x - row["x"] + 1] == label
+        for row in (ruler["widget_row"], ruler["compositor_row"])
+    )
+    return {
+        "ruler:separate_rows": (
+            ruler_region["height"] == 1
+            and ruler_region["bottom"] == editor_region["y"]
+            and ruler_region["x"] == editor_region["x"]
+        ),
+        "ruler:active_column_cell": (
+            screen_x
+            == ruler_region["x"]
+            + evidence["gutter_left"]
+            + evidence["gutter_width"]
+            + evidence["cursor_render_offset"][0]
+            - evidence["scroll_x"]
+            and label_visible
+        ),
+        "ruler:first_gutter_separate": all(
+            row["text"][: evidence["gutter_width"]].strip() == "1"
+            and row["y"] > ruler["compositor_row"]["y"]
+            for row in (editor["widget_row"], editor["compositor_row"])
+        ),
+        "ruler:empty_workspace": (
+            evidence["active_workspace"] == "2"
+            and evidence["document_empty"]
+            and evidence["cursor_location"] == [0, 0]
+        ),
+    }
+
+
 def _persist_evidence(payload: dict[str, Any], evidence_path: Path) -> None:
     # A mounted scene may emit an incomplete diagnostic frame before it settles,
     # but teardown must never replace geometry that already passed every check.
@@ -971,6 +1051,10 @@ def _write_evidence(
             {f"directory:{name}": value for name, value in readiness["conditions"].items()}
         )
     assertions.update(_button_color_assertions(app))
+    ruler_evidence = None
+    if scene_id == "tab-database-change" and isinstance(app, VisualExplorerApp):
+        ruler_evidence = _ruler_evidence(app)
+        assertions.update(_ruler_evidence_assertions(ruler_evidence))
 
     payload = {
         "schema_version": 1,
@@ -986,6 +1070,8 @@ def _write_evidence(
         payload["scene_readiness"] = readiness
     if selector_snapshot is not None:
         payload["selector_readiness"] = selector_snapshot
+    if ruler_evidence is not None:
+        payload["ruler_evidence"] = ruler_evidence
     _persist_evidence(payload, evidence_path)
 
 

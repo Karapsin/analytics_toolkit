@@ -509,3 +509,61 @@ def test_picker_comparisons_cannot_bypass_readiness_or_geometry(
         assert not geometry.exists()
     assert not screenshot.exists()
     assert not geometry.with_suffix(".tmp").exists()
+
+
+@pytest.mark.parametrize("extra", [0, 1])
+def test_multicursor_export_shares_lossless_budget_with_supersampling(
+    monkeypatch: pytest.MonkeyPatch, extra: int
+) -> None:
+    framed = capture._frame_svg(SVG)
+    supersampled = evidence.supersampling_svg(framed)
+    rasterization = {
+        "svg": {
+            "content": supersampled,
+            "encoding": "UTF-8",
+            "sha256": evidence.digest(supersampled.encode("utf-8")),
+            "byte_length": len(supersampled.encode("utf-8")),
+        },
+        "renderer": "resvg_py.svg_to_bytes",
+        "renderer_arguments": {"input": "svg.content", "other_arguments": {}},
+        "processing": {
+            "scale_factor": 2,
+            "intermediate": {
+                "dimensions": [2560, 1600],
+                "sha256": evidence.digest(b"intermediate"),
+            },
+            "final": {"dimensions": [1280, 800], "sha256": evidence.digest(PNG)},
+            "pillow_version": "observed-version",
+            "reduction_filter": "Image.Resampling.LANCZOS",
+            "reductions": 1,
+        },
+    }
+    original = json.dumps(rasterization, sort_keys=True)
+    total = sum(len(value.encode("utf-8")) for value in (SVG, framed, supersampled))
+    monkeypatch.setattr(evidence, "MAX_SVG_BYTES", total - extra)
+    monkeypatch.setattr(
+        evidence, "_render_svg", lambda *_args: pytest.fail("diagnostics must not render")
+    )
+    result = json.loads(
+        json.dumps(evidence.export_input_evidence(SVG, framed, PNG, rasterization=rasterization))
+    )
+    assert result["complete"] is (extra == 0)
+    assert result["combined_svg_byte_length"] == total
+    assert result["missing"] == ([] if extra == 0 else ["combined_svg_byte_limit"])
+    for name, content in (
+        ("raw_svg", SVG),
+        ("framed_svg", framed),
+        ("supersampling_svg", supersampled),
+    ):
+        record = result["inputs"][name]
+        assert record["sha256"] == evidence.digest(content.encode("utf-8"))
+        assert record["byte_length"] == len(content.encode("utf-8"))
+        assert ("content" in record) is (extra == 0)
+        if not extra:
+            assert record["content"].encode("utf-8") == content.encode("utf-8")
+    assert result["rasterization"]["processing"] == rasterization["processing"]
+    assert result["rasterization"]["renderer_arguments"] == rasterization["renderer_arguments"]
+    assert result["rasterization"]["svg_input"] == "inputs.supersampling_svg"
+    assert "svg" not in result["rasterization"]
+    assert result["png_sha256"] == rasterization["processing"]["final"]["sha256"]
+    assert json.dumps(rasterization, sort_keys=True) == original

@@ -12,11 +12,13 @@ from xml.etree import ElementTree as ET
 
 from rich.cells import cell_len
 from rich.color import Color
+from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
 from textual.app import ScreenStackError
 from textual.css.query import NoMatches
 from textual.geometry import Region
+from textual.strip import Strip
 
 # These limits apply across a scene, not independently to each widget.
 MAX_REGIONS = 9
@@ -30,6 +32,7 @@ SCENES = frozenset(
         "find-replace",
         "column-ruler-scrolled",
         "completion-columns",
+        "keyboard-multicursor",
         "create-table-advanced",
         "create-table-schema",
         "create-table-invalid",
@@ -320,6 +323,11 @@ def _targets(app: Any, scene: str) -> list[tuple[str, Any, int]]:
         return [("heading", app.screen.query_one("#database-picker-title"), 3)]
     if scene == "find-replace":
         return [("find-matches", app.active_workspace.editor, 6)]
+    if scene == "keyboard-multicursor":
+        return [
+            ("multicursor-editor", app.active_workspace.editor, 3),
+            ("multicursor-ruler", app.active_workspace.query_one("#column-ruler"), 1),
+        ]
     if scene == "completion-columns":
         return [
             ("completion-anchor", app.active_workspace.editor, 3),
@@ -461,6 +469,168 @@ def _collect_region_rows(
         result["missing"].append(f"{name}:{type(error).__name__}")
 
 
+def _caret_cells(
+    rows: list[dict[str, Any]], *, x: int, y: int, width: int
+) -> dict[str, Any] | None:
+    """Crop already collected terminal cells; never render or refresh a second time."""
+    row = next((item for item in rows if item["y"] == y), None)
+    if row is None:
+        return None
+    spans = []
+    for span in row["spans"]:
+        left, right = max(x, span["x"]), min(x + width, span["x"] + span["cells"])
+        if left < right:
+            text = Strip([Segment(span["text"])]).crop(left - span["x"], right - span["x"]).text
+            spans.append({**span, "x": left, "cells": right - left, "text": text})
+    cells = sum(span["cells"] for span in spans)
+    return {
+        "x": x,
+        "y": y,
+        "cells": cells,
+        "text": "".join(span["text"] for span in spans),
+        "spans": spans,
+        "truncated": cells != width or row["truncated"],
+    }
+
+
+def _caret_mapping(editor: Any, selection: Any) -> dict[str, Any]:
+    row, column = selection.end
+    wrapped_x, wrapped_y = editor.wrapped_document.location_to_offset(selection.end)
+    x = wrapped_x - int(editor.scroll_x) + editor.gutter_width
+    y = wrapped_y - int(editor.scroll_y)
+    in_document = column < len(editor.document[row])
+    width = 1
+    if in_document:
+        next_x, next_y = editor.wrapped_document.location_to_offset((row, column + 1))
+        width = (
+            max(1, next_x - wrapped_x)
+            if next_y == wrapped_y
+            else max(1, editor.scrollable_content_region.width - x)
+        )
+    origin = editor.content_region
+    screen_x, screen_y = origin.x + x, origin.y + y
+    viewport = editor.scrollable_content_region
+    visible = (
+        x >= editor.gutter_width
+        and viewport.x <= screen_x
+        and screen_x + width <= viewport.right
+        and viewport.y <= screen_y < viewport.bottom
+    )
+    return {
+        "wrapped_offset": [wrapped_x, wrapped_y],
+        "content_local_cell": [x, y],
+        "widget_local_cell": [screen_x - editor.region.x, screen_y - editor.region.y],
+        "screen_cell": [screen_x, screen_y],
+        "cell_width": width,
+        "in_document": in_document,
+        "visible": visible,
+        "clipped": not visible,
+    }
+
+
+def _observe_caret_layers(
+    caret: dict[str, Any], regions: list[dict[str, Any]], result: dict[str, Any]
+) -> None:
+    name = f"multicursor:caret:{caret['index']}"
+    if caret["clipped"]:
+        result["missing"].append(f"{name}:clipped")
+    region = next((entry for entry in regions if entry["name"] == "multicursor-editor"), {})
+    x, y = caret["screen_cell"]
+    width = min(caret["cell_width"], MAX_CELLS)
+    if width < caret["cell_width"]:
+        result["omissions"].append(f"{name}:cell_limit")
+    for layer in ("widget_rows", "composed_rows"):
+        observed = _caret_cells(region.get(layer, []), x=x, y=y, width=width)
+        caret[layer] = observed
+        if observed is None or observed["truncated"]:
+            result["missing"].append(f"{name}:{layer}:unavailable_or_clipped")
+            continue
+        # A recorded style is not a PNG visibility verdict.
+        marked = (
+            all(span["flags"]["underline"] for span in observed["spans"])
+            if caret["in_document"]
+            else observed["text"] == "│"
+        )
+        if not marked:
+            result["multicursor"]["findings"].append(f"{name}:{layer}:caret_mark_absent")
+
+
+def _collect_caret(editor: Any, selection: Any, index: int, result: dict[str, Any]) -> None:
+    caret = {
+        "index": index,
+        "identity": id(selection),
+        "primary": selection is editor.selection,
+        "start": list(selection.start),
+        "end": list(selection.end),
+        "empty": selection.is_empty,
+        "preferred_column": editor._cursor_preferences.get(selection),  # noqa: SLF001
+    }
+    result["multicursor"]["carets"].append(caret)
+    try:
+        caret.update(_caret_mapping(editor, selection))
+        _observe_caret_layers(caret, result["regions"], result)
+    except (AttributeError, LookupError, RuntimeError, TypeError, ValueError) as error:
+        result["missing"].append(f"multicursor:caret:{index}:{type(error).__name__}")
+
+
+def _multicursor_diagnostics(app: Any, result: dict[str, Any]) -> None:
+    """Observe actual state separately from fixture expectations without changing either."""
+    snapshot: dict[str, Any] = {
+        "expected": {
+            "positions": [[0, 14], [1, 14], [2, 14]],
+            "primary": [1, 14],
+            "empty_selections": True,
+            "keyboard_mode": True,
+        },
+        "carets": [],
+        "findings": [],
+    }
+    result["multicursor"] = snapshot
+    try:
+        workspace = app.active_workspace
+        editor = workspace.editor
+        selections = editor.cursor_selections
+        focused = app.focused
+        snapshot.update(
+            active_workspace=workspace.tab_id,
+            keyboard_mode=app.keyboard_mode,
+            focused_widget=(
+                {
+                    "class": type(focused).__name__,
+                    "id": focused.id,
+                    "identity": id(focused),
+                }
+                if focused is not None
+                else None
+            ),
+            editor_focused=editor.has_focus,
+            cursor_count=editor.cursor_count,
+            primary_identity=id(editor.selection),
+            scroll_offset=list(editor.scroll_offset),
+            gutter_width=editor.gutter_width,
+            gutter_left=editor.gutter.left,
+            region=_region_record(editor.region),
+            content_region=_region_record(editor.content_region),
+            viewport=_region_record(editor.scrollable_content_region),
+            preference_count=len(editor._cursor_preferences),  # noqa: SLF001
+        )
+        if len(selections) > MAX_REGIONS:
+            result["omissions"].append("multicursor:caret_limit")
+        for index, selection in enumerate(selections[:MAX_REGIONS]):
+            _collect_caret(editor, selection, index, result)
+        expected = snapshot["expected"]
+        if [list(selection.end) for selection in selections[:MAX_REGIONS]] != expected["positions"]:
+            snapshot["findings"].append("multicursor:unexpected_positions")
+        if list(editor.selection.end) != expected["primary"]:
+            snapshot["findings"].append("multicursor:unexpected_primary")
+        if not all(selection.is_empty for selection in selections[:MAX_REGIONS]):
+            snapshot["findings"].append("multicursor:nonempty_selection")
+        if snapshot["keyboard_mode"] is not expected["keyboard_mode"]:
+            snapshot["findings"].append("multicursor:unexpected_keyboard_mode")
+    except (AttributeError, NoMatches, ScreenStackError, RuntimeError) as error:
+        result["missing"].append(f"multicursor:state:{type(error).__name__}")
+
+
 def _editor_diagnostics(app: Any, scene: str, result: dict[str, Any]) -> None:
     """Attach caret, scrolling, and popup geometry only for their assigned scenes."""
     if scene in {"find-replace", "column-ruler-scrolled"}:
@@ -487,6 +657,8 @@ def _editor_diagnostics(app: Any, scene: str, result: dict[str, Any]) -> None:
                 key: getattr(scrollbar, key)
                 for key in ("position", "window_size", "window_virtual_size")
             }
+    if scene == "keyboard-multicursor":
+        _multicursor_diagnostics(app, result)
     if scene == "completion-columns":
         editor = app.active_workspace.editor
         _, cursor_y = editor.wrapped_document.location_to_offset(editor.cursor_location)
@@ -547,6 +719,8 @@ def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:
         composed = app.screen._compositor.render_strips()  # noqa: SLF001
     except (AttributeError, LookupError, NoMatches, ScreenStackError, RuntimeError) as error:
         result["missing"].append(f"terminal:{type(error).__name__}")
+        if scene == "keyboard-multicursor":
+            _multicursor_diagnostics(app, result)
         if "source_selector" in result:
             _selector_visibility(result["source_selector"], [])
         return result
@@ -663,6 +837,7 @@ def svg_diagnostics(  # noqa: C901, PLR0912, PLR0915
                         "font-family",
                         "font-size",
                         "font-weight",
+                        "text-decoration",
                         "visibility",
                     }
                 }

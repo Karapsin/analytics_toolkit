@@ -108,9 +108,17 @@ def _font_context(svg: str) -> dict[str, Any]:
     }
 
 
-def export_input_evidence(svg: str, framed_svg: str, png: bytes) -> dict[str, Any]:
+def export_input_evidence(
+    svg: str,
+    framed_svg: str,
+    png: bytes,
+    *,
+    rasterization: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Keep exact renderer inputs separate from the lossy parsed-diagnostic reducer."""
     inputs = {"raw_svg": svg.encode("utf-8"), "framed_svg": framed_svg.encode("utf-8")}
+    if rasterization is not None:
+        inputs["supersampling_svg"] = rasterization["svg"]["content"].encode("utf-8")
     total = sum(len(data) for data in inputs.values())
     complete = total <= MAX_SVG_BYTES
     records = {}
@@ -122,7 +130,7 @@ def export_input_evidence(svg: str, framed_svg: str, png: bytes) -> dict[str, An
         }
         if complete:
             records[name]["content"] = data.decode("utf-8")
-    return {
+    result: dict[str, Any] = {
         "schema_version": 1,
         "complete": complete,
         "missing": [] if complete else ["combined_svg_byte_limit"],
@@ -137,6 +145,12 @@ def export_input_evidence(svg: str, framed_svg: str, png: bytes) -> dict[str, An
         },
         "fonts": _font_context(svg),
     }
+    if rasterization is not None:
+        result["rasterization"] = {
+            key: value for key, value in rasterization.items() if key != "svg"
+        }
+        result["rasterization"]["svg_input"] = "inputs.supersampling_svg"
+    return result
 
 
 def _comparison_font() -> dict[str, Any]:

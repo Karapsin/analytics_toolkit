@@ -98,6 +98,10 @@ def _capture_frame(
         geometry["rasterization_comparisons"] = rasterization_comparisons(
             svg, framed_svg, png, rasterization=rasterization
         )
+    if scene == "keyboard-multicursor":
+        geometry["export_input_evidence"] = export_input_evidence(
+            svg, framed_svg, png, rasterization=rasterization
+        )
     temporary = evidence.with_suffix(".tmp")
     temporary.write_text(json.dumps(geometry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(evidence)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from copy import deepcopy
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
@@ -22,6 +23,7 @@ from tests.agent_tools._support import wait_for_scene
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Any
 
 
 @pytest.mark.parametrize("scene", ["save-changes", "save-changes-cancel"])
@@ -99,6 +101,111 @@ def test_query_and_result_fixtures_describe_the_same_operation(scene: str, tmp_p
                     assert result.truncated
 
     asyncio.run(exercise())
+
+
+def test_tab_database_ruler_evidence_observes_separate_widget_and_compositor_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def exercise() -> None:
+        evidence_path = tmp_path / "evidence.json"
+        manifest = REPO_ROOT / sql_explorer_visual.MANIFEST
+        app = scenes.VisualExplorerApp("tab-database-change", evidence_path, manifest)
+        switched = asyncio.Event()
+        switch_database = app._switch_visual_database
+
+        def observe_switch() -> None:
+            switch_database()
+            switched.set()
+
+        monkeypatch.setattr(app, "_switch_visual_database", observe_switch)
+        async with app.run_test(size=(208, 47)) as pilot:
+            await asyncio.wait_for(switched.wait(), timeout=5)
+            await pilot.pause()
+            workspace = app.active_workspace
+            editor = workspace.editor
+            original = (
+                app.focused,
+                editor.text,
+                editor.cursor_selections,
+                editor.scroll_offset,
+            )
+            scenes._write_evidence(app, "tab-database-change", evidence_path, manifest)
+            geometry = json.loads(evidence_path.read_text(encoding="utf-8"))
+            snapshot = geometry["ruler_evidence"]
+            assert geometry["ok"]
+            assert snapshot["active_workspace"] == workspace.tab_id == "2"
+            assert snapshot["cursor_location"] == list(editor.cursor_location) == [0, 0]
+            assert snapshot["active_column"] == 1
+            assert snapshot["document_empty"]
+            assert snapshot["cursor_render_offset"] == list(editor.cursor_render_offset)
+            assert snapshot["scroll_x"] == int(editor.scroll_x) == 0
+            assert snapshot["scroll_y"] == int(editor.scroll_y) == 0
+            assert snapshot["gutter_width"] == editor.gutter_width
+            assert snapshot["gutter_left"] == editor.gutter.left
+            assert snapshot["active_column_screen_x"] == (
+                editor.content_region.x + editor.gutter_width
+            )
+            assert snapshot["ruler"]["region"]["bottom"] == snapshot["editor"]["region"]["y"]
+            assert snapshot["ruler"]["region"]["height"] == 1
+            _assert_ruler_rows(app, snapshot)
+            assert snapshot["ruler"]["widget_row"]["text"].strip() == "1"
+            assert snapshot["editor"]["widget_row"]["text"][: editor.gutter_width].strip() == "1"
+            assert snapshot["editor"]["widget_row"]["text"][editor.gutter_width :].strip() == "│"
+            assert app.focused is workspace.command_input
+            assert original == (
+                app.focused,
+                editor.text,
+                editor.cursor_selections,
+                editor.scroll_offset,
+            )
+            assert all(scenes._ruler_evidence_assertions(snapshot).values())
+
+            _assert_ruler_negative_controls(snapshot)
+
+            # A final export owns the observed rows just as it owns other diagnostics.
+            geometry["render_diagnostics"] = {"frame": "owned"}
+            evidence_path.write_text(json.dumps(geometry), encoding="utf-8")
+            owned = evidence_path.read_bytes()
+            scenes._write_evidence(app, "tab-database-change", evidence_path, manifest)
+            assert evidence_path.read_bytes() == owned
+
+    asyncio.run(exercise())
+
+
+def _assert_ruler_rows(app: scenes.VisualExplorerApp, snapshot: dict[str, Any]) -> None:
+    workspace = app.active_workspace
+    ruler = workspace.query_one("#column-ruler", Static)
+    composed = app.screen._compositor.render_strips()
+    for name, widget in (("ruler", ruler), ("editor", workspace.editor)):
+        region = widget.content_region
+        entry = snapshot[name]
+        assert entry["region"] == scenes._widget_geometry(widget)
+        for layer in ("widget_row", "compositor_row"):
+            row = entry[layer]
+            assert row["x"] == region.x
+            assert row["y"] == region.y
+            assert row["cells"] <= 208
+            assert not row["truncated"]
+        assert entry["widget_row"]["text"] == widget.render_line(0).crop(0, region.width).text
+        assert entry["compositor_row"]["text"] == (
+            composed[region.y].crop(region.x, region.right).text
+        )
+        assert entry["widget_row"]["text"] == entry["compositor_row"]["text"]
+
+
+def _assert_ruler_negative_controls(snapshot: dict[str, Any]) -> None:
+    overlap = deepcopy(snapshot)
+    overlap["ruler"]["region"]["bottom"] += 1
+    assert not scenes._ruler_evidence_assertions(overlap)["ruler:separate_rows"]
+    shifted = deepcopy(snapshot)
+    shifted["active_column_screen_x"] += 1
+    assert not scenes._ruler_evidence_assertions(shifted)["ruler:active_column_cell"]
+    lost_label = deepcopy(snapshot)
+    lost_label["ruler"]["compositor_row"]["text"] = " " * snapshot["ruler"]["widget_row"]["cells"]
+    assert not scenes._ruler_evidence_assertions(lost_label)["ruler:active_column_cell"]
+    lost_gutter = deepcopy(snapshot)
+    lost_gutter["editor"]["compositor_row"]["text"] = " " * snapshot["editor"]["widget_row"]["cells"]
+    assert not scenes._ruler_evidence_assertions(lost_gutter)["ruler:first_gutter_separate"]
 
 
 def _armed_app() -> tuple[SimpleNamespace, Mock, dict[str, Mock]]:
