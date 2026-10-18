@@ -657,6 +657,18 @@ requests, so the periodic reconciler remains recovery for interrupted operations
 and external writers. Paired companion source/tests and exact-commit checks must
 cover the final controller bytes before activation.
 
+An authenticated amendment may require a new plan while its factual prerequisite
+is still unmet. `readonly_coordinator_scope` permits `plan`, `plan-review` and
+the separate read-only recommended-option `plan-resolver` under the exact retained request, published head and task binding. The dependency
+hold stays in place. A second coordinator hold, owner pause, veto or pending
+feature amendment denies that scope. The predicate processes no resume commands
+and grants no coding, publication, policy approval or merge authority.
+`replace_coordinator` atomically exchanges a retained inventory for its separately
+reviewed successor, requiring the exact previous binding and a later revision.
+Retries cannot reinstall a retired hold. The host must preserve authenticated
+questions and answers and independently reassess the full amended scope; a new
+plan alone never proves a prerequisite PR merged.
+
 Verified publication recovery and correction-question recovery share one atomic
 pause-retirement operation. It matches the observed repository, PR, head, reason
 and creation time. A replacement hold or a current-head owner veto prevents the
