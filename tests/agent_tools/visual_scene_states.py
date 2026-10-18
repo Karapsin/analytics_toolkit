@@ -83,8 +83,8 @@ def test_completion_geometry_guard_rejects_overlapping_popup(tmp_path: Path) -> 
                 + workspace.editor.cursor_render_offset[1]
                 - int(workspace.editor.scroll_y)
             )
-            offset = menu.styles.offset.resolve(menu.parent.size, app.size)
-            menu.styles.offset = (offset.x, offset.y + row - menu.region.y)
+            origin = workspace.query_one(".query-pane").content_region
+            menu.styles.offset = (menu.region.x - origin.x, row - origin.y)
             await pilot.pause()
             guards = sql_explorer_visual_scene._completion_geometry_assertions(workspace)
             assert not guards["completion_active_row_visible"]
@@ -100,6 +100,8 @@ def test_completion_geometry_guard_rejects_overlapping_popup(tmp_path: Path) -> 
         (-1, Region(1, 3, 32, 3), False, True),
         (0, Region(1, 2, 32, 3), False, True),
         (0, Region(-1, 3, 32, 3), True, False),
+        (0, Region(0, 3, 32, 3), True, False),
+        (0, Region(48, 3, 32, 3), True, False),
         (0, Region(60, 3, 32, 3), True, False),
         (0, Region(1, 17, 32, 3), True, False),
     ],

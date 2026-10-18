@@ -201,11 +201,15 @@ Tab is reserved for completion and indentation. Shift+Tab requests columns in
 a SELECT projection or WHERE expression even with a blank prefix; elsewhere it unindents. Neither
 key moves focus. Ctrl+Space also requests completion without indentation.
 With multiple editor cursors, completion is disabled and Tab only indents.
-Completion lists prefer the space below the active SQL row and move above it
-when the full list fits there instead. If neither side fits the full list, it
-uses the larger space and scrolls its options. Scrolling, narrowing suggestions,
-and resizing keep that row readable. The list stays inside the query area and
-closes if there is no room for an option without covering the active row.
+Completion lists anchor to the rendered caret, accounting for the ruler, tabs,
+wide characters, and scrolling. They prefer the space below the active SQL row
+and move above it when the full list fits there instead. If neither side fits
+the full list, the menu uses the larger space and scrolls its options. Scrolling,
+narrowing suggestions, and resizing preserve that anchor after layout settles.
+The menu stays inside both the editor viewport and query area, clamps at the
+right edge, and closes if fewer than three cells remain for an option and its
+border without covering the active row. Deferred positioning ignores dismissed or
+replaced menus, inactive or closed tabs, and modal screens.
 Accepting complete SQL or command tokens adds a space unless whitespace or
 closing punctuation already follows. Catalog, schema, and ClickHouse database
 completion inserts a trailing dot with no space, ready to continue qualification.

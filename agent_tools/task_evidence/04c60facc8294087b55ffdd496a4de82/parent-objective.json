@@ -1,6 +1,18 @@
 {
   "format_version": 1,
   "kind": "separate-visual-repair-complete-parent-objective",
+  "evidence_corrections": [
+    {
+      "source": "https://github.com/Karapsin/analytics_toolkit/pull/39#issuecomment-6244524349",
+      "head": "6aefc2eff5e37b6d3e98a819ed00b40c9fb244d7",
+      "dev_base": "7142aac73dbc26fb0195b61e1dce7bcf8aa19e5a",
+      "image": "database-picker.png",
+      "image_sha256": "01ad7b5da45db751e023aff86610ca6eaeabf90efe8c8c6a89d661bf5b3644b5",
+      "correction": "The original picker PNG does not establish character loss. Historical SVG and comparison images do not establish a failing layer or current renderer/font provenance. Preserve the exact Select a .connections database key heading and existing question/option/answer history; no speculative picker/exporter repair or mandatory missing-glyph regression is justified.",
+      "acceptance": "Fresh complete 46-scene GitHub geometry and individual full-PNG review remain required. If the exact heading and picker scene pass, close the allegation with fresh evidence. Specific remaining acceptance uncertainty requires bounded candidate/base/task/run-bound coordinator diagnostics; inconclusive evidence remains unresolved. A demonstrated defect requires cause-specific replanning and separate independent plan review.",
+      "authority": "Factual evidence correction only; no owner answer, plan/source/protected approval, visual pass, deployment authorization or parent completion claim. All original scope, dependency, security and monitoring requirements remain."
+    }
+  ],
   "parent": {
     "kind": "parent-objective-and-exporter-prerequisite-scope",
     "parent": {

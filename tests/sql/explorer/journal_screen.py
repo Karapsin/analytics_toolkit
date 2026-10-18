@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
-
 from analytics_toolkit.sql.execution.observation import observed_connection
 from analytics_toolkit.sql_explorer import journal_screen as module
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
@@ -83,7 +82,7 @@ def test_journal_filter_search_preview_and_open_preserve_editor(tmp_path: Path) 
             await wait_for_ui_workers(pilot, screen.workers)
             assert not screen.records
             assert (
-                screen.query_one("#journal-status", Static).renderable
+                str(screen.query_one("#journal-status", Static).renderable)
                 == "No matching journal entries."
             )
             search.value = "orders"
@@ -91,10 +90,10 @@ def test_journal_filter_search_preview_and_open_preserve_editor(tmp_path: Path) 
             await wait_for_ui_workers(pilot, screen.workers)
             await pilot.pause()
             assert len(screen.records) == 1
-            assert screen.query_one("#journal-status", Static).renderable == "Page 1 · 1 entries."
+            assert str(screen.query_one("#journal-status", Static).renderable) == "Page 1 · 1 entries."
             screen._receive_page(-1, JournalPage((), None, "Cannot read journal: stale failure"))
             assert len(screen.records) == 1
-            assert screen.query_one("#journal-status", Static).renderable == "Page 1 · 1 entries."
+            assert str(screen.query_one("#journal-status", Static).renderable) == "Page 1 · 1 entries."
             await pilot.click("#journal-open")
             await pilot.pause()
             assert application.active_workspace is not original
@@ -122,7 +121,7 @@ def test_empty_journal_command_and_internal_open(tmp_path: Path) -> None:
             await wait_for_ui_workers(pilot, screen.workers)
             assert not session.journal.store("gp").path.exists()
             assert (
-                screen.query_one("#journal-status", Static).renderable
+                str(screen.query_one("#journal-status", Static).renderable)
                 == "No matching journal entries."
             )
             assert screen.query_one("#journal-open", Button).disabled
@@ -238,7 +237,7 @@ def test_corrupt_journal_status_and_refresh_recovery(tmp_path: Path, populated: 
             await pilot.click("#journal-refresh")
             await wait_for_ui_workers(pilot, screen.workers)
             expected = "Page 1 · 1 entries." if populated else "No matching journal entries."
-            assert screen.query_one("#journal-status", Static).renderable == expected
+            assert str(screen.query_one("#journal-status", Static).renderable) == expected
             assert len(screen.records) == int(populated)
             assert screen.query_one("#journal-open", Button).disabled is not populated
             assert session.executed == []

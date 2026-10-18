@@ -580,7 +580,9 @@ class CompletionMenu(OptionList):
         from .workspace import workspace_for  # noqa: PLC0415 -- avoids widget import cycle.
 
         if self.is_mounted and self.is_open:
-            cast("SqlExplorerApp", self.app)._schedule_completion_position(workspace_for(self))
+            # Widget lifecycle changes must use the app's tab/epoch guarded scheduler.
+            app = cast("SqlExplorerApp", self.app)
+            app._schedule_completion_position(workspace_for(self))  # noqa: SLF001
 
     def open(self, suggestions: tuple[str, ...]) -> None:
         self.suggestions = suggestions

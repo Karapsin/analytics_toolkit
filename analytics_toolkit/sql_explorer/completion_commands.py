@@ -20,6 +20,8 @@ from .completion import (
 from .editor_actions import completion_text
 
 if TYPE_CHECKING:
+    from textual.widget import Widget
+
     from .workspace import SqlExplorerWorkspace
 
 _COMPLETION_MAX_HEIGHT = 12
@@ -353,14 +355,20 @@ class SqlExplorerCompletionCommandsMixin:
             menu.action_close()
             return
         menu.open(suggestions)
-        app._position_completion(workspace)
         app._schedule_completion_position(workspace)
 
     def _schedule_completion_position(self, workspace: SqlExplorerWorkspace) -> None:
         """Bind deferred layout work to the menu incarnation that requested it."""
         app = cast("Any", self)
+        if (
+            app._exit_requested
+            or not workspace.is_mounted
+            or workspace is not app.active_workspace
+            or len(app.screen_stack) != 1
+        ):
+            return
         menu = workspace.completion_menu
-        if not workspace.is_mounted or not menu.is_mounted or not menu.is_open:
+        if not menu.is_mounted or not menu.is_open:
             return
         epoch = workspace.completion_epoch
         suggestions = menu.suggestions
@@ -370,6 +378,7 @@ class SqlExplorerCompletionCommandsMixin:
                 not app._exit_requested
                 and workspace.is_mounted
                 and workspace is app.active_workspace
+                and len(app.screen_stack) == 1
                 and menu.is_mounted
                 and menu.is_open
                 and workspace.completion_epoch == epoch
@@ -379,10 +388,8 @@ class SqlExplorerCompletionCommandsMixin:
 
         app.call_after_refresh(reposition)
 
-    def _position_completion(  # noqa: PLR0914 -- explicit screen and overlay coordinates.
-        self, workspace: SqlExplorerWorkspace
-    ) -> None:
-        """Translate the rendered caret to the overlay's actual layout origin."""
+    def _position_completion(self, workspace: SqlExplorerWorkspace) -> None:
+        """Place the top-docked overlay from a stable parent content origin."""
         app = cast("Any", self)
         if (
             app._exit_requested
@@ -393,15 +400,17 @@ class SqlExplorerCompletionCommandsMixin:
             return
         menu = workspace.completion_menu
         editor = workspace.editor
-        parent = menu.parent
+        parent = cast("Widget | None", menu.parent)
         if not menu.is_mounted or not menu.is_open or parent is None:
             return
-        bounds = editor.scrollable_content_region
+        origin = parent.content_region
+        bounds = editor.scrollable_content_region.intersection(origin)
         cursor_x, cursor_y = editor.cursor_render_offset
         # The rendered offset already expands tabs/wide characters. Scrolling and
         # the editor's content origin (including the ruler) are applied once here.
-        row = bounds.y + cursor_y - int(editor.scroll_y)
-        caret_x = bounds.x + editor.gutter_width + cursor_x - int(editor.scroll_x)
+        content = editor.scrollable_content_region
+        row = content.y + cursor_y - int(editor.scroll_y)
+        caret_x = content.x + editor.gutter_width + cursor_x - int(editor.scroll_x)
         if not bounds.y <= row < bounds.bottom:
             menu.action_close()
             return
@@ -409,16 +418,14 @@ class SqlExplorerCompletionCommandsMixin:
         above, below = row - bounds.y, bounds.bottom - row - 1
         use_below = below >= wanted_height or (above < wanted_height and below >= above)
         height = min(wanted_height, below if use_below else above)
-        width = min(_COMPLETION_WIDTH, parent.content_region.width)
+        width = min(_COMPLETION_WIDTH, bounds.width)
         if height < _COMPLETION_MIN_SIZE or width < _COMPLETION_MIN_SIZE:
             menu.action_close()
             return
         top = row + 1 if use_below else row - height
-        left = max(parent.content_region.x, min(caret_x, parent.content_region.right - width))
-        # Offsets are relative to the menu's layout position, not the editor.
-        # Removing the current offset makes repeated layout passes idempotent.
-        offset = menu.styles.offset.resolve(parent.size, app.size)
-        origin = menu.region.offset - offset
+        left = max(bounds.x, min(caret_x, bounds.right - width))
+        # Top docking fixes the unshifted origin at the parent content corner.
+        # Never infer it from menu.region: it may still describe the last layout.
         menu.styles.width = width
         menu.styles.height = height
         menu.styles.offset = (left - origin.x, top - origin.y)

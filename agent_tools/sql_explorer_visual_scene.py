@@ -554,6 +554,7 @@ def _completion_geometry_assertions(workspace: Any) -> dict[str, bool]:
             menu.is_open
             and parent.x <= region.x < region.right <= parent.right
             and parent.y <= region.y < region.bottom <= parent.bottom
+            and bounds.x <= region.x < region.right <= bounds.right
             and bounds.y <= region.y < region.bottom <= bounds.bottom
         ),
     }
@@ -587,52 +588,7 @@ def _write_evidence(
         )
 
     if isinstance(app, VisualExplorerApp) and len(app.screen_stack) == 1:
-        workspace = app.active_workspace
-        editor = workspace.editor
-        editor_status = workspace.query_one("#editor-status")
-        assertions["editor_status_no_overlap"] = editor.region.bottom == editor_status.region.y
-        assertions["editor_first_two_lines_visible"] = (
-            editor.content_region.height >= 2 and editor.scroll_offset.y == 0
-        )
-        tab = app.query_one("#tab-1")
-        assertions["compact_tab_height"] = tab.region.height == 1
-        if scene_id == "tabs-overflow":
-            assertions["tabs_overflow_first_tab_active"] = workspace.tab_id == "1"
-            assertions["overflow_keeps_tab_labels_visible"] = (
-                app.query_one("#tab-strip").scrollable_content_region.height >= 1
-            )
-        summary = workspace.query_one("#query-summary")
-        interrupt = workspace.query_one("#interrupt", Button)
-        run = workspace.query_one("#run-query", Button)
-        assertions["run_spelling"] = str(run.label) == "RUN"
-        assertions["run_visible_only_ready"] = run.display == (
-            not workspace.busy and workspace.query_state == "ready"
-        )
-        assertions["run_right_aligned"] = (
-            not run.display or run.region.right == summary.content_region.right
-        )
-        assertions["stop_spelling"] = str(interrupt.label) == "STOP"
-        assertions["interrupt_right_aligned"] = (
-            not interrupt.display or interrupt.region.right == summary.content_region.right
-        )
-        assertions["interrupt_visible_only_running"] = interrupt.display == (
-            workspace.query_state in {"running", "cancelling"}
-        )
-        _assert_changed_controls(app, scene_id, assertions)
-        if "#completion-menu" in required:
-            assertions.update(_completion_geometry_assertions(workspace))
-
-        panes = [workspace.query_one(".query-pane")]
-        if workspace.results_open:
-            panes.append(workspace.query_one(".result-pane"))
-        panes.append(workspace.query_one(".command-panel"))
-        assertions["pane_gaps"] = _pane_gaps(workspace, panes)
-        table = workspace.query_one(ResultTable)
-        for name, widget in (("editor", editor), ("result", table)):
-            if widget.show_vertical_scrollbar:
-                assertions[f"{name}_scrollbar_right"] = (
-                    widget.vertical_scrollbar.region.right == widget.content_region.right
-                )
+        assertions.update(_workspace_geometry_assertions(app, scene_id, required))
 
     assertions.update(_button_color_assertions(app))
     assertions.update(_scene_state_assertions(app, scene_id))
@@ -655,6 +611,61 @@ def _write_evidence(
     temporary = evidence_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(evidence_path)
+
+
+def _workspace_geometry_assertions(
+    app: VisualExplorerApp, scene_id: str, required: list[str]
+) -> dict[str, bool]:
+    """Collect geometry and controls for the visible workspace."""
+    assertions: dict[str, bool] = {}
+    workspace = app.active_workspace
+    editor = workspace.editor
+    editor_status = workspace.query_one("#editor-status")
+    assertions["editor_status_no_overlap"] = editor.region.bottom == editor_status.region.y
+    assertions["editor_first_two_lines_visible"] = (
+        editor.content_region.height >= 2 and editor.scroll_offset.y == 0
+    )
+    tab = app.query_one("#tab-1")
+    assertions["compact_tab_height"] = tab.region.height == 1
+    if scene_id == "tabs-overflow":
+        assertions["tabs_overflow_first_tab_active"] = workspace.tab_id == "1"
+        assertions["overflow_keeps_tab_labels_visible"] = (
+            app.query_one("#tab-strip").scrollable_content_region.height >= 1
+        )
+    summary = workspace.query_one("#query-summary")
+    interrupt = workspace.query_one("#interrupt", Button)
+    run = workspace.query_one("#run-query", Button)
+    assertions["run_spelling"] = str(run.label) == "RUN"
+    assertions["run_visible_only_ready"] = run.display == (
+        not workspace.busy and workspace.query_state == "ready"
+    )
+    assertions["run_right_aligned"] = (
+        not run.display or run.region.right == summary.content_region.right
+    )
+    assertions["stop_spelling"] = str(interrupt.label) == "STOP"
+    assertions["interrupt_right_aligned"] = (
+        not interrupt.display or interrupt.region.right == summary.content_region.right
+    )
+    assertions["interrupt_visible_only_running"] = interrupt.display == (
+        workspace.query_state in {"running", "cancelling"}
+    )
+    _assert_changed_controls(app, scene_id, assertions)
+    if "#completion-menu" in required:
+        assertions.update(_completion_geometry_assertions(workspace))
+
+    panes = [workspace.query_one(".query-pane")]
+    if workspace.results_open:
+        panes.append(workspace.query_one(".result-pane"))
+    panes.append(workspace.query_one(".command-panel"))
+    assertions["pane_gaps"] = _pane_gaps(workspace, panes)
+    table = workspace.query_one(ResultTable)
+    for name, widget in (("editor", editor), ("result", table)):
+        if widget.show_vertical_scrollbar:
+            assertions[f"{name}_scrollbar_right"] = (
+                widget.vertical_scrollbar.region.right == widget.content_region.right
+            )
+
+    return assertions
 
 
 def _button_color_assertions(app: App[Any]) -> dict[str, bool]:
