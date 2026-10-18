@@ -12,13 +12,11 @@ from xml.etree import ElementTree as ET
 
 from rich.cells import cell_len
 from rich.color import Color
-from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
 from textual.app import ScreenStackError
 from textual.css.query import NoMatches
 from textual.geometry import Region
-from textual.strip import Strip
 
 # These limits apply across a scene, not independently to each widget.
 MAX_REGIONS = 9
@@ -26,6 +24,7 @@ MAX_ROWS = 24
 MAX_CELLS = 208
 MAX_SVG_ELEMENTS = 256
 MAX_BYTES = 512 * 1024
+MAX_LIFECYCLE_BYTES = 8192
 SCENES = frozenset(
     {
         "database-picker",
@@ -33,6 +32,8 @@ SCENES = frozenset(
         "column-ruler-scrolled",
         "completion-columns",
         "keyboard-multicursor",
+        "editor-command-caret",
+        "new-file",
         "create-table-advanced",
         "create-table-schema",
         "create-table-invalid",
@@ -323,10 +324,16 @@ def _targets(app: Any, scene: str) -> list[tuple[str, Any, int]]:
         return [("heading", app.screen.query_one("#database-picker-title"), 3)]
     if scene == "find-replace":
         return [("find-matches", app.active_workspace.editor, 6)]
-    if scene == "keyboard-multicursor":
+    if scene in {"keyboard-multicursor", "editor-command-caret"}:
         return [
             ("multicursor-editor", app.active_workspace.editor, 3),
             ("multicursor-ruler", app.active_workspace.query_one("#column-ruler"), 1),
+        ]
+    if scene == "new-file":
+        dialog = app.screen.query_one("#new-file-dialog")
+        return [
+            ("new-file-dialog", dialog, max(1, dialog.region.height)),
+            ("new-file-name", app.screen.query_one("#new-file-name"), 3),
         ]
     if scene == "completion-columns":
         return [
@@ -469,6 +476,36 @@ def _collect_region_rows(
         result["missing"].append(f"{name}:{type(error).__name__}")
 
 
+def _crop_caret_span(
+    span: dict[str, Any], left: int, right: int, *, retained: bool
+) -> tuple[dict[str, Any] | None, bool]:
+    """Keep zero-width suffixes with their retained base, even across style spans."""
+    position = span["x"]
+    text = []
+    cells = 0
+    for character in span["text"]:
+        size = cell_len(character)
+        if not size:
+            if retained:
+                text.append(character)
+            continue
+        start, end = max(left, position), min(right, position + size)
+        retained = left <= position and position + size <= right
+        if start < end:
+            text.append(character if retained else " " * (end - start))
+            cells += end - start
+        position += size
+    if not text:
+        return None, retained
+    cropped = {
+        **span,
+        "x": max(left, span["x"]),
+        "text": "".join(text),
+        "cells": cells,
+    }
+    return cropped, retained
+
+
 def _caret_cells(
     rows: list[dict[str, Any]], *, x: int, y: int, width: int
 ) -> dict[str, Any] | None:
@@ -477,11 +514,11 @@ def _caret_cells(
     if row is None:
         return None
     spans = []
+    retained = False
     for span in row["spans"]:
-        left, right = max(x, span["x"]), min(x + width, span["x"] + span["cells"])
-        if left < right:
-            text = Strip([Segment(span["text"])]).crop(left - span["x"], right - span["x"]).text
-            spans.append({**span, "x": left, "cells": right - left, "text": text})
+        cropped, retained = _crop_caret_span(span, x, x + width, retained=retained)
+        if cropped is not None:
+            spans.append(cropped)
     cells = sum(span["cells"] for span in spans)
     return {
         "x": x,
@@ -573,7 +610,9 @@ def _collect_caret(editor: Any, selection: Any, index: int, result: dict[str, An
         result["missing"].append(f"multicursor:caret:{index}:{type(error).__name__}")
 
 
-def _multicursor_diagnostics(app: Any, result: dict[str, Any]) -> None:
+def _multicursor_diagnostics(
+    app: Any, result: dict[str, Any], *, scene: str = "keyboard-multicursor"
+) -> None:
     """Observe actual state separately from fixture expectations without changing either."""
     snapshot: dict[str, Any] = {
         "expected": {
@@ -585,6 +624,10 @@ def _multicursor_diagnostics(app: Any, result: dict[str, Any]) -> None:
         "carets": [],
         "findings": [],
     }
+    if scene == "editor-command-caret":
+        snapshot["expected"].update(
+            positions=[[1, 14]], keyboard_mode=False, focused_widget_id="command-input"
+        )
     result["multicursor"] = snapshot
     try:
         workspace = app.active_workspace
@@ -631,6 +674,119 @@ def _multicursor_diagnostics(app: Any, result: dict[str, Any]) -> None:
         result["missing"].append(f"multicursor:state:{type(error).__name__}")
 
 
+def _observed_attribute(widget: Any, name: str) -> Any:
+    """Return unavailable probes explicitly rather than substituting expected state."""
+    try:
+        value = getattr(widget, name)
+    except (AttributeError, RuntimeError) as error:
+        return {"unavailable": type(error).__name__}
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    text = str(value)
+    if len(text) > MAX_CELLS:
+        return {"value": text[:MAX_CELLS], "truncated": True}
+    return text
+
+
+def _layout_observation(widget: Any) -> dict[str, Any]:
+    values = {
+        "class": type(widget).__name__,
+        "id": widget.id,
+        "mounted": widget.is_mounted,
+        "region": _region_record(widget.region),
+        "content_region": _region_record(widget.content_region),
+        "viewport": _region_record(widget.scrollable_content_region),
+        "scroll_offset": list(widget.scroll_offset),
+        "pending": {
+            name: _observed_attribute(widget, name)
+            for name in ("_layout_required", "_repaint_required", "_scroll_required")
+        },
+        "styles": {
+            name: _observed_attribute(widget.styles, name)
+            for name in (
+                "align_horizontal",
+                "align_vertical",
+                "content_align_horizontal",
+                "content_align_vertical",
+                "layout",
+                "width",
+                "height",
+                "offset",
+                "dock",
+            )
+        },
+    }
+    try:
+        queue = widget._message_queue  # noqa: SLF001 - observe only; never drain messages.
+        values["queued_messages"] = queue.qsize()
+    except (AttributeError, RuntimeError) as error:
+        values["queued_messages"] = {"unavailable": type(error).__name__}
+    return values
+
+
+def ruler_lifecycle_snapshot(app: Any, rows: dict[str, Any]) -> dict[str, Any]:
+    """Observe the failing ruler frame without rendering rows or changing lifecycle."""
+    workspace = app.active_workspace
+    widgets = {
+        "ruler": workspace.query_one("#column-ruler"),
+        "editor": workspace.editor,
+        "command": workspace.command_input,
+    }
+    snapshot = {
+        "focused_widget": {
+            "class": type(app.focused).__name__,
+            "id": getattr(app.focused, "id", None),
+            "identity": id(app.focused),
+        },
+        "widgets": {name: _layout_observation(widget) for name, widget in widgets.items()},
+        "row_lengths": {
+            name: {
+                layer: {"characters": len(row["text"]), "cells": row["cells"]}
+                for layer, row in entry.items()
+                if layer in {"widget_row", "compositor_row"}
+            }
+            for name, entry in rows.items()
+            if name in {"ruler", "editor"}
+        },
+        "versions": {
+            "python": platform.python_version(),
+            **{package: _package_version(package) for package in ("textual", "rich")},
+        },
+    }
+    if len(json.dumps(snapshot, ensure_ascii=True).encode("utf-8")) > MAX_LIFECYCLE_BYTES:
+        return {"complete": False, "omissions": ["lifecycle_byte_limit"]}
+    return snapshot
+
+
+def _new_file_diagnostics(app: Any, result: dict[str, Any]) -> None:
+    try:
+        screen = app.screen
+        dialog = screen.query_one("#new-file-dialog")
+        result["new_file"] = {
+            "screen": _layout_observation(screen),
+            "screen_mro": [
+                f"{cls.__module__}.{cls.__name__}" for cls in type(screen).__mro__[:MAX_REGIONS]
+            ],
+            "screen_mro_truncated": len(type(screen).__mro__) > MAX_REGIONS,
+            "dialog": _layout_observation(dialog),
+            "dialog_geometry": _selector_child_state(dialog),
+        }
+        if result["new_file"]["screen_mro_truncated"]:
+            result["omissions"].append("new-file:screen_mro_limit")
+        if result["new_file"]["dialog_geometry"]["ancestors_truncated"]:
+            result["omissions"].append("new-file:ancestor_limit")
+    except (AttributeError, LookupError, NoMatches, ScreenStackError, RuntimeError) as error:
+        result["missing"].append(f"new-file:state:{type(error).__name__}")
+
+
+def _scene_state_diagnostics(app: Any, scene: str, result: dict[str, Any]) -> None:
+    """Keep actual state observable even when the compositor is unavailable."""
+    if scene in {"keyboard-multicursor", "editor-command-caret"}:
+        _multicursor_diagnostics(app, result, scene=scene)
+    if scene == "new-file":
+        _new_file_diagnostics(app, result)
+
+
 def _editor_diagnostics(app: Any, scene: str, result: dict[str, Any]) -> None:
     """Attach caret, scrolling, and popup geometry only for their assigned scenes."""
     if scene in {"find-replace", "column-ruler-scrolled"}:
@@ -657,8 +813,7 @@ def _editor_diagnostics(app: Any, scene: str, result: dict[str, Any]) -> None:
                 key: getattr(scrollbar, key)
                 for key in ("position", "window_size", "window_virtual_size")
             }
-    if scene == "keyboard-multicursor":
-        _multicursor_diagnostics(app, result)
+    _scene_state_diagnostics(app, scene, result)
     if scene == "completion-columns":
         editor = app.active_workspace.editor
         _, cursor_y = editor.wrapped_document.location_to_offset(editor.cursor_location)
@@ -719,8 +874,7 @@ def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:
         composed = app.screen._compositor.render_strips()  # noqa: SLF001
     except (AttributeError, LookupError, NoMatches, ScreenStackError, RuntimeError) as error:
         result["missing"].append(f"terminal:{type(error).__name__}")
-        if scene == "keyboard-multicursor":
-            _multicursor_diagnostics(app, result)
+        _scene_state_diagnostics(app, scene, result)
         if "source_selector" in result:
             _selector_visibility(result["source_selector"], [])
         return result

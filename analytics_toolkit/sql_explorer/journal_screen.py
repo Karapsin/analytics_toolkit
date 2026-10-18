@@ -161,7 +161,9 @@ class JournalScreen(ModalScreen[Optional[str]]):
             if self.records
             else "No matching journal entries."
         )
-        self.query_one("#journal-status", Static).update(f"{status} {page.warning}")
+        self.query_one("#journal-status", Static).update(
+            f"{status} {page.warning}" if self.records else page.warning or status
+        )
         if self.records and options.highlighted is None:
             options.highlighted = 0
         if self.records and options.highlighted is not None:

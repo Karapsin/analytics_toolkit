@@ -267,7 +267,8 @@ come from one export; atomic evidence replacement protects that frame from later
 timer refreshes. These diagnostics do not replace geometry checks or individual
 review of every full PNG.
 
-The `keyboard-multicursor` scene additionally records `terminal.multicursor`:
+The `keyboard-multicursor` and `editor-command-caret` scenes record
+`terminal.multicursor` (including the single-caret command-focus observation):
 actual workspace, keyboard mode, focused widget, primary/secondary selection
 identities and endpoints, preferences, scroll offsets, gutter and viewport.
 Each observed caret maps through the wrapped document to content-local,
@@ -278,11 +279,16 @@ rows and ruler row share the existing nine-region, 24-row and 208-cell limits.
 Caret records are capped at nine. Missing probes, clipping, missing rows/styles
 and all collection limits explicitly make the reduced evidence incomplete.
 Expected positions `(0,14)`, `(1,14)`, `(2,14)`, primary `(1,14)`, empty
-selections and keyboard mode on remain separate from observations. State
+selections and keyboard mode on remain separate from observations. The command
+scene expects only `(1,14)`, keyboard mode off and command input focus; observed
+state is never replaced with those expectations. Caret-cell cropping keeps
+combining marks attached to retained bases across styled segments, preserving
+colors and widths, and excludes marks whose base lies outside the crop. State
 mismatches and absent caret marks are findings, not a PNG visibility verdict.
 
-Multicursor `export_input_evidence` retains the exact raw, framed and ordinary
-supersampling SVGs from the single final export without comparison renders.
+Multicursor, command-caret and new-file `export_input_evidence` retains the exact
+raw, framed and ordinary supersampling SVGs from the single final export without
+comparison renders.
 All three inputs share the 4 MiB lossless SVG budget; overflow omits content
 while preserving lengths/hashes and reports `complete=false`. Its
 `rasterization` record retains the ordinary renderer settings, scale factor,
@@ -307,6 +313,27 @@ and reject overlapping rows, shifted column mapping and missing composed labels
 or gutter numbers. This evidence supports independent reassessment of the ruler
 finding; it does not clear a rejected visual gate. Fresh candidate-bound review
 must still inspect every one of the 46 full PNGs and geometry results.
+
+Ruler evidence also retains observational focus identity, widget/content/viewport
+geometry, scroll offsets, pending layout/refresh flags, queue sizes where available,
+dependency versions and original row lengths. The strict mounted regression
+attaches a separately bounded 8 KiB pre-assert observation on failure, preserving
+the command-focus and exact-row assertions. Unavailable probes and byte omissions
+are explicit; collection never drains queues or forces focus, width or timing.
+
+The `new-file` scene records actual mounted screen/subclass identity, computed
+alignment/layout styles, dialog and viewport geometry, ancestor clips and exact
+widget/compositor rows, together with parsed SVG positions from the final export.
+These diagnostics share the existing region/row/cell/payload limits and lossless
+SVG budgets. They identify missing evidence without selecting an alignment or
+export repair. Command-caret visibility and new-file placement still require
+candidate-bound GitHub diagnosis and independently reviewed repairs.
+
+Journal-status regressions separately distinguish empty successful reads from read
+failures: an empty failed read shows its warning alone, while populated pages keep
+their entry count and any warning. GitHub validation must retain recovery and stale
+result checks alongside these diagnostics; capture success does not clear the
+remaining caret, dialog or ruler findings.
 
 Create-table checkbox entries additionally retain bounded model label/value and
 enabled/focused state, direct Rich render text/styles/spans, computed geometry and

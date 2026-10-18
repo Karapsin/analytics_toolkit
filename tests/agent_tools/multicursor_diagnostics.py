@@ -47,7 +47,8 @@ def _assert_caret_layers(app: Any, caret: dict[str, Any], composed: Any) -> None
     screen_x, screen_y = caret["screen_cell"]
     assert screen_x == editor.content_region.x + editor.gutter_width + 14
     assert screen_y == editor.content_region.y + row
-    assert caret["visible"] and not caret["clipped"]
+    assert caret["visible"]
+    assert not caret["clipped"]
     local_x, local_y = caret["content_local_cell"]
     strips = {
         "widget_rows": editor.render_line(local_y).crop(local_x, local_x + 1),
@@ -124,8 +125,8 @@ def test_mounted_unicode_and_tab_mapping_uses_terminal_cells(
             result = diagnostics.terminal_diagnostics(app, "keyboard-multicursor")
             assert not result["missing"]
             for caret in result["multicursor"]["carets"]:
-                row, column = caret["end"]
-                offset = editor.wrapped_document.location_to_offset((row, column))
+                observed_row, observed_column = caret["end"]
+                offset = editor.wrapped_document.location_to_offset((observed_row, observed_column))
                 assert caret["wrapped_offset"] == list(offset)
                 x, y = caret["content_local_cell"]
                 width = caret["cell_width"]
@@ -305,9 +306,14 @@ def test_cell_crop_retains_combining_wide_and_expanded_tab_styles() -> None:
     assert spaces["text"] == " " * 4
     assert spaces["spans"][0]["flags"]["underline"]
     assert spaces["spans"][0]["foreground"] == "#123456"
+    for cropped in (wide, combining, spaces):
+        assert cropped["spans"][0]["foreground"] == row["spans"][0]["foreground"]
+        assert cropped["spans"][0]["background"] == row["spans"][0]["background"]
+        assert cropped["spans"][0]["flags"] == row["spans"][0]["flags"]
 
 
-def test_unavailable_compositor_retains_actual_cursor_state() -> None:
+@pytest.mark.parametrize("scene", ["keyboard-multicursor", "editor-command-caret"])
+def test_unavailable_compositor_retains_actual_cursor_state(scene: str) -> None:
     app, result = _fake_observation()
     app.active_workspace.query_one = lambda _query: object()
 
@@ -316,7 +322,7 @@ def test_unavailable_compositor_retains_actual_cursor_state() -> None:
         raise RuntimeError(message)
 
     app.screen = SimpleNamespace(_compositor=SimpleNamespace(render_strips=missing_strips))
-    observed = diagnostics.terminal_diagnostics(app, "keyboard-multicursor")
+    observed = diagnostics.terminal_diagnostics(app, scene)
     assert "terminal:RuntimeError" in observed["missing"]
     assert observed["multicursor"]["cursor_count"] == 3
     assert [caret["end"] for caret in observed["multicursor"]["carets"]] == [
@@ -373,3 +379,42 @@ def test_padding_marks_and_state_mismatches_are_reported_without_repair() -> Non
     assert all(caret["widget_rows"]["text"] == "│" for caret in snapshot["carets"])
     assert app.keyboard_mode is False
     assert editor.selection is editor.cursor_selections[0]
+
+
+@pytest.mark.parametrize(
+    ("x", "width", "expected"),
+    [(8, 1, "e\u0301\u0327"), (7, 1, " "), (6, 1, " "), (9, 1, "Z")],
+)
+def test_caret_crop_keeps_cross_span_marks_only_with_their_complete_base(
+    x: int, width: int, expected: str
+) -> None:
+    base_style = Style(color="#123456", bgcolor="#345678", underline=True)
+    mark_style = Style(color="#abcdef", bgcolor="#654321", italic=True)
+    row = diagnostics.strip_record(
+        Strip(
+            [
+                Segment("界e", base_style),
+                Segment("\u0301\u0327", mark_style),
+                Segment("Z", base_style),
+            ]
+        ),
+        x=6,
+        y=3,
+        width=20,
+    )
+    original = deepcopy(row)
+    cropped = diagnostics._caret_cells([row], x=x, y=3, width=width)
+    assert cropped is not None
+    assert cropped["text"] == expected
+    assert cropped["cells"] == width
+    assert not cropped["truncated"]
+    assert row == original
+    if x == 8:
+        assert [span["text"] for span in cropped["spans"]] == ["e", "\u0301\u0327"]
+        assert [span["cells"] for span in cropped["spans"]] == [1, 0]
+        assert cropped["spans"][0]["foreground"] == "#123456"
+        assert cropped["spans"][0]["background"] == "#345678"
+        assert cropped["spans"][0]["flags"]["underline"]
+        assert cropped["spans"][1]["foreground"] == "#abcdef"
+        assert cropped["spans"][1]["background"] == "#654321"
+        assert cropped["spans"][1]["flags"]["italic"]

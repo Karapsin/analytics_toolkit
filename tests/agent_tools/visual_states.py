@@ -16,6 +16,7 @@ from rich.text import Text
 from textual.css.query import NoMatches
 from textual.widgets import Button, Input, Static
 
+from agent_tools import sql_explorer_render_diagnostics as diagnostics
 from agent_tools import sql_explorer_visual, sql_explorer_visual_capture
 from agent_tools import sql_explorer_visual_scene as scenes
 from tests._support.paths import REPO_ROOT
@@ -132,33 +133,41 @@ def test_tab_database_ruler_evidence_observes_separate_widget_and_compositor_row
             scenes._write_evidence(app, "tab-database-change", evidence_path, manifest)
             geometry = json.loads(evidence_path.read_text(encoding="utf-8"))
             snapshot = geometry["ruler_evidence"]
-            assert geometry["ok"]
-            assert snapshot["active_workspace"] == workspace.tab_id == "2"
-            assert snapshot["cursor_location"] == list(editor.cursor_location) == [0, 0]
-            assert snapshot["active_column"] == 1
-            assert snapshot["document_empty"]
-            assert snapshot["cursor_render_offset"] == list(editor.cursor_render_offset)
-            assert snapshot["scroll_x"] == int(editor.scroll_x) == 0
-            assert snapshot["scroll_y"] == int(editor.scroll_y) == 0
-            assert snapshot["gutter_width"] == editor.gutter_width
-            assert snapshot["gutter_left"] == editor.gutter.left
-            assert snapshot["active_column_screen_x"] == (
-                editor.content_region.x + editor.gutter_width
-            )
-            assert snapshot["ruler"]["region"]["bottom"] == snapshot["editor"]["region"]["y"]
-            assert snapshot["ruler"]["region"]["height"] == 1
-            _assert_ruler_rows(app, snapshot)
-            assert snapshot["ruler"]["widget_row"]["text"].strip() == "1"
-            assert snapshot["editor"]["widget_row"]["text"][: editor.gutter_width].strip() == "1"
-            assert snapshot["editor"]["widget_row"]["text"][editor.gutter_width :].strip() == "│"
-            assert app.focused is workspace.command_input
-            assert original == (
-                app.focused,
-                editor.text,
-                editor.cursor_selections,
-                editor.scroll_offset,
-            )
-            assert all(scenes._ruler_evidence_assertions(snapshot).values())
+            observation = diagnostics.ruler_lifecycle_snapshot(app, snapshot)
+            try:
+                assert geometry["ok"]
+                assert snapshot["active_workspace"] == workspace.tab_id == "2"
+                assert snapshot["cursor_location"] == list(editor.cursor_location) == [0, 0]
+                assert snapshot["active_column"] == 1
+                assert snapshot["document_empty"]
+                assert snapshot["cursor_render_offset"] == list(editor.cursor_render_offset)
+                assert snapshot["scroll_x"] == int(editor.scroll_x) == 0
+                assert snapshot["scroll_y"] == int(editor.scroll_y) == 0
+                assert snapshot["gutter_width"] == editor.gutter_width
+                assert snapshot["gutter_left"] == editor.gutter.left
+                assert snapshot["active_column_screen_x"] == (
+                    editor.content_region.x + editor.gutter_width
+                )
+                assert snapshot["ruler"]["region"]["bottom"] == snapshot["editor"]["region"]["y"]
+                assert snapshot["ruler"]["region"]["height"] == 1
+                _assert_ruler_rows(app, snapshot)
+                assert snapshot["ruler"]["widget_row"]["text"].strip() == "1"
+                assert (
+                    snapshot["editor"]["widget_row"]["text"][: editor.gutter_width].strip() == "1"
+                )
+                assert (
+                    snapshot["editor"]["widget_row"]["text"][editor.gutter_width :].strip() == "│"
+                )
+                assert app.focused is workspace.command_input
+                assert original == (
+                    app.focused,
+                    editor.text,
+                    editor.cursor_selections,
+                    editor.scroll_offset,
+                )
+                assert all(scenes._ruler_evidence_assertions(snapshot).values())
+            except AssertionError as error:
+                raise AssertionError(json.dumps(observation, sort_keys=True)) from error
 
             _assert_ruler_negative_controls(snapshot)
 
@@ -204,7 +213,9 @@ def _assert_ruler_negative_controls(snapshot: dict[str, Any]) -> None:
     lost_label["ruler"]["compositor_row"]["text"] = " " * snapshot["ruler"]["widget_row"]["cells"]
     assert not scenes._ruler_evidence_assertions(lost_label)["ruler:active_column_cell"]
     lost_gutter = deepcopy(snapshot)
-    lost_gutter["editor"]["compositor_row"]["text"] = " " * snapshot["editor"]["widget_row"]["cells"]
+    lost_gutter["editor"]["compositor_row"]["text"] = (
+        " " * snapshot["editor"]["widget_row"]["cells"]
+    )
     assert not scenes._ruler_evidence_assertions(lost_gutter)["ruler:first_gutter_separate"]
 
 

@@ -283,7 +283,10 @@ def test_timeout_retains_selector_observation_for_failed_state_and_geometry(
     assert result["geometry"]["ok"] is False
 
 
-@pytest.mark.parametrize("scene", ["keyboard-multicursor", "find-replace", "editor-ready"])
+@pytest.mark.parametrize(
+    "scene",
+    ["keyboard-multicursor", "editor-command-caret", "new-file", "find-replace", "editor-ready"],
+)
 def test_multicursor_retains_one_export_inputs_and_processing_atomically(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, scene: str
 ) -> None:
@@ -335,7 +338,7 @@ def test_multicursor_retains_one_export_inputs_and_processing_atomically(
     assert exports == [svg]
     assert len(renders) == 1
     assert screenshot.read_bytes() == b"ordinary png"
-    if scene == "keyboard-multicursor":
+    if scene in {"keyboard-multicursor", "editor-command-caret", "new-file"}:
         assert observations == [(svg, capture._frame_svg(svg), b"ordinary png", rasterization)]
         assert saved["export_input_evidence"] == incomplete
         assert saved["render_diagnostics"] == {"complete": False}
@@ -347,8 +350,9 @@ def test_multicursor_retains_one_export_inputs_and_processing_atomically(
 
 
 @pytest.mark.parametrize("ready", [False, True])
+@pytest.mark.parametrize("scene", ["keyboard-multicursor", "editor-command-caret", "new-file"])
 def test_multicursor_diagnostics_cannot_bypass_capture_gates(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ready: bool
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ready: bool, scene: str
 ) -> None:
     geometry = tmp_path / "scene.json"
     screenshot = tmp_path / "scene.png"
@@ -368,7 +372,7 @@ def test_multicursor_diagnostics_cannot_bypass_capture_gates(
     with pytest.raises(RuntimeError, match="failed geometry" if ready else "not ready"):
         capture._capture_frame(
             cast("Any", SimpleNamespace(export_screenshot=unexpected)),
-            "keyboard-multicursor",
+            scene,
             geometry,
             tmp_path / "manifest",
             screenshot,

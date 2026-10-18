@@ -98,7 +98,7 @@ def _capture_frame(
         geometry["rasterization_comparisons"] = rasterization_comparisons(
             svg, framed_svg, png, rasterization=rasterization
         )
-    if scene == "keyboard-multicursor":
+    if scene in {"keyboard-multicursor", "editor-command-caret", "new-file"}:
         geometry["export_input_evidence"] = export_input_evidence(
             svg, framed_svg, png, rasterization=rasterization
         )

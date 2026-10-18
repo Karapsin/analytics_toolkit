@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from agent_tools.sql_explorer_render_diagnostics import (
     SELECTOR_SCENES,
+    ruler_lifecycle_snapshot,
     selector_readiness_assertions,
     selector_readiness_snapshot,
     strip_record,
@@ -968,6 +969,7 @@ def _ruler_evidence(app: VisualExplorerApp) -> dict[str, Any]:
             - int(editor.scroll_x)
         ),
         "document_empty": editor.text == "",
+        "lifecycle": ruler_lifecycle_snapshot(app, rows),
         **rows,
     }
 
@@ -1021,6 +1023,37 @@ def _persist_evidence(payload: dict[str, Any], evidence_path: Path) -> None:
     temporary.replace(evidence_path)
 
 
+def _optional_scene_evidence(
+    app: App[Any], scene_id: str, assertions: dict[str, bool]
+) -> dict[str, Any]:
+    """Collect optional observations in their original order before publication."""
+    selector_snapshot = None
+    if scene_id in SELECTOR_SCENES:
+        selector_snapshot = selector_readiness_snapshot(app, scene_id)
+        assertions.update(selector_readiness_assertions(selector_snapshot))
+    readiness = None
+    if scene_id == "directory-armed" and isinstance(app, VisualExplorerApp):
+        readiness = app.scene_readiness_details()
+        assertions.update(
+            {f"directory:{name}": value for name, value in readiness["conditions"].items()}
+        )
+    assertions.update(_button_color_assertions(app))
+    ruler_evidence = None
+    if scene_id == "tab-database-change" and isinstance(app, VisualExplorerApp):
+        ruler_evidence = _ruler_evidence(app)
+        assertions.update(_ruler_evidence_assertions(ruler_evidence))
+
+    return {
+        key: value
+        for key, value in (
+            ("scene_readiness", readiness),
+            ("selector_readiness", selector_snapshot),
+            ("ruler_evidence", ruler_evidence),
+        )
+        if value is not None
+    }
+
+
 def _write_evidence(
     app: App[Any],
     scene_id: str,
@@ -1040,21 +1073,7 @@ def _write_evidence(
     if isinstance(app, VisualExplorerApp) and len(app.screen_stack) == 1:
         assertions.update(_workspace_assertions(app, scene_id))
 
-    selector_snapshot = None
-    if scene_id in SELECTOR_SCENES:
-        selector_snapshot = selector_readiness_snapshot(app, scene_id)
-        assertions.update(selector_readiness_assertions(selector_snapshot))
-    readiness = None
-    if scene_id == "directory-armed" and isinstance(app, VisualExplorerApp):
-        readiness = app.scene_readiness_details()
-        assertions.update(
-            {f"directory:{name}": value for name, value in readiness["conditions"].items()}
-        )
-    assertions.update(_button_color_assertions(app))
-    ruler_evidence = None
-    if scene_id == "tab-database-change" and isinstance(app, VisualExplorerApp):
-        ruler_evidence = _ruler_evidence(app)
-        assertions.update(_ruler_evidence_assertions(ruler_evidence))
+    optional = _optional_scene_evidence(app, scene_id, assertions)
 
     payload = {
         "schema_version": 1,
@@ -1066,12 +1085,7 @@ def _write_evidence(
         "assertions": assertions,
         "ok": bool(assertions) and all(assertions.values()),
     }
-    if readiness is not None:
-        payload["scene_readiness"] = readiness
-    if selector_snapshot is not None:
-        payload["selector_readiness"] = selector_snapshot
-    if ruler_evidence is not None:
-        payload["ruler_evidence"] = ruler_evidence
+    payload.update(optional)
     _persist_evidence(payload, evidence_path)
 
 

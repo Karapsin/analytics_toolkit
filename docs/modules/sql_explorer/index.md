@@ -674,6 +674,9 @@ case-insensitive substrings. Select an entry to inspect it; **Next SQL** cycles
 through user-visible SQL and actual database submissions. **Previous/Next**
 replace the current page of up to 100 summaries; query details load only for the
 selected action. **Refresh** reloads history. `Ctrl+F` focuses search; Escape closes.
+A failed read shows its warning alone when no entries are available; “No matching
+journal entries” appears only after a warning-free empty read. Record actions stay
+disabled until an entry is available.
 
 **Open in new tab** copies the user-visible query into a new unsaved tab on its
 original connection. For an internal action it copies the selected submission.
