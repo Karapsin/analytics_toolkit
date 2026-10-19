@@ -6,11 +6,39 @@ from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
+from textual.geometry import Region
 
 from agent_tools import sql_explorer_visual_scene as scenes
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _new_file_screen(required: list[SimpleNamespace]) -> SimpleNamespace:
+    dialog = SimpleNamespace(region=Region(64, 18, 80, 11))
+
+    def query(selector: str) -> list[SimpleNamespace]:
+        if selector == "#required":
+            return required
+        if selector == "#new-file-dialog":
+            return [dialog]
+        return []
+
+    def query_one(selector: str) -> SimpleNamespace:
+        if selector == "#new-file-dialog":
+            return dialog
+        matches = query(selector)
+        if len(matches) != 1:
+            message = f"Expected one widget for {selector}, got {len(matches)}"
+            raise AssertionError(message)
+        return matches[0]
+
+    return SimpleNamespace(
+        content_region=Region(0, 0, 208, 47),
+        styles=SimpleNamespace(align_horizontal="center", align_vertical="middle"),
+        query=query,
+        query_one=query_one,
+    )
 
 
 @pytest.mark.parametrize("ready", [False, True])
@@ -55,7 +83,7 @@ def test_required_element_evidence_keeps_missing_and_hidden_controls_failing(
     widget = SimpleNamespace(region=region, display=state != "hidden")
     matches = [] if state == "missing" else [widget]
     app = SimpleNamespace(
-        screen=SimpleNamespace(query=lambda selector: matches if selector == "#required" else []),
+        screen=_new_file_screen(matches),
         console=SimpleNamespace(color_system="256"),
         size=SimpleNamespace(width=208, height=47),
     )
@@ -74,7 +102,7 @@ def test_unsuccessful_refresh_preserves_passing_evidence(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     app = SimpleNamespace(
-        screen=SimpleNamespace(query=lambda _selector: []),
+        screen=_new_file_screen([]),
         console=SimpleNamespace(color_system="256"),
         size=SimpleNamespace(width=208, height=47),
     )

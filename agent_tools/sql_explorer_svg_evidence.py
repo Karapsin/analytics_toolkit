@@ -17,6 +17,7 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from agent_tools.sql_explorer_render_diagnostics import digest
+from agent_tools.sql_explorer_svg_underlines import normalize_terminal_underlines
 
 MAX_SVG_BYTES = 4 * 1024 * 1024
 MAX_COMPARISON_PNG_BYTES = 4 * 1024 * 1024
@@ -121,6 +122,11 @@ def export_input_evidence(
     inputs = {"raw_svg": svg.encode("utf-8"), "framed_svg": framed_svg.encode("utf-8")}
     if rasterization is not None:
         inputs["supersampling_svg"] = rasterization["svg"]["content"].encode("utf-8")
+        normalization = rasterization.get("normalization", {})
+        if normalization.get("converted"):
+            inputs["supersampling_svg"] = supersampling_svg(framed_svg).encode("utf-8")
+            inputs["normalized_framed_svg"] = normalization["normalized_framed_svg"].encode("utf-8")
+            inputs["normalized_supersampling_svg"] = rasterization["svg"]["content"].encode("utf-8")
     total = sum(len(data) for data in inputs.values())
     complete = total <= MAX_SVG_BYTES
     records = {}
@@ -151,7 +157,17 @@ def export_input_evidence(
         result["rasterization"] = {
             key: value for key, value in rasterization.items() if key != "svg"
         }
-        result["rasterization"]["svg_input"] = "inputs.supersampling_svg"
+        result["rasterization"]["svg_input"] = (
+            "inputs.normalized_supersampling_svg"
+            if rasterization.get("normalization", {}).get("converted")
+            else "inputs.supersampling_svg"
+        )
+        if "normalization" in result["rasterization"]:
+            result["rasterization"]["normalization"] = {
+                key: value
+                for key, value in result["rasterization"]["normalization"].items()
+                if key != "normalized_framed_svg"
+            }
     return result
 
 
@@ -233,12 +249,18 @@ def supersampling_svg(framed_svg: str) -> str:
 
 
 def rasterize_framed_svg(
-    framed_svg: str, *, retained_pngs: dict[str, bytes] | None = None
+    framed_svg: str,
+    *,
+    retained_pngs: dict[str, bytes] | None = None,
+    normalize_underlines: bool = True,
 ) -> tuple[bytes, dict[str, Any]]:
     """Render at twice the target size, then perform exactly one Lanczos reduction."""
     from PIL import Image  # noqa: PLC0415 - optional agent capture dependency.
 
-    svg = supersampling_svg(framed_svg)
+    normalized, conversions = (
+        normalize_terminal_underlines(framed_svg) if normalize_underlines else (framed_svg, [])
+    )
+    svg = supersampling_svg(normalized)
     intermediate = _render_svg(svg)
     dimensions = _png_dimensions(intermediate)
     expected = [size * SUPERSAMPLE_FACTOR for size in RASTER_VIEWPORT]
@@ -263,6 +285,13 @@ def rasterize_framed_svg(
             "byte_length": len(encoded),
             "sha256": digest(encoded),
             "content": svg,
+        },
+        "normalization": {
+            "converted": bool(conversions),
+            "conversions": conversions,
+            "original_framed_sha256": digest(framed_svg.encode("utf-8")),
+            "normalized_framed_sha256": digest(normalized.encode("utf-8")),
+            "normalized_framed_svg": normalized if conversions else None,
         },
         "renderer": "resvg_py.svg_to_bytes",
         "renderer_arguments": {"input": "svg.content", "other_arguments": {}},
@@ -535,6 +564,12 @@ def _caret_raster_stages(
         "sizing": "2560x1600 render; one Lanczos reduction to 1280x800",
         "status": "pending",
     }
+    if "normalization" in common:
+        common["normalization"] = {
+            key: value
+            for key, value in common["normalization"].items()
+            if key != "normalized_framed_svg"
+        }
     # Both records identify the same invocation; reduced output is never rerendered.
     return {
         "intermediate": _retained_raster_stage(common, intermediate, ordinary=ordinary),
@@ -550,44 +585,57 @@ def caret_rasterization_comparisons(
     rasterization: dict[str, Any],
     intermediate_png: bytes | None,
 ) -> dict[str, Any]:
-    """Retain actual raster stages and declaration-only font controls, without repair."""
+    """Retain unmodified and normalized stages under both font declarations."""
     font = _comparison_font()
     inputs = _comparison_inputs(svg, framed_svg, font)
     variants = {
         "direct_original": inputs["framed_original"],
         "direct_dejavu": inputs["framed_dejavu"],
     }
-    original = _caret_raster_stages(png, rasterization, intermediate_png, ordinary=True)
-    variants.update({stage + "_original": record for stage, record in original.items()})
+    converted = rasterization.get("normalization", {}).get("converted", False)
+    ordinary = _caret_raster_stages(png, rasterization, intermediate_png, ordinary=True)
+    if converted:
+        originals = _comparison_stages(framed_svg, normalize=False)
+        variants.update({stage + "_original": record for stage, record in originals.items()})
+        variants.update(
+            {stage + "_original_normalized": record for stage, record in ordinary.items()}
+        )
+        normalized, conversions = normalize_terminal_underlines(framed_svg)
+        variants["direct_original_normalized"] = _svg_comparison_record(normalized, conversions)
+    else:
+        variants.update({stage + "_original": record for stage, record in ordinary.items()})
     control = inputs["framed_dejavu"]
     if control["status"] == "pending":
-        retained: dict[str, bytes] = {}
-        try:
-            control_png, metadata = rasterize_framed_svg(
-                control["svg"]["content"], retained_pngs=retained
+        control_svg = control["svg"]["content"]
+        stages = _comparison_stages(control_svg, normalize=False)
+        if converted:
+            normalized, conversions = normalize_terminal_underlines(control_svg)
+            variants["direct_dejavu_normalized"] = _svg_comparison_record(normalized, conversions)
+            normalized_stages = _comparison_stages(control_svg, normalize=True)
+            variants.update(
+                {stage + "_dejavu_normalized": record for stage, record in normalized_stages.items()}
             )
-            stages = _caret_raster_stages(
-                control_png,
-                metadata,
-                retained.get("intermediate"),
-                ordinary=False,
-            )
-        except (OSError, RuntimeError, ValueError) as exc:
-            stages = {
-                stage: {"status": "failed", "reason": type(exc).__name__ + ": " + str(exc)[:256]}
-                for stage in ("intermediate", "reduced")
-            }
     else:
         stages = {
             stage: {"status": "omitted", "reason": control["reason"]}
             for stage in ("intermediate", "reduced")
         }
+        if converted:
+            variants.update(
+                {
+                    stage + "_dejavu_normalized": dict(record)
+                    for stage, record in {**stages, "direct": control}.items()
+                }
+            )
     variants.update({stage + "_dejavu": record for stage, record in stages.items()})
     for identity, record in variants.items():
-        record["font"] = (
-            COMPARISON_FONT if identity.endswith("_dejavu") else "original declarations"
-        )
+        record["font"] = COMPARISON_FONT if "_dejavu" in identity else "original declarations"
         record["stage"] = identity.split("_", 1)[0]
+        record["representation"] = (
+            "explicit underline geometry"
+            if identity.endswith("_normalized")
+            else "unmodified export"
+        )
     result = _bounded_comparisons(variants, png, font)
     _validate_caret_raster_stages(result)
     result["font_observations"] = _font_context(svg)
@@ -596,6 +644,36 @@ def caret_rasterization_comparisons(
         result["complete"] = False
         result["missing"].append("font_file_observations_incomplete")
     return result
+
+
+def _svg_comparison_record(svg: str, conversions: list[dict[str, Any]]) -> dict[str, Any]:
+    data = svg.encode("utf-8")
+    return {
+        "status": "pending",
+        "svg": {
+            "content": svg,
+            "encoding": "UTF-8",
+            "byte_length": len(data),
+            "sha256": digest(data),
+        },
+        "conversions": conversions,
+        "renderer": "resvg_py.svg_to_bytes",
+        "renderer_arguments": {"input": "svg.content", "other_arguments": {}},
+    }
+
+
+def _comparison_stages(svg: str, *, normalize: bool) -> dict[str, Any]:
+    retained: dict[str, bytes] = {}
+    try:
+        png, metadata = rasterize_framed_svg(
+            svg, retained_pngs=retained, normalize_underlines=normalize
+        )
+        return _caret_raster_stages(png, metadata, retained.get("intermediate"), ordinary=False)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {
+            stage: {"status": "failed", "reason": type(exc).__name__ + ": " + str(exc)[:256]}
+            for stage in ("intermediate", "reduced")
+        }
 
 
 def _validate_caret_raster_stages(result: dict[str, Any]) -> None:

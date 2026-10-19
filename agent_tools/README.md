@@ -176,7 +176,8 @@ It starts each scene in a separate process with Textual's headless driver and
 fake database fixtures, exports the complete application screen, and rasterizes
 it with `resvg-py` at 2560x1600, then reduces once with Pillow's
 `Image.Resampling.LANCZOS` to the full 1280x800 PNG. An outer SVG viewport scales
-the unchanged framed SVG; intermediate and final dimensions are validated, and
+the framed SVG after the export-only underline normalization described below;
+intermediate and final dimensions are validated, and
 rendering errors propagate. The terminal grid is 208x47 cells. A host
 monospace font must be installed (for example Menlo, Consolas, or Liberation
 Mono). No VM, OS image download, desktop session, or VNC server is needed.
@@ -287,13 +288,15 @@ colors and widths, and excludes marks whose base lies outside the crop. State
 mismatches and absent caret marks are findings, not a PNG visibility verdict.
 
 Multicursor, command-caret and new-file `export_input_evidence` retains the exact
-raw, framed and ordinary supersampling SVGs from the single final export without
-comparison renders.
-All three inputs share the 4 MiB lossless SVG budget; overflow omits content
+raw and framed SVGs from the single final export without comparison renders.
+The original supersampling input remains separately identified; when underlines
+are converted, `normalized_framed_svg` and `normalized_supersampling_svg` retain
+the actual export-only copies. All inputs share the 4 MiB lossless SVG budget; overflow omits content
 while preserving lengths/hashes and reports `complete=false`. Its
 `rasterization` record retains the ordinary renderer settings, scale factor,
 intermediate/final dimensions and hashes, Pillow version and reduction filter;
-`svg_input` identifies `inputs.supersampling_svg` as the retained rendering input.
+`svg_input` identifies the actual retained rendering input, using
+`inputs.normalized_supersampling_svg` only when conversion occurred.
 Verify its final hash and `png_sha256` against the full scene PNG. Parsed styles
 also retain SVG text-decoration attributes. Existing parsed-element and 512 KiB
 limits, atomic publication, readiness and geometry checks stay in force.
@@ -365,29 +368,54 @@ ordering, production focus restoration, observation non-mutation and strict
 raw/styled/compositor comparisons; fresh CI and full visual review remain required.
 
 For `keyboard-multicursor` and `editor-command-caret`, additive
-`rasterization_comparisons` retains six lossless PNGs: direct target-size, actual
-ordinary supersampling intermediate, and actual reduced output, plus the same
-three stages with only the terminal font declaration changed to verified-available
-DejaVu Sans Mono. The ordinary stages come from the same rasterizer invocation
-that writes the scene PNG; neither is rerendered for evidence. The optional
-`retained_pngs` sink leaves the rasterizer return contract and default output intact.
-Each comparison identifies its stage, exact SVG input, renderer arguments, PNG
-dimensions/length/hash, and processing metadata. Raw/framed/supersampling inputs
-also remain in `export_input_evidence` from the single final export. Comparison
-SVGs and decoded PNGs share their respective 4 MiB budgets across all six stages;
-overflow removes content and marks evidence incomplete. Missing intermediate
-bytes, font probes or failed renders remain explicit rather than substituted.
-Stage dimensions must match the direct/intermediate/reduced viewport; retained
-ordinary bytes must also match the invocation's processing hashes and dimensions.
-Mismatches mark comparisons incomplete while preserving the observed bytes within
-the same budgets, without rerendering or substituting a successful image.
-Malformed retained PNG headers likewise record a failed stage with unavailable
-dimensions; their original bytes and hashes remain subject to the shared PNG
-budget alongside successful stages.
+`rasterization_comparisons` retains the six unmodified stage PNGs: direct target
+size, actual supersampling intermediate, and one Lanczos reduction under both the
+original and diagnostic-only verified DejaVu declarations. When underline
+conversion occurs, six separately named `*_normalized` stages retain the same
+pairs using explicit underline geometry. Only the normalized original intermediate
+and reduced stages reuse the actual ordinary invocation; unmodified stages are
+identified as diagnostic reproductions. With no conversions the existing six-stage
+contract remains unchanged. The optional `retained_pngs` sink preserves the
+rasterizer return contract.
+
+Every comparison records its representation, stage, exact SVG, renderer arguments,
+PNG dimensions/length/hash and processing metadata. All original and normalized
+comparison SVGs and decoded PNGs share the existing respective 4 MiB budgets.
+Overflow removes content and marks evidence incomplete; missing intermediate
+bytes, unavailable fonts and failed renders cannot become successful comparisons.
+Stage dimensions and retained invocation hashes remain strict. Invalid retained
+PNG bytes remain available within the same budgets, with unavailable dimensions.
 Font observations retain system paths and hashes for at most eight files, reading
-at most 16 MiB per file; they never establish the renderer-selected font. These
-GitHub-only comparisons support independent diagnosis of rasterization versus
-Lanczos reduction. They grant no caret repair, visual acceptance or gate waiver.
+at most 16 MiB per file; these never prove the renderer-selected font.
+
+[`normalize_terminal_underlines`](sql_explorer_svg_underlines.py) runs only at the
+SVG export boundary before supersampling. It resolves generated terminal class,
+inline and inherited underline styling, then derives butt-ended strokes from the
+actual span x/y/textLength, resolved color and font size. Baseline offset and
+thickness are both 0.1em. Existing transforms and clips still apply. Only converted
+native underline decoration is neutralized to avoid duplicate decoration; text,
+other decorations, glyph colors, positions, widths and terminal behavior stay
+intact. Span widths handle spaces, expanded tabs, wide and combining text without
+counting characters. Ambiguous geometry or unsupported underline syntax raises
+an explicit error. No conversion returns the exact original bytes; normalization
+is idempotent. Originals are never relabeled as normalized copies.
+
+The mandatory `tests/agent_tools/underline_rasterization.py` uses actual resvg and
+Pillow with hash-bound rejected command-focus and keyboard SVG fixtures. Captured
+exports are stored as whitespace-clean `.svg.json` envelopes: ordered base64 chunks,
+decoded byte length and original SHA256. The provenance file separately records
+each envelope SHA256; replay validates both identities before UTF-8 decoding.
+No captured SVG whitespace is trimmed or normalized. Fast envelope regressions
+reject malformed base64, changed lengths, changed bytes and mismatched identities.
+The same fixed continuous-underline criterion must reject the original and accept the
+normalized output; no-underline, shifted-cell, wrong-color and clipping controls
+remain required. Ordinary GitHub matrix and tox latest/minimum/coverage jobs run
+it explicitly before the full suite, without renderer skips. Test-only
+`resvg-py>=0.5,<0.6` and Pillow plus GitHub fontconfig/DejaVu provisioning leave
+public dependencies and font declarations unchanged. A failed reproduction must
+retain its environment evidence for renewed planning. These tests and comparisons
+supply no visual approval: all 46 fresh full-scene verdicts and exact-head CI
+remain required.
 
 For `connections-searching` and `result-success`, border diagnostics target the
 actual connections dialog and active query/results panes. Each region records its
@@ -417,7 +445,7 @@ terminal cell. Both the base filename screen and SQL subclass retain this
 alignment across resize, with mounted focus, filename-validation and confirm/cancel
 regressions. These source corrections still require fresh candidate-bound GitHub
 validation and independent full-scene review; diagnostic output alone supplies no
-visual approval. Command-caret diagnostics select no production export repair.
+visual approval. Command-caret observations alone cannot certify the export repair.
 
 Journal-status regressions separately distinguish empty successful reads from read
 failures: an empty failed read shows its warning alone, while populated pages keep

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "repository": "Karapsin/analytics_toolkit",
+  "head": "66730f9b4c6cb00524758e156a772b98317c256a",
+  "base": "04945ba5c60f15eead12ccefdbfb4b7932284dc9",
+  "run_id": 39264821529,
+  "manifest_sha256": "fbfe0ad894e8f08f5fe5ad0d20dcb26a066ab576a2c852f3e7b9b6f2dfa10886",
+  "qualification": "Unmodified rejected exports; historical diagnosis, never approval for later source.",
+  "fixtures": [
+    {
+      "scene": "editor-command-caret",
+      "path": "editor-command-caret.svg.json",
+      "sha256": "4434a925506b2630a102adc8c1888a8ceffa98db05d5ff90c9f9ccc744a17254",
+      "evidence": "diagnostics/editor-command-caret/input-framed_svg.svg",
+      "screen_cells": [
+        [
+          19,
+          5
+        ]
+      ],
+      "geometry_sha256": "2c756ab6d7ecb4d20ef4b3c8e7b597d660aa45fad846afcb1bb7b101ca66be46",
+      "byte_length": 54530,
+      "envelope_sha256": "9a876ab8be6aab24fd7e8bf58b56f08b94c43e7d0ccd70d1e84f88512c10c59f"
+    },
+    {
+      "scene": "keyboard-multicursor",
+      "path": "keyboard-multicursor.svg.json",
+      "sha256": "6024ff24ea7dcceaae62636b0461646b0b2460d715a3dd1ca234cf8b71a96f02",
+      "evidence": "diagnostics/keyboard-multicursor/input-framed_svg.svg",
+      "screen_cells": [
+        [
+          19,
+          4
+        ],
+        [
+          19,
+          5
+        ],
+        [
+          19,
+          6
+        ]
+      ],
+      "geometry_sha256": "95af25d7257820ddf353b77c7e7a665a6473351a6ce06167febe82ed0238130a",
+      "byte_length": 55539,
+      "envelope_sha256": "c02d682756cc1392944b605e0f96f2028ea9512b1e213334d6146467c3107931"
+    }
+  ],
+  "producer_id": "author:81c7a96e37494ccb838079e011f61e46",
+  "task_digest": "8e54828510b923a2febe544f388faba9d37eabdf0e3269ccbe62d24fdc3898eb",
+  "source_visual_manifest_sha256": "578aef28eeab7030c7eaa69d5a8d6ec4a8fa30f9c932eb90ed693b3cd1f67320",
+  "storage": "base64-json-v1",
+  "sha256_scope": "Decoded captured SVG bytes; envelope_sha256 identifies storage bytes separately."
+}
