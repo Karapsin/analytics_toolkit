@@ -82,6 +82,8 @@ Generated from package version bumps and recent commit history.
 - Prevent precommit stage reuse and certification across observed source or toolchain changes
 - Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
 - Add receipt-bound transactional coordinator authority renewal with strict replay checks
+- Isolate candidate visual installation and capture from the GitHub runner and retain bounded host-owned diagnostics.
+- Preserve native capture failure diagnostics, produced renderer artifacts and safe post-cleanup evidence without weakening glyph or isolation checks.
 - Protect and promote the exact shared visual-rendering infrastructure helper without admitting adjacent tools or application code.
 
 ## 1.3.12.5 - 2026-10-14
