@@ -1,0 +1,51 @@
+{
+  "kind": "authenticated-parent-objective-and-agent-derived-followup",
+  "parent_source": {
+    "repository": "Karapsin/analytics_toolkit",
+    "pull_request": 40,
+    "url": "https://github.com/Karapsin/analytics_toolkit/pull/40",
+    "signed_head": "28fe06589e01eca837c94f9d5d779b209c6c45b4",
+    "task_digest": "b037201a1bd70f1596d6281e26924574a2008db69ebf961aa58e7f3ce407ce57"
+  },
+  "original_context": {
+    "version": 1,
+    "task_id": "68302ba1bca84a8691e7576dffd2f5cb",
+    "producer_id": "local:68302ba1bca84a8691e7576dffd2f5cb",
+    "source": "user",
+    "starting_prompt": "implement it on your own if orchestator is not doing that",
+    "corrections": [
+      "and once you done - monitor PRs until completion, stop only when ALL of them are merged successfully with dev",
+      "fix any issues on the way",
+      "PR in self_host is considered relevant only if it affects github agents functionality",
+      "check RPI agents, their, especially those who waiting for user approval",
+      "also update rpi agents to ALWAYS use recommended options when they have questions about plan/feature implementation/correction",
+      "and I want to get messages only about user approvals / tg requested feature implemntation status / pr mergres with dev / released / merges with main",
+      "also restart agents who are waiting user's approval so that use this new policy",
+      "also for tg questions, allow respond in github as well",
+      "ok, fix those tooling issues",
+      "one asks me to provide agents.md WTF, looks like a tooling issue as well",
+      "also I've noticed that user answers to agent's question recorded and posted in PR, but agent's question is not visible => not enough context, fix that as well, record both questions and answers",
+      "answer to agents in PRs",
+      "also raise RPI agents concurrency to 10",
+      "do not forget \"agent:writing\" labels",
+      "provide reliable fix so that does not occur again",
+      "for \"ALWAYS use reccomended\" let's just spawn \"plan resolver\" agent on RPI which checks that recommended options and if they are aligned with user request -approves them. Also add \"orchestrator\" agent which is spawned every 30 minutes (no more than 1 such agent) IF at least 1 PR is open and  it basically does what you do now: finds issues in rpi agents toolkit, fixes them, etc. still no heavy checks on rpi. but it may edit atk and self host dirs. If nothng to fix - that agent ceases to exist",
+      "if it is not addressing it - fix it so it does that",
+      "is orchestrator fixing #9?"
+    ]
+  },
+  "followup_scope": {
+    "author": "coordinator, derived from observed tooling defect under the original repair-all-issues authorization",
+    "problem": "Stages currently relabel their receipt with the tree present after the command, and final success fingerprints only completion. Actual prior validation had different fingerprints across stages after overlapping edits; it was preserved and invalidated, then all four stages rerun on frozen PR40 tree.",
+    "required_behavior": "Bind each stage and the final success to the immutable start source/toolchain; detect observed boundary drift, stop without publishing new success or relabeling stage receipts; preserve changes, allow exact-tree resumptions only, and recheck final validation toolchain at commit.",
+    "parent_completion": "PR40 remains Pi-owned. Preserve all task/evidence/Q+A and all qualifying PR dev-merge/companion acceptance obligations; this isolated tooling change supplies no source/visual/protected approval or dependency satisfaction.",
+    "evidence": {
+      "prior_cache_invalidation_sha256": "dd4f34245788e995944c7ce3a83c7044a07e864785a1b30a0483975af852d70f",
+      "frozen_PR40_stage_receipts_sha256": "804a8176a37cf2f51f42fb567c8dbbf9d1855574238fb90177646a074af1a979"
+    }
+  },
+  "scope_limits": [
+    "Observed-boundary detection does not claim an immutable execution sandbox or detect a transient edit fully reverted between observations.",
+    "No candidate programs/tests/renders on Pi. Preserve existing owner/veto/authentication/exact-head review gates and handed-off branches."
+  ]
+}
