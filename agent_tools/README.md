@@ -417,6 +417,51 @@ retain its environment evidence for renewed planning. These tests and comparison
 supply no visual approval: all 46 fresh full-scene verdicts and exact-head CI
 remain required.
 
+
+Causal raster observations are collected before the strict assertions. The
+GitHub matrix retains `raster-<profile>-<head>-<run>-<attempt>` artifacts; canonical
+coverage retains the corresponding `raster-coverage-...` artifact even on failure.
+The versioned `raster.json` enumerates both captured scenes and synthetic space,
+expanded-tab, wide-glyph and combining-mark cases before any assertion can hide a
+later control. Each original/plain/normalized variant, plus applicable wrong-color
+and clipped controls, retains exact base64 SVG, direct PNG, actual 2x intermediate
+and once-reduced PNG bytes. Pixel observations cover only the unchanged predicate's
+three sampled rows at the target and shifted cell, recording RGB values, channel
+differences and qualifying runs. These are separately labeled reproductions, not
+the earlier capture or reused pytest invocations. Fixture-envelope and decoded
+export identities remain separate; the predicate, thresholds and strict failures
+are unchanged.
+
+`tests/agent_tools/_support/renderer_probe.py` runs a disposable Python 3.9
+environment before the ordinary incompatible installation. It downloads only the
+selected diagnostic `resvg-py==0.3.2` candidate, records wheel/metadata identities
+and Requires-Python, installs it under the latest/minimum dependency distinction,
+checks the actual API and renders the identical raster cases. Installation reports,
+versions, command arguments, stdout/stderr and exit codes are retained. After a
+strict raster failure, the probe still records pip-check and freeze results and
+returns failure; focused tests cover this ordering in both disposable profiles.
+A failed case stays failed; this probe neither adopts 0.3.2 nor changes the required 0.5
+installation. Standard-library-only transport lets even pre-install failures be
+reported. Successfully installed ordinary profiles collect the same observations
+before their required renderer regression; canonical coverage collects once before
+its first assertion and preserves that first report.
+
+The existing separate 4 MiB SVG/decoded-PNG budgets still apply across each
+report. Reports are bounded to 8 MiB, command streams to 1 MiB each; omissions and
+failed/unavailable probes explicitly make evidence incomplete. Font availability
+and file hashes are system observations, never renderer-selected-font proof.
+Source hashes include the exact fixture envelopes, decoded-source provenance,
+loader and rendering helpers. Reports distinguish the approved plan-review input
+from historical diagnostic bindings and the actual GitHub checkout, candidate,
+workflow revision, run/attempt/job and profile. Unavailable runtime fields remain
+explicitly unavailable; fixed reviewed-input hashes never stand in for a new
+execution head. The coordinator must bind the final artifact, checkpoint, producer
+and consumer receipts. A fast regression changes retained fixture bytes and CI
+identities independently to detect stale provenance. Missing evidence is not a
+successful comparison. Fresh
+independent evidence assessment and a separately reviewed repair plan remain
+necessary before changing provisioning, mapping, normalization or visibility.
+
 For `connections-searching` and `result-success`, border diagnostics target the
 actual connections dialog and active query/results panes. Each region records its
 outer/content geometry, ancestor viewport clips and resolved border styles.

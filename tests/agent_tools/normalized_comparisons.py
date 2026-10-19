@@ -7,7 +7,9 @@ import pytest
 
 from agent_tools import sql_explorer_svg_evidence as evidence
 from agent_tools import sql_explorer_visual_capture as capture
-from tests.agent_tools.caret_rasterization import raster_capture as raster_capture
+from tests.agent_tools.caret_rasterization import raster_capture
+
+__all__ = ["raster_capture"]
 
 
 def _normalized_capture(state: dict[str, Any]) -> dict[str, Any]:
@@ -52,9 +54,7 @@ def test_twelve_images_keep_unmodified_inputs_and_bind_only_real_ordinary_output
         assert record["png"]["reused_ordinary_png"] is ordinary
         if ordinary:
             expected = (
-                state["retained"]["intermediate"]
-                if identity.startswith("intermediate")
-                else state["png"]
+                state["retained"]["intermediate"] if identity.startswith("intermediate") else state["png"]
             )
             assert base64.b64decode(record["png"]["content"], validate=True) == expected
         if "normalization" in record:

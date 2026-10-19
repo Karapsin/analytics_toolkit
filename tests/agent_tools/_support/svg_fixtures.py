@@ -21,8 +21,10 @@ def decode_captured_svg(data: bytes, *, sha256: str, envelope_sha256: str) -> st
         message = "unsupported_captured_svg_envelope"
         raise ValueError(message)
     chunks = envelope.get("content")
-    if not isinstance(chunks, list) or not chunks or any(
-        not isinstance(chunk, str) or not chunk for chunk in chunks
+    if (
+        not isinstance(chunks, list)
+        or not chunks
+        or any(not isinstance(chunk, str) or not chunk for chunk in chunks)
     ):
         message = "invalid_captured_svg_chunks"
         raise ValueError(message)

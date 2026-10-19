@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from xml.etree import ElementTree as ET
+import xml.etree.ElementTree as ET
 
 import pytest
 

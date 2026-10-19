@@ -202,6 +202,10 @@ jobs:
     if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only tests' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only tests' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only tests' || matrix.env_name }}
     runs-on: ubuntu-latest
+    env:
+      RASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      RASTER_BASE: 4a17e91b20b2683aca365f486e6217a141ef8c5b
+      RASTER_PROFILE: ${{ matrix.env_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -240,12 +244,21 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
+      - name: Probe Python 3.9 renderer in a disposable environment
+        if: startsWith(matrix.env_name, 'py39-')
+        run: >-
+          python -m tests.agent_tools._support.renderer_probe
+          --profile "${{ matrix.env_name }}"
+          --output "raster-diagnostics/${{ matrix.env_name }}/probe"
+
       - name: Install latest test environment
-        if: matrix.env_name != 'py39-min'
+        id: latest
+        if: ${{ !cancelled() && matrix.env_name != 'py39-min' }}
         run: python -m pip install -e '.[tui,datalens]' pytest "Pillow>=10,<13" "resvg-py>=0.5,<0.6"
 
       - name: Install minimum Python 3.9 test environment
-        if: matrix.env_name == 'py39-min'
+        id: minimum
+        if: ${{ !cancelled() && matrix.env_name == 'py39-min' }}
         run: python -m pip install -c constraints/py39-min.txt -e '.[tui,datalens]' pytest==8.3.5 "Pillow>=10,<13" "resvg-py>=0.5,<0.6"
 
       - name: Validate minimum dependency constraints
@@ -257,7 +270,18 @@ jobs:
       - name: Compile package and tests
         run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
 
+      - name: Collect every causal raster case before strict assertions
+        if: ${{ !cancelled() && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
+        run: >-
+          python -m tests.agent_tools._support.renderer_probe
+          --collect-current --output "raster-diagnostics/${{ matrix.env_name }}"
+
+      - name: Require fast causal-diagnostic regressions
+        if: ${{ !cancelled() && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
+        run: python -m pytest -q tests/agent_tools/raster_observations.py
+
       - name: Require actual renderer regression
+        if: ${{ !cancelled() && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
         run: python -m pytest -q tests/agent_tools/underline_rasterization.py
 
       - name: Run tests
@@ -266,6 +290,14 @@ jobs:
       - name: Freeze environment
         if: always()
         run: python -m pip freeze
+
+      - name: Retain complete or explicitly incomplete raster diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: raster-${{ matrix.env_name }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: raster-diagnostics/${{ matrix.env_name }}/
+          if-no-files-found: warn
 
   sdk-conformance:
     if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
@@ -288,6 +320,10 @@ jobs:
     if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only quality' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only quality' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only quality checks' || 'quality gates' }}
     runs-on: ubuntu-latest
+    env:
+      RASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      RASTER_BASE: 4a17e91b20b2683aca365f486e6217a141ef8c5b
+      RASTER_PROFILE: coverage
 
     steps:
       - name: Checkout
@@ -317,4 +353,11 @@ jobs:
         with:
           name: coverage-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: coverage.json
+          if-no-files-found: warn
+      - name: Retain canonical raster failure observations
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: raster-coverage-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: raster-diagnostics/coverage/
           if-no-files-found: warn

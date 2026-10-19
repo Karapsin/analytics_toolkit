@@ -45,8 +45,8 @@ def _class_rules(root: ET.Element) -> list[tuple[str, dict[str, str]]]:
         if node.tag.rsplit("}", 1)[-1] != "style":
             continue
         css = re.sub(r"@font-face\s*\{[^{}]*\}", "", node.text or "")
-        for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
-            selector = selector.strip()
+        for raw_selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+            selector = raw_selector.strip()
             declarations = _declarations(body)
             if not re.fullmatch(r"\.[\w-]+", selector):
                 if "underline" in body or any(key in declarations for key in _PROPERTIES):

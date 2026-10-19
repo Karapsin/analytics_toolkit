@@ -613,7 +613,10 @@ def caret_rasterization_comparisons(
             variants["direct_dejavu_normalized"] = _svg_comparison_record(normalized, conversions)
             normalized_stages = _comparison_stages(control_svg, normalize=True)
             variants.update(
-                {stage + "_dejavu_normalized": record for stage, record in normalized_stages.items()}
+                {
+                    stage + "_dejavu_normalized": record
+                    for stage, record in normalized_stages.items()
+                }
             )
     else:
         stages = {

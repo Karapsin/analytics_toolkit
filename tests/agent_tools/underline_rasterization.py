@@ -5,11 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import platform
 import re
+import sys
+import xml.etree.ElementTree as ET
+from contextlib import ExitStack
 from importlib.metadata import version
 from io import BytesIO
-from xml.etree import ElementTree as ET
+from pathlib import Path
 
 import pytest
 import resvg_py
@@ -18,11 +22,19 @@ from PIL import Image
 from agent_tools import sql_explorer_svg_evidence as evidence
 from agent_tools.sql_explorer_svg_underlines import normalize_terminal_underlines
 from tests._support.paths import REPO_ROOT
+from tests.agent_tools._support.raster_observations import collect_report, write_report
 from tests.agent_tools._support.svg_fixtures import decode_captured_svg
 
 _FIXTURES = REPO_ROOT / "tests/agent_tools/_support/fixtures"
 _MIN_CONTRAST = 32
 _MIN_WIDTH_FRACTION = 0.7
+
+
+@pytest.fixture(scope="module", autouse=True)
+def retain_all_raster_cases_before_assertions() -> None:
+    output = os.environ.get("RASTER_OBSERVATIONS")
+    if output is not None and not Path(output).exists():
+        write_report(Path(output), collect_report(sys.modules[__name__]))
 
 
 def _raster(svg: str) -> Image.Image:
@@ -122,14 +134,16 @@ def test_rejected_original_fails_and_normalized_export_passes_same_caret_predica
         "qualification": "Available/system matches do not prove renderer-selected identity.",
     }
     assert evidence._comparison_font()["available"], observations
-    with _raster(svg) as original, _raster(_without_underline(svg)) as plain:
-        with _raster(normalized) as repaired:
-            for region in regions:
-                assert not _visible_underline(plain, plain, region)
-                assert not _visible_underline(original, plain, region), observations
-                assert _visible_underline(repaired, plain, region), observations
-                wrong_cell = (region[0] + region[2] * 3, region[1], region[2])
-                assert not _visible_underline(repaired, plain, wrong_cell)
+    with ExitStack() as stack:
+        original = stack.enter_context(_raster(svg))
+        plain = stack.enter_context(_raster(_without_underline(svg)))
+        repaired = stack.enter_context(_raster(normalized))
+        for region in regions:
+            assert not _visible_underline(plain, plain, region)
+            assert not _visible_underline(original, plain, region), observations
+            assert _visible_underline(repaired, plain, region), observations
+            wrong_cell = (region[0] + region[2] * 3, region[1], region[2])
+            assert not _visible_underline(repaired, plain, wrong_cell)
     original_text = [
         (node.text, node.tail, dict(node.attrib))
         for node in ET.fromstring(svg).iter()
