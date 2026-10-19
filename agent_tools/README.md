@@ -344,17 +344,68 @@ Segment evidence retains its separate 8 KiB bound; unavailable rows, cell limits
 and omissions explicitly mark incomplete evidence. Failure reports retain the
 first snapshot and its trace without recollection.
 
-The tab/database scene stays unconfigured during initialization. It activates
-the target workspace and switches its database once, delegates production
-deferred focus restoration unchanged, then queues one command-focus request
-after the restoration's queued focus application. A subsequent queued
-continuation marks configuration complete after command focus applies.
+The tab/database scene stays unconfigured during mount-driven initialization.
+Before yielding, it chains a one-shot action into the new workspace's existing
+`pending_mount_action` hook, preserving an earlier action and its exceptions.
+The native mount handler consumes the hook after workspace initialization; the
+scene waits for that activation's deferred restoration and queued focus application
+before activating the target workspace and switching its database once. It then
+delegates the second restoration unchanged and queues one command-focus request
+after that restoration's queued focus application. A subsequent queued
+continuation marks configuration complete after command focus applies. No fixed
+timer stands in for mount completion. A controlled delayed-mount regression checks
+that switching, readiness and capture remain blocked until the hook runs.
+Hook regressions also preserve a prior action's single invocation, propagated
+exception, and any replacement action's ownership without invoking that replacement.
 Readiness observes workspace, database, initialization and current focus;
 later focus loss blocks capture without another focus request. The bounded
 callback trace also records these initialization boundaries. Production tab
 restoration and ruler presentation remain unchanged. GitHub regressions cover
 ordering, production focus restoration, observation non-mutation and strict
 raw/styled/compositor comparisons; fresh CI and full visual review remain required.
+
+For `keyboard-multicursor` and `editor-command-caret`, additive
+`rasterization_comparisons` retains six lossless PNGs: direct target-size, actual
+ordinary supersampling intermediate, and actual reduced output, plus the same
+three stages with only the terminal font declaration changed to verified-available
+DejaVu Sans Mono. The ordinary stages come from the same rasterizer invocation
+that writes the scene PNG; neither is rerendered for evidence. The optional
+`retained_pngs` sink leaves the rasterizer return contract and default output intact.
+Each comparison identifies its stage, exact SVG input, renderer arguments, PNG
+dimensions/length/hash, and processing metadata. Raw/framed/supersampling inputs
+also remain in `export_input_evidence` from the single final export. Comparison
+SVGs and decoded PNGs share their respective 4 MiB budgets across all six stages;
+overflow removes content and marks evidence incomplete. Missing intermediate
+bytes, font probes or failed renders remain explicit rather than substituted.
+Stage dimensions must match the direct/intermediate/reduced viewport; retained
+ordinary bytes must also match the invocation's processing hashes and dimensions.
+Mismatches mark comparisons incomplete while preserving the observed bytes within
+the same budgets, without rerendering or substituting a successful image.
+Malformed retained PNG headers likewise record a failed stage with unavailable
+dimensions; their original bytes and hashes remain subject to the shared PNG
+budget alongside successful stages.
+Font observations retain system paths and hashes for at most eight files, reading
+at most 16 MiB per file; they never establish the renderer-selected font. These
+GitHub-only comparisons support independent diagnosis of rasterization versus
+Lanczos reduction. They grant no caret repair, visual acceptance or gate waiver.
+
+For `connections-searching` and `result-success`, border diagnostics target the
+actual connections dialog and active query/results panes. Each region records its
+outer/content geometry, ancestor viewport clips and resolved border styles.
+`border_samples` identifies each widget-local and screen clip, native styled
+outer-widget row, compositor crop, missing layers and strict `layers_equal`
+result. Native `render_lines` includes borders and padding; coordinates are
+translated once. Raw `render_line(0)` content and its original segment/length
+observation remain separately identified and are never compared as border output.
+All samples share the nine-region, 24-row and 208-cell limits; the raw content row
+also consumes the row budget. Top/bottom rows and three pairs of side cells are
+sampled, with every unsampled edge interval recorded in half-open widget-local
+coordinates. Unsampled edges, missing rows, clipping and capacity limits explicitly
+keep evidence incomplete. A layer mismatch is recorded without rewriting either
+row or claiming a production defect. Exact raw/framed/supersampling SVG inputs
+and the ordinary full PNG remain bound to the single final export through atomic
+geometry publication and existing budgets. These GitHub-only observations select
+no production border repair and do not clear any visual rejection.
 
 The `new-file` scene records actual mounted screen/subclass identity, computed
 alignment/layout styles, dialog and viewport geometry, ancestor clips and exact
@@ -593,9 +644,16 @@ fresh virtual environments with a shared `.tox/pip-cache` download cache.
 Successful stages receive private 24-hour receipts keyed by the exact working
 tree, command definition, toolchain versions, and parallelism. An interrupted
 or corrected run reuses only exact matches and reports each stage as executed,
-reused, or failed. Managed coverage target increases are reported and accepted
-in the same coverage run, while the manual coverage command keeps its
-review-and-rerun behavior. The compatibility `--quick` script mode retains its
+reused, failed, or invalidated. The run keeps its original source and toolchain
+identity: drift observed before or after a stage, during reuse, or before final
+certification stops validation without relabelling earlier receipts. Version 2
+receipts replace legacy receipts, and commit readiness rechecks the toolchain.
+Keep any edits and rerun checks on the resulting tree. This also applies when
+the coverage command accepts a managed target increase that changes tracked
+metadata; the complete pre-commit run must validate the updated tree. Boundary
+checks do not provide an immutable execution sandbox or detect a temporary edit
+that is fully reverted between observations. The manual coverage command keeps
+its review-and-rerun behavior. The compatibility `--quick` script mode retains its
 plain pytest run, but managed pre-commit validation does not duplicate it.
 Check failures include every failed stage, failing pytest
 node IDs, quality-debt increases, architecture overages, and tox environments

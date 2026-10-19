@@ -25,6 +25,8 @@ MAX_CELLS = 208
 MAX_SVG_ELEMENTS = 256
 MAX_BYTES = 512 * 1024
 MAX_LIFECYCLE_BYTES = 8192
+BORDER_ROWS_PER_REGION = 9
+BORDER_SCENES = frozenset({"connections-searching", "result-success"})
 SCENES = frozenset(
     {
         "database-picker",
@@ -322,6 +324,15 @@ def selector_readiness_assertions(snapshot: dict[str, Any]) -> dict[str, bool]:
 def _targets(app: Any, scene: str) -> list[tuple[str, Any, int]]:
     if scene == "database-picker":
         targets = [("heading", app.screen.query_one("#database-picker-title"), 3)]
+    elif scene == "connections-searching":
+        targets = [
+            ("connections-border", app.screen.query_one("#connections-picker"), BORDER_ROWS_PER_REGION)
+        ]
+    elif scene == "result-success":
+        targets = [
+            (name, app.active_workspace.query_one(f".{name}"), BORDER_ROWS_PER_REGION)
+            for name in ("query-pane", "result-pane")
+        ]
     elif scene == "find-replace":
         targets = [("find-matches", app.active_workspace.editor, 6)]
     elif scene in {"keyboard-multicursor", "editor-command-caret"}:
@@ -956,6 +967,155 @@ def _collect_target_region(
     return row_budget
 
 
+def _border_sample_clips(region: Region) -> list[Region]:
+    """Sample outer horizontal edges and three pairs of side cells, without padding."""
+    width, height = region.width, region.height
+    if width <= 0 or height <= 0:
+        return []
+    clips = [Region(0, y, min(width, MAX_CELLS), 1) for y in sorted({0, height - 1})]
+    side_rows = sorted({1, height // 2, height - 2} - {0, height - 1})
+    clips.extend(
+        Region(x, y, 1, 1)
+        for y in side_rows
+        if 0 < y < height - 1
+        for x in sorted({0, width - 1})
+    )
+    return clips
+
+
+def _border_sample(widget: Any, composed: Any, clip: Region) -> dict[str, Any]:
+    """Map a native outer-widget clip to screen coordinates exactly once."""
+    outer = widget.region
+    x, y = outer.x + clip.x, outer.y + clip.y
+    sample: dict[str, Any] = {
+        "widget_local_clip": _region_record(clip),
+        "screen_clip": _region_record(Region(x, y, clip.width, 1)),
+        "styled_widget_row": None,
+        "compositor_row": None,
+        "missing": [],
+    }
+    try:
+        strip = widget.render_lines(clip)[0]
+        sample["styled_widget_row"] = strip_record(strip, x=x, y=y, width=clip.width)
+    except (AttributeError, IndexError, RuntimeError, TypeError, ValueError) as error:
+        sample["missing"].append("styled_widget_row:" + type(error).__name__)
+    try:
+        if x < 0 or not 0 <= y < len(composed):
+            sample["missing"].append("outside_screen")
+        else:
+            crop = composed[y].crop(x, x + clip.width)
+            sample["compositor_row"] = strip_record(crop, x=x, y=y, width=clip.width)
+    except (AttributeError, IndexError, RuntimeError, TypeError, ValueError) as error:
+        sample["missing"].append("compositor_row:" + type(error).__name__)
+    for layer in ("styled_widget_row", "compositor_row"):
+        row = sample[layer]
+        if row is None or row["cells"] != clip.width or row["truncated"]:
+            sample["missing"].append(layer + ":unavailable_or_clipped")
+    sample["layers_equal"] = rendered_rows_equal(
+        sample["styled_widget_row"], sample["compositor_row"]
+    )
+    return sample
+
+
+def _unsampled_intervals(length: int, intervals: list[tuple[int, int]]) -> list[list[int]]:
+    """Record half-open gaps without allocating a cell for every perimeter coordinate."""
+    gaps = []
+    end = 0
+    for left, right in sorted(intervals):
+        if left > end:
+            gaps.append([end, left])
+        end = max(end, right)
+    if end < length:
+        gaps.append([end, length])
+    return gaps
+
+
+def _border_coverage(region: Region, clips: list[Region]) -> dict[str, Any]:
+    """Identify every unsampled edge coordinate, including partially sampled corners."""
+    edges = {
+        "top": (region.width, [(c.x, c.right) for c in clips if c.y == 0]),
+        "bottom": (region.width, [(c.x, c.right) for c in clips if c.y == region.height - 1]),
+        "left": (region.height, [(c.y, c.bottom) for c in clips if c.x == 0]),
+        "right": (region.height, [(c.y, c.bottom) for c in clips if c.right == region.width]),
+    }
+    return {
+        "unsampled_edges": {
+            name: _unsampled_intervals(length, intervals)
+            for name, (length, intervals) in edges.items()
+        },
+        "horizontal_cell_limit": region.width > MAX_CELLS,
+        "sampled_clips": [_region_record(clip) for clip in clips],
+        "scope": "outer perimeter only; interior and descendant output are not fully sampled",
+    }
+
+
+def _append_border_sample(entry: dict[str, Any], sample: dict[str, Any]) -> None:
+    """Keep positioned styled/composed rows available to the existing SVG mapper."""
+    entry["border_samples"].append(sample)
+    for layer, rows in (
+        ("styled_widget_row", "widget_rows"),
+        ("compositor_row", "composed_rows"),
+    ):
+        if sample[layer] is not None:
+            entry[rows].append(sample[layer])
+
+
+def _collect_border_raw(widget: Any, entry: dict[str, Any], result: dict[str, Any]) -> None:
+    """Retain the original raw content strip with its own coordinate system."""
+    try:
+        content = widget.content_region
+        raw = widget.render_line(0)
+        row = strip_record(raw, x=content.x, y=content.y, width=content.width)
+        observation = ruler_strip_observation(raw, row, width=content.width)
+        entry.update(raw_content_row=row, raw_content_observation=observation)
+        if not observation["complete"] or row["truncated"]:
+            result["omissions"].append(entry["name"] + ":raw_content_incomplete")
+    except (AttributeError, IndexError, RuntimeError, TypeError, ValueError) as error:
+        result["missing"].append(entry["name"] + ":raw_content:" + type(error).__name__)
+
+
+def _collect_border_region(
+    target: tuple[str, Any, int], composed: Any, result: dict[str, Any], row_budget: int
+) -> int:
+    """Share scene budgets while keeping raw content distinct from styled border output."""
+    name, widget, requested_rows = target
+    entry: dict[str, Any] = {
+        "name": name,
+        "region": _region_record(widget.region),
+        "widget_rows": [],
+        "composed_rows": [],
+        "border_samples": [],
+    }
+    result["regions"].append(entry)
+    try:
+        entry["geometry"] = _selector_child_state(widget)
+        if entry["geometry"]["ancestors_truncated"]:
+            result["omissions"].append(name + ":ancestor_limit")
+        if not widget.display or not widget.visible or not widget.region.area:
+            result["missing"].append(name + ":not_visible")
+            return row_budget
+        if row_budget:
+            _collect_border_raw(widget, entry, result)
+            row_budget -= 1
+        clips = _border_sample_clips(widget.region)
+        selected = clips[: min(row_budget, max(0, requested_rows - 1))]
+        entry["coverage"] = _border_coverage(widget.region, selected)
+        if len(selected) != len(clips):
+            result["omissions"].append(name + ":row_limit")
+        if any(entry["coverage"]["unsampled_edges"].values()):
+            result["omissions"].append(name + ":unsampled_edges")
+        if entry["coverage"]["horizontal_cell_limit"]:
+            result["omissions"].append(name + ":cell_limit")
+        for clip in selected:
+            sample = _border_sample(widget, composed, clip)
+            _append_border_sample(entry, sample)
+            result["missing"].extend(name + ":" + issue for issue in sample["missing"])
+        row_budget -= len(selected)
+    except (AttributeError, IndexError, RuntimeError, TypeError, ValueError) as error:
+        result["missing"].append(name + ":" + type(error).__name__)
+    return row_budget
+
+
 def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:
     """Separate the widget render cache from the screen compositor's actual strips."""
     result: dict[str, Any] = {"regions": [], "missing": [], "omissions": []}
@@ -980,8 +1140,9 @@ def terminal_diagnostics(app: Any, scene: str) -> dict[str, Any]:
         result["omissions"].append("region_limit")
         result["omissions"].extend(f"{name}:region_limit" for name, *_rest in targets[MAX_REGIONS:])
     row_budget = MAX_ROWS
+    collector = _collect_border_region if scene in BORDER_SCENES else _collect_target_region
     for target in targets[:MAX_REGIONS]:
-        row_budget = _collect_target_region(target, composed, result, row_budget)
+        row_budget = collector(target, composed, result, row_budget)
     _editor_diagnostics(app, scene, result)
     if "source_selector" in result:
         _selector_visibility(result["source_selector"], result["regions"])

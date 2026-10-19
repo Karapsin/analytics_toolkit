@@ -126,7 +126,9 @@ def test_mounted_unicode_and_tab_mapping_uses_terminal_cells(
             assert not result["missing"]
             for caret in result["multicursor"]["carets"]:
                 observed_row, observed_column = caret["end"]
-                offset = editor.wrapped_document.location_to_offset((observed_row, observed_column))
+                offset = editor.wrapped_document.location_to_offset(
+                    (observed_row, observed_column),
+                )
                 assert caret["wrapped_offset"] == list(offset)
                 x, y = caret["content_local_cell"]
                 width = caret["cell_width"]
@@ -207,7 +209,7 @@ def test_missing_layer_and_lost_style_are_observed_separately(layer: str, damage
         assert not result["missing"]
         assert caret[layer]["spans"][0]["flags"]["underline"] is False
         assert result["multicursor"]["findings"] == [
-            f"multicursor:caret:0:{layer}:caret_mark_absent"
+            f"multicursor:caret:0:{layer}:caret_mark_absent",
         ]
     else:
         assert result["missing"]

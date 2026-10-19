@@ -13,6 +13,7 @@ from analytics_toolkit.sql_explorer.create_table import creation_options
 from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen
 from analytics_toolkit.sql_explorer.widgets import ConfirmMutationScreen, FileNavigationScreen
+from analytics_toolkit.sql_explorer.workspace import SqlExplorerWorkspace
 from rich.text import Text
 from textual.css.query import NoMatches
 from textual.widgets import Button, Input, Static
@@ -161,6 +162,169 @@ def test_tab_database_ruler_evidence_observes_separate_widget_and_compositor_row
             await _assert_ruler_focus_loss(app, pilot, tmp_path, manifest)
 
     asyncio.run(exercise())
+
+
+def test_tab_database_scene_waits_for_controlled_workspace_mount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def exercise() -> None:
+        evidence = tmp_path / "delayed.json"
+        manifest = REPO_ROOT / sql_explorer_visual.MANIFEST
+        app = scenes.VisualExplorerApp("tab-database-change", evidence, manifest)
+        gate = _install_mount_gate(app, monkeypatch)
+        async with app.run_test(size=(208, 47)) as pilot:
+            try:
+                await asyncio.wait_for(gate.configured.wait(), timeout=5)
+                gate.configure("tab-database-change")
+                await asyncio.wait_for(gate.held.wait(), timeout=5)
+                target = app._workspaces["2"]
+                assert target.pending_mount_action is not gate.owner
+                command_focus = Mock(wraps=target.command_input.focus)
+                monkeypatch.setattr(target.command_input, "focus", command_focus)
+                _assert_mount_gate_closed(app, evidence, manifest)
+                gate.owner.assert_not_called()
+                assert gate.completed == []
+            finally:
+                gate.release.set()
+            await asyncio.wait_for(gate.initialized.wait(), timeout=5)
+            await pilot.pause()
+            gate.owner.assert_called_once_with()
+            command_focus.assert_called_once_with()
+            assert gate.completed == ["2"]
+            assert target.pending_mount_action is None
+            _assert_released_mount(app)
+            await _assert_ruler_focus_loss(app, pilot, tmp_path, manifest)
+
+    asyncio.run(exercise())
+
+
+def _install_mount_gate(
+    app: scenes.VisualExplorerApp, monkeypatch: pytest.MonkeyPatch
+) -> SimpleNamespace:
+    gate = SimpleNamespace(
+        configured=asyncio.Event(),
+        held=asyncio.Event(),
+        release=asyncio.Event(),
+        initialized=asyncio.Event(),
+        completed=[],
+        owner=Mock(),
+        configure=app._configure_document_scene,
+    )
+    add = app._add_workspace
+    mount = SqlExplorerWorkspace.on_mount
+    finish = app._finish_visual_database_scene
+
+    def add_with_owner() -> SqlExplorerWorkspace:
+        target = add()
+        target.pending_mount_action = gate.owner
+        return target
+
+    async def delayed_mount(workspace: SqlExplorerWorkspace) -> None:
+        if workspace.tab_id == "2":
+            gate.held.set()
+            await gate.release.wait()
+            gate.completed.append(workspace.tab_id)
+        mount(workspace)
+
+    def finish_scene() -> None:
+        assert not app.scene_configured
+        assert app.focused is app.active_workspace.command_input
+        finish()
+        gate.initialized.set()
+
+    # Start the controlled mount only after run_test's own startup completes.
+    monkeypatch.setattr(app, "_configure_document_scene", lambda _scene: gate.configured.set())
+    monkeypatch.setattr(app, "_add_workspace", add_with_owner)
+    monkeypatch.setattr(app, "_finish_visual_database_scene", finish_scene)
+    monkeypatch.setattr(SqlExplorerWorkspace, "on_mount", delayed_mount)
+    return gate
+
+
+def _assert_released_mount(app: scenes.VisualExplorerApp) -> None:
+    assert app.scene_configured
+    assert app.creation_scene_ready
+    assert app.focused is app.active_workspace.command_input
+    assert app._scene_state_ready()
+    trace = app.ruler_trace.snapshot()
+    _assert_scene_initialization(app, {"callback_trace": trace})
+    events = trace["events"]
+    completion = next(
+        event
+        for event in events
+        if event["callback"] == "_finish_added_workspace" and event["phase"] == "after"
+    )
+    restorations = [
+        event
+        for event in events
+        if event["callback"] == "_restore_active_focus" and event["phase"] == "after"
+    ]
+    switch = next(
+        event
+        for event in events
+        if event["callback"] == "_switch_visual_database" and event["phase"] == "before"
+    )
+    assert completion["sequence"] < restorations[0]["sequence"] < switch["sequence"]
+    assert switch["state"]["focused"]["identity"] == id(app.active_workspace.editor)
+    assert not app._visual_workspace_restore_pending
+    assert not app._visual_database_restore_pending
+
+
+def _assert_mount_gate_closed(
+    app: scenes.VisualExplorerApp, evidence: Path, manifest: Path
+) -> None:
+    assert not app.scene_configured
+    assert not app.creation_scene_ready
+    assert not app._scene_state_ready()
+    assert not app._visual_database_switch_started
+    assert not app._visual_workspace_restore_pending
+    assert not app._visual_database_restore_pending
+    assert app.active_workspace.tab_id == "1"
+    assert all(
+        event["callback"] not in {"_switch_visual_database", "_command_database"}
+        for event in app.ruler_trace.snapshot()["events"]
+    )
+    with pytest.raises(RuntimeError, match="not ready for final capture"):
+        sql_explorer_visual_capture._capture_frame(
+            app, "tab-database-change", evidence, manifest, evidence.with_suffix(".png")
+        )
+
+
+@pytest.mark.parametrize("outcome", ["absent", "returned", "replacement", "raised"])
+def test_workspace_mount_hook_preserves_ownership_and_failure(outcome: str) -> None:
+    message = "owned mount action failed"
+    failure = RuntimeError(message)
+    owner = Mock(side_effect=failure if outcome == "raised" else None)
+    queued = []
+    target = SimpleNamespace(
+        tab_id="2",
+        pending_mount_action=None if outcome == "absent" else owner,
+    )
+    app = SimpleNamespace(
+        active_workspace=object(),
+        _add_workspace=lambda: target,
+        _visual_workspace_restore_pending=False,
+    )
+    target.app = SimpleNamespace(
+        _finish_added_workspace=lambda tab_id: queued.append(tab_id),
+    )
+    replacement = Mock()
+    if outcome == "replacement":
+        owner.side_effect = lambda: setattr(target, "pending_mount_action", replacement)
+    scenes.VisualExplorerApp._configure_document_scene(app, "tab-database-change")
+    assert queued == []
+    if outcome == "raised":
+        with pytest.raises(RuntimeError, match=message) as caught:
+            SqlExplorerWorkspace.on_mount(target)
+        assert caught.value is failure
+        assert not app._visual_workspace_restore_pending
+    else:
+        SqlExplorerWorkspace.on_mount(target)
+        assert app._visual_workspace_restore_pending
+    assert queued == ["2"]
+    assert target.pending_mount_action is (replacement if outcome == "replacement" else None)
+    replacement.assert_not_called()
+    if outcome != "absent":
+        owner.assert_called_once_with()
 
 
 def _assert_ruler_workspace(app: scenes.VisualExplorerApp, snapshot: dict[str, Any]) -> None:

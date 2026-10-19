@@ -135,6 +135,7 @@ class VisualExplorerApp(SqlExplorerApp):
         ) = None
         self._directory_scene_initialized = False
         self._visual_database_switch_started = False
+        self._visual_workspace_restore_pending = False
         self._visual_database_restore_pending = False
         super().__init__(VisualSession())
         self.ruler_trace: RulerLifecycleTrace | None = None
@@ -240,8 +241,16 @@ class VisualExplorerApp(SqlExplorerApp):
     def _configure_document_scene(self, scene: str) -> None:
         workspace = self.active_workspace
         if scene == "tab-database-change":
-            self._add_workspace()
-            self.set_timer(0.3, self._switch_visual_database)
+            target = self._add_workspace()
+            previous_action = target.pending_mount_action
+
+            def mounted() -> None:
+                # The workspace consumes this hook after _finish_added_workspace.
+                if previous_action is not None:
+                    previous_action()
+                self._visual_workspace_restore_pending = True
+
+            target.pending_mount_action = mounted
         elif scene == "formatted-sql":
             workspace.editor.text = (
                 "select order_id, revenue from analytics.daily_orders where revenue > 100;\n"
@@ -454,7 +463,10 @@ class VisualExplorerApp(SqlExplorerApp):
     def _restore_active_focus(self) -> None:
         # Delegate the real restoration, including its queued Widget.focus application.
         super()._restore_active_focus()
-        if self._visual_database_restore_pending:
+        if self._visual_workspace_restore_pending:
+            self._visual_workspace_restore_pending = False
+            self.call_later(self._switch_visual_database)
+        elif self._visual_database_restore_pending:
             self._visual_database_restore_pending = False
             self.call_later(self._focus_visual_database_command)
 

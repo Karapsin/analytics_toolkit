@@ -285,7 +285,15 @@ def test_timeout_retains_selector_observation_for_failed_state_and_geometry(
 
 @pytest.mark.parametrize(
     "scene",
-    ["keyboard-multicursor", "editor-command-caret", "new-file", "find-replace", "editor-ready"],
+    [
+        "keyboard-multicursor",
+        "editor-command-caret",
+        "new-file",
+        "connections-searching",
+        "result-success",
+        "find-replace",
+        "editor-ready",
+    ],
 )
 def test_multicursor_retains_one_export_inputs_and_processing_atomically(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, scene: str
@@ -302,7 +310,15 @@ def test_multicursor_retains_one_export_inputs_and_processing_atomically(
         exports.append(svg)
         return svg
 
-    def write_png(raw: str, path: Path, *, framed_svg: str | None = None) -> dict[str, Any]:
+    def write_png(
+        raw: str,
+        path: Path,
+        *,
+        framed_svg: str | None = None,
+        retained_pngs: dict[str, bytes] | None = None,
+    ) -> dict[str, Any]:
+        if retained_pngs is not None:
+            retained_pngs.update(intermediate=b"actual intermediate", final=b"ordinary png")
         renders.append((raw, framed_svg))
         path.write_bytes(b"ordinary png")
         return rasterization
@@ -314,6 +330,14 @@ def test_multicursor_retains_one_export_inputs_and_processing_atomically(
         observations.append((raw, framed, png, rasterization))
         return incomplete
 
+    comparisons = []
+
+    def compare(raw: str, framed: str, png: bytes, **kwargs: Any) -> dict[str, Any]:
+        assert json.loads(geometry.read_text()) == {"ok": True}
+        comparisons.append((raw, framed, png, kwargs))
+        return incomplete
+
+    monkeypatch.setattr(capture, "caret_rasterization_comparisons", compare)
     monkeypatch.setattr(capture, "_scene_ready", lambda _app: True)
     monkeypatch.setattr(
         capture, "_write_evidence", lambda *_args: geometry.write_text('{"ok": true}')
@@ -325,7 +349,7 @@ def test_multicursor_retains_one_export_inputs_and_processing_atomically(
     monkeypatch.setattr(
         capture,
         "rasterization_comparisons",
-        lambda *_args, **_kwargs: pytest.fail("multicursor must not add comparison renders"),
+        lambda *_args, **_kwargs: pytest.fail("caret scenes must not invoke picker comparisons"),
     )
     capture._capture_frame(
         cast("Any", SimpleNamespace(export_screenshot=export)),
@@ -338,19 +362,46 @@ def test_multicursor_retains_one_export_inputs_and_processing_atomically(
     assert exports == [svg]
     assert len(renders) == 1
     assert screenshot.read_bytes() == b"ordinary png"
-    if scene in {"keyboard-multicursor", "editor-command-caret", "new-file"}:
+    if scene in {
+        "keyboard-multicursor",
+        "editor-command-caret",
+        "new-file",
+        "connections-searching",
+        "result-success",
+    }:
         assert observations == [(svg, capture._frame_svg(svg), b"ordinary png", rasterization)]
         assert saved["export_input_evidence"] == incomplete
         assert saved["render_diagnostics"] == {"complete": False}
     else:
         assert not observations
         assert "export_input_evidence" not in saved
-    assert "rasterization_comparisons" not in saved
+    if scene in {"keyboard-multicursor", "editor-command-caret"}:
+        assert comparisons == [
+            (
+                svg,
+                capture._frame_svg(svg),
+                b"ordinary png",
+                {"rasterization": rasterization, "intermediate_png": b"actual intermediate"},
+            )
+        ]
+        assert saved["rasterization_comparisons"] == incomplete
+    else:
+        assert not comparisons
+        assert "rasterization_comparisons" not in saved
     assert not geometry.with_suffix(".tmp").exists()
 
 
 @pytest.mark.parametrize("ready", [False, True])
-@pytest.mark.parametrize("scene", ["keyboard-multicursor", "editor-command-caret", "new-file"])
+@pytest.mark.parametrize(
+    "scene",
+    [
+        "keyboard-multicursor",
+        "editor-command-caret",
+        "new-file",
+        "connections-searching",
+        "result-success",
+    ],
+)
 def test_multicursor_diagnostics_cannot_bypass_capture_gates(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ready: bool, scene: str
 ) -> None:

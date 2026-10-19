@@ -12,12 +12,14 @@ from typing import TYPE_CHECKING, Any
 from xml.etree import ElementTree as ET
 
 from agent_tools.sql_explorer_render_diagnostics import (
+    BORDER_SCENES,
     SCENES,
     render_diagnostics,
     selector_readiness_snapshot,
     terminal_diagnostics,
 )
 from agent_tools.sql_explorer_svg_evidence import (
+    caret_rasterization_comparisons,
     export_input_evidence,
     rasterization_comparisons,
     rasterize_framed_svg,
@@ -51,9 +53,18 @@ def _frame_svg(svg: str) -> str:
     return ET.tostring(frame, encoding="unicode")
 
 
-def _write_png(svg: str, destination: Path, *, framed_svg: str | None = None) -> dict[str, Any]:
-    png, rasterization = rasterize_framed_svg(
-        framed_svg if framed_svg is not None else _frame_svg(svg)
+def _write_png(
+    svg: str,
+    destination: Path,
+    *,
+    framed_svg: str | None = None,
+    retained_pngs: dict[str, bytes] | None = None,
+) -> dict[str, Any]:
+    framed = framed_svg if framed_svg is not None else _frame_svg(svg)
+    png, rasterization = (
+        rasterize_framed_svg(framed)
+        if retained_pngs is None
+        else rasterize_framed_svg(framed, retained_pngs=retained_pngs)
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(png)
@@ -82,7 +93,7 @@ def _capture_frame(
     if not geometry["ok"]:
         message = f"Scene {scene} failed geometry checks: {geometry['assertions']}"
         raise RuntimeError(message)
-    terminal = terminal_diagnostics(app, scene) if scene in SCENES else None
+    terminal = terminal_diagnostics(app, scene) if scene in SCENES | BORDER_SCENES else None
     if terminal is not None and "source_selector" in terminal:
         geometry["selector_readiness"] = selector_readiness_snapshot(app, scene, terminal=terminal)
     svg = app.export_screenshot(title=f"SQL Explorer — {scene}")
@@ -90,7 +101,13 @@ def _capture_frame(
         _write_png(svg, screenshot)
         return
     framed_svg = _frame_svg(svg)
-    rasterization = _write_png(svg, screenshot, framed_svg=framed_svg)
+    caret_scene = scene in {"keyboard-multicursor", "editor-command-caret"}
+    retained: dict[str, bytes] = {}
+    rasterization = (
+        _write_png(svg, screenshot, framed_svg=framed_svg, retained_pngs=retained)
+        if caret_scene
+        else _write_png(svg, screenshot, framed_svg=framed_svg)
+    )
     png = screenshot.read_bytes()
     geometry["render_diagnostics"] = render_diagnostics(app, scene, svg, framed_svg, png, terminal)
     if scene == "database-picker":
@@ -98,9 +115,23 @@ def _capture_frame(
         geometry["rasterization_comparisons"] = rasterization_comparisons(
             svg, framed_svg, png, rasterization=rasterization
         )
-    if scene in {"keyboard-multicursor", "editor-command-caret", "new-file"}:
+    if scene in {
+        "keyboard-multicursor",
+        "editor-command-caret",
+        "new-file",
+        "connections-searching",
+        "result-success",
+    }:
         geometry["export_input_evidence"] = export_input_evidence(
             svg, framed_svg, png, rasterization=rasterization
+        )
+    if caret_scene:
+        geometry["rasterization_comparisons"] = caret_rasterization_comparisons(
+            svg,
+            framed_svg,
+            png,
+            rasterization=rasterization,
+            intermediate_png=retained.get("intermediate"),
         )
     temporary = evidence.with_suffix(".tmp")
     temporary.write_text(json.dumps(geometry, indent=2, sort_keys=True) + "\n", encoding="utf-8")

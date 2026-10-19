@@ -11,6 +11,7 @@ import struct
 import subprocess
 from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
+from pathlib import Path
 from tempfile import TemporaryFile
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -27,6 +28,7 @@ MAX_FONT_FAMILY_LENGTH = 512
 PROBE_TIMEOUT = 3
 RASTER_VIEWPORT = (1280, 800)
 SUPERSAMPLE_FACTOR = 2
+MAX_FONT_FILE_BYTES = 16 * 1024 * 1024
 
 
 def _version(package: str) -> str:
@@ -230,7 +232,9 @@ def supersampling_svg(framed_svg: str) -> str:
     )
 
 
-def rasterize_framed_svg(framed_svg: str) -> tuple[bytes, dict[str, Any]]:
+def rasterize_framed_svg(
+    framed_svg: str, *, retained_pngs: dict[str, bytes] | None = None
+) -> tuple[bytes, dict[str, Any]]:
     """Render at twice the target size, then perform exactly one Lanczos reduction."""
     from PIL import Image  # noqa: PLC0415 - optional agent capture dependency.
 
@@ -250,6 +254,8 @@ def rasterize_framed_svg(framed_svg: str) -> tuple[bytes, dict[str, Any]]:
     if final_dimensions != list(RASTER_VIEWPORT):
         message = f"unexpected_final_dimensions: {final_dimensions}"
         raise ValueError(message)
+    if retained_pngs is not None:
+        retained_pngs.update(intermediate=intermediate, final=png)
     encoded = svg.encode("utf-8")
     return png, {
         "svg": {
@@ -396,6 +402,9 @@ def _add_framing_controls(variants: dict[str, Any], svg: str, framed_svg: str) -
 def _comparison_pngs(variants: dict[str, Any], ordinary_png: bytes) -> int:
     total = 0
     for identity, record in variants.items():
+        if "png" in record:
+            total += record["png"]["byte_length"]
+            continue
         if record["status"] != "pending":
             continue
         try:
@@ -441,14 +450,22 @@ def rasterization_comparisons(
             "sizing": "2560x1600 render; one Lanczos reduction to 1280x800",
             "status": "pending",
         }
+    return _bounded_comparisons(variants, png, font)
+
+
+def _bounded_comparisons(
+    variants: dict[str, Any], png: bytes, font: dict[str, Any]
+) -> dict[str, Any]:
     svg_total = sum(record.get("svg", {}).get("byte_length", 0) for record in variants.values())
     missing = []
-    png_total = 0
+    png_total = sum(record.get("png", {}).get("byte_length", 0) for record in variants.values())
     if svg_total > MAX_SVG_BYTES:
         missing.append("combined_svg_byte_limit")
         for record in variants.values():
             if "svg" in record:
-                record["svg"].pop("content")
+                record["svg"].pop("content", None)
+                if "png" in record:
+                    record["png"].pop("content", None)
                 record.update(status="omitted", reason="combined_svg_byte_limit")
     else:
         png_total = _comparison_pngs(variants, png)
@@ -456,7 +473,7 @@ def rasterization_comparisons(
         missing.append("combined_png_byte_limit")
         for record in variants.values():
             if "png" in record:
-                record["png"].pop("content")
+                record["png"].pop("content", None)
                 record.update(status="omitted", reason="combined_png_byte_limit")
     missing.extend(
         identity + ":" + record["reason"]
@@ -480,3 +497,170 @@ def rasterization_comparisons(
         "comparison_font": font,
         "variants": variants,
     }
+
+
+def _retained_raster_stage(
+    record: dict[str, Any], data: bytes | None, *, ordinary: bool
+) -> dict[str, Any]:
+    result = {**record, "svg": dict(record["svg"])}
+    if data is None:
+        return {**result, "status": "omitted", "reason": "actual_intermediate_unavailable"}
+    result["png"] = {
+        "encoding": "base64",
+        "byte_length": len(data),
+        "sha256": digest(data),
+        "dimensions": None,
+        "reused_ordinary_png": ordinary,
+        "content": base64.b64encode(data).decode("ascii"),
+    }
+    try:
+        result["png"]["dimensions"] = _png_dimensions(data)
+    except ValueError as exc:
+        result.update(status="failed", reason=str(exc))
+    else:
+        result["status"] = "ok"
+    return result
+
+
+def _caret_raster_stages(
+    png: bytes,
+    metadata: dict[str, Any],
+    intermediate: bytes | None,
+    *,
+    ordinary: bool,
+) -> dict[str, Any]:
+    common = {
+        **metadata,
+        "framing": "unchanged target frame in doubled outer viewport",
+        "sizing": "2560x1600 render; one Lanczos reduction to 1280x800",
+        "status": "pending",
+    }
+    # Both records identify the same invocation; reduced output is never rerendered.
+    return {
+        "intermediate": _retained_raster_stage(common, intermediate, ordinary=ordinary),
+        "reduced": _retained_raster_stage(common, png, ordinary=ordinary),
+    }
+
+
+def caret_rasterization_comparisons(
+    svg: str,
+    framed_svg: str,
+    png: bytes,
+    *,
+    rasterization: dict[str, Any],
+    intermediate_png: bytes | None,
+) -> dict[str, Any]:
+    """Retain actual raster stages and declaration-only font controls, without repair."""
+    font = _comparison_font()
+    inputs = _comparison_inputs(svg, framed_svg, font)
+    variants = {
+        "direct_original": inputs["framed_original"],
+        "direct_dejavu": inputs["framed_dejavu"],
+    }
+    original = _caret_raster_stages(png, rasterization, intermediate_png, ordinary=True)
+    variants.update({stage + "_original": record for stage, record in original.items()})
+    control = inputs["framed_dejavu"]
+    if control["status"] == "pending":
+        retained: dict[str, bytes] = {}
+        try:
+            control_png, metadata = rasterize_framed_svg(
+                control["svg"]["content"], retained_pngs=retained
+            )
+            stages = _caret_raster_stages(
+                control_png,
+                metadata,
+                retained.get("intermediate"),
+                ordinary=False,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            stages = {
+                stage: {"status": "failed", "reason": type(exc).__name__ + ": " + str(exc)[:256]}
+                for stage in ("intermediate", "reduced")
+            }
+    else:
+        stages = {
+            stage: {"status": "omitted", "reason": control["reason"]}
+            for stage in ("intermediate", "reduced")
+        }
+    variants.update({stage + "_dejavu": record for stage, record in stages.items()})
+    for identity, record in variants.items():
+        record["font"] = (
+            COMPARISON_FONT if identity.endswith("_dejavu") else "original declarations"
+        )
+        record["stage"] = identity.split("_", 1)[0]
+    result = _bounded_comparisons(variants, png, font)
+    _validate_caret_raster_stages(result)
+    result["font_observations"] = _font_context(svg)
+    result["font_files"] = _observed_font_files(result["font_observations"], font)
+    if not result["font_files"]["complete"]:
+        result["complete"] = False
+        result["missing"].append("font_file_observations_incomplete")
+    return result
+
+
+def _validate_caret_raster_stages(result: dict[str, Any]) -> None:
+    """Reject mismatched stage evidence without replacing or rerendering its bytes."""
+    for identity, record in result["variants"].items():
+        if record["status"] != "ok":
+            continue
+        stage = record["stage"]
+        factor = SUPERSAMPLE_FACTOR if stage == "intermediate" else 1
+        dimensions = [size * factor for size in RASTER_VIEWPORT]
+        observed = record["png"]
+        reason = ""
+        if observed["dimensions"] != dimensions:
+            reason = "unexpected_stage_dimensions"
+        elif stage != "direct":
+            processing_key = "intermediate" if stage == "intermediate" else "final"
+            processing = record["processing"][processing_key]
+            if any(processing[key] != observed[key] for key in ("dimensions", "sha256")):
+                reason = "ordinary_stage_metadata_mismatch"
+        if reason:
+            record.update(status="failed", reason=reason)
+            result["missing"].append(identity + ":" + reason)
+            result["complete"] = False
+
+
+def _observed_font_files(context: dict[str, Any], font: dict[str, Any]) -> dict[str, Any]:
+    """Hash bounded observed files, without claiming renderer-selected identity."""
+    probes = [entry["probe"] for entry in context["system_matches"]] + [font["probe"]]
+    paths = sorted(
+        {
+            row.rsplit("\t", 1)[-1]
+            for probe in probes
+            if probe.get("status") == "ok" and not probe.get("stdout", {}).get("truncated", True)
+            for row in probe["stdout"]["text"].splitlines()
+            if "\t" in row
+        }
+    )
+    records = [_font_file_record(path) for path in paths[:MAX_FONT_REQUESTS]]
+    complete = (
+        bool(records)
+        and len(paths) <= MAX_FONT_REQUESTS
+        and all(record["status"] == "ok" for record in records)
+        and all(
+            probe.get("status") == "ok" and not probe.get("stdout", {}).get("truncated", True)
+            for probe in probes
+        )
+    )
+    return {
+        "complete": complete,
+        "files": records,
+        "omitted_files": max(0, len(paths) - MAX_FONT_REQUESTS),
+        "byte_limit_per_file": MAX_FONT_FILE_BYTES,
+        "renderer_selection": "unobservable; these are system file observations only",
+    }
+
+
+def _font_file_record(path: str) -> dict[str, Any]:
+    record: dict[str, Any] = {"path": path, "status": "unavailable"}
+    try:
+        with Path(path).open("rb") as stream:
+            data = stream.read(MAX_FONT_FILE_BYTES + 1)
+        if len(data) > MAX_FONT_FILE_BYTES:
+            record["reason"] = "font_file_byte_limit"
+        else:
+            record.update(status="ok", byte_length=len(data), sha256=digest(data))
+    except OSError as exc:
+        record["reason"] = type(exc).__name__
+    return record

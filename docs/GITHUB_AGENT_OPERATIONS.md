@@ -456,6 +456,15 @@ newly merged automation paths to main. It reconstructs the merge tree from the a
 dev, validates the recorded squash/merge tree and current-dev ancestry, and rechecks owner authorization
 and signed task binding immediately before a non-force main push, and retains
 failed activation for retry. Independently changed main files block projection.
+The exact infrastructure path `agent_tools/sql_explorer_visual_render.py` also
+belongs to this protected allowlist so the native capture probe can use the same
+reviewed rendering policy on main. Its edits and either endpoint of a rename
+require the same exact-head owner decision. Other `agent_tools` paths and SQL
+Explorer application files gain no promotion permission. Activate the path policy
+before processing a capture PR that needs the helper: the activation ledger does
+not replay completed PR identities. If an older activation omitted the helper,
+retain its ledger and require a separately reviewed, authenticated projection
+with the existing merge, source, authority and main comparison checks.
 Package code stays on dev until an explicit release; historical merges are not
 replayed. The private activation ledger is included in orchestrator evidence.
 

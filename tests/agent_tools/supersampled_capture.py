@@ -33,8 +33,9 @@ def test_outer_viewport_doubles_size_without_reserializing_the_target_frame() ->
     assert ET.tostring(root[0]) == ET.tostring(ET.fromstring(framed))
 
 
+@pytest.mark.parametrize("retain", [False, True])
 def test_rasterization_reduces_once_and_records_exact_inputs_and_hashes(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, retain: bool
 ) -> None:
     monkeypatch.setattr(evidence, "RASTER_VIEWPORT", (8, 5))
     framed = capture._frame_svg(COMPARISON_SVG)
@@ -56,7 +57,9 @@ def test_rasterization_reduces_once_and_records_exact_inputs_and_hashes(
 
     monkeypatch.setattr(evidence, "_render_svg", render)
     monkeypatch.setattr(Image.Image, "resize", observe_resize)
-    png, metadata = evidence.rasterize_framed_svg(framed)
+    retained: dict[str, bytes] = {}
+    png, metadata = evidence.rasterize_framed_svg(framed, retained_pngs=retained if retain else None)
+    assert retained == ({"intermediate": intermediate, "final": png} if retain else {})
     assert calls == [evidence.supersampling_svg(framed)]
     assert reductions == [((16, 10), (8, 5), Image.Resampling.LANCZOS)]
     assert evidence._png_dimensions(png) == [8, 5]
@@ -79,26 +82,38 @@ def test_rasterization_reduces_once_and_records_exact_inputs_and_hashes(
     assert processing["reductions"] == 1
 
 
+@pytest.mark.parametrize("retain", [False, True])
 @pytest.mark.parametrize("preframed", [False, True])
 def test_png_writer_publishes_shared_rasterizer_output_and_returns_its_evidence(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, preframed: bool
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, preframed: bool, retain: bool
 ) -> None:
     framed = capture._frame_svg(COMPARISON_SVG)
     metadata = {"processing": {"final": {"sha256": evidence.digest(PNG)}}}
     calls = []
 
-    def rasterize(svg: str) -> tuple[bytes, dict[str, Any]]:
+    retained: dict[str, bytes] = {}
+
+    def rasterize(
+        svg: str, *, retained_pngs: dict[str, bytes] | None = None
+    ) -> tuple[bytes, dict[str, Any]]:
+        assert retained_pngs is (retained if retain else None)
+        if retained_pngs is not None:
+            retained_pngs.update(intermediate=b"actual intermediate", final=PNG)
         calls.append(svg)
         return PNG, metadata
 
     monkeypatch.setattr(capture, "rasterize_framed_svg", rasterize)
     destination = tmp_path / "screenshots" / "scene.png"
     result = capture._write_png(
-        COMPARISON_SVG, destination, framed_svg=framed if preframed else None
+        COMPARISON_SVG,
+        destination,
+        framed_svg=framed if preframed else None,
+        retained_pngs=retained if retain else None,
     )
     assert result is metadata
     assert calls == [framed]
     assert destination.read_bytes() == PNG
+    assert retained == ({"intermediate": b"actual intermediate", "final": PNG} if retain else {})
 
 
 @pytest.mark.parametrize("failure", ["renderer", "header", "dimensions", "decode", "final"])

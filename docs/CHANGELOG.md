@@ -79,7 +79,9 @@ Generated from package version bumps and recent commit history.
 - Preserve available failed visual capture artifacts through the trusted workflow without changing candidate harnesses or treating unknown stream coverage as complete.
 - Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
 - Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
+- Prevent precommit stage reuse and certification across observed source or toolchain changes
 - Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
+- Protect and promote the exact shared visual-rendering infrastructure helper without admitting adjacent tools or application code.
 
 - Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
 - Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
