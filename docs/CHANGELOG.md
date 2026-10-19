@@ -112,6 +112,7 @@ Generated from package version bumps and recent commit history.
 - Fix SQL Explorer diagnostic regression import ordering and formatting while preserving multicursor, clipboard, caret, and capture coverage.
 - Fix SQL Explorer diagnostic regression import ordering and formatting while preserving all assertions.
 - Preserve mount-ordered SQL Explorer scenes and strict regressions, correct diagnostic test formatting/imports, and retain bounded caret raster stages, explicit malformed-stage failures, and native dialog/results border evidence for GitHub diagnosis.
+- Center SQL filename dialogs with mounted resize regressions, preserve current-dev validation safeguards and Python profiles, and correct diagnostic lint/format findings without weakening assertions.
 
 ## 1.3.12.5 - 2026-10-14
 
