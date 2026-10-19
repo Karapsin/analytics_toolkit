@@ -107,6 +107,7 @@ Generated from package version bumps and recent commit history.
 - Order SQL Explorer tab/database scene focus initialization and compare native styled rows with compositor output while preserving raw diagnostics and production behavior.
 - Fix SQL Explorer diagnostic regression import ordering and formatting while preserving multicursor, clipboard, caret, and capture coverage.
 - Fix SQL Explorer diagnostic regression import ordering and formatting while preserving all assertions.
+- Preserve mount-ordered SQL Explorer scenes and strict regressions, correct diagnostic test formatting/imports, and retain bounded caret raster stages, explicit malformed-stage failures, and native dialog/results border evidence for GitHub diagnosis.
 
 ## 1.3.12.5 - 2026-10-14
 
