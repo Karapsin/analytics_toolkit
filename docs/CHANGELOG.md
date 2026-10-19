@@ -89,6 +89,7 @@ Generated from package version bumps and recent commit history.
 - Preserve native capture failure diagnostics, produced renderer artifacts and safe post-cleanup evidence without weakening glyph or isolation checks.
 - Protect and promote the exact shared visual-rendering infrastructure helper without admitting adjacent tools or application code.
 - Add isolated nonproduction native-capture source validation; exclude Python 3.8 runtime checks while preserving Python 3.9 minimum-dependency coverage.
+- Reconcile resumable source review and isolated readiness regressions with current dev safeguards, preserving checked-renewal receipts and later control barriers through review completion.
 
 ## 1.3.12.5 - 2026-10-14
 
