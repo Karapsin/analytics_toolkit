@@ -87,6 +87,7 @@ Generated from package version bumps and recent commit history.
 - Protect and promote the exact shared visual-rendering infrastructure helper without admitting adjacent tools or application code.
 - Add isolated nonproduction native-capture source validation; exclude Python 3.8 runtime checks while preserving Python 3.9 minimum-dependency coverage.
 - Add a source-pinned contained lifecycle diagnostic for the published PR39 baseline with separate uninstrumented and observed results.
+- Preserve coordinator-held read-only preparation and reject stale closed-PR discovery denials.
 
 ## 1.3.12.5 - 2026-10-14
 
