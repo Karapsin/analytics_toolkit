@@ -223,7 +223,8 @@ def policy_path(path: str) -> bool:
     return (path.startswith((".github/agent/", ".codex/")) or path in {
         ".github/workflows/github-agent.yml", ".github/workflows/agent-dispatch.yml",
         ".github/workflows/agent-visual.yml", ".github/workflows/publish.yml",
-        ".github/required-workflows.json", "agent_tools/machine_signing.py"})
+        ".github/required-workflows.json", "agent_tools/machine_signing.py",
+        "agent_tools/sql_explorer_visual_render.py"})
 
 
 def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True, *,
