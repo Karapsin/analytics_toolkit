@@ -274,9 +274,16 @@ fresh virtual environments with a shared `.tox/pip-cache` download cache.
 Successful stages receive private 24-hour receipts keyed by the exact working
 tree, command definition, toolchain versions, and parallelism. An interrupted
 or corrected run reuses only exact matches and reports each stage as executed,
-reused, or failed. Managed coverage target increases are reported and accepted
-in the same coverage run, while the manual coverage command keeps its
-review-and-rerun behavior. The compatibility `--quick` script mode retains its
+reused, failed, or invalidated. The run keeps its original source and toolchain
+identity: drift observed before or after a stage, during reuse, or before final
+certification stops validation without relabelling earlier receipts. Version 2
+receipts replace legacy receipts, and commit readiness rechecks the toolchain.
+Keep any edits and rerun checks on the resulting tree. This also applies when
+the coverage command accepts a managed target increase that changes tracked
+metadata; the complete pre-commit run must validate the updated tree. Boundary
+checks do not provide an immutable execution sandbox or detect a temporary edit
+that is fully reverted between observations. The manual coverage command keeps
+its review-and-rerun behavior. The compatibility `--quick` script mode retains its
 plain pytest run, but managed pre-commit validation does not duplicate it.
 Check failures include every failed stage, failing pytest
 node IDs, quality-debt increases, architecture overages, and tox environments
