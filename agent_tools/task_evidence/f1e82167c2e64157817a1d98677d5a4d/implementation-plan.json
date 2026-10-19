@@ -1,0 +1,79 @@
+{
+  "schema": "minimal-native-source-validation-stage1-plan/v2",
+  "author": "root (implementation author, not the independent plan reviewer)",
+  "objective": "Obtain honest complete or partial native product capture for the already published exact PR45 subject without production activation, universal admission infrastructure or legacy host candidate execution.",
+  "parent_authority": {
+    "exact_user_requests": [
+      "and once you done - monitor PRs until completion, stop only when ALL of them are merged successfully with dev",
+      "fix any issues on the way",
+      "for \"ALWAYS use reccomended\" let's just spawn \"plan resolver\" agent on RPI which checks that recommended options and if they are aligned with user request -approves them. Also add \"orchestrator\" agent which is spawned every 30 minutes (no more than 1 such agent) IF at least 1 PR is open and  it basically does what you do now: finds issues in rpi agents toolkit, fixes them, etc. still no heavy checks on rpi. but it may edit atk and self host dirs. If nothng to fix - that agent ceases to exist"
+    ],
+    "full_original_context": "/private/tmp/current-pr39-pr43-pr45-questions-and-context-1792391208365967000.json",
+    "independent_scope_assessment": "/private/tmp/pr43-pr45-pr39-minimal-native-source-validation-independent-full-task-assessment-v1.json",
+    "assessment_sha256": "3473adf24a4fccaf8ecb56588a0be90e8e9191ea03cc984d91fcde3f9349d1b2",
+    "session_waiver": "Reviewer and protected policy approval for automation DEV MERGES only; retain CI, provenance, genuine holds. No main/runtime activation permission."
+  },
+  "baseline": {
+    "dev": "dd6f7d62afd035498e151fa405ea6533d16ad411",
+    "revalidate_at_managed_start": true,
+    "immutable_subject_and_transport": "467768b9bed2c90a0dfba85ef2eea6ac6868f8d6",
+    "trusted_transport_hashes": {
+      ".github/agent/capture_isolation.py": "6aa4f93fbf0037a50a04217df8012f51ee5782fceb9e856f129fe1c9391bf440",
+      ".github/agent/capture_sandbox.py": "4dc6c61dc7da17f24fd6d038cfe0865f50085f1de3c330b590f39490a58fefae",
+      ".github/agent/capture_artifact.py": "7a032cfbab17109dc41312d1565a75cca53910bcc68805000a8aba850ac9f89b",
+      "agent_tools/sql_explorer_visual_render.py": "2284b4c7bc162ed0c408ed033c637a3adcd4743cab615aab6ecf44e67fe0ac07"
+    },
+    "publications_and_reviews": "The exact467 full source/security review and actual native synthetic acceptance remain historical evidence only. New driver/workflow require independent source review before dispatch."
+  },
+  "source_scope": [
+    ".github/workflows/tests.yml: add separate manual mode and a bounded source-validation job, preserve ordinary CI behavior and future synthetic probe semantics",
+    ".github/agent/source_validation.py: host-only fixed reviewed transport verifier/invoker and source-validation-role metadata, no candidate imports or subprocess commands other than trusted Git identity/hash reads and the fixed transport entrypoint",
+    "tests/repository/source_validation.py and nearest support if needed: behavioral negative and lifecycle coverage using fake Git/transport boundaries; no docker/network/database execution in unit tests",
+    "docs/GITHUB_AGENT_OPERATIONS.md: narrow operation, honest evidence role, and still-missing future checkpoint publication/receipt capability",
+    "unique version_bump fragment and source/task provenance records as mandated"
+  ],
+  "workflow": {
+    "inputs": {
+      "source_validation": "boolean default false",
+      "source_validation_subject": "string default empty, exact lowercase40 SHA when mode selected"
+    },
+    "selection": "A manual dispatch with either flag or subject nonempty selects only the separate validation path. Guard rejects flag/subject mismatch or both source validation and an independently introduced synthetic-probe flag. It never silently runs ordinary candidate jobs for malformed source-mode inputs.",
+    "ordinary_job_names": "Under source mode skip all ordinary test, SDK, quality and fast jobs with mode-specific display names so skipped jobs cannot masquerade as required normal fast-checks. Normal pull_request/push/default manual behavior remains exact. Preserve a separately introduced probe job as synthetic-only and reject conflicting mode selection.",
+    "job_permissions": "contents:read only, no secrets/App/controller/private signing material; actor must equal repository owner for this first opt-in administrative validation route",
+    "checkouts": "Separate workflow-control exact github.sha checkout, fixed literal467 trusted-transport checkout, and exact subject checkout. All persist-credentials:false; no submodules/LFS/candidate hooks or host installs/imports/tests. Mode input is validated as data before subject selection. No candidate paths can choose a host helper source.",
+    "entry": "Run source_validation.py from the reviewed workflow checkout with python -I, from runner.temp. Verify exact Git HEADs and the fixed four-file transport closure hashes before invoking capture_isolation.py with python -I using its unchanged reviewed CLI. Validate source roots and prevent overlap. Subject source remains untrusted data on the host. The transport receives a separate wrapper-owned0600 GITHUB_OUTPUT file outside candidate/trusted/container-writable/output roots, with a small explicit byte cap. The wrapper parses only a single exact artifact_root assignment and rejects duplicate, unknown, multiline, unsafe or excessive output. Admit only the expected generated atk-visual-<hexuuid> direct child of actual RUNNER_TEMP, with no symlink/hardlink/non-directory/root overlap and ownership/path-component checks. Never fall back to a guessed root when transport suppresses output after unsafe writers. Only the wrapper emits its admitted path to the Actions command file; an independent wrapper-owned source-validation metadata directory can be retained safely when no capture root is admitted. No transport-root files are exposed before this admission.",
+    "environment": "Build an explicit child environment containing only required PATH, RUNNER_TEMP, GITHUB_OUTPUT and repository/run/attempt/CANDIDATE/CANDIDATE_ROOT identities. Do not forward GitHub/App tokens, Git extraheaders/config, proxies, private credentials or uncontrolled Python import variables. The fixed transport handles owned install egress guards, a nonroot install container, network-none rendering, complete streams, uncertainty checks and cleanup.",
+    "budget": "One ubuntu-latest job, 35 minutes maximum, existing transport22-minute alarm plus owned cleanup, no retries-as-pass. No programs/tests/captures/services on Pi.",
+    "evidence": "Upload only wrapper-admitted run-owned fixed safe source-validation artifact roots using actions/upload-artifact always. Retain separate wrapper-owned validation metadata even when capture root is unavailable; in that case retain no guessed capture paths and explicitly report absent/unavailable diagnostics. Preserve complete visual-artifact or honest partial visual-diagnostics, all available isolation ownership/streams/cleanup records, and a pre-upload source-validation manifest binding workflow commit, fixed transport commit+actual hashes, subject commit, repo, run ID/attempt, actual transport exit/status and observed step outcome. Explicitly label final GitHub job/run conclusion and uploaded artifact identities as not yet observed; a pre-upload manifest cannot truthfully contain them. After completion fetch actual final run/job conclusions, artifact IDs/digests and original download identities from authenticated GitHub APIs, retain them as a separate immutable operation/consumer record without rewriting the uploaded original. Explicit false approval/activation fields and distinct role/name; never synthetic-probe, production admission, visual approval, main or runtime receipt. Every46 full PNG/geometry remains subject to independent individual review. Missing/unsafe/incomplete evidence fails closed without truncation-as-success.",
+    "failure_paths": "Bad input, wrong actor/repository/identity, missing or altered fixed transport, root overlap, host verification failure and transport failure all fail. Capture failure preserves the transport's honest diagnostic output. The wrapper must not publish a success manifest on error or claim cleanup it has not observed. Reuse the reviewed transport's own output and collection guarantees; do not invent a second runtime/receiver."
+  },
+  "publication_and_first_operation": {
+    "implementation": "Normal repository MCP start, impact/status, focused tests, unique fragment, complete managed precommit, exact source independent review and signed feature PR to dev. It is infrastructure only: no SQL Explorer production, scene manifest, capture harness content or fixed transport changes; native product/source acceptance is not inferred from its ordinary CI.",
+    "first_dispatch": "Do not dispatch merely because code exists or a session dev merge waiver exists. First verify exact reviewed workflow commit/ref, complete workflow trigger census, actual owner actor/permissions, current subject enrolled SSH signature + full signed task binding, and actual private holds/ownership. Dispatch only the non-production isolated validation job for already published467 under the standing requested diagnostic/fix scope. If those concrete preconditions are not satisfied, retain the exact blocker; never infer main/runtime authorization or fabricate protected owner approval. GitHub documents workflow_dispatch refs as branch or tag names; no exact-SHA dispatch acceptance is claimed from historical feature-branch native runs. A genuine frozen reviewed ref and actual triggering/rerun actor must be verified at the action boundary. Prepare a separate bounded concrete operation binding a create-only content-addressed reserved tag to the reviewed workflow commit under effective no-update/no-delete protection and a complete trigger census; verify actual ref/run resolution. Do not dispatch a mutable PR branch merely after preflight or infer safety from a later run-head check. If the concrete freeze/authority conditions are unavailable, keep the first operation blocked while retaining source implementation; no universal receiver or main activation framework is introduced. Official parameter reference: https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event .",
+    "review": "Retrieve exact run/attempt artifact IDs as original bytes, verify identity/hashes and safe complete extraction, inspect every full PNG individually and preserve all failed geometry/findings. Ordinary CI, source/security review, synthetic native acceptance and full product validation are separate. No source-only current45 plan is declared implementation/publication-ready merely by this feature publication.",
+    "future_checkpoints": "A separate narrowly reviewed managed temporary-source publication operation avoiding automatic legacy capture, plus minimal truthful external receipt import if needed, remains necessary before validating an unpublished future UI checkpoint. Stage1 neither implements nor claims it. It does not abandon the remaining whole parent goal."
+  },
+  "tests": [
+    "Workflow selection truth table: normal events retain required jobs; source opt-in selects only validation; malformed/both-mode inputs fail rather than mint normal fast success; synthetic probe purpose remains unchanged.",
+    "Reject changed/missing trusted closure, wrong actual Git subjects/workflow, path overlap, unsafe input/actor/repo/run identities before candidate execution.",
+    "Invoke only fixed trusted entrypoint, with sanitized explicit environment and exact source role; no candidate code/import/install/test on host.",
+    "Preserve actual transport failure/uncertain diagnostics and output binding, no success/approval on exception or missing artifact, bounded process behavior, cleanup remains owned by unchanged trusted transport.",
+    "No source validation manifest or skipped normal checks can satisfy visual approval, source review, policy approval, production activation or a different head's CI.",
+    "Reject duplicate/oversized/multiline/unexpected output keys, symlink/overlapping/outside or guessed artifact roots; suppressed output must not expose candidate logs. Retain safe wrapper-owned failed metadata only.",
+    "Assert pre-upload manifest has no claimed final GitHub job success or future artifact identity; authenticated completed run/job/artifact metadata is a separate immutable consumer record."
+  ],
+  "non_goals": [
+    "No production main sync or worker restart/activation",
+    "No universal receiver/admission/positive prerequisite framework",
+    "No changes to synthetic probe programs, SQL Explorer/UI/capture harness or old source approvals",
+    "No hidden waiver of genuine CI/security/visual/owner-veto/provenance holds",
+    "No edits to handed-off branches"
+  ],
+  "approval_state": "Pending independent concrete plan review; no feature edits or dispatch performed.",
+  "prior_plan": {
+    "path": "/private/tmp/minimal-native-source-validation-stage1-concrete-plan-v1.json",
+    "sha256": "ac14be2344d6933481486068af72faad253332112dca1dadb5f8c49b97d94b30",
+    "independent_review": "/private/tmp/minimal-native-source-validation-stage1-independent-concrete-plan-review-v1.json",
+    "review_sha256": "d391cc3deef546c1a54ae0cbea93b814fb282b789b319d83216bead6c230b59e"
+  }
+}

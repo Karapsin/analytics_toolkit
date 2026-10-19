@@ -1,0 +1,93 @@
+{
+  "schema": "independent-native-source-validation-stage1-concrete-plan-review/v2",
+  "reviewer": "/root/review_native_source_validation_stage1_plan",
+  "created_at_utc": "2026-10-19T06:51:26.275132+00:00",
+  "decision": "approve_complete_bounded_stage1_implementation_plan",
+  "completeness": "complete",
+  "findings": [],
+  "inputs": [
+    {
+      "path": "/private/tmp/minimal-native-source-validation-stage1-concrete-plan-v2.json",
+      "bytes": 13462,
+      "sha256": "438edf720d6e4c93b7cea99b7f8775838c11b926f981de0c64e9342feedaf66e"
+    },
+    {
+      "path": "/private/tmp/minimal-native-source-validation-stage1-independent-concrete-plan-review-v1.json",
+      "bytes": 10414,
+      "sha256": "d391cc3deef546c1a54ae0cbea93b814fb282b789b319d83216bead6c230b59e"
+    },
+    {
+      "path": "/private/tmp/current-pr39-pr43-pr45-questions-and-context-1792391208365967000.json",
+      "bytes": 227342,
+      "sha256": "f4e092b563c6662dab2e52b99deb353db1d4436e3b22bd3f09aba3f577634c9f"
+    },
+    {
+      "path": "/private/tmp/pr43-pr45-pr39-minimal-native-source-validation-independent-full-task-assessment-v1.json",
+      "bytes": 20717,
+      "sha256": "3473adf24a4fccaf8ecb56588a0be90e8e9191ea03cc984d91fcde3f9349d1b2"
+    }
+  ],
+  "review_scope": {
+    "complete_v2_plan_read": true,
+    "same_full_original_objective_and_fixed_source_context": "Reused unchanged full objective/source/context reading and exact source hashing recorded in v1 report. Read entire13462B v2, not only its diff. No new live repository/runtime assertions are made.",
+    "v1_plan_sha256": "ac14be2344d6933481486068af72faad253332112dca1dadb5f8c49b97d94b30",
+    "v2_plan_sha256": "438edf720d6e4c93b7cea99b7f8775838c11b926f981de0c64e9342feedaf66e",
+    "protected_merge_waiver": "Only this session automation dev-merge review and protected-policy gates; does not waive CI/security/provenance, genuine holds, native or visual validation, main projection or runtime activation."
+  },
+  "v1_findings_resolution": [
+    {
+      "id": "S1",
+      "status": "resolved_by_complete_v2_plan",
+      "basis": "workflow.entry now gives unchanged fixed transport a private wrapper-owned0600 capped command file outside writable roots; accepts exactly one bounded artifact_root assignment; requires actual run-owned direct child atk-visual UUID directory under actual RUNNER_TEMP with no-follow/ownership/nonoverlap checks; refuses malformed/duplicate/unknown/suppressed outputs; wrapper alone emits admitted output. Evidence/failure sections preserve independent safe wrapper metadata without guessed paths, complete-evidence or cleanup claims. Tests cover this boundary.",
+      "implementation_precision": "Directory safety checks must respect normal directory link counts; do not require directories to have st_nlink==1. Reject directory path replacement/symlink/ownership violations and regular-file hardlinks through appropriate descriptor/inode checks. This is implementation precision within the approved plan, not another feature or gate."
+    },
+    {
+      "id": "S2",
+      "status": "resolved_by_complete_v2_plan",
+      "basis": "workflow.evidence now explicitly records actual transport exit/status and observed step outcome only. Final run/job conclusions and artifact identities are labelled not yet observed in the uploaded original. After completion, authenticated actual GitHub run/attempt/job/artifact originals become a separate immutable consumer record. The uploaded original is not rewritten and cannot claim future job success; meaningful tests cover these semantics."
+    }
+  ],
+  "alignment_assessment": {
+    "verdict": "aligned",
+    "reason": "The parent asked for reliable agent-tooling fixes and monitoring to actual successful dev merges. The concrete one-driver/one-manual-mode stage1 infrastructure addresses the demonstrated missing native premerge product-evidence route without making45devmerge/mainactivation a prerequisite for its own premerge visual evidence. It preserves the selected isolation boundary and every actual feature/visual/CI/provenance/ownership requirement. It does not demand a general receiver/admission framework or delegate new authority to model assertions.",
+    "source_feature_can_be_implemented_now": true,
+    "first_operation_can_be_dispatched_from_this_review": false,
+    "no_repeated_owner_preference_required_for_this_plan": true,
+    "stage1_does_not_complete_parent_objective": true
+  },
+  "dispatch_authority_assessment": {
+    "official_source": {
+      "title": "GitHub REST API endpoints for workflows: Create a workflow dispatch event",
+      "url": "https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event",
+      "independently_browsed": true,
+      "supported_ref_semantics": "The current official parameter description names branch or tag refs; no raw40SHA acceptance is inferred.",
+      "required_permission": "The current official endpoint description specifies Actions write permission for fine-grained token dispatch. Actual owner actor/token authorization must be observed at action time; contents:read inside the job is separate."
+    },
+    "plan_v2_resolution": "The complete plan now explicitly refuses mutable-PR-branch preflight plus posthoc run-head checking as a freeze. It retains a separate concrete create-only content-addressed reserved-tag operation with actual effective no-update/no-delete protection, full trigger census, exact reviewed workflow binding and actual triggering/rerun actor verification. That operation needs its own concrete review and current authority evidence. No dispatch is authorized until those conditions genuinely exist.",
+    "why_not_a_source_planning_blocker": "Stage1 source implementation has a well-defined safe boundary and honestly declares dispatch unavailable until separate bounded operation prerequisites hold. Building and independently reviewing this infrastructure does not execute unreviewed source, activate production, claim full45publication readiness or require a universal framework. Deferring the unimplemented operation is truthful sequencing, not a fabricated capability."
+  },
+  "required_implementation_acceptance": [
+    "Revalidate actual current dev at managed MCP start before edits; materially changed source context requires normal plan revalidation.",
+    "Preserve all ordinary event jobs, matrices, aggregate fast-checks, failure propagation and quality/coverage floors; synthetic probe and source mode remain mutually exclusive distinct roles/names. Malformed mode or inadmissible actor/repository must fail explicitly before candidate execution.",
+    "Run only independently reviewed workflow driver and fixed467 host transport closure with sanitized explicit environment, distinct safe roots and exact Git/content verification. No candidate program/import/install/test/render runs on host or Pi.",
+    "Preserve actual fixed transport cleanup/uncertainty and complete-or-honestly-incomplete diagnostic semantics; missing unsafe output cannot produce a success or visual/activation approval.",
+    "Complete meaningful fake-boundary focused tests and mandatory managed precommit, signed task-bound feature publication and fresh complete source/security review. These are still future execution, not passes granted by this plan review.",
+    "Before first operation, satisfy the separately concretely reviewed frozen-ref/trigger/actor/current provenance/task/assignment/hold contract and inspect actual run resolution. Keep blocker if unavailable; do not infer main/runtime permission from automation dev-merge waiver.",
+    "Fetch exact original completed GitHub run/job/attempt/artifact metadata, verify safe original bytes and complete scene membership/identity. Inspect every full application PNG individually and preserve failed geometry/findings. Native synthetic acceptance, source feature publication and diagnostic success cannot substitute for full product acceptance.",
+    "Future unpublished UI checkpoints still need the stated narrow managed no-legacy temporary-source publication and only actually missing strict receipt import support. This report approves neither those future designs nor an implementation-ready full45publication plan.",
+    "Continue all qualifying PRs and repair successors to actual successful dev merges, preserving concurrency10, truthful lifecycle labels, full questions/options/answers, independent resolver/orchestrator policy, notification limits and GitHub-agent-only self_host relevance."
+  ],
+  "authority_limits": {
+    "complete_bounded_stage1_implementation_plan_approved": true,
+    "candidate_implementation_source_or_security_approved": false,
+    "checks_or_native_or_visual_pass": false,
+    "dispatch_or_ref_creation_or_protection_mutation_authorized": false,
+    "main_projection_or_runtime_activation_authorized": false,
+    "owner_policy_approval_or_waiver_expanded": false,
+    "full_PR45_publication_plan_approved": false,
+    "any_PR_merge_or_parent_completion_claimed": false,
+    "repository_or_PR_or_private_control_edits": 0,
+    "Pi_calls_or_candidate_execution": 0,
+    "only_private_report_written_and_official_documentation_read": true
+  }
+}

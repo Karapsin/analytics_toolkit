@@ -61,7 +61,7 @@ pyenv_python() {
 }
 
 export PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache
-# pip 25.0.1 is the final virtualenv seed line that supports Python 3.8.
+# Keep one fixed pip seed across managed virtual environments.
 export VIRTUALENV_PIP=25.0.1
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${repo_root}/.tox/pip-cache}"
 
@@ -84,7 +84,6 @@ run_static_gate() {
 
 configure_python_matrix() {
   require_command pyenv
-  export PYTHON38
   export PYTHON39
   export PYTHON310
   export PYTHON311
@@ -92,7 +91,6 @@ configure_python_matrix() {
   export PYTHON313
   export PYTHON314
 
-  PYTHON38="$(pyenv_python 3.8.18)"
   PYTHON39="$(pyenv_python 3.9.25)"
   PYTHON310="$(pyenv_python 3.10.20)"
   PYTHON311="$(pyenv_python 3.11.15)"
@@ -128,7 +126,7 @@ run_matrix_gate() {
     return 2
   fi
   configure_python_matrix
-  run_stage tox-matrix tox run-parallel -p "${parallelism}" -e py38-latest,py38-min,py39-latest,py310-latest,py310-sdk31,py310-sdk32,py312-latest,py313-latest,py314-latest
+  run_stage tox-matrix tox run-parallel -p "${parallelism}" -e py39-latest,py39-min,py310-latest,py310-sdk31,py310-sdk32,py312-latest,py313-latest,py314-latest
 }
 
 run_quick_gate() {
