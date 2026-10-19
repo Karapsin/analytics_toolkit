@@ -823,6 +823,22 @@ Retries cannot reinstall a retired hold. The host must preserve authenticated
 questions and answers and independently reassess the full amended scope; a new
 plan alone never proves a prerequisite PR merged.
 
+`prepare_coordinator_readonly` prepares only redacted review context for that
+exact retained scope. Ordinary `prepare` still rejects a held PR. Preparation
+checks signed task identity, current dev and private authority before and after
+collecting evidence; the historical hold base is preserved. The paired worker
+uses its bounded `Gate.observe` path and checks the full request and authority
+again before launching the model. A controller without this capability produces
+an internal tooling retry, with no owner question or unrestricted fallback.
+Source publication alone does not deploy this capability.
+
+Discovery revalidates an inventory PR after refresh and before publishing an
+authorization or context rejection. A closed or changed target is discarded;
+context rejection also rechecks before installing a pause. Real current open
+authorization failures remain visible. GitHub state reads and check creation
+are separate requests, so this closes the observed stale-inventory window
+without claiming an atomic operation or rewriting historical check results.
+
 The additive `prerequisite_authority_snapshot` and `renew_coordinator_checked`
 APIs support callers that need a complete, receipt-selected control observation.
 The full version-2 prerequisite review receipt commits every selected peer and

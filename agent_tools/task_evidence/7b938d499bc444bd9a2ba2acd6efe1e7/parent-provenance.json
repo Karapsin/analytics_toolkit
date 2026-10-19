@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "repository": "Karapsin/analytics_toolkit",
+  "parent_pr": 48,
+  "published_head": "573588880ad9d32afbcaa51e78844d0321a06a80",
+  "parent_task_id": "ccd6409cda224ba59927524f54656265",
+  "canonical_bytes": 134364,
+  "canonical_sha256": "3c9a2e63754ef98cf294f57bf9be2be583639381d948c4353e48263d1d1b7787",
+  "archive_tag": "agent-task-evidence/v1/3c9a2e63754ef98cf294f57bf9be2be583639381d948c4353e48263d1d1b7787",
+  "archive_commit": "89337af3cbc72f306e181dd2ffbccaf3ded1c3ee",
+  "archive_tree": "8805b5d769f28e61c2788002324edb62bcb81a2b",
+  "scope": "Complete already-public signed parent context retained verbatim, including historical assistant plans and locators. Historical approvals/evidence do not approve this new source or operations. No private request rows, worker configuration or new private locators are included."
+}
