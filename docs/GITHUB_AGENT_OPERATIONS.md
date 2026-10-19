@@ -82,6 +82,49 @@ guard result; capture acceptance remains false until capture actually completes.
 The upload retains this guard metadata when capture never starts, and includes
 hidden members of safely admitted diagnostics to preserve complete originals.
 
+## Fixed PR39 lifecycle baseline diagnostic
+
+The separate `tests.yml` boolean `lifecycle_diagnostic` selects only two contained
+diagnostic jobs: Python 3.11 with Textual 0.73 and Python 3.13 with Textual 0.89.
+The source is fixed to the published PR39 baseline
+`76eb8481734ec4ffb77d71ce300787caff21b860`; there is no arbitrary command,
+selector, subject, profile or checkpoint input. Its complete public parent task,
+public planning questions/options/replies and source provenance are retained in
+`agent_tools/task_evidence/357a59078b4f423491e915d12ca37061/`.
+
+Publish and independently review the diagnostic source, pass its ordinary CI,
+and actually merge that source to dev first. A subsequent operation requires
+its own concrete review, effective immutable-tag protection and the exact frozen
+workflow identity under `refs/tags/agent-source-validation/v1/<source-sha>`.
+Both original and rerun actors must be the owner. This source change itself
+does not authorize a dispatch, synchronization to main, runtime activation or
+release of PR39's prerequisites.
+
+Candidate installation runs in the existing guarded nonroot container. Test
+execution runs with networking disabled. The host imports no candidate Python
+and never mounts its pristine checkout. Each profile runs the same five fixed
+cases once in a baseline process with reporting only, and once in a separate
+observed process. Observation preserves original calls, results and exceptions,
+but can affect timing; the baseline outcome remains separate. Both fixed Ruff
+commands run after the tests, retaining original failures and full phase streams.
+No assertion, expectation, quality baseline or visual acceptance gate is relaxed.
+
+Artifacts named `pr39-lifecycle-<source>-<run>-<attempt>-py<line>` retain reports,
+bounded lifecycle events, framework/version provenance, original process outcomes,
+stream byte counts/hashes, exact source bindings and cleanup/collection state.
+The joint ceiling is 100 MiB and 256 files: 64 MiB logs, 32 MiB candidate data
+and 4 MiB host metadata. Capacity loss is explicit incompleteness. Upload roots
+are created only after all relevant writers stop and owned containers/resources
+are confirmed absent. Otherwise only the earlier closed guard metadata is
+uploadable. Original job/artifact IDs and final upload conclusions are unknown
+inside the running job and remain null until genuine GitHub API collection.
+
+A failed baseline remains a failed diagnostic even if the observed run passes.
+Complete collection is distinct from test success. These artifacts grant no
+visual approval, prerequisite satisfaction, production activation or ordinary
+`fast-checks`/`agent-review` success. Cause-specific fixes still need a complete
+reviewed plan, normal source review, real CI and all required visual reviews.
+
 ## Isolated capture execution
 
 The capture transport keeps the Actions checkout pristine and copies the exact
