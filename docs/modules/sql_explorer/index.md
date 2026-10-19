@@ -151,8 +151,18 @@ cursor or selection. Buttons, search fields, and completion choices still
 perform their actions. After executing a command,
 focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
 
-The editor and text inputs use steady non-blinking carets. The compact active
-tab uses a dark surface with amber text and always includes its database key.
+The editor uses steady thin carets, including secondary cursors: underlines on
+all in-document cells, including spaces and expanded tabs, and vertical bars only
+on end-of-line or empty-line padding. SQL characters remain
+readable and terminal columns stay aligned, including tabs, wide characters,
+horizontal scrolling, and empty lines. Carets and selections remain visible when
+the command or find input has focus; search matches keep their yellow background
+through caret overlays. In-document carets preserve the original foreground and
+background, including selection and find colors, with no native block colors
+beneath the underline when the editor has focus. End-padding bars preserve the
+existing cell background, including inherited backgrounds. Presentation padding
+never changes the SQL buffer.
+Text inputs retain steady non-blinking carets. The compact active tab uses a dark surface with amber text and always includes its database key.
 The editor displays line numbers, keeps its vertical scrollbar on the right,
 shows the active one-based line and column in its lower-right corner without
 covering the first editor rows, applies SQL syntax
@@ -167,12 +177,31 @@ Ctrl+Left, Ctrl+Right, Tab, Shift+Tab, Enter, Escape, Ctrl+C, Ctrl+Enter, and F5
 Home always moves every cursor to column zero of its current logical line and
 collapses its selection; Ctrl+Home goes to the start of the document. Ctrl+A
 selects the full buffer. Ctrl+Left and Ctrl+Right move every cursor by one word,
-and their Shift variants extend every cursor's independent selection. Shift+Up
-and Shift+Down add a cursor above or below the active cursor. Repeating the key
+and their Shift variants extend every cursor's independent selection.
+Ctrl+Shift+Up and Ctrl+Shift+Down extend
+each existing selection by one logical line, preserving its anchor and intended
+column across short or empty lines. Repeated presses extend across many lines;
+reversing direction shrinks the selection without creating cursors. Clicking in the
+editor chooses a new preferred column, even when the caret stays at the same
+clamped position. Shift+Up and Shift+Down add a cursor above or below the active cursor. Repeating the key
 chains cursors across as many logical lines as needed;
-pressing toward an occupied adjacent line removes that cursor, while at least one
-cursor always remains. Each cursor has an independent selection, and editing or
-pasting applies at every cursor. Escape collapses multiple cursors to the active
+pressing toward an existing cursor at the exact projected position removes it.
+Other positions on that row remain, and at least one cursor always remains.
+Each cursor has an independent selection, and editing or
+pasting applies at every cursor. Copying with multiple cursors retains one
+fragment per selection in document order, including empty selections. If all
+are empty, copying or cutting clears the clipboard and deletes nothing. Paste
+distributes those fragments when
+their count matches the destination cursor count. Otherwise, matching clipboard
+lines are distributed, including text copied outside Explorer; one trailing line
+ending is ignored for this comparison. If neither count matches, each cursor
+receives the whole clipboard. A single cursor receives the joined text. Copying
+elsewhere in Explorer or receiving different clipboard text clears the stored
+fragments. Identical external replacement cannot be detected by text comparison.
+A successful empty system-clipboard read stays empty; only transport failure uses
+the internal fallback. Ctrl+C/Ctrl+V, `cp`/`pst`, cut, and terminal paste share
+these rules. Copying with one unselected cursor retains whole-buffer copy.
+Escape collapses multiple cursors to the active
 one before toggling focus between the editor and command panel. F6 and Shift+F6
 cycle panes explicitly; arrows never switch panes. Tab and Shift+Tab indent or
 unindent selected logical lines. Double-clicking selects a complete SQL word such
@@ -220,6 +249,10 @@ In the editor, Tab is conditional:
 4. If metadata is needed, Tab requests it and applies the same one-or-many rule.
 5. Otherwise, Tab performs normal indentation.
 
+SQL completion menus sit below the active SQL row, or above it when space below
+is limited, and follow scrolling and terminal resizing without covering that row.
+A menu temporarily hidden by layout reappears when there is space again; Escape
+clears its candidates so later layout changes cannot reopen it.
 Completion menus shrink to their remaining matching rows. Catalog, schema,
 table, keyword, and column suggestions all filter locally as the prefix changes.
 
@@ -473,7 +506,9 @@ the editor shows one compact row of 1-based logical column labels, spaced every
 An empty document shows only column 1. All rows share the range of the longest
 row, including its final insertion position. Typing or `mv` can grow that range;
 displaying those columns never pads or changes the text on other rows.
-The ruler follows horizontal scrolling and accounts for tabs and wide characters.
+The ruler and horizontal scrollbar follow the visible columns together, including
+when the terminal is resized or the SQL buffer becomes shorter. The ruler
+accounts for tabs and wide characters.
 
 Absolute `mv` creates missing rows when its numeric destination is beyond the
 document end. One invocation adds at most 100 lines; larger destinations stop
@@ -509,8 +544,8 @@ Enter commands in the lower panel, with or without a leading colon:
 - `keyboard [on|off|toggle]` - report/change editable keyboard mode (F8 toggles)
 - `results switch` - toggle horizontal/vertical results
 - `results expand N`, `results shrink N` - resize in terminal rows/columns
-- `cp` - copy selections in document order, or the whole editor when unselected
-- `pst` - paste the Explorer clipboard once at every cursor or selection
+- `cp` - copy one fragment per cursor in document order, including empty selections; with one unselected cursor, copy the whole editor
+- `pst` - paste clipboard fragments or matching lines in document order, otherwise the full clipboard at every cursor or selection
 - `db DB_KEY` - switch to another valid configured connection
 - `shortcut KEY|reset` - save a run shortcut or restore `Ctrl+Enter`
 - `confirm on|off|toggle` - change and save mutation confirmation
@@ -536,10 +571,21 @@ row. Missing columns add at most 10 spaces per `mv` invocation. Absolute
 selection rows must exist; selection columns and relative navigation clamp at
 boundaries. Relative navigation never changes the document.
 
-Left/Right aligns multiple cursors to the main cursor's logical column without
-wrapping across lines. Short lines clamp the visible caret while preserving
-the intended column for later vertical movement. The active line gutter and
-row/column status values follow only the main cursor, using the focus accent.
+Each cursor moves independently, including distinct positions on the same row.
+Left/Right crosses logical line boundaries; a plain Left/Right or word move
+collapses each selection toward that direction. Short lines clamp the visible
+caret while preserving each cursor's intended column for vertical movement.
+Overlapping selections merge while retaining the primary cursor and direction.
+Typing, pasting, deleting, and indentation form one undoable transaction;
+undo/redo restores every cursor and its intended column. Cursor snapshots follow
+the retained undo/redo history: discarded redo branches and evicted edits release
+their snapshots. Loading replacement text clears the edit history, secondary
+cursors, and remembered columns, leaving one cursor at the start of the new buffer.
+The active line gutter and row/column status values follow only the main cursor,
+using the focus accent.
+Carets underline in-document characters, spaces, and every visible cell of expanded
+tabs. Vertical bars appear only on end-of-line or empty-line padding, so SQL text
+and find highlights remain readable without shifting columns.
 
 Up/Down in the command pane browses session history for that tab. Moving beyond
 the newest entry restores the draft and caret. When completion is open,
@@ -587,11 +633,18 @@ N, Escape, and mouse controls remain available.
 the originating tab's connection key. Enter `table_name` and choose one source:
 `table_schema` provides add/remove column-name and SQL-type rows; `from_sql`
 provides a multiline query field and maps to the function's `sql` argument.
+Source and advanced Boolean selectors keep their selected label and dropdown
+arrow inside one three-row frame. Keyboard focus highlights that frame in amber;
+the label stays readable when the form scrolls or the terminal is resized.
 Type fields offer backend-specific suggestions using Up/Down and Enter,
 while accepting custom type expressions.
 
 The basic form always shows `insert_data`, `skip_if_exists`, and
-`drop_if_exists`, initially False. `insert_data` is enabled only with source SQL.
+`drop_if_exists`, initially False. Checkboxes show `[ ]` for False and `[x]` for
+True, including disabled controls. Each schema row has a visible `x` control to
+remove that column. Form buttons, including removal controls, use a dark surface
+when neutral or disabled, a lighter panel on hover, and amber for keyboard focus
+even under the pointer. `insert_data` is enabled only with source SQL.
 `skip_if_exists` maps to `if_not_exists`; selecting skip clears drop and vice versa.
 Advanced expands source database, partition/order, and backend-specific creation
 settings. Retry controls are omitted; creation uses the function’s retry defaults. Blank advanced settings retain the function defaults;
@@ -621,6 +674,9 @@ case-insensitive substrings. Select an entry to inspect it; **Next SQL** cycles
 through user-visible SQL and actual database submissions. **Previous/Next**
 replace the current page of up to 100 summaries; query details load only for the
 selected action. **Refresh** reloads history. `Ctrl+F` focuses search; Escape closes.
+A failed read shows its warning alone when no entries are available; “No matching
+journal entries” appears only after a warning-free empty read. Record actions stay
+disabled until an entry is available.
 
 **Open in new tab** copies the user-visible query into a new unsaved tab on its
 original connection. For an internal action it copies the selected submission.

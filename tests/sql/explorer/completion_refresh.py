@@ -210,3 +210,32 @@ def test_shift_tab_requests_columns_with_blank_left_cell() -> None:
             assert editor.text == "select 1"
 
     asyncio.run(exercise())
+
+
+def test_hidden_popup_recovers_on_idle_and_explicit_close_stays_closed() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test() as pilot:
+            stub = _install_stub(app)
+            stub.schemas[None] = ("sales", "sandbox")
+            editor = app.active_workspace.editor
+            editor.text = "select * from sa"
+            editor.cursor_location = (0, len(editor.text))
+            await pilot.press("ctrl+space")
+            menu = app.active_workspace.completion_menu
+            assert menu.is_open
+            candidates = menu.suggestions
+            menu.styles.display = "none"
+            assert not menu.is_open
+            editor.on_idle()
+            assert menu.is_open
+            assert menu.suggestions == candidates
+            await pilot.pause()
+            viewport = editor.scrollable_content_region
+            assert viewport.y <= menu.region.y < menu.region.bottom <= viewport.bottom
+            menu.action_close()
+            editor.on_idle()
+            assert not menu.is_open
+            assert menu.suggestions == ()
+
+    asyncio.run(exercise())

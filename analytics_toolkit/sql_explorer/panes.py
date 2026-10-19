@@ -10,6 +10,7 @@ from textual.widgets import Input, OptionList, RichLog
 
 from .command_completion import command_suggestions
 from .editor_actions import completion_text
+from .help_text import help_table
 from .inputs import EditableInput
 
 if TYPE_CHECKING:
@@ -29,15 +30,23 @@ class ResultMessage(RichLog):
     def __init__(self, content: str = "", **kwargs: Any) -> None:
         super().__init__(wrap=True, min_width=1, auto_scroll=False, **kwargs)
         self._message = Text(content)
+        self._help_content: str | None = None
 
     def update(self, content: str | Text) -> None:
+        self._help_content = None
         self._message = content if isinstance(content, Text) else Text(content)
         self.call_after_refresh(self._write_content)
+
+    def update_help(self, content: str) -> None:
+        self.update(content)
+        self._help_content = content
 
     def _write_content(self) -> None:
         self.clear()
         if self._message:
-            self.write(self._message)
+            self.write(
+                help_table(self._help_content) if self._help_content is not None else self._message
+            )
 
     def on_resize(self) -> None:
         # Textual dispatches base-class resize handlers independently; their
