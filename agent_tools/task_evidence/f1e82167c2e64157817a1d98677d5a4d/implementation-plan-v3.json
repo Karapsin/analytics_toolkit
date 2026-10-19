@@ -1,0 +1,59 @@
+{
+  "schema": "concrete-plan/v3",
+  "parent_approved_native_plan": "/private/tmp/minimal-native-source-validation-stage1-concrete-plan-v2.json",
+  "parent_source_review": "/private/tmp/minimal-native-source-validation-stage1-independent-full-source-review-v2.json",
+  "exact_user_correction": "I allow to exclude python 3.8 from all checks",
+  "task_id": "f1e82167c2e64157817a1d98677d5a4d",
+  "task_digest": "c976ffe34436818b892bc594739ab45af03795e3efdace203417e24fabb907f7",
+  "current_branch": "codex/19ac2eeff8284a2f-9e48bab3",
+  "current_base": "71422731e51af15a104b65915873d576bf0024c0",
+  "scope": "Retain complete approved native source-validation implementation; add user-authorized removal of Python3.8 execution from all supported validation entrypoints. Preserve every remaining gate and minimum-dependency coverage by moving the minimum profile toPython3.9.",
+  "changes": [
+    {
+      "paths": [
+        "tox.ini",
+        "release_routines/pre_commit_checks.sh",
+        ".github/workflows/tests.yml"
+      ],
+      "change": "Remove py38-latest and PYTHON38 interpreter setup. Replace py38-min with py39-min everywhere. GitHub normal matrix Python3.9-3.14 pluspy39-min; localmatrix3.9,3.10,3.12-3.14,py39-min plusboth3.10SDK profiles; canonicalcoverage3.11 retained. Toxexplicit py38 base mapping removed. No supported3.8 check entrypoint/recommendation remains."
+    },
+    {
+      "paths": [
+        "constraints/py38-min.txt",
+        "constraints/py39-min.txt",
+        "release_routines/lib/check_minimum_constraints.py",
+        "tests/release_routines/quality/release.py",
+        "tox.ini",
+        ".github/workflows/tests.yml"
+      ],
+      "change": "Rename unchanged exactminimumdependency pins toconstraints/py39-min.txt; updateallconsumers. Minimumdependency staticfloormetadata checker retained and executed undercurrenthost, minimumruntimeprofile+pipcheck nowPython3.9."
+    },
+    {
+      "paths": [
+        "agent_docs/development.md",
+        "agent_tools/README.md",
+        "agent_tools/requirements-mcp.txt",
+        "release_routines/pre_commit_checks.sh"
+      ],
+      "change": "Update checkpolicy/docs and obsoletePython3.8-specific rationale only. Keep existingvirtualenv>=21.1,<21.5 andpip25.0.1 seed stable toavoidunrequestedtoolchainupgrade. No Python3.8 interpreter is provisioned/executed. DeclaredPython>=3.8 package/API/language-compatibilitymetadata andRuff/mypy syntax targets remainunchanged; syntaxanalysis runs onPython3.11 and isnot aPython3.8 execution job."
+    },
+    {
+      "paths": [
+        "tests/agent_tools/mcp/checks.py",
+        "tests/release_routines/quality/release.py"
+      ],
+      "change": "Behavioralregression fakepyenv/faketox verifiesmanagedmatrixworkswithoutanyPython3.8 andrequestsallremainingprofiles inclpy39-min+SDK, no duplicatepy311runtime. Configcontract verifiesGitHub/toxlocalprofilesaligned and3.8absent. RenameobsoletePython38piptestname, retainstages/cache/seed/gate assertions. Existingminimumconstraintstestpointsto renamedfile."
+    },
+    {
+      "paths": [
+        "agent_tools/changelog/",
+        "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/"
+      ],
+      "change": "MCPversion_bump recordnewpolicychange, retainexactusercorrection throughMCPtask_context, fullplan+independentreview artifacts andallprevioushistoricalreviews."
+    }
+  ],
+  "validation": "RunappropriatefocusedMCPchecks, thenallfourmandatoryprecommitstages againstfinaltree. Oldstatic/coverage/artifactsuccessesapplyonlyoldtree; managedtooldecidesreuse. No localintegration orPi programs/tests. Existing matrixpy38 failurecausedmissingpg_config andwasstopped; no waiverorfalsepass. AllremainingCI+quality/source/provenance/visual/authoritygates retained.",
+  "publication": "MCPsignedfeaturePR todev, retainPi handoffownership. Sessionautomationdevmergewaivers only; nomain/runtimeactivation. Continue9prioritymanualdevstability andallqualifyingPRmonitoring.",
+  "status": "Pending independentupdated-complete-plan review beforeedits",
+  "created_epoch": 1792397296.9691288
+}

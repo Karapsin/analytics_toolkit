@@ -53,7 +53,7 @@ def test_precommit_checks_stop_before_later_stages_when_static_gate_fails(
     assert result["result"]["failure_signature"]
 
 
-def test_precommit_emits_stages_and_seeds_python38_compatible_pip() -> None:
+def test_precommit_emits_stages_and_uses_the_pinned_pip_seed() -> None:
     script = (mcp_server.REPO_ROOT / "release_routines" / "pre_commit_checks.sh").read_text(
         encoding="utf-8"
     )
