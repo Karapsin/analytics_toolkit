@@ -81,6 +81,7 @@ Generated from package version bumps and recent commit history.
 - Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
 - Prevent precommit stage reuse and certification across observed source or toolchain changes
 - Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
+- Add a source-pinned purpose-separated capture receiver with truthful bounded transport and immutable retry evidence
 
 ## 1.3.12.5 - 2026-10-14
 

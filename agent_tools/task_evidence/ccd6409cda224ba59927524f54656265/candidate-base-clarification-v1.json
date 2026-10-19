@@ -1,0 +1,15 @@
+{
+  "schema": "capture-receiver-candidate-base-factual-clarification/v1",
+  "purpose": "Resolve an existing wire term using the unchanged actual controller implementation; not source, operation or authority approval",
+  "plan_sha256": "05b6ce5bd5d4adbf84c33efaea781e052d360033a23e1af879a48aa33ef2a0df",
+  "wire_sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba",
+  "baseline_controller_sha256": "4ad12163c313fa3d8a05682081954ebc03ddb01052a65765cc908558572f5e4e",
+  "existing_source": "controller.candidate: git commit-tree -S <tree> -p task[head] -m Temporary visual candidate",
+  "interpretation": "production.authorization.candidate_base is the temporary signed candidate sole parent: the current feature/PR head task[head]. It is not the reviewed dev base task[base]. The independent plan/Gate proof retains and checks reviewed dev base separately; no new optional field, source selection, authority, or weakened base check is introduced.",
+  "required_remote_guard": "Before candidate checkout/execution require actual temporary ref candidate identity and commit sole parent candidate_base, actual PR current head=candidate_base and base.ref=dev. Source/App/nonce/receipt/Gate/current-request bindings remain mandatory; remote parent check cannot establish private reviewed dev-base/Gate authority.",
+  "meaningful_tests": [
+    "Candidate sole parent feature head passes only source/metadata guard under authentic synthetic App fixture; distinct dev base remains in local prepared/task and genuine plan/Gate bindings.",
+    "Wrong/extra/no parent, PR head change, wrong dev target or source move rejects before candidate execution; no coercion of devbase into candidate_base."
+  ],
+  "status": "Proposed factual clarification awaiting independent confirmation before final production guard implementation; no runtime or publication action."
+}

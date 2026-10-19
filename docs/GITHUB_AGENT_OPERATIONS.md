@@ -33,6 +33,72 @@ redacted, paged model view. Publication, runtime activation and actual request
 assignment require their own verified gates; merging this exporter alone does
 not establish that a blocked agent has received the evidence.
 
+## Source-pinned capture receiver
+
+The additive `agent-visual-profile` workflow uses protocol
+`capture-receiver-v2` and an immutable create-only
+`agent-visual-source-v1-<trusted-head>` tag. Its early source guard and trusted
+preflight run before either candidate checkout or the fixed synthetic sentinel.
+Production and `receiver-rehearsal` envelopes have disjoint authorization kinds;
+rehearsal can never grant product visual approval or satisfy the full prerequisite.
+The normative closed receiver schema remains version 2.
+Before creating the fixed sentinel container, the receiver compares the resolved
+image to the exact accepted 3.11 native profile. A changed official tag resolution
+remains pending and triggers owned cleanup; the image is never silently replaced.
+
+This source feature does not implement the positive worker Gate or the genuine
+source-deployment operation. Host publication entrypoints remain explicitly
+pending until those separately reviewed live authority/CAS boundaries exist.
+Schema-valid private files, protocol metadata and synthetic component tests do
+not enable them. Exact source review, CI, protected policy, dev merge, whole
+controller admission, main projection, source-tag deployment and actual GitHub
+positive/negative receiver acceptance remain distinct requirements.
+
+The new bounded transport retains actual HTTP status, response completeness and
+immutable request/response originals. Complete documented API refusals are
+different from uncertain potentially applied mutations: timeouts, 408/5xx and
+malformed or incomplete successful responses retain uncertainty. Reconciliation
+appends supported comment/ref identities without rewriting the original outcome.
+Nested comment/App/ref fields are checked before identity access; malformed201
+identities still retain an immutable uncertain receipt with exact status and body.
+A created source ref must return the fixed repository/tag URL; an included commit
+URL must also match. Returned URLs are compared only. Malformed discovery metadata
+remains incomplete, and a later separate exact readback can append a match without
+rewriting the original uncertainty or issuing another POST.
+Run-title and named-step navigation cannot authenticate exact receiver originals
+or the persisted POST interval, so positive run reconciliation remains incomplete.
+The genuine host cross-run intent-history boundary is also absent in this unit;
+the bridge retains bounded navigation and refuses before POST. A new ephemeral
+root, comment or nonce never clears an earlier uncertain action. These are explicit
+remaining source-operation prerequisites, not implemented authority.
+Every unresolved attempt is discovery-only; no automatic second POST, mutable
+main fallback, invented run ID or owner-upload loop is permitted. All metadata,
+pagination, time and retention limits apply jointly. Tokens remain outside
+containers and artifacts. Credential-tainted body/header observations retain exact
+private originals and hashes outside the upload root, with safe delivery-pending
+metadata. Read interruptions, unexpected backend failures and response-close
+failures pass through the same retention path before safe pending propagation;
+known status and exact bounded prefixes are preserved without exception text.
+Failed private persistence is explicitly unavailable and cannot claim a retained
+original or accepted action. Private runner-local retention does not claim off-run delivery. One joint
+16MiB accounting object covers HTTP, source/fixture reads, immutable records and
+indexes. It conservatively prepays retained copies, carries usage between workflow
+steps and reserves bounded capacity-pending metadata. Before HTTP can take effect,
+the actual canonical request is charged and the full bounded response-header,
+body and finalization allowance is held. Settlement releases only unused capacity;
+unexpected settlement failure records safe observed identity as unavailable and
+pending, without acceptance or replay. Limits can make collection
+incomplete and never grant acceptance. Every rehearsal execution/stream/resource
+writer starts outside the upload root; only descriptor/hash-verified stopped
+streams are copied into it. Even a failed quarantine cannot expose a live writer
+to upload. The monitor must be the complete unique open nonPR `agent:state` issue.
+Ordinary legacy scalar operations retain their API.
+
+The retained PR45 App comment fixture supplies authentic server-owned identity
+fields but is a PR comment, so it is a negative for the non-PR monitor guard.
+Positive monitor, Git and Docker fixtures are explicitly synthetic; they prove
+component behavior and do not claim native/GitHub runtime or visual acceptance.
+
 ## Scheduling and status
 
 Airflow owns `github_agent_reconcile` (every minute) and

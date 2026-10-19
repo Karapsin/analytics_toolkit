@@ -223,6 +223,7 @@ def policy_path(path: str) -> bool:
     return (path.startswith((".github/agent/", ".codex/")) or path in {
         ".github/workflows/github-agent.yml", ".github/workflows/agent-dispatch.yml",
         ".github/workflows/agent-visual.yml", ".github/workflows/publish.yml",
+        ".github/workflows/agent-visual-profile.yml",
         ".github/required-workflows.json", "agent_tools/machine_signing.py"})
 
 
@@ -704,6 +705,58 @@ def candidate(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> s
     command("git", "push", "origin", f"{commit}:refs/heads/{branch}", cwd=work)
     dispatch(gh, "visual", commit)
     return commit
+
+
+def prepare_profile_visual_candidate(gh: GitHub, task: dict[str, Any], artifact: Path,
+                                     work: Path) -> dict[str, Any]:
+    """Inert local signed preparation; no ref push, dispatch or PR execution."""
+    if not isinstance(task, dict) or gh.repository != "Karapsin/analytics_toolkit" or any(
+            not isinstance(task.get(key), str) or SHA.fullmatch(task[key]) is None
+            for key in ("head", "base")) or not isinstance(task.get("task_digest"), str) or re.fullmatch(
+            r"[0-9a-f]{64}", task["task_digest"]) is None:
+        raise ValueError("Invalid prepared capture task")
+    if command("git", "-c", "core.hooksPath=/dev/null", "rev-parse", "HEAD", cwd=work) != task["head"]:
+        raise ValueError("Prepared capture checkout/head mismatch")
+    patch = artifact / "fix.patch"
+    raw = patch.read_bytes()
+    if raw.strip():
+        command("git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+                "apply", "--index", str(patch.resolve()), cwd=work)
+    tree = command("git", "write-tree", cwd=work)
+    commit = command("git", *signing_options(), "commit-tree", "-S", tree, "-p", task["head"],
+                     "-m", "Temporary visual candidate", cwd=work)
+    if SHA.fullmatch(tree) is None or SHA.fullmatch(commit) is None:
+        raise RuntimeError("Invalid local signed candidate identity")
+    return {"candidate": commit, "head": task["head"], "base": task["base"], "tree": tree,
+            "patch_sha256": hashlib.sha256(raw).hexdigest(), "task_digest": task["task_digest"]}
+
+
+def publish_profile_visual_candidate(gh: GitHub, prepared: dict[str, Any],
+                                     envelope: dict[str, Any], admission_ref: dict[str, Any]) -> None:
+    """No schema-valid file can substitute for the absent live production Gate."""
+    receiver = trusted_module("capture_receiver")
+    receiver.validate_envelope(receiver.D.canonical(envelope), expected_purpose="production",
+                               now=int(time.time()))
+    fields = {"candidate", "head", "base", "tree", "patch_sha256", "task_digest"}
+    if (not isinstance(prepared, dict) or set(prepared) != fields
+            or any(not isinstance(prepared[key], str) or SHA.fullmatch(prepared[key]) is None
+                   for key in ("candidate", "head", "base", "tree"))
+            or any(not isinstance(prepared[key], str) or re.fullmatch(r"[0-9a-f]{64}", prepared[key]) is None
+                   for key in ("patch_sha256", "task_digest"))
+            or gh.repository != receiver.T.REPOSITORY or any(prepared[key] != envelope["authorization"][field]
+            for key, field in (("candidate", "candidate"), ("head", "candidate_base"), ("patch_sha256", "patch_sha256"), ("task_digest", "task_digest")))):
+        raise ValueError("Prepared candidate/admission mismatch")
+    receiver.require_live_host_boundary("production")
+
+
+def dispatch_profile_request(gh: GitHub, envelope: dict[str, Any],
+                             admission_ref: dict[str, Any]) -> None:
+    receiver = trusted_module("capture_receiver")
+    receiver.validate_envelope(receiver.D.canonical(envelope), expected_purpose="production",
+                               now=int(time.time()))
+    if gh.repository != receiver.T.REPOSITORY:
+        raise ValueError("Unsupported profile repository")
+    receiver.require_live_host_boundary("production")
 
 
 def verify_visual(artifact: Path, patch: Path, task: dict[str, Any]) -> None:
