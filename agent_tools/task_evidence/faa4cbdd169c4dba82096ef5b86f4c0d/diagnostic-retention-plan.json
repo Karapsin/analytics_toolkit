@@ -1,0 +1,30 @@
+{
+  "scope": "Fresh successor to PR43: retain per-phase native renderer diagnostics before assertions and safe failure evidence, then use actual matrix evidence to diagnose glyph failure. Does not claim native glyph cause or activation.",
+  "parent": {
+    "repository": "Karapsin/analytics_toolkit",
+    "pr": 43,
+    "head": "e2abd24c66142af59cafffeb99118234e748c2ac",
+    "task_original": "/private/tmp/pr43-complete-private-task-original-6c55-v1.json",
+    "task_archive": "/private/tmp/pr43-exact-canonical-task-archive-b265-v1.json",
+    "parent_objective_path": "agent_tools/task_evidence/6c55e5559ba84e33a764d78025e0e315/parent-objective.json",
+    "failed_native_run": 39126299210
+  },
+  "ownership": "No PR43 correction request in actual guarded read-only capture1792339972432291000; root fresh branch, never edit handed-off43; #9 remains Pi-owned running plan-review.",
+  "changes": [
+    "Carry complete PR43 source and historical task evidence forward from exact original published head using fresh source successor provenance; no stale approval transfer.",
+    "CAPTURE records initial phase/toolchain, network probes, full font inventory/hash, exact SVG/options and PNG if produced before glyph assertion. Complete failure JSON records original exception and incomplete stage in finally. Preserve nonempty-glyph and image geometry assertions.",
+    "Host records firewall counters in finally before cleanup if owned guards were installed, counter errors explicitly incomplete without replacing original error. Assert counter success only on successful full probe.",
+    "After cleanup collect existing inert probe-evidence on failure as well as success ONLY when cleanup_complete, no containers/uncertain operations, and no unquarantined writer. Missing directory recorded honestly; collection failures remain failed.",
+    "Meaningful service-free regressions execute actual contained CAPTURE program under controlled font/network/render boundaries; real PNGs prove all-black rejection preserves bytes and facts, success nonblack retains geometry and fields, renderer exception/no-font/network failure records stage+exception. Host-main fake boundaries test safe failed-install/capture retention and every unsafe cleanup gate.",
+    "Keep native workflow isolated, synthetic-only and opt-in, ordinary fastchecks unmodified, no host candidate execution/Pi tests. Preserve all source isolation guards and original raw artifacts.",
+    "Obtain fresh native3.11/3.13 diagnostic run on published successor, then independently plan cause-specific rendering fix from actual facts; no unsupported guessed family selection."
+  ],
+  "validation": [
+    "focused managed agent_tools/repository checks",
+    "mandatory complete managed precommit",
+    "independent full plan and source review",
+    "exact-head CI and native3.11/3.13 observations",
+    "protected delegated exact-head approval only after real required gates; activation separate"
+  ],
+  "out_of_scope": "No SQL Explorer source/visual harness/scene manifest edits, no public APIs/deps/packageversion changes, no owner preference or upload."
+}

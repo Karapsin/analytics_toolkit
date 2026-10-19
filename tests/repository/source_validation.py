@@ -15,28 +15,24 @@ from tests.repository._support.source_validation import layout, load, product, r
 from tests.repository._support.workflow_scalars import expression, job_scalars
 
 
-@pytest.mark.parametrize(
-    ("event", "mode", "subject"),
-    [
-        ("push", False, ""),
-        ("pull_request", False, ""),
-        ("workflow_dispatch", False, ""),
-        ("push", True, "a" * 40),
-        ("workflow_dispatch", True, "a" * 40),
-        ("workflow_dispatch", False, "a" * 40),
-        ("workflow_dispatch", True, ""),
-    ],
-)
-def test_source_mode_is_exclusive_and_cannot_mint_skipped_normal_fast_success(event, mode, subject):
+@pytest.mark.parametrize("event", ["push", "pull_request", "workflow_dispatch"])
+@pytest.mark.parametrize("mode", [False, True])
+@pytest.mark.parametrize("subject", ["", "a" * 40, "invalid"])
+@pytest.mark.parametrize("probe", [False, True])
+def test_dispatch_modes_cannot_mint_skipped_normal_fast_success(event, mode, subject, probe):
     jobs = job_scalars(REPO_ROOT / ".github/workflows/tests.yml")
     selected = event == "workflow_dispatch" and (mode or bool(subject))
-    arguments = {"event": event, "mode": mode, "subject": subject}
+    probe_selected = event == "workflow_dispatch" and probe and not selected
+    arguments = {"event": event, "mode": mode, "subject": subject, "probe": probe}
     assert bool(expression(jobs["source-validation"]["if"], **arguments)) is selected
+    assert bool(expression(jobs["visual-isolation-probe"]["if"], **arguments)) is probe_selected
     for job in ("fast-checks", "tests", "sdk-conformance", "quality"):
-        assert bool(expression(jobs[job]["if"], **arguments)) is not selected
+        assert bool(expression(jobs[job]["if"], **arguments)) is not (selected or probe_selected)
         name = expression(jobs[job]["name"], **arguments)
         if selected:
             assert name.startswith("Source-validation-only")
+        elif probe_selected:
+            assert name.startswith("Probe-only")
         elif job == "fast-checks":
             assert name == "fast-checks"
         elif job == "quality":

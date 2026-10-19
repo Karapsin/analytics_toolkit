@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      visual_isolation_probe:
+        description: Run the separately reviewed native container infrastructure probe
+        type: boolean
+        default: false
       source_validation:
         description: Capture a published source subject in the reviewed native containers
         type: boolean
@@ -85,10 +89,46 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  visual-isolation-probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && !(inputs.source_validation || inputs.source_validation_subject != '')
+    name: Visual isolation infrastructure Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Probe reviewed container infrastructure without host candidate execution
+        id: probe
+        working-directory: ${{ runner.temp }}
+        env:
+          PROBE_PYTHON: ${{ matrix.python }}
+        run: python -I "$GITHUB_WORKSPACE/.github/agent/capture_isolation_probe.py"
+      - name: Retain complete or explicitly incomplete native probe evidence
+        if: always() && steps.probe.outputs.artifact_root != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-isolation-infrastructure-${{ matrix.python }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.probe.outputs.artifact_root }}/isolation-diagnostics/
+            ${{ steps.probe.outputs.artifact_root }}/probe-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
   fast-checks:
-    name: ${{ github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only fast checks' || 'fast-checks' }}
+    name: ${{ github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only fast checks' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only fast checks' || 'fast-checks' }}
     needs: [tests, sdk-conformance, quality]
-    if: always() && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != ''))
+    if: always() && !(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != ''))
     runs-on: ubuntu-latest
     steps:
       - name: Require every fast validation job
@@ -101,8 +141,8 @@ jobs:
           PY
 
   tests:
-    if: "!(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != ''))"
-    name: ${{ github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only tests' || matrix.env_name }}
+    if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != ''))"
+    name: ${{ github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only tests' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only tests' || matrix.env_name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -161,8 +201,8 @@ jobs:
         run: python -m pip freeze
 
   sdk-conformance:
-    if: "!(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != ''))"
-    name: ${{ github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only SDK' || matrix.env_name }}
+    if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != ''))"
+    name: ${{ github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only SDK' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only SDK conformance' || matrix.env_name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -178,8 +218,8 @@ jobs:
       - run: tox -e ${{ matrix.env_name }}
 
   quality:
-    if: "!(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != ''))"
-    name: ${{ github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only quality' || 'quality gates' }}
+    if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != ''))"
+    name: ${{ github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only quality' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only quality checks' || 'quality gates' }}
     runs-on: ubuntu-latest
 
     steps:

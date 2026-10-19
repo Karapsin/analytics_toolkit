@@ -84,14 +84,18 @@ class _Expression(ast.NodeVisitor):
         return self.generic_visit(node)
 
 
-def expression(text, *, event, mode=False, subject=""):
+def expression(text, *, event, mode=False, subject="", probe=False):
     text = text.strip()
     if text.startswith("${{") and text.endswith("}}"):
         text = text[3:-2].strip()
     text = text.replace("&&", " and ").replace("||", " or ").replace("!(", "not (")
     context = {
         "github": {"event_name": event},
-        "inputs": {"source_validation": mode, "source_validation_subject": subject},
+        "inputs": {
+            "source_validation": mode,
+            "source_validation_subject": subject,
+            "visual_isolation_probe": probe,
+        },
         "matrix": {"env_name": "matrix-profile"},
     }
     return _Expression(context).visit(ast.parse(text, mode="eval").body)
