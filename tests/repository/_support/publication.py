@@ -36,7 +36,7 @@ class GitHub:
         self.comments.append({"body": body, "user": {"type": "Bot", "login": "app"}})
 
     def api(self, path: str, method: str = "GET", data: Any = None) -> Any:
-        if path.endswith("/labels") and method == "POST":
+        if path.endswith("/labels") and method in {"POST", "PUT"}:
             self.pr["labels"] = [{"name": x} for x in data["labels"]]
         if method == "DELETE":
             self.pr["labels"] = []

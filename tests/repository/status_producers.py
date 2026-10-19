@@ -309,7 +309,7 @@ def test_internal_work_projection_uses_one_snapshot_during_amendment_transfer(
         assert db.execute("SELECT count(*) FROM feature_amendments").fetchone()[0] == 0
 
 
-@pytest.mark.parametrize("method", ["DELETE", "POST"])
+@pytest.mark.parametrize("method", ["PUT"])
 @pytest.mark.parametrize("timing", ["before", "after"])
 def test_attention_arriving_during_each_phase_mutation_wins(
     control: Any,
@@ -343,7 +343,7 @@ def test_reentrant_owner_producer_converges_without_file_lock_deadlock(control: 
 
     def incoming(path: str, operation: str) -> None:
         nonlocal fired
-        if operation == "POST" and not fired:
+        if operation == "PUT" and not fired:
             fired = True
             control.hold_correction(gh, gh.pr)
 
@@ -359,7 +359,7 @@ def test_changed_head_or_state_aborts_without_invented_attention(control: Any, c
     gh.pr["labels"].append({"name": control.PAUSED})
 
     def changed(path: str, operation: str) -> None:
-        if operation == "DELETE":
+        if operation == "PUT":
             if change == "head":
                 gh.pr["head"]["sha"] = "b" * 40
             else:
@@ -368,7 +368,7 @@ def test_changed_head_or_state_aborts_without_invented_attention(control: Any, c
     gh.after = changed
     assert not control.reconcile_label(gh, copy.deepcopy(gh.pr), approval_required=False)
     assert control.PAUSED not in names(gh)
-    assert not any(operation == "POST" for path, operation in gh.mutations)
+    assert not any(operation in {"DELETE", "POST"} for path, operation in gh.mutations)
 
 
 def test_issue_label_endpoint_refreshes_the_callers_metadata(control: Any) -> None:
@@ -380,14 +380,14 @@ def test_issue_label_endpoint_refreshes_the_callers_metadata(control: Any) -> No
 
 
 @pytest.mark.parametrize("already_absent", [True, False])
-def test_delete_errors_require_fresh_authenticated_absence(
+def test_uncertain_replacement_requires_fresh_authenticated_convergence(
     control: Any, already_absent: bool
 ) -> None:
     gh = ProducerGitHub()
     original = gh.api
 
     def api(path: str, method: str = "GET", data: Any = None) -> Any:
-        if method == "DELETE":
+        if method == "PUT":
             if already_absent:
                 original(path, method, data)
             message = "Persistent permission error"
@@ -409,7 +409,7 @@ def test_failed_post_retries_without_changing_authority(control: Any) -> None:
     original = gh.api
 
     def api(path: str, method: str = "GET", data: Any = None) -> Any:
-        if method == "POST":
+        if method == "PUT":
             message = "Network unavailable"
             raise RuntimeError(message)
         return original(path, method, data)
@@ -419,7 +419,7 @@ def test_failed_post_retries_without_changing_authority(control: Any) -> None:
     with pytest.raises(RuntimeError, match="Network"):
         controller.GitHub.label(gh, 1, acquire=True)
     assert authority(control) == before
-    assert names(gh) == {"feature"}
+    assert names(gh) == {"feature", "agent:reviewing"}
     gh.api = original
     controller.GitHub.label(gh, 1, acquire=True)
     assert names(gh) == {"feature", "agent:writing"}
