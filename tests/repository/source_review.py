@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import copy
+from contextlib import closing
 from typing import Any
 
 import pytest
 
+from tests.repository._support.coordinator_authority import Case
 from tests.repository.github_agent import checks, controller, owned_pr
 from tests.repository.review_control import control as control  # noqa: PLC0414
 
@@ -79,6 +81,48 @@ class GitHub:
     def comment(self, number: int, body: str) -> None:
         assert number == 1
         self.comments.append({"body": body, "user": {"type": "Bot"}})
+
+
+def test_source_review_preserves_checked_renewal_and_later_control_barriers(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = Case(tmp_path, monkeypatch)
+    controls = case.controls
+    assert case.renew()["status"] == "committed"
+    later_hold = dict(case.scope["binding"], revision=8)
+    controls.hold_coordinator(case.gh, case.pr, later_hold)
+
+    def authority_rows() -> dict[str, list[tuple[Any, ...]]]:
+        queries = {
+            "checked": "SELECT * FROM coordinator_checked_renewals ORDER BY rowid",
+            "renewals": "SELECT * FROM coordinator_renewals ORDER BY rowid",
+            "holds": "SELECT * FROM coordinator_holds ORDER BY rowid",
+            "corrections": "SELECT * FROM corrections ORDER BY rowid",
+        }
+        with closing(controls.connect()) as db:
+            return {
+                name: [tuple(row) for row in db.execute(query)] for name, query in queries.items()
+            }
+
+    before = authority_rows()
+    assert len(before["checked"]) == 1
+    assert len(before["corrections"]) == 1
+    assert controls.coordinator_held(case.gh, case.pr)
+
+    receipt = assignment(controls)
+    assert role.blocks_merge(controls, owned_pr(), TASK["base"])
+    assert authority_rows() == before
+    role.finish(controls, case.gh.repository, TASK, receipt, "approve")
+
+    assert role.current(controls, case.gh.repository, 1) is None
+    assert role.completed(controls, case.gh.repository, TASK, receipt, "approve")
+    assert authority_rows() == before
+    assert controls.coordinator_held(case.gh, case.pr)
+    assert controls.correction(
+        case.gh.repository, 1, case.pr["head"]["sha"], case.scope["own"]["task_digest"]
+    )
+    current_pr = dict(owned_pr(), head=case.pr["head"])
+    assert role.blocks_merge(controls, current_pr, TASK["base"])
 
 
 def test_incomplete_and_legacy_results_cannot_invent_rejection() -> None:

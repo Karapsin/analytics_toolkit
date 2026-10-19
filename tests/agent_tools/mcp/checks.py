@@ -53,7 +53,7 @@ def test_precommit_checks_stop_before_later_stages_when_static_gate_fails(
     assert result["result"]["failure_signature"]
 
 
-def test_precommit_emits_stages_and_seeds_python38_compatible_pip() -> None:
+def test_precommit_emits_stages_and_uses_the_pinned_pip_seed() -> None:
     script = (mcp_server.REPO_ROOT / "release_routines" / "pre_commit_checks.sh").read_text(
         encoding="utf-8"
     )
@@ -204,6 +204,7 @@ def test_precommit_stage_receipt_requires_current_tree_toolchain_command_and_tim
     now = 1_000_000.0
     monkeypatch.setattr(mcp_server.time, "time", lambda: now)
     receipt = {
+        "format_version": 2,
         "fingerprint": "tree",
         "toolchain_fingerprint": "tools",
         "command_fingerprint": mcp_server._precommit_command_fingerprint(command),
@@ -212,6 +213,13 @@ def test_precommit_stage_receipt_requires_current_tree_toolchain_command_and_tim
 
     assert mcp_server._precommit_stage_receipt_is_current(
         receipt,
+        fingerprint="tree",
+        toolchain_fingerprint="tools",
+        command=command,
+    )
+    legacy = {key: value for key, value in receipt.items() if key != "format_version"}
+    assert not mcp_server._precommit_stage_receipt_is_current(
+        legacy,
         fingerprint="tree",
         toolchain_fingerprint="tools",
         command=command,

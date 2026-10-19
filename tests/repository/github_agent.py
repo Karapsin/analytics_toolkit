@@ -34,12 +34,8 @@ def test_integration_failure_does_not_gate_dev_merge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
-    pr = {
-        "number": 9,
-        "mergeable": True,
-        "labels": [],
-        "base": {"repo": {"full_name": "owner/repo"}},
-    }
+    pr = owned_pr()
+    pr.update(mergeable=True, labels=[])
     assert controller.ready(pr, checks(), "base", 17)
 
 
@@ -234,7 +230,18 @@ def test_only_owner_and_own_repair_bot_are_trusted() -> None:
     assert controller.trusted(pr, "owner/repo")
 
 
-def test_policy_approval_is_owner_only_exact_head_and_covers_renames(monkeypatch: Any) -> None:
+@pytest.mark.parametrize(
+    ("filename", "previous"),
+    [
+        ("notes.md", ".github/agent/controller.py"),
+        ("notes.md", "agent_tools/sql_explorer_visual_render.py"),
+        ("agent_tools/sql_explorer_visual_render.py", "notes.md"),
+        ("agent_tools/sql_explorer_visual_render.py", ""),
+    ],
+)
+def test_policy_approval_is_owner_only_exact_head_and_covers_renames(
+    monkeypatch: Any, filename: str, previous: str
+) -> None:
     class GitHub:
         repository = "owner/repo"
 
@@ -243,9 +250,7 @@ def test_policy_approval_is_owner_only_exact_head_and_covers_renames(monkeypatch
 
         def pages(self, path: str) -> list[dict[str, Any]]:
             if "/files?" in path:
-                return [
-                    {"filename": "notes.md", "previous_filename": ".github/agent/controller.py"}
-                ]
+                return [{"filename": filename, "previous_filename": previous}]
             return self.comments
 
     gh = GitHub()

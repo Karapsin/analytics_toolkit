@@ -40,6 +40,7 @@ from release_routines.lib.project_metadata import load_project
 DEFAULT_INDEX_DIR = docs_assistant.DEFAULT_INDEX_DIR
 CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "precommit_check.json"
 PRECOMMIT_STAGE_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "precommit_stages.json"
+PRECOMMIT_RECEIPT_VERSION = 2
 RELEASE_CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "release_check.json"
 TOOL_LOG_DIR = Path(DEFAULT_INDEX_DIR) / "tool_logs"
 GITHUB_WATCH_DIR = Path(DEFAULT_INDEX_DIR) / "github_checks"
@@ -298,6 +299,26 @@ class _FingerprintError(RuntimeError):
             "stderr": str(self.result.get("stderr", "")).strip(),
             "stdout": str(self.result.get("stdout", "")).strip(),
             "message": str(self),
+        }
+
+
+class _PrecommitContextError(_FingerprintError):
+    def __init__(self, expected: dict[str, Any], observed: dict[str, str]) -> None:
+        self.expected = {key: expected[key] for key in observed}
+        self.observed = observed
+        RuntimeError.__init__(
+            self,
+            "Source or validation toolchain changed during pre-commit; "
+            "preserve changes and rerun checks.",
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "phase": "checks",
+            "code": "context_changed",
+            "message": str(self),
+            "expected": self.expected,
+            "observed": self.observed,
         }
 
 
@@ -1373,7 +1394,8 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
         result_data["coverage_target_changes"] = coverage_changes
     if level == "precommit":
         try:
-            fingerprint = _working_tree_fingerprint(root_path)
+            context = execution["precommit_context"]
+            fingerprint = _validated_precommit_fingerprint(root_path, context)
         except _FingerprintError as exc:
             return _tool_output(
                 "run_checks",
@@ -1387,7 +1409,12 @@ def run_checks(  # noqa: PLR0913 - public MCP input shape is intentionally expli
                     "Fix the git fingerprinting failure, then rerun run_checks(level='precommit')."
                 ],
             )
-        _record_precommit_success(root_path, fingerprint, command_results)
+        _record_precommit_success(
+            root_path,
+            fingerprint,
+            command_results,
+            toolchain_fingerprint=context["toolchain_fingerprint"],
+        )
         result_data["precommit_fingerprint"] = fingerprint
 
     return _tool_output(
@@ -1416,6 +1443,13 @@ def _execute_check_commands(
         }
 
     for command_index, command in enumerate(commands):
+        context_error = _precommit_context_error(root, context)
+        if context_error:
+            return {
+                "command_results": command_results,
+                "stage_reports": stage_reports,
+                "fingerprint_error": context_error,
+            }
         stage = str(command.get("stage") or f"command-{command_index + 1}")
         receipt = _reusable_precommit_stage(context, stage, command)
         if receipt:
@@ -1442,25 +1476,68 @@ def _execute_check_commands(
                 "failed_result": result,
                 "failed_command_index": command_index,
             }
-        if context is not None:
-            fingerprint, fingerprint_error = _try_working_tree_fingerprint(root)
-            if fingerprint_error:
-                return {
-                    "command_results": command_results,
-                    "stage_reports": stage_reports,
-                    "fingerprint_error": fingerprint_error,
-                }
-            context["fingerprint"] = fingerprint
-            receipt = {
-                "fingerprint": fingerprint,
-                "toolchain_fingerprint": context["toolchain_fingerprint"],
-                "command_fingerprint": _precommit_command_fingerprint(command),
-                "completed_at": time.time(),
-                "elapsed_seconds": stage_elapsed,
+        context_error = _finish_precommit_stage(root, context, command, stage_reports[-1])
+        if context_error:
+            return {
+                "command_results": command_results,
+                "stage_reports": stage_reports,
+                "fingerprint_error": context_error,
             }
-            _record_precommit_stage_success(root, stage, receipt)
-            context["state"] = _load_precommit_stage_state(root)
-    return {"command_results": command_results, "stage_reports": stage_reports}
+    return {
+        "command_results": command_results,
+        "stage_reports": stage_reports,
+        "precommit_context": context,
+    }
+
+
+def _finish_precommit_stage(
+    root: Path,
+    context: dict[str, Any] | None,
+    command: dict[str, Any],
+    report: dict[str, Any],
+) -> _FingerprintError | None:
+    if context is None:
+        return None
+    error = _precommit_context_error(root, context)
+    if error:
+        report["status"] = "invalidated"
+        return error
+    receipt = {
+        "format_version": PRECOMMIT_RECEIPT_VERSION,
+        "fingerprint": context["fingerprint"],
+        "toolchain_fingerprint": context["toolchain_fingerprint"],
+        "command_fingerprint": _precommit_command_fingerprint(command),
+        "completed_at": time.time(),
+        "elapsed_seconds": report["elapsed_seconds"],
+    }
+    _record_precommit_stage_success(root, report["stage"], receipt)
+    context["state"] = _load_precommit_stage_state(root)
+    return None
+
+
+def _precommit_context_error(
+    root: Path,
+    context: dict[str, Any] | None,
+) -> _FingerprintError | None:
+    if context is None:
+        return None
+    fingerprint, error = _try_working_tree_fingerprint(root)
+    if error:
+        return error
+    observed = {
+        "fingerprint": str(fingerprint),
+        "toolchain_fingerprint": _precommit_toolchain_fingerprint(root),
+    }
+    if any(context[key] != value for key, value in observed.items()):
+        return _PrecommitContextError(context, observed)
+    return None
+
+
+def _validated_precommit_fingerprint(root: Path, context: dict[str, Any]) -> str:
+    error = _precommit_context_error(root, context)
+    if error:
+        raise error
+    return str(context["fingerprint"])
 
 
 def _precommit_execution_context(
@@ -4042,7 +4119,8 @@ def _precommit_stage_receipt_is_current(
     if age_seconds < 0 or age_seconds > PRECOMMIT_STAGE_TTL_SECONDS:
         return False
     return (
-        receipt.get("fingerprint") == fingerprint
+        receipt.get("format_version") == PRECOMMIT_RECEIPT_VERSION
+        and receipt.get("fingerprint") == fingerprint
         and receipt.get("toolchain_fingerprint") == toolchain_fingerprint
         and receipt.get("command_fingerprint") == _precommit_command_fingerprint(command)
     )
@@ -4066,11 +4144,15 @@ def _record_precommit_success(
     root: Path,
     fingerprint: str,
     command_results: list[dict[str, Any]],
+    *,
+    toolchain_fingerprint: str | None = None,
 ) -> None:
     state_path = root / CHECK_STATE_FILE
     state_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
+        "format_version": PRECOMMIT_RECEIPT_VERSION,
         "fingerprint": fingerprint,
+        "toolchain_fingerprint": (toolchain_fingerprint or _precommit_toolchain_fingerprint(root)),
         "recorded_at": date.today().isoformat(),
         "commands": [
             {
@@ -4108,6 +4190,14 @@ def _verify_precommit_success(root: Path) -> dict[str, Any]:
             "message": "Recorded pre-commit check fingerprint does not match the current tree.",
             "recorded_fingerprint": recorded,
             "current_fingerprint": current,
+        }
+    if state.get("format_version") != PRECOMMIT_RECEIPT_VERSION or state.get(
+        "toolchain_fingerprint"
+    ) != _precommit_toolchain_fingerprint(root):
+        return {
+            "ok": False,
+            "message": "Pre-commit record is legacy or its validation toolchain changed; "
+            "rerun checks.",
         }
     return {
         "ok": True,

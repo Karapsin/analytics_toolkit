@@ -1,0 +1,41 @@
+{
+  "kind": "trusted-render-helper-fixed-main-promotion-concrete-plan-v1",
+  "starting_user_prompt": "implement it on your own if orchestator is not doing that",
+  "scope": "New independently reviewed feature/PR to dev; never edit handed-off PR45. Extend the existing protected automation path policy by ONE exact infrastructure file agent_tools/sql_explorer_visual_render.py. No new prefix, package/UI/promoted product code, capture/renderer changes or gate relaxation.",
+  "startup": "Fresh mandatory prepare_start ec8c5c82ee2d3f37 clean dev; change_impact, required development and agent_tools README read; no implementation or feature branch yet.",
+  "source_facts": {
+    "dev": "f66a80ebe4b3c28dbca17fbc58c2d6ffe464bb01",
+    "current45": "467768b9bed2c90a0dfba85ef2eea6ac6868f8d6",
+    "native_acceptance_review": "877a2eab49fb6506c9acfb6e454a81308e30e4bb2659caab0ef90f1032053ca4",
+    "helper_sha256": "2284b4c7bc162ed0c408ed033c637a3adcd4743cab615aab6ecf44e67fe0ac07",
+    "mechanism": "controller.policy_path is the shared exact-head protected authorization and automation_promotion allowlist. automation_promotion.run filters both rename endpoints with it; project rejects every endpoint outside it, compares current main to previous dev, stages exact merged regular blobs and checks main CAS. Current fixed path not included: projected probe may import an absent/stale helper on main."
+  },
+  "implementation": [
+    "Add only the literal exact agent_tools/sql_explorer_visual_render.py to controller.policy_path fixed path set. Keep existing prefixes and all current exact protected paths unchanged. No basename/prefix/path normalization widening. This makes later helper-only PRs protected as appropriate for trusted execution.",
+    "Add meaningful existing-policy and real temporary-Git projection regressions: exact helper authorized while sibling, nested, suffix, similar basename, package/UI and arbitrary agent_tools paths denied; exact regular helper from reviewed merge can be projected while unrelated package/UI/tools files remain byte-identical; independently edited main helper refuses replacement; rename endpoint protection remains exercised through actual authorization/file inventory path. Use existing patterns, fakes and disposable Git only.",
+    "Update docs/GITHUB_AGENT_OPERATIONS.md to state this single fixed trusted-renderer helper exception and retained independent exact-head owner/main CAS requirements; add unique feature fragment through version_bump. Do not change AGENTS.md, packaging/README/package version or SQL Explorer/harness/scenes.",
+    "Before edits use managed git_workflow start/new task. Preserve full authenticated parent task9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14 and chronological correction/new-task identity, not generic prompt alone. Retain source/provenance outside v1 context fields. Run workflow_status before/after, focused+all mandatory precommit, fresh independent full source review, explicit managed commit/push/handoff. No candidate source/test/render onPi."
+  ],
+  "deployment_sequence": [
+    "This plan approves source implementation only. New protected PR must pass fresh independent exact-head source/alignment review, ordinary CI and authentic delegated owner policy decision under standing user authorization. No posted approval before all required gates.",
+    "Before any activation verify actual dev merge and exact checked/authenticated head, existing main and previous-dev contents and final source equality; activate only approved automation paths with existing trusted projection mechanism and enrolled signature. Preserve all unrelated main paths and normal nonforce CAS.",
+    "The currently active worker875 and planned426 proof/controller pin b59 must be revalidated against the actual new trusted controller before operational use. Existing completedv7 remains immutable. Do not mutate or retarget its helper, replay completion, erase pauses or claim a source merge is runtime compatibility. Any necessary new source/catalogue compatibility record and installation needs fresh independent concrete operation review and full evidence/capacity/CAS/naturaldrain/held+ordinary health gates.",
+    "Only after the exact fixed path policy is actually active may the capture-isolation projection claim that the shared renderer is in its trusted transitive closure. PR45 main activation still requires its actual reviewed dev merge, exact-head policy/source/CI/native acceptance and all current authority conditions. Do not manually copy helper or UI/package files to main or invent a positive contract."
+  ],
+  "retained_parent_obligations": "All ATK and GitHub-agent self_host PRs/successors through actual successful dev merges. PR9 underlines diagnostics preserve settled full feature; PR10 actual9merge/ancestry; PR39 full implementable plan, tests/source/46fullPNG gates, true capture/main/runtime prerequisites; PR37/15 actual39dependency. Concurrency10, truthful exclusive labels inclwriting, fullQ/options/A, authenticGithub/TG replies, independent recommended-planresolver, singleton30minorchestrator with idleexit, sparseTGnotifications, security/provenance/veto/cancel/credential/exactheadholds remain.",
+  "source_hashes": {
+    ".github/agent/controller.py": "4ad12163c313fa3d8a05682081954ebc03ddb01052a65765cc908558572f5e4e",
+    ".github/agent/automation_promotion.py": "eda982dc05d5e27d76a0b66eb7c364de4e726f7fc8d33633b72c42caedf54f27",
+    "tests/repository/automation_promotion.py": "7f40b1eb5f6ff71833e15527c3e43a0f8eb1b6f98ecc71089fa697e802be6527"
+  },
+  "not_claimed": [
+    "source approval",
+    "tests passing",
+    "PR creation or merge",
+    "protected decision",
+    "main promotion",
+    "worker deployment or compatibility",
+    "positive capture prerequisite satisfaction",
+    "parent completion"
+  ]
+}
