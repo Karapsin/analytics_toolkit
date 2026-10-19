@@ -84,7 +84,8 @@ class _Expression(ast.NodeVisitor):
         return self.generic_visit(node)
 
 
-def expression(text, *, event, mode=False, subject="", probe=False):
+# Preserve explicit existing keyword inputs and the one closed diagnostic mode.
+def expression(text, *, event, mode=False, subject="", probe=False, lifecycle=False):  # noqa: PLR0913
     text = text.strip()
     if text.startswith("${{") and text.endswith("}}"):
         text = text[3:-2].strip()
@@ -95,6 +96,7 @@ def expression(text, *, event, mode=False, subject="", probe=False):
             "source_validation": mode,
             "source_validation_subject": subject,
             "visual_isolation_probe": probe,
+            "lifecycle_diagnostic": lifecycle,
         },
         "matrix": {"env_name": "matrix-profile"},
     }

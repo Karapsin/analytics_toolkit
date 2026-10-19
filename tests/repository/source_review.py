@@ -91,6 +91,27 @@ def test_source_review_preserves_checked_renewal_and_later_control_barriers(
     assert case.renew()["status"] == "committed"
     later_hold = dict(case.scope["binding"], revision=8)
     controls.hold_coordinator(case.gh, case.pr, later_hold)
+    reason = "Later source finding requires correction."
+    changes = "Preserve checked renewal and the later coordinator hold."
+    assert controls.require_correction(
+        case.gh.repository,
+        case.pr["number"],
+        case.pr["head"]["sha"],
+        case.scope["own"]["task_digest"],
+        reason,
+        changes,
+        expected=None,
+    )
+    correction = controls.correction_snapshot(case.gh.repository, case.pr["number"])
+    assert correction is not None
+    assert {key: correction[key] for key in ("repository", "number", "head", "digest")} == {
+        "repository": case.gh.repository,
+        "number": case.pr["number"],
+        "head": case.pr["head"]["sha"],
+        "digest": case.scope["own"]["task_digest"],
+    }
+    assert correction["reason"] == reason
+    assert correction["changes"] == changes
 
     def authority_rows() -> dict[str, list[tuple[Any, ...]]]:
         queries = {
@@ -118,9 +139,11 @@ def test_source_review_preserves_checked_renewal_and_later_control_barriers(
     assert role.completed(controls, case.gh.repository, TASK, receipt, "approve")
     assert authority_rows() == before
     assert controls.coordinator_held(case.gh, case.pr)
-    assert controls.correction(
+    retained = controls.correction(
         case.gh.repository, 1, case.pr["head"]["sha"], case.scope["own"]["task_digest"]
     )
+    assert retained == {"reason": reason, "changes": changes}
+    assert controls.correction_snapshot(case.gh.repository, case.pr["number"]) == correction
     current_pr = dict(owned_pr(), head=case.pr["head"])
     assert role.blocks_merge(controls, current_pr, TASK["base"])
 

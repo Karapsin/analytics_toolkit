@@ -143,6 +143,11 @@ decision identities and correction-row compare-and-set; newer findings and
 owner/coordinator holds remain authoritative. Source-review tables are additive
 in the existing control database; review initialization and completion preserve
 checked-renewal receipts, correction records and later coordinator holds.
+Ordinary preparation keeps its existing prompt unless a compatible worker selects
+source protocol 1. Coordinator read-only preparation keeps the ordinary context
+without beginning a source review or acquiring writer authority. Coexistence
+regressions create a concrete later correction through the control API before
+checking that review completion preserves its identity, contents and merge block.
 Legacy five-field verdicts cannot establish source completeness. The separately reviewed worker adapter supports
 only the pinned approved legacy controller closure during bootstrap, retaining
 its host merge exclusion until the complete independent result is reconciled.
