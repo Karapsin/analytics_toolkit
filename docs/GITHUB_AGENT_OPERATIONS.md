@@ -33,6 +33,98 @@ redacted, paged model view. Publication, runtime activation and actual request
 assignment require their own verified gates; merging this exporter alone does
 not establish that a blocked agent has received the evidence.
 
+## Native source validation before production activation
+
+The separate `tests.yml` source-validation mode captures an already published
+exact subject through the fixed reviewed native container transport. It does not
+execute subject installs, imports, tests or rendering on the runner host. Ordinary
+CI remains required; the synthetic infrastructure probe retains its separate
+purpose. No capture programs or checks run on the Pi.
+
+The workflow control must be reviewed and frozen at
+`refs/tags/agent-source-validation/v1/<workflow-sha>`. First establish effective
+no-update/no-delete protection, create-only publication, complete workflow-trigger
+review and actual owner dispatch authority through a separately reviewed concrete
+operation. Merely publishing this feature or approving a dev merge supplies none
+of those operational facts. The job checks both the original and rerun actor,
+the exact workflow identity, separate checkout roots and the fixed transport's
+source hashes. All checkouts disable persisted credentials; candidate containers
+receive no repository write, App or private controller credentials.
+
+After those real preconditions are satisfied, dispatch the registered `tests.yml`
+workflow from that frozen ref with `source_validation=true` and
+`source_validation_subject=<exact-published-sha>`. Malformed or conflicting mode
+inputs fail; source-mode skipped jobs cannot supply normal `fast-checks` success.
+[GitHub dispatch refs are branch or tag names](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
+Bare-SHA dispatch is not assumed.
+
+The metadata and capture artifacts have distinct `source-validation-*` names.
+The transport's private output is admitted before exposing a run-owned artifact
+root. Unavailable or unsafe roots retain only safe wrapper metadata. Successful
+transport evidence includes every manifest scene's geometry and full 1280x800
+PNG, with independent individual image verdicts still pending. Failure evidence
+remains partial or unavailable as observed. The pre-upload manifest records the
+actual transport and step result; final GitHub job/run conclusions and artifact
+IDs/digests must be obtained after completion and retained separately without
+rewriting the uploaded original. These artifacts grant no visual approval,
+production admission, main projection, runtime activation or acceptance for a
+different source head.
+
+This first mode can diagnose the already published subject. Validating an
+unpublished future UI checkpoint still needs a narrowly reviewed managed
+temporary-source publisher without automatic legacy capture, plus any minimal
+honest external receipt support required by its consumer. Those capabilities
+and the production capture activation remain separate pending work.
+
+The pre-check emits owned metadata even when an invalid actor, mode or frozen ref
+stops execution before subject checkout. A successful pre-check records only its
+guard result; capture acceptance remains false until capture actually completes.
+The upload retains this guard metadata when capture never starts, and includes
+hidden members of safely admitted diagnostics to preserve complete originals.
+
+## Fixed PR39 lifecycle baseline diagnostic
+
+The separate `tests.yml` boolean `lifecycle_diagnostic` selects only two contained
+diagnostic jobs: Python 3.11 with Textual 0.73 and Python 3.13 with Textual 0.89.
+The source is fixed to the published PR39 baseline
+`76eb8481734ec4ffb77d71ce300787caff21b860`; there is no arbitrary command,
+selector, subject, profile or checkpoint input. Its complete public parent task,
+public planning questions/options/replies and source provenance are retained in
+`agent_tools/task_evidence/357a59078b4f423491e915d12ca37061/`.
+
+Publish and independently review the diagnostic source, pass its ordinary CI,
+and actually merge that source to dev first. A subsequent operation requires
+its own concrete review, effective immutable-tag protection and the exact frozen
+workflow identity under `refs/tags/agent-source-validation/v1/<source-sha>`.
+Both original and rerun actors must be the owner. This source change itself
+does not authorize a dispatch, synchronization to main, runtime activation or
+release of PR39's prerequisites.
+
+Candidate installation runs in the existing guarded nonroot container. Test
+execution runs with networking disabled. The host imports no candidate Python
+and never mounts its pristine checkout. Each profile runs the same five fixed
+cases once in a baseline process with reporting only, and once in a separate
+observed process. Observation preserves original calls, results and exceptions,
+but can affect timing; the baseline outcome remains separate. Both fixed Ruff
+commands run after the tests, retaining original failures and full phase streams.
+No assertion, expectation, quality baseline or visual acceptance gate is relaxed.
+
+Artifacts named `pr39-lifecycle-<source>-<run>-<attempt>-py<line>` retain reports,
+bounded lifecycle events, framework/version provenance, original process outcomes,
+stream byte counts/hashes, exact source bindings and cleanup/collection state.
+The joint ceiling is 100 MiB and 256 files: 64 MiB logs, 32 MiB candidate data
+and 4 MiB host metadata. Capacity loss is explicit incompleteness. Upload roots
+are created only after all relevant writers stop and owned containers/resources
+are confirmed absent. Otherwise only the earlier closed guard metadata is
+uploadable. Original job/artifact IDs and final upload conclusions are unknown
+inside the running job and remain null until genuine GitHub API collection.
+
+A failed baseline remains a failed diagnostic even if the observed run passes.
+Complete collection is distinct from test success. These artifacts grant no
+visual approval, prerequisite satisfaction, production activation or ordinary
+`fast-checks`/`agent-review` success. Cause-specific fixes still need a complete
+reviewed plan, normal source review, real CI and all required visual reviews.
+
 ## Isolated capture execution
 
 The capture transport keeps the Actions checkout pristine and copies the exact
@@ -70,6 +162,21 @@ properties. The probe uses synthetic data and grants no SQL Explorer visual
 approval. Protected exact-head review/approval and authorized main activation
 remain separate requirements; scene geometry and every full-PNG verdict remain
 mandatory for SQL Explorer repairs.
+
+Native probe failure artifacts retain per-phase observations even when an import,
+install, network check or rendering assertion fails. Capture records its actual
+renderer versions and invocation, full font inventory and inspection results,
+exact SVG, produced PNG and geometry/color observations before asserting glyph
+presence. The phase record preserves the original exception and traceback;
+unexecuted stages remain incomplete. Default renderer options and the nonempty
+glyph assertion stay unchanged, so diagnostic retention does not imply native
+acceptance or establish a font-selection cause.
+
+Available probe files are collected after failed runs only when cleanup succeeded,
+all owned containers are absent, no resource mutation is uncertain and upload
+writers are safe. Missing or unsafe evidence remains a failed/incomplete result.
+Owned firewall counters are sampled before cleanup even after a phase failure;
+counter failures are recorded separately from the original error.
 
 ## Scheduling and status
 
@@ -465,6 +572,15 @@ newly merged automation paths to main. It reconstructs the merge tree from the a
 dev, validates the recorded squash/merge tree and current-dev ancestry, and rechecks owner authorization
 and signed task binding immediately before a non-force main push, and retains
 failed activation for retry. Independently changed main files block projection.
+The exact infrastructure path `agent_tools/sql_explorer_visual_render.py` also
+belongs to this protected allowlist so the native capture probe can use the same
+reviewed rendering policy on main. Its edits and either endpoint of a rename
+require the same exact-head owner decision. Other `agent_tools` paths and SQL
+Explorer application files gain no promotion permission. Activate the path policy
+before processing a capture PR that needs the helper: the activation ledger does
+not replay completed PR identities. If an older activation omitted the helper,
+retain its ledger and require a separately reviewed, authenticated projection
+with the existing merge, source, authority and main comparison checks.
 Package code stays on dev until an explicit release; historical merges are not
 replayed. The private activation ledger is included in orchestrator evidence.
 
@@ -706,6 +822,57 @@ reviewed successor, requiring the exact previous binding and a later revision.
 Retries cannot reinstall a retired hold. The host must preserve authenticated
 questions and answers and independently reassess the full amended scope; a new
 plan alone never proves a prerequisite PR merged.
+
+`prepare_coordinator_readonly` prepares only redacted review context for that
+exact retained scope. Ordinary `prepare` still rejects a held PR. Preparation
+checks signed task identity, current dev and private authority before and after
+collecting evidence; the historical hold base is preserved. The paired worker
+uses its bounded `Gate.observe` path and checks the full request and authority
+again before launching the model. A controller without this capability produces
+an internal tooling retry, with no owner question or unrestricted fallback.
+Source publication alone does not deploy this capability.
+
+Discovery revalidates an inventory PR after refresh and before publishing an
+authorization or context rejection. A closed or changed target is discarded;
+context rejection also rechecks before installing a pause. Real current open
+authorization failures remain visible. GitHub state reads and check creation
+are separate requests, so this closes the observed stale-inventory window
+without claiming an atomic operation or rewriting historical check results.
+
+The additive `prerequisite_authority_snapshot` and `renew_coordinator_checked`
+APIs support callers that need a complete, receipt-selected control observation.
+The full version-2 prerequisite review receipt commits every selected peer and
+branch; its digest must match the persisted own hold. The snapshot retains all
+selected rows, including historical rows and explicit absence, from holds,
+renewals, pauses, vetoes, approvals, amendments, corrections and both feature
+enrollment tables. Raw SQLite types and JSON text are preserved. Unsupported
+schema, triggers, excess data, busy writers and expired metadata budgets stay
+operationally pending. These APIs never create or migrate the database; normal
+trusted `connect` performs only the additive checked-receipt table migration.
+
+Checked renewal compares the entire observation in one `BEGIN IMMEDIATE`
+transaction, preserves the own correction that must return to planning, rejects
+active peer barriers, and changes only the exact own hold and renewal. It appends
+an immutable checked receipt and verifies both receipt and authority after the
+last write. A lost response can replay only identical inputs against the exact
+unchanged post-state. A replacement or reinstalled hold is preserved and makes
+replay stale. Existing ordinary renewal behavior remains separate.
+
+The trusted consumer must keep its actual `SupervisorLock.assert_current_owner()`
+ownership around the local call, bind full request and external proof identities,
+and recheck them before advancing fresh planning. This is control-SQLite
+atomicity; GitHub, request/jobs databases, source files and settings require their
+own current observations and CAS. A checked receipt grants no coding, dispatch,
+publication, protected approval or merge permission. Missing checked capability
+has no legacy fallback for a composite capture prerequisite.
+
+Source publication alone does not activate this API or its private schema.
+Installed legacy workers admit exact whole controller trees: a new controller
+closure needs a genuinely supported, independently reviewed source-admission
+path before main projection. A protocol marker, compatibility JSON, healthy
+heartbeat or earlier approval cannot supply it. The positive capture verifier,
+guarded receiver, actual native/visual evidence, controller projection and worker
+deployment remain separate requirements.
 
 Verified publication recovery and correction-question recovery share one atomic
 pause-retirement operation. It matches the observed repository, PR, head, reason

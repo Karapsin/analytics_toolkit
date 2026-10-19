@@ -15,13 +15,14 @@ metadata, minimum constraints, documentation, compileall, Ruff, and mypy. The
 coverage stage is the canonical Python 3.11 test run and enforces 90% branch
 coverage, plus the stricter committed statement and branch ratchets in
 `release_routines/coverage_targets.json`. Artifact smoke tests run next, followed
-by the Python 3.8 through 3.14 compatibility matrix and the Python 3.8
+by the Python 3.9 through 3.14 compatibility matrix and the Python 3.9
 minimum-dependency environment. Python
 3.11 is omitted from that matrix because coverage already exercises it. The matrix
 also runs offline DataLens conformance on Python 3.10 with SDK 3.1.0 and 3.2.0.
 The matrix defaults to three parallel tox workers; set `PRECOMMIT_PARALLELISM` to a
 positive integer to tune local resource use. The minimum environment must also
-pass `pip check`.
+pass `pip check`. Runtime validation starts at Python 3.9; package support metadata
+and static syntax targets retain the public Python 3.8 floor.
 
 Each successful managed stage writes a private receipt below `.rag_index/`.
 Interrupted or failed runs may reuse a stage for 24 hours only when the working
@@ -30,7 +31,11 @@ distinguish executed, reused, and failed stages. Any tracked-tree or toolchain
 change invalidates the affected receipt. Do not commit unless every stage
 passes or has a current exact-match receipt; if an interpreter or dependency is
 missing, install it or explicitly report the blocker instead of skipping that
-stage.
+stage. Validation keeps the source and toolchain identity observed at the start
+of the run. A change detected at a stage boundary or before final certification
+invalidates the run; preserve the edits and rerun on the resulting tree, including
+managed coverage target updates. Earlier receipts retain their original identity.
+Legacy receipts are not reused, and commit readiness rechecks the toolchain.
 
 The artifact gate copies the project into a temporary source tree outside the
 checkout, builds one wheel and one sdist, validates their metadata and wheel

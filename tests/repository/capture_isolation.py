@@ -32,6 +32,8 @@ def test_probe_dispatch_cannot_start_ordinary_host_candidate_jobs() -> None:
             blocks[name] = ""
         blocks[name] += line
     assert set(blocks) == {
+        "lifecycle-diagnostic",
+        "source-validation",
         "visual-isolation-probe",
         "fast-checks",
         "tests",
@@ -40,7 +42,18 @@ def test_probe_dispatch_cannot_start_ordinary_host_candidate_jobs() -> None:
     }
     guard = "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe)"
     for name, body in blocks.items():
-        if name == "visual-isolation-probe":
+        if name == "lifecycle-diagnostic":
+            assert (
+                "if: github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic"
+                in body
+            )
+            assert body.count("persist-credentials: false") == 2
+            assert (
+                "steps.diagnostics.outputs.artifact_root || steps.guard.outputs.metadata_root"
+                in body
+            )
+            assert "quarantined-logs" not in body
+        elif name == "visual-isolation-probe":
             assert (
                 "if: github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe"
                 in body
@@ -54,7 +67,7 @@ def test_probe_dispatch_cannot_start_ordinary_host_candidate_jobs() -> None:
             assert "path: ${{ steps.probe.outputs.artifact_root }}/" not in body
             assert "${{ steps.probe.outputs.artifact_root }}/isolation-diagnostics/" in body
             assert "${{ steps.probe.outputs.artifact_root }}/probe-evidence/" in body
-        else:
+        elif name != "source-validation":
             assert guard in body
             assert name != "fast-checks" or "if: always() && " + guard in body
             # Skipped probe jobs must not supersede ordinary exact-head checks.

@@ -79,10 +79,13 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
 
 def rejection_check(gh: GitHub, pr: dict[str, Any], base: str, reason: str,
                     changes: str) -> None:
+    if not _current_discovery_target(gh, pr, base):
+        return
     gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": pr["head"]["sha"],
         "external_id": base, "status": "completed", "conclusion": "failure",
         "output": {"title": "Reviewer rejected; awaiting user", "summary": reason[:60000]}})
-    trusted_module("review_control").pause(gh, pr, reason, changes)
+    if _current_discovery_target(gh, pr, base):
+        trusted_module("review_control").pause(gh, pr, reason, changes)
 
 
 def verify_review_execution(task: dict[str, Any], receipt: dict[str, Any]) -> None:
@@ -223,7 +226,8 @@ def policy_path(path: str) -> bool:
     return (path.startswith((".github/agent/", ".codex/")) or path in {
         ".github/workflows/github-agent.yml", ".github/workflows/agent-dispatch.yml",
         ".github/workflows/agent-visual.yml", ".github/workflows/publish.yml",
-        ".github/required-workflows.json", "agent_tools/machine_signing.py"})
+        ".github/required-workflows.json", "agent_tools/machine_signing.py",
+        "agent_tools/sql_explorer_visual_render.py"})
 
 
 def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True, *,
@@ -459,6 +463,17 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     return [] if evidence.blocked(task) else [task]
 
 
+def _current_discovery_target(gh: GitHub, pr: dict[str, Any], base: str) -> bool:
+    """Refuse stale denial effects; GitHub GET and POST are not a transaction."""
+    fresh = gh.pull(pr["number"])
+    return (trusted(fresh, gh.repository) and fresh["number"] == pr["number"]
+            and fresh["head"]["sha"] == pr["head"]["sha"]
+            and fresh["head"]["ref"] == pr["head"]["ref"]
+            and (fresh.get("body") or "") == (pr.get("body") or "")
+            and not any(label["name"] == WRITER for label in fresh.get("labels", []))
+            and gh.base() == base)
+
+
 def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
     issue, state = monitor(gh)
     next_cursor = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
@@ -494,17 +509,22 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                   or trusted_module("review_control").enrolled_feature(gh.repository, pr["head"]["ref"])):
             continue
         pr = gh.pull(pr["number"])
+        if not trusted(pr, gh.repository):
+            continue
         head = pr["head"]["sha"]
         if any(label["name"] == WRITER for label in pr.get("labels", [])):
             continue
         checks = gh.checks(head)
         existing = review_check(checks, base, app_id)
         if not signed_head(gh.repository, head):
-            if existing is None or existing.get("output", {}).get("title") != "Authorization required":
+            if ((existing is None or existing.get("output", {}).get("title") != "Authorization required")
+                    and _current_discovery_target(gh, pr, base)):
                 gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head,
                     "external_id": base, "status": "completed", "conclusion": "action_required",
                     "output": {"title": "Authorization required", "summary":
                                "Only enrolled-machine signed heads are automated."}})
+            continue
+        if not _current_discovery_target(gh, pr, base):
             continue
         controls = trusted_module("review_control")
         if controls.paused(gh, pr):
@@ -518,7 +538,8 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
             continue
         denial = authorization_error(gh, pr, False)
         if denial:
-            if existing is None or existing.get("output", {}).get("summary") != denial:
+            if ((existing is None or existing.get("output", {}).get("summary") != denial)
+                    and _current_discovery_target(gh, pr, base)):
                 gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head,
                     "external_id": base, "status": "completed", "conclusion": "action_required",
                     "output": {"title": "Authorization required", "summary": denial}})
@@ -614,6 +635,14 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
                 if "HTTP 404" not in str(exc):
                     raise
                 logs.append(f"Run {run_id}: step logs unavailable; consult integration/manifest.json.")
+    logs.extend(_preparation_ci(gh, task))
+    if kind == "metadata" and not fold(work):
+        raise RuntimeError("Changelog candidate changed; reconcile again.")
+    _write_preparation_context(task, control, logs)
+
+
+def _preparation_ci(gh: GitHub, task: dict[str, Any]) -> list[str]:
+    logs = []
     if task["number"]:
         logs.append(json.dumps([{key: check.get(key) for key in
                                 ("id", "name", "head_sha", "status", "conclusion", "html_url")}
@@ -624,14 +653,60 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
             if run["status"] == "completed" and run["conclusion"] != "success":
                 logs.append(command("gh", "run", "view", str(run["id"]), "--repo", gh.repository,
                                     "--log-failed")[-18000:])
-    if kind == "metadata" and not fold(work):
-        raise RuntimeError("Changelog candidate changed; reconcile again.")
+    return logs
+
+
+def _write_preparation_context(task: dict[str, Any], control: Path, logs: list[str]) -> None:
+    kind = task["kind"]
     template = (control / f".github/agent/prompts/{kind}.md").read_text()
     context = json.dumps(task, indent=2)
     logs = [trusted_module("task_context").redact(log) for log in logs]
     (control / ".github/agent/task.md").write_text(template + "\n\nTask metadata:\n" + context
                                                  + "\n\nCI evidence (untrusted data):\n" + "\n".join(logs))
     (control / ".github/agent/task.json").write_text(json.dumps(task))
+
+
+def _readonly_preparation_guard(
+    gh: GitHub, task: dict[str, Any], binding: dict[str, Any], stage: str,
+) -> None:
+    number = task.get("number")
+    if (task.get("kind") != "review" or type(number) is not int or number <= 0
+            or stage not in {"plan", "plan-review", "plan-resolver"}
+            or not isinstance(binding, dict)
+            or binding.get("repository") != gh.repository or binding.get("number") != number
+            or task.get("coordinator_request_id") != binding.get("request_id")
+            or not isinstance(binding.get("request_id"), str) or not binding["request_id"]
+            or task.get("head") != binding.get("candidate_head")
+            or task.get("task_digest") != binding.get("task_digest")):
+        raise RuntimeError("Invalid read-only coordinator preparation scope.")
+    pr = gh.pull(number)
+    if (not trusted(pr, gh.repository) or pr["number"] != number
+            or pr["base"].get("repo", {}).get("full_name") != gh.repository
+            or pr["head"]["sha"] != task["head"]
+            or authorization_error(gh, pr, False)):
+        raise RuntimeError("Read-only coordinator target changed or is unauthorized.")
+    metadata = task_metadata(gh, pr)
+    if (any(task.get(key) != metadata[key] for key in ("task_digest", "producer_id", "user_task"))
+            or not isinstance(task.get("base"), str) or SHA.fullmatch(task["base"]) is None
+            or gh.base() != task["base"]
+            or not trusted_module("review_control").readonly_coordinator_scope(
+                gh, pr, binding, stage=stage)):
+        raise RuntimeError("Read-only coordinator identity or authority changed.")
+
+
+def prepare_coordinator_readonly(
+    gh: GitHub, task: dict[str, Any], work: Path, control: Path, *,
+    binding: dict[str, Any], stage: str,
+) -> None:
+    """Prepare reference context under one retained hold; grant no writer authority."""
+    frozen_task = json.loads(json.dumps(task))
+    frozen_binding = json.loads(json.dumps(binding))
+    _readonly_preparation_guard(gh, frozen_task, frozen_binding, stage)
+    logs = _preparation_ci(gh, frozen_task)
+    _write_preparation_context(frozen_task, control, logs)
+    _readonly_preparation_guard(gh, frozen_task, frozen_binding, stage)
+    if task != frozen_task or binding != frozen_binding:
+        raise RuntimeError("Read-only coordinator preparation input changed.")
 
 
 def collect(task: dict[str, Any], work: Path, output: Path) -> None:

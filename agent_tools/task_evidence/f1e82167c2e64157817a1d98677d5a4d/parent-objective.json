@@ -1,0 +1,15 @@
+{
+  "source_pr": "https://github.com/Karapsin/analytics_toolkit/pull/45",
+  "source_head": "467768b9bed2c90a0dfba85ef2eea6ac6868f8d6",
+  "authenticated_public_task_blob": "https://api.github.com/repos/Karapsin/analytics_toolkit/git/blobs/0f6d7d719a308d0fefae955173cf862d9c4775fb",
+  "parent_task_digest": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+  "current_task_id": "f1e82167c2e64157817a1d98677d5a4d",
+  "preservation": "The complete authenticated parent task is retained in parent-task.json. Current task originals remain under the repository MCP task context. This follow-up implements the independently reviewed minimal source-validation capability for the existing monitoring/fix objective; it grants no activation or visual acceptance.",
+  "retained_boundaries": [
+    "all qualifying PRs through actual successful dev merge",
+    "no heavy checks/programs on Pi",
+    "native capture remains distinct from ordinary CI and synthetic native probe",
+    "no main projection/runtime activation",
+    "future source checkpoint publication and honest receipt import still require real implementation"
+  ]
+}
