@@ -92,6 +92,7 @@ Generated from package version bumps and recent commit history.
 - Reconcile resumable source review and isolated readiness regressions with current dev safeguards, preserving checked-renewal receipts and later control barriers through review completion.
 - Add a source-pinned contained lifecycle diagnostic for the published PR39 baseline with separate uninstrumented and observed results.
 - Preserve coordinator-held read-only preparation and reject stale closed-PR discovery denials.
+- Reconcile resumable source review with current dev safeguards, preserve default and read-only preparation, and establish the concrete correction fixture before verifying retained control barriers.
 
 ## 1.3.12.5 - 2026-10-14
 
