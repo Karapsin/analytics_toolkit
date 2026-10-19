@@ -205,7 +205,9 @@ def test_border_scene_targets_are_actual_dialog_or_workspace_panes(scene: str) -
         else [".query-pane", ".result-pane"]
     )
     assert [name for name, _widget, _rows in targets] == (
-        ["connections-border"] if scene == "connections-searching" else ["query-pane", "result-pane"]
+        ["connections-border"]
+        if scene == "connections-searching"
+        else ["query-pane", "result-pane"]
     )
 
 

@@ -305,7 +305,7 @@ def test_workspace_mount_hook_preserves_ownership_and_failure(outcome: str) -> N
         _visual_workspace_restore_pending=False,
     )
     target.app = SimpleNamespace(
-        _finish_added_workspace=lambda tab_id: queued.append(tab_id),
+        _finish_added_workspace=queued.append,
     )
     replacement = Mock()
     if outcome == "replacement":

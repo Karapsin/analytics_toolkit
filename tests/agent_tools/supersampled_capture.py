@@ -58,7 +58,9 @@ def test_rasterization_reduces_once_and_records_exact_inputs_and_hashes(
     monkeypatch.setattr(evidence, "_render_svg", render)
     monkeypatch.setattr(Image.Image, "resize", observe_resize)
     retained: dict[str, bytes] = {}
-    png, metadata = evidence.rasterize_framed_svg(framed, retained_pngs=retained if retain else None)
+    png, metadata = evidence.rasterize_framed_svg(
+        framed, retained_pngs=retained if retain else None
+    )
     assert retained == ({"intermediate": intermediate, "final": png} if retain else {})
     assert calls == [evidence.supersampling_svg(framed)]
     assert reductions == [((16, 10), (8, 5), Image.Resampling.LANCZOS)]

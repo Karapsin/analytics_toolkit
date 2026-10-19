@@ -263,7 +263,8 @@ def test_unavailable_state_and_mapping_probes_are_explicit() -> None:
 
 
 @pytest.mark.parametrize(
-    ("limit", "value"), [("MAX_ROWS", 1), ("MAX_CELLS", 8), ("MAX_REGIONS", 1)]
+    ("limit", "value"),
+    [("MAX_ROWS", 1), ("MAX_CELLS", 8), ("MAX_REGIONS", 1)],
 )
 def test_scene_collection_limits_cannot_report_complete_caret_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: str, value: int

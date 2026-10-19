@@ -81,7 +81,11 @@ Generated from package version bumps and recent commit history.
 - Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
 - Prevent precommit stage reuse and certification across observed source or toolchain changes
 - Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
+- Add receipt-bound transactional coordinator authority renewal with strict replay checks
+- Isolate candidate visual installation and capture from the GitHub runner and retain bounded host-owned diagnostics.
+- Preserve native capture failure diagnostics, produced renderer artifacts and safe post-cleanup evidence without weakening glyph or isolation checks.
 - Protect and promote the exact shared visual-rendering infrastructure helper without admitting adjacent tools or application code.
+- Add isolated nonproduction native-capture source validation; exclude Python 3.8 runtime checks while preserving Python 3.9 minimum-dependency coverage.
 
 - Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
 - Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.

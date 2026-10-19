@@ -326,7 +326,11 @@ def _targets(app: Any, scene: str) -> list[tuple[str, Any, int]]:
         targets = [("heading", app.screen.query_one("#database-picker-title"), 3)]
     elif scene == "connections-searching":
         targets = [
-            ("connections-border", app.screen.query_one("#connections-picker"), BORDER_ROWS_PER_REGION)
+            (
+                "connections-border",
+                app.screen.query_one("#connections-picker"),
+                BORDER_ROWS_PER_REGION,
+            ),
         ]
     elif scene == "result-success":
         targets = [

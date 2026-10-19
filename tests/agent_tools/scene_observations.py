@@ -76,6 +76,14 @@ def test_added_scene_diagnostics_observe_actual_layers_without_changing_state(
                 )
                 assert all(entry["widget_rows"] for entry in result["regions"])
                 assert all(entry["composed_rows"] for entry in result["regions"])
+                geometry = json.loads((tmp_path / "geometry.json").read_text(encoding="utf-8"))
+                for name in (
+                    "new_file_center_middle",
+                    "new_file_dialog_contained",
+                    "new_file_horizontally_centered",
+                    "new_file_vertically_centered",
+                ):
+                    assert geometry["assertions"][name] is True
 
     asyncio.run(exercise())
 

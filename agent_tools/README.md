@@ -411,9 +411,13 @@ The `new-file` scene records actual mounted screen/subclass identity, computed
 alignment/layout styles, dialog and viewport geometry, ancestor clips and exact
 widget/compositor rows, together with parsed SVG positions from the final export.
 These diagnostics share the existing region/row/cell/payload limits and lossless
-SVG budgets. They identify missing evidence without selecting an alignment or
-export repair. Command-caret visibility and new-file placement still require
-candidate-bound GitHub diagnosis and independently reviewed repairs.
+SVG budgets. The new-file geometry gate also requires resolved center/middle
+alignment, dialog containment and opposing margins differing by at most one
+terminal cell. Both the base filename screen and SQL subclass retain this
+alignment across resize, with mounted focus, filename-validation and confirm/cancel
+regressions. These source corrections still require fresh candidate-bound GitHub
+validation and independent full-scene review; diagnostic output alone supplies no
+visual approval. Command-caret diagnostics select no production export repair.
 
 Journal-status regressions separately distinguish empty successful reads from read
 failures: an empty failed read shows its warning alone, while populated pages keep
@@ -636,9 +640,10 @@ external database endpoints.
 
 Managed pre-commit checks run as separate static, coverage, artifact, and Python
 matrix commands, stopping before downstream work when a stage fails. Coverage
-is the canonical Python 3.11 test run; the remaining Python 3.8 through 3.14
+is the canonical Python 3.11 test run; the remaining Python 3.9 through 3.14
 matrix omits that duplicate and defaults to three parallel tox workers. Set
-`PRECOMMIT_PARALLELISM` to a positive integer to tune it. Artifact installs use
+`PRECOMMIT_PARALLELISM` to a positive integer to tune it. The minimum-dependency profile runs on Python 3.9
+and retains `pip check`; Python 3.8 is excluded from runtime checks. Artifact installs use
 fresh virtual environments with a shared `.tox/pip-cache` download cache.
 
 Successful stages receive private 24-hour receipts keyed by the exact working
@@ -729,9 +734,9 @@ Questions during coding pause work and return through the same exchange. The Pi
 runs no repository checks, builds or renders; GitHub performs validation and a fresh
 independent agent reviews the final PR.
 
-The agent-only validation environment constrains `virtualenv>=21.1,<21.5` so
-the required Python 3.8 matrix remains runnable. Project setup resolves this
-constraint together with tox; it does not change public package dependencies.
+The agent-only validation environment retains the reviewed
+`virtualenv>=21.1,<21.5` toolchain. Project setup resolves this constraint together
+with tox; it does not change public package dependencies.
 
 ## Release candidate recovery
 

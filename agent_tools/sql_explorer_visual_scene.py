@@ -1109,6 +1109,25 @@ def _persist_evidence(payload: dict[str, Any], evidence_path: Path) -> None:
     temporary.replace(evidence_path)
 
 
+def _new_file_alignment_assertions(app: App[Any]) -> dict[str, bool]:
+    screen = app.screen
+    viewport = screen.content_region
+    dialog = screen.query_one("#new-file-dialog").region
+    left, right = dialog.x - viewport.x, viewport.right - dialog.right
+    top, bottom = dialog.y - viewport.y, viewport.bottom - dialog.bottom
+    return {
+        "new_file_center_middle": (
+            screen.styles.align_horizontal == "center"
+            and screen.styles.align_vertical == "middle"
+        ),
+        "new_file_dialog_contained": (
+            dialog.width > 0 and dialog.height > 0 and min(left, right, top, bottom) >= 0
+        ),
+        "new_file_horizontally_centered": abs(left - right) <= 1,
+        "new_file_vertically_centered": abs(top - bottom) <= 1,
+    }
+
+
 def _optional_scene_evidence(
     app: App[Any], scene_id: str, assertions: dict[str, bool]
 ) -> dict[str, Any]:
@@ -1124,6 +1143,8 @@ def _optional_scene_evidence(
             {f"directory:{name}": value for name, value in readiness["conditions"].items()}
         )
     assertions.update(_button_color_assertions(app))
+    if scene_id == "new-file":
+        assertions.update(_new_file_alignment_assertions(app))
     ruler_evidence = None
     if scene_id == "tab-database-change" and isinstance(app, VisualExplorerApp):
         ruler_evidence = _ruler_evidence(app)
