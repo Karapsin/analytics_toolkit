@@ -1,0 +1,137 @@
+{
+  "candidate": "76eb8481734ec4ffb77d71ce300787caff21b860",
+  "expected_case_ids": [
+    "tests/agent_tools/visual_scene_states.py::test_completion_geometry_guard_rejects_overlapping_popup",
+    "tests/sql/explorer/completion_placement.py::test_completion_repositions_on_scroll_resize_and_narrowing",
+    "tests/sql/explorer/completion_placement.py::test_completion_clamps_right_edge_and_closes_without_row_space",
+    "tests/sql/explorer/completion_placement.py::test_deferred_completion_layout_ignores_inactive_workspace[False]",
+    "tests/sql/explorer/completion_placement.py::test_deferred_completion_layout_ignores_inactive_workspace[True]"
+  ],
+  "new_task_id": "357a59078b4f423491e915d12ca37061",
+  "parent_producer_id": "local:04c60facc8294087b55ffdd496a4de82",
+  "parent_task_bytes": 34199,
+  "parent_task_id": "04c60facc8294087b55ffdd496a4de82",
+  "parent_task_sha256": "813e95fe9b37968b03c3a016c0992531c4413807cc334ffe03f9e942a20e8b18",
+  "prerequisite_satisfied": false,
+  "production_activation": false,
+  "profiles": [
+    {
+      "python": "3.11",
+      "textual_constraint": "textual>=0.73,<0.74"
+    },
+    {
+      "python": "3.13",
+      "textual_constraint": "textual[syntax]>=0.89.1,<0.90"
+    }
+  ],
+  "public_comment_urls": [
+    "https://github.com/Karapsin/analytics_toolkit/pull/39#issuecomment-6247967847",
+    "https://github.com/Karapsin/analytics_toolkit/pull/39#issuecomment-6248549284",
+    "https://github.com/Karapsin/analytics_toolkit/pull/39#issuecomment-6249025614",
+    "https://github.com/Karapsin/analytics_toolkit/pull/39#issuecomment-6253938144"
+  ],
+  "public_context_sha256": "bfa16c88693eccb2cdff8871f0df312ef70cc804a85c4ce6161badb44af9630e",
+  "purpose": "Archival fixed baseline provenance; no approval or runtime authority",
+  "repository": "Karapsin/analytics_toolkit",
+  "schema_version": 1,
+  "selectors": [
+    "tests/agent_tools/visual_scene_states.py::test_completion_geometry_guard_rejects_overlapping_popup",
+    "tests/sql/explorer/completion_placement.py::test_completion_repositions_on_scroll_resize_and_narrowing",
+    "tests/sql/explorer/completion_placement.py::test_completion_clamps_right_edge_and_closes_without_row_space",
+    "tests/sql/explorer/completion_placement.py::test_deferred_completion_layout_ignores_inactive_workspace"
+  ],
+  "source_base": "04945ba5c60f15eead12ccefdbfb4b7932284dc9",
+  "subject_files": [
+    {
+      "bytes": 232,
+      "git_blob": "e26dbdcebaaaf0c0def877afd3abe06b80759f83",
+      "path": "agent_tools/requirements-mcp.txt",
+      "sha256": "5763b6722fd7ce0779c3d442c65cbc2afabcd61607b7edb50c0ab3f22aacafd6"
+    },
+    {
+      "bytes": 36584,
+      "git_blob": "8e4a6f41c1a9038ad84e6ccfa5b47ca552ef2d19",
+      "path": "agent_tools/sql_explorer_visual_scene.py",
+      "sha256": "367bdd181eee589dcc48a1db2b49ad90b4c353531320e396f7854c086a97567e"
+    },
+    {
+      "bytes": 36514,
+      "git_blob": "71aa621f6f919a8c9f03723af5da9e9c4b825567",
+      "path": "analytics_toolkit/sql_explorer/app.py",
+      "sha256": "2c9a4064a75eaec8fb0b1f5b1f21dce9acc8e240aec35761c4f1ed5ea8fcb829"
+    },
+    {
+      "bytes": 21629,
+      "git_blob": "0e7fe846b0ed6e41e05da64cba581218b35b05b6",
+      "path": "analytics_toolkit/sql_explorer/completion_commands.py",
+      "sha256": "db44d8c67b3be5e83b02d67655bcfccb14fc49cdd3ba58e4702f3bb9ec3f0967"
+    },
+    {
+      "bytes": 31823,
+      "git_blob": "1f2b1796d9693dc49efad02a9ca27d2c26393c40",
+      "path": "analytics_toolkit/sql_explorer/editor.py",
+      "sha256": "92cbb3da7337075d450d2bebf737b20b7aa354de2f927cf96470d6d5d4dfe763"
+    },
+    {
+      "bytes": 11873,
+      "git_blob": "f93552df06566582fee6d074092f8b1edad5baff",
+      "path": "analytics_toolkit/sql_explorer/tabs.py",
+      "sha256": "a9ee4f7535a66ac7ce52a71be16e613a2e070d3642e55baeb17f595cf44cc684"
+    },
+    {
+      "bytes": 9663,
+      "git_blob": "71bf9d3c0e1a07013d425fa84dde2af1b0f99c00",
+      "path": "analytics_toolkit/sql_explorer/workspace.py",
+      "sha256": "ffe69bed091394a1032fdea7b633001adadba4c1ca27d4050a9b675ac81169b0"
+    },
+    {
+      "bytes": 6031,
+      "git_blob": "0a1e924214eb0d8a782310a97bd71a17fcece542",
+      "path": "pyproject.toml",
+      "sha256": "09984661380c1061101551c11c78dea1f510b9a8186819fb1d4fe396c168d963"
+    },
+    {
+      "bytes": 6133,
+      "git_blob": "a1633ddf365587a64692702c492a39f539abf101",
+      "path": "tests/agent_tools/visual_scene_states.py",
+      "sha256": "3c7aca632785e77b9a42d12cb92f9352cb941309872259c591967cfd475bc411"
+    },
+    {
+      "bytes": 2949,
+      "git_blob": "34d23d710992c6a3e87c2d4ccdf542fa21343608",
+      "path": "tests/conftest.py",
+      "sha256": "655712b85d9669122fdcd311b09180eaefc8ed560dc5ad5f33b1b524f384c650"
+    },
+    {
+      "bytes": 3280,
+      "git_blob": "b7f11044dcddfd39f13d9e5f1240132056571a19",
+      "path": "tests/sql/_support/completion.py",
+      "sha256": "13510940b0b87f54045b851e590b60158e65693e9bf40c7eae3a8b4cbb92b7c6"
+    },
+    {
+      "bytes": 2902,
+      "git_blob": "d97738b83b5c9dd7a1fa232115cf8e18e160ba8e",
+      "path": "tests/sql/_support/explorer.py",
+      "sha256": "a7b8acec3d08ddef6d1e0df7ee3e28f31b4dca170753c33ca0046cd198f34823"
+    },
+    {
+      "bytes": 15018,
+      "git_blob": "ea6921f1bfccba817ee96b3e336a9ca6b14f5c12",
+      "path": "tests/sql/explorer/completion_placement.py",
+      "sha256": "a034c95a9bd55c007200a1fafc32cfc42403df96980a0051bd7a2f3973d13ce6"
+    },
+    {
+      "bytes": 16929,
+      "git_blob": "da4f601c76bbc7fdde8ab9dd55b0ee5e08aec67d",
+      "path": "tests/sql/explorer/journal_screen.py",
+      "sha256": "78a119391e57f83763784c72c29da53fb692a4ff82097eb843dbf4c314a5a87e"
+    },
+    {
+      "bytes": 2760,
+      "git_blob": "122c56b9e5121284211c718e924bfa2ec596fd36",
+      "path": "tox.ini",
+      "sha256": "84b0e9e9f57aef59097fcf21a520ef3edbd4558a88d6e9b1fba18747877a38e6"
+    }
+  ],
+  "visual_approval": false
+}
