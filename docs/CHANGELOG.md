@@ -95,6 +95,7 @@ Generated from package version bumps and recent commit history.
 - Add a source-pinned contained lifecycle diagnostic for the published PR39 baseline with separate uninstrumented and observed results.
 - Preserve coordinator-held read-only preparation and reject stale closed-PR discovery denials.
 - Reconcile resumable source review with current dev safeguards, preserve default and read-only preparation, and establish the concrete correction fixture before verifying retained control barriers.
+- Repair read-only preparation regression lint and formatting without changing assertions, protocol cases or resumable source-review behavior.
 
 ## 1.3.12.5 - 2026-10-14
 
