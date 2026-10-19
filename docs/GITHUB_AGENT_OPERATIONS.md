@@ -780,6 +780,41 @@ Retries cannot reinstall a retired hold. The host must preserve authenticated
 questions and answers and independently reassess the full amended scope; a new
 plan alone never proves a prerequisite PR merged.
 
+The additive `prerequisite_authority_snapshot` and `renew_coordinator_checked`
+APIs support callers that need a complete, receipt-selected control observation.
+The full version-2 prerequisite review receipt commits every selected peer and
+branch; its digest must match the persisted own hold. The snapshot retains all
+selected rows, including historical rows and explicit absence, from holds,
+renewals, pauses, vetoes, approvals, amendments, corrections and both feature
+enrollment tables. Raw SQLite types and JSON text are preserved. Unsupported
+schema, triggers, excess data, busy writers and expired metadata budgets stay
+operationally pending. These APIs never create or migrate the database; normal
+trusted `connect` performs only the additive checked-receipt table migration.
+
+Checked renewal compares the entire observation in one `BEGIN IMMEDIATE`
+transaction, preserves the own correction that must return to planning, rejects
+active peer barriers, and changes only the exact own hold and renewal. It appends
+an immutable checked receipt and verifies both receipt and authority after the
+last write. A lost response can replay only identical inputs against the exact
+unchanged post-state. A replacement or reinstalled hold is preserved and makes
+replay stale. Existing ordinary renewal behavior remains separate.
+
+The trusted consumer must keep its actual `SupervisorLock.assert_current_owner()`
+ownership around the local call, bind full request and external proof identities,
+and recheck them before advancing fresh planning. This is control-SQLite
+atomicity; GitHub, request/jobs databases, source files and settings require their
+own current observations and CAS. A checked receipt grants no coding, dispatch,
+publication, protected approval or merge permission. Missing checked capability
+has no legacy fallback for a composite capture prerequisite.
+
+Source publication alone does not activate this API or its private schema.
+Installed legacy workers admit exact whole controller trees: a new controller
+closure needs a genuinely supported, independently reviewed source-admission
+path before main projection. A protocol marker, compatibility JSON, healthy
+heartbeat or earlier approval cannot supply it. The positive capture verifier,
+guarded receiver, actual native/visual evidence, controller projection and worker
+deployment remain separate requirements.
+
 Verified publication recovery and correction-question recovery share one atomic
 pause-retirement operation. It matches the observed repository, PR, head, reason
 and creation time. A replacement hold or a current-head owner veto prevents the
