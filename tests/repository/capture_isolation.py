@@ -32,6 +32,7 @@ def test_probe_dispatch_cannot_start_ordinary_host_candidate_jobs() -> None:
             blocks[name] = ""
         blocks[name] += line
     assert set(blocks) == {
+        "source-validation",
         "visual-isolation-probe",
         "fast-checks",
         "tests",
@@ -54,7 +55,7 @@ def test_probe_dispatch_cannot_start_ordinary_host_candidate_jobs() -> None:
             assert "path: ${{ steps.probe.outputs.artifact_root }}/" not in body
             assert "${{ steps.probe.outputs.artifact_root }}/isolation-diagnostics/" in body
             assert "${{ steps.probe.outputs.artifact_root }}/probe-evidence/" in body
-        else:
+        elif name != "source-validation":
             assert guard in body
             assert name != "fast-checks" or "if: always() && " + guard in body
             # Skipped probe jobs must not supersede ordinary exact-head checks.

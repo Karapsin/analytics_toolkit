@@ -96,7 +96,7 @@ def test_sql_function_signature_check_reports_missing_export_and_malformed_block
 def test_repository_minimum_constraints_match_runtime_dependencies() -> None:
     project = load_project(REPO_ROOT / "pyproject.toml")
     dependencies = [str(requirement) for requirement in project["dependencies"]]
-    constraints = (REPO_ROOT / "constraints" / "py38-min.txt").read_text(encoding="utf-8")
+    constraints = (REPO_ROOT / "constraints" / "py39-min.txt").read_text(encoding="utf-8")
 
     assert validate_minimum_constraints(dependencies, constraints) == []
 

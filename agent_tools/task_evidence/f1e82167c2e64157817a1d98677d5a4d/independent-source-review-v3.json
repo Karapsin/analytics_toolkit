@@ -1,0 +1,243 @@
+{
+  "schema": "independent-native-source-validation-and-python38-exclusion-complete-source-security-review/v3",
+  "reviewer": "/root/review_native_source_validation_stage1_plan",
+  "created_at_utc": "2026-10-19T08:23:45.010181+00:00",
+  "decision": "approve_complete_exact_final_source_payload",
+  "completeness": "complete",
+  "findings": [],
+  "binding": {
+    "branch": "codex/19ac2eeff8284a2f-9e48bab3",
+    "base": "71422731e51af15a104b65915873d576bf0024c0",
+    "reviewed_state": "Full changed/deleted/untracked source, tests, documentation, fragment and retained task/review evidence at current working tree. This is an exact source payload assessment, not an invented committed/pushed head or completed CI receipt.",
+    "inventory": {
+      "path": "/private/tmp/native-source-validation-python38-exclusion-final-source-freeze-v3-1792398031388595000/manifest.json",
+      "bytes": 5090,
+      "sha256": "5f6ba641b273061a1bab848e66ce4a40ecc676a95a78b7ce9dc0cc8d863be789"
+    },
+    "files": [
+      {
+        "path": ".github/agent/source_validation.py",
+        "bytes": 15080,
+        "sha256": "41484d03067f3cea2a2c80128730f688a0fc65c72ed4c44d70ef96918f7ed04e"
+      },
+      {
+        "path": ".github/workflows/tests.yml",
+        "bytes": 7794,
+        "sha256": "59c64ae28fdefcbddf69feb733412ccb9034a52aae410c86b448569f6f3386c2"
+      },
+      {
+        "path": "agent_docs/development.md",
+        "bytes": 10946,
+        "sha256": "dbd39e7ea5ff27d56a60c9baa363ead7cabd3aa38db10f50a750cca33c10bed7"
+      },
+      {
+        "path": "agent_tools/README.md",
+        "bytes": 27520,
+        "sha256": "cc84cda64a248d0935125c3c19f75c20288ed6bae40f5b04e327935d08e597d1"
+      },
+      {
+        "path": "agent_tools/changelog/0eb3fa30706b49a28f53c050ebd40f4a.md",
+        "bytes": 154,
+        "sha256": "2e92c0683d1a1375bd1b422690bd2829678e6dd84d2a3047c9e42090bc95dcac"
+      },
+      {
+        "path": "agent_tools/requirements-mcp.txt",
+        "bytes": 231,
+        "sha256": "2f0357bead8a5d44a9ac74e9a9a439aa879e3cf4b47a7dfe5f7bd6baf01e13cf"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/implementation-plan-v3.json",
+        "bytes": 4062,
+        "sha256": "cbe91b297d0bad2d894e93150bb3b528426bec460634b4dacabf4b4dfcd848d2"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/implementation-plan.json",
+        "bytes": 13462,
+        "sha256": "438edf720d6e4c93b7cea99b7f8775838c11b926f981de0c64e9342feedaf66e"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-plan-review-v3.json",
+        "bytes": 9947,
+        "sha256": "bc9ddf59133a99a9f5072e3e01fc0d50a504f085d76ddbf98674daef8bcb66f7"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-plan-review.json",
+        "bytes": 9178,
+        "sha256": "9fb5e4dfb9a738f6c107c01c47eb45c3f0baa74d1bc8a0aad605226887360ada"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-scope-assessment.json",
+        "bytes": 20717,
+        "sha256": "3473adf24a4fccaf8ecb56588a0be90e8e9191ea03cc984d91fcde3f9349d1b2"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-source-review-v1.json",
+        "bytes": 14996,
+        "sha256": "40add89e399f1679d5d489c04a555d5bec84d8c3252b533235ebfb2e8e301508"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-source-review-v2.json",
+        "bytes": 16430,
+        "sha256": "2f1e26ea7e01266ae9eb0d429522fdc196b03b43ca898388275d2a9fa2fd4c19"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/parent-objective.json",
+        "bytes": 1135,
+        "sha256": "83908d4491d98d964cbc1baf993d3c6d403070da63c4bc9a9fb088b09a682419"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/parent-task.json",
+        "bytes": 56655,
+        "sha256": "6b3f0534497773b2178f7d30b7a91ec1927db4d6f71728e2b7988958c5d8bf27"
+      },
+      {
+        "path": "constraints/py38-min.txt",
+        "state": "deleted",
+        "old_bytes": 313,
+        "old_sha256": "56d4046e9d6bf4b9ff3db363899f5919d65bf76c80478e0f4d7f386add9ab0e5"
+      },
+      {
+        "path": "constraints/py39-min.txt",
+        "bytes": 313,
+        "sha256": "56d4046e9d6bf4b9ff3db363899f5919d65bf76c80478e0f4d7f386add9ab0e5"
+      },
+      {
+        "path": "docs/GITHUB_AGENT_OPERATIONS.md",
+        "bytes": 65332,
+        "sha256": "bbde23cc968696c0dedaf0942b9f102d89160424f79097f3fc6305efeb89e17c"
+      },
+      {
+        "path": "release_routines/lib/check_minimum_constraints.py",
+        "bytes": 4720,
+        "sha256": "61e4eb906cace50afa51c343641d5dddfb10eb52a24bf4d97a9b4cc414d9d5b6"
+      },
+      {
+        "path": "release_routines/pre_commit_checks.sh",
+        "bytes": 4450,
+        "sha256": "886a106ddeebf390f989e787000d8e2ae74de564e83977c3f003ec7f6c2bd977"
+      },
+      {
+        "path": "tests/agent_tools/mcp/checks.py",
+        "bytes": 15530,
+        "sha256": "6da2e8f47f6738900b5cc04b85b5d5c09682c02a853855e3eb57f559578e2caf"
+      },
+      {
+        "path": "tests/release_routines/quality/python_profiles.py",
+        "bytes": 3270,
+        "sha256": "8e232c6a5db900707f1871c20742b8efeda9a708c7cd6401073c16c788ee56dc"
+      },
+      {
+        "path": "tests/release_routines/quality/release.py",
+        "bytes": 12481,
+        "sha256": "c9fb85d357cb542bc54da65ae1e4158ad2741eb28fac85dbeb1d3deff1cf49c1"
+      },
+      {
+        "path": "tests/repository/_support/source_validation.py",
+        "bytes": 4947,
+        "sha256": "a5c2aa53a039c8912bccc60e03951ff233ad088f0be10fe66a091c0665b87782"
+      },
+      {
+        "path": "tests/repository/_support/workflow_scalars.py",
+        "bytes": 3037,
+        "sha256": "bcee88a6557b1697d06c690fe382216dd97fb3562c7b16e5726248a2f9ecdee8"
+      },
+      {
+        "path": "tests/repository/source_validation.py",
+        "bytes": 12731,
+        "sha256": "b1e6bdb0674305d3a2f48f72fd033ac5c2d226cdff34daec67fe63f0021d2671"
+      },
+      {
+        "path": "tox.ini",
+        "bytes": 2709,
+        "sha256": "6f7b892a9f870235d3c4cf0bddb6f6ef48efb6ca8304a48dc77091d4a90bb34b"
+      }
+    ],
+    "final_unchanged_source_and_rename_recheck": {
+      "path": "/private/tmp/native-source-validation-python38-exclusion-final-source-freeze-v3-1792398031388595000/final-source-recheck-and-constraint-rename-original.json",
+      "bytes": 770,
+      "sha256": "a81475822cff992dd357d147cc03b9e2117507f9969412fc0cb18a446c7f2d3f"
+    },
+    "current_path_set_equals_reviewed_inventory": true,
+    "current_and_frozen_content_mismatches": [],
+    "approved_amended_plan_sha256": "cbe91b297d0bad2d894e93150bb3b528426bec460634b4dacabf4b4dfcd848d2",
+    "complete_amended_plan_review_sha256": "bc9ddf59133a99a9f5072e3e01fc0d50a504f085d76ddbf98674daef8bcb66f7",
+    "previous_complete_native_source_review_sha256": "2f1e26ea7e01266ae9eb0d429522fdc196b03b43ca898388275d2a9fa2fd4c19",
+    "exact_user_correction": "I allow to exclude python 3.8 from all checks",
+    "task_id": "f1e82167c2e64157817a1d98677d5a4d",
+    "parent_reported_task_digest_after_correction3": "c976ffe34436818b892bc594739ab45af03795e3efdace203417e24fabb907f7",
+    "task_binding_limit": "MCP correction append and digest were supplied by parent and retained in reviewed v3 plan. This review does not replace actual signed final-head task-attachment verification."
+  },
+  "complete_read_coverage": {
+    "new_or_amended_runtime_configuration": "Freshly read complete final tests.yml, tox.ini, pre_commit_checks.sh, minimum-constraints checker and313B19-pin py39-min constraints. Read complete new python_profiles.py regression, complete current420-line MCP checks module and342-line release quality test module, not just changed names/paths.",
+    "native_driver_tests_helpers": "Final source_validation.py and all three native test/helper files are byte-identical to the individually completely read and approved v2 source. Rehashed every one against that prior exact source payload; reused that complete security assessment, with fresh full final workflow reading to verify mode/matrix integration.",
+    "docs_instructions": "Read full tracked diff for development instructions, agent_tools README, requirements comment and all other amended tracked source; re-read complete altered policy paragraphs. Native operations section is unchanged from complete v2 assessment. All actual changed doc bytes are bound explicitly, while unrelated unchanged multi-page prose is not falsely claimed a new security target.",
+    "parent_objective_task_and_history": "Approved v2 native plan/reviews and v3 amended plan/review exactly match prior complete readings. Entire parent-task JSON parsed and equal to previous authenticated parent object, preserving all original corrections/decisions/plans/questions. Historical request-changes v1 and approval v2 reports are retained unchanged under their real identities; none is relabelled as current source/CI approval. Combined fragment fully read.",
+    "entrypoint_completeness": "Reused complete tracked-source check-entrypoint census and release/MCP routing from v3 plan review. Fresh final search over tox/shell/workflow/checker returns no py38/PYTHON38/python3.8/3.8.18 runtime/profile references. Python3.8 language/API support targets are deliberately not mistaken for3.8 execution.",
+    "read_only_method": "Parent owns mandatory prepared MCP/start/impact/routing context and current feature/check execution. Reviewer performed only read-only Git/file/text/JSON/hash inspection and private freeze/report writes; no candidate module imports/tests/programs, installs, network/controller mutations or Pi calls."
+  },
+  "whole_task_alignment": {
+    "verdict": "aligned",
+    "explanation": "The final payload retains the complete native source-validation feature for already published subjects and implements the exact explicitly authorized Python3.8 runtime-check exclusion. It keeps minimum-dependency coverage on3.9, all other checks and public package compatibility policy. It neither abandons the original all-PR monitoring/repair goal nor infers that this infrastructure alone completes PR45 visual repair or operational deployment.",
+    "minimum_constraints_preserved": "The new constraints/py39-min.txt is byte-for-byte identical to the deleted base constraints/py38-min.txt:313B SHA25656d4046e9d6bf4b9ff3db363899f5919d65bf76c80478e0f4d7f386add9ab0e5. All19 original exact dependency floor pins are retained.",
+    "public_metadata_unchanged": {
+      "exact_base_bytes": true,
+      "sha256": "09984661380c1061101551c11c78dea1f510b9a8186819fb1d4fe396c168d963",
+      "meaning": "Package>=3.8 support/classifiers, dependency declarations, version and Ruff/mypy syntax targets were not changed. Keeping static analysis of3.8 syntax on3.11 does not executePython3.8."
+    }
+  },
+  "python_runtime_exclusion_assessment": {
+    "tox": "Configured py38-latest/py38-min and explicitPYTHON38 mapping removed. py39-min uses same min pytest pin and faithful renamed constraints for installation. All latest3.9-3.14, both3.10SDK profiles, lint/type/coverage/artifact commands remain. Min validator and pip check still execute before tests.",
+    "managed_local_matrix": "NoPYTHON38 export or3.8.18 lookup. Exact matrix remainspy39-latest,py39-min,py310-latest,py310-sdk31,py310-sdk32,py312-latest,py313-latest,py314-latest. Actual3.11 is still configured for canonical coverage/artifacts; managed matrix does not duplicate py311-latest. Interpreter absence, invalid parallelism and command failures retain existing fail-closed behavior/stage outcomes.",
+    "GitHub_normal_CI": "Six latest runtimes3.9\u20133.14 plus3.9 minimum replace3.8 latest/min. All minimum conditionals/install paths/descriptions now selectpy39-min; static minimum validator and pip check remain. SDK3.1/3.2, quality lint/type/coverage/artifacts, full tests/compileall, fail-fast:false and aggregate fast-check failure propagation remain.",
+    "all_supported_entrypoints": "MCP precommit commands still enter the same static/coverage/artifact/matrix shell modes. Release receipt guard still requires genuine exact-tree precommit and release validation. Current tracked-source census found no other3.8 runtime executor to migrate; explicit arbitrary ad-hoc user commands are not claimed prohibited.",
+    "toolchain_scope": "Only obsolete3.8 rationale comments changed. Actualvirtualenv>=21.1,<21.5 and VIRTUALENV_PIP25.0.1 remain stable; no unrelated tooling/dependency upgrade or floor weakening was introduced.",
+    "meaningful_regressions": "New behavior test enters the real shell --matrix with fakepyenv that explicitly rejects3.8 and logs all lookups, plus faketox that records exact remaining8profiles/parallelism. It asserts all remaining interpreter lines and profiles includingmin/SDK. Config test parses actualtox config and actual GitHub matrix, rejects3.8 support profiles/mapping and preserves3.9min/pipcheck. Existing MCP stage/cache/seed/ratchet/failure tests retain all assertions; onlyobsolete testname renamed. These are offline source-level regressions, not claimed actual multi-runtime test success."
+  },
+  "complete_native_security_assessment": {
+    "fixed_source_and_host_boundary": "The unchanged approved driver executes only stdlib, trusted bounded Git identity reads and python-I fixed467 capture_isolation host entrypoint after exact three-checkout identities and four-file hash closure verification. Candidate installs/imports/render execute solely inside unchanged reviewed nonroot install/network-none capture containers. No new host candidate step is introduced by matrix changes to the separate source mode.",
+    "owner_workflow_identity": "Exact repository, source-mode inputs, original and triggering/rerun owner actor, workflow SHA equality, content-addressed reserved tag syntax and positive run/attempt identity remain required. Actual frozen ref protection/create-only operation/trigger census/current actor permissions/provenance/assignment/holds remain separately concrete real prerequisites, never inferred from a tag-shaped name or this review.",
+    "root_and_environment_confinement": "Independent actual owned no-symlink/nonoverlap control/transport/subject/temp roots, pristine checkout versus private writable container copy, explicit nonsecret child env and all source-mode persist-credentials:false settings remain. Candidate cannot choose a host helper or receive private App/controller/write credentials, Actions command file or Docker socket.",
+    "private_output_admission": "Separate wrapper-owned0600 capped command file, exact one-line root assignment, direct owned atk-visual UUID child admission and no guessed/suppressed/interrupted roots remain. Only validated transport root or independent metadata is exposed to upload.",
+    "failure_lifecycle": "Trusted transport remains owner of cleanup/resource uncertainty/log collection. Wrapper bounded process-group TERM/cleanup/KILL handling never certifies interrupted/forced output. Actual CLI guard uses common safe metadata boundary before candidate checkout; guard pass is not capture pass. Uploaded retained diagnostics include safe hidden members. Historical R1/R2 remain fixed.",
+    "complete_product_evidence": "Success requires exact93-member46-scene candidate/session/hash/geometry/full1280x800PNG contract. Individual full-PNG verdicts remain pending, visual approval/production activation false; no source-only or synthetic artifact is promoted to product acceptance.",
+    "mode_and_result_separation": "Malformed or opt-in source mode skips ordinary jobs under distinct source-only display names, preserving failing guard behavior. All ordinary remaining runtime/SDK/quality jobs retain exclusion conditions. Pre-upload manifest still contains actual transport/observed-step data only, with final job/artifact identities null until separately observed actual completed GitHub metadata. No gate skipping/false approval added."
+  },
+  "previous_findings": [
+    {
+      "id": "R1",
+      "status": "remains_resolved",
+      "basis": "Final workflow retainsinclude-hidden-files:true only under admitted capture root paths."
+    },
+    {
+      "id": "R2",
+      "status": "remains_resolved",
+      "basis": "Final driver remainsapprovedv2 common guard/capture metadata wrapper; workflow guardid and capture-or-guard metadata fallback unchanged."
+    }
+  ],
+  "documentation_and_provenance": {
+    "policy_accuracy": "Development and README now explicitly state checked runtime matrix starts3.9, minimum profile/pip check retained and public3.8/static syntax floor unchanged. Requirements/shell comments accurately describe retained toolchain instead of obsolete3.8 execution rationale.",
+    "fragment": "Owned combined fragment records isolated nonproduction native source capture and3.8 runtime exclusion while preserving3.9 minimum coverage; no package/README version mutation.",
+    "review_history": "Original plans, independent scope assessment, rejected v1source findings, corrected v2source approval and complete amended v3plan/review are all retained with exact original hashes. Current review is additive, not a replacement of history or owner authority."
+  },
+  "validation_limits_and_remaining_gates": [
+    "This is a complete independent source/security assessment. Reviewer executed no tests, candidate programs/imports/renders, installs or actual native GitHub operation. No pass is inferred from source or fake-boundary test text.",
+    "Root must complete appropriate focused MCP checks and all four final-tree mandatory managed stages. Old pre-amendment successes or3.8 failure/interruption retain their exact old identity; only genuine MCP exact-tree/toolchain logic may reuse a matching stage. Remaining3.9/min or other environment/test failures must still be fixed or reported, never silently excluded.",
+    "Final signed feature publication, exact current full-task attachment/signature and ordinary final-head CI remain genuine separate requirements. This local working-payload approval does not invent a final commit SHA or enrollment receipt.",
+    "No first source-validation dispatch until separately reviewed concrete frozen-ref/protection/create-only/trigger/actor/permission/current task/provenance/ownership/hold conditions genuinely hold. Feature publication and session dev-merge waivers do not authorize dispatch/main/runtime actions.",
+    "After actual native capture, retain original completed GitHub run/job/attempt/artifact metadata separately; verify original bytes, safe extraction, complete scene identities and every full PNG individually. Preserve actual failures. No PR45 UI cause/fix/product acceptance is established here.",
+    "Future unpublished UI checkpoint publication and strictly necessary receipt import remain separate actual implementation work. Production main projection/runtime activation and genuine security/veto/cancel/operational holds remain independent.",
+    "Continue complete parent task through actual successful dev merges of all qualifying PRs and repair successors, with concurrency10, truthful labels, complete questions/options/answers, authenticated replies, resolver/orchestrator requirements, notification limits and GitHub-agent-only self_host relevance retained."
+  ],
+  "authority_limits": {
+    "exact_complete_source_payload_approved": true,
+    "final_head_signed_task_enrollment_or_CI_attested": false,
+    "native_or_visual_or_product_acceptance_pass": false,
+    "first_dispatch_tag_protection_creation_main_runtime_or_hold_release_authorized": false,
+    "owner_approval_forged_or_session_waiver_expanded": false,
+    "PR_merge_or_parent_completion_claimed": false,
+    "repository_edits": 0,
+    "candidate_execution_tests_installs_renders": 0,
+    "Pi_calls": 0,
+    "only_readonly_metadata_source_inspection_and_private_freeze_report_writes": true
+  }
+}

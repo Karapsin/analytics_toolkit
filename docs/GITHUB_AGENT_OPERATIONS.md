@@ -33,6 +33,55 @@ redacted, paged model view. Publication, runtime activation and actual request
 assignment require their own verified gates; merging this exporter alone does
 not establish that a blocked agent has received the evidence.
 
+## Native source validation before production activation
+
+The separate `tests.yml` source-validation mode captures an already published
+exact subject through the fixed reviewed native container transport. It does not
+execute subject installs, imports, tests or rendering on the runner host. Ordinary
+CI remains required; the synthetic infrastructure probe retains its separate
+purpose. No capture programs or checks run on the Pi.
+
+The workflow control must be reviewed and frozen at
+`refs/tags/agent-source-validation/v1/<workflow-sha>`. First establish effective
+no-update/no-delete protection, create-only publication, complete workflow-trigger
+review and actual owner dispatch authority through a separately reviewed concrete
+operation. Merely publishing this feature or approving a dev merge supplies none
+of those operational facts. The job checks both the original and rerun actor,
+the exact workflow identity, separate checkout roots and the fixed transport's
+source hashes. All checkouts disable persisted credentials; candidate containers
+receive no repository write, App or private controller credentials.
+
+After those real preconditions are satisfied, dispatch the registered `tests.yml`
+workflow from that frozen ref with `source_validation=true` and
+`source_validation_subject=<exact-published-sha>`. Malformed or conflicting mode
+inputs fail; source-mode skipped jobs cannot supply normal `fast-checks` success.
+[GitHub dispatch refs are branch or tag names](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
+Bare-SHA dispatch is not assumed.
+
+The metadata and capture artifacts have distinct `source-validation-*` names.
+The transport's private output is admitted before exposing a run-owned artifact
+root. Unavailable or unsafe roots retain only safe wrapper metadata. Successful
+transport evidence includes every manifest scene's geometry and full 1280x800
+PNG, with independent individual image verdicts still pending. Failure evidence
+remains partial or unavailable as observed. The pre-upload manifest records the
+actual transport and step result; final GitHub job/run conclusions and artifact
+IDs/digests must be obtained after completion and retained separately without
+rewriting the uploaded original. These artifacts grant no visual approval,
+production admission, main projection, runtime activation or acceptance for a
+different source head.
+
+This first mode can diagnose the already published subject. Validating an
+unpublished future UI checkpoint still needs a narrowly reviewed managed
+temporary-source publisher without automatic legacy capture, plus any minimal
+honest external receipt support required by its consumer. Those capabilities
+and the production capture activation remain separate pending work.
+
+The pre-check emits owned metadata even when an invalid actor, mode or frozen ref
+stops execution before subject checkout. A successful pre-check records only its
+guard result; capture acceptance remains false until capture actually completes.
+The upload retains this guard metadata when capture never starts, and includes
+hidden members of safely admitted diagnostics to preserve complete originals.
+
 ## Isolated capture execution
 
 The capture transport keeps the Actions checkout pristine and copies the exact

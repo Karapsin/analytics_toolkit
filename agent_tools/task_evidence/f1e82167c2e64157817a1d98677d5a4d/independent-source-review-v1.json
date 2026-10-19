@@ -1,0 +1,157 @@
+{
+  "schema": "independent-native-source-validation-stage1-full-source-security-review/v1",
+  "reviewer": "/root/review_native_source_validation_stage1_plan",
+  "created_at_utc": "2026-10-19T07:27:42.516784+00:00",
+  "decision": "request_changes",
+  "completeness": "complete",
+  "binding": {
+    "base": "71422731e51af15a104b65915873d576bf0024c0",
+    "branch": "codex/19ac2eeff8284a2f-9e48bab3",
+    "working_tree_not_commit": "Exact frozen changed-source/task inventory plus unchanged base; no candidate commit/head approval is implied.",
+    "inventory": {
+      "path": "/private/tmp/native-source-validation-stage1-independent-source-review-freeze-1792394530703643000/manifest.json",
+      "bytes": 2440,
+      "sha256": "b28943482e8c8ab64bd92e9ad08bf7cad915156e74f31d0c164dfb60bfc29b86"
+    },
+    "files": [
+      {
+        "path": ".github/agent/source_validation.py",
+        "bytes": 14598,
+        "sha256": "13df9a8b9603a4f09b48a2918a5a561f2d60a7ee1c9bfbd68515da13d4f96c7f"
+      },
+      {
+        "path": ".github/workflows/tests.yml",
+        "bytes": 7725,
+        "sha256": "ad9eb83dfadbf57e4a0674d89ba5d1d79873f836432b4967fa57105c734c065e"
+      },
+      {
+        "path": "agent_tools/changelog/0eb3fa30706b49a28f53c050ebd40f4a.md",
+        "bytes": 142,
+        "sha256": "b5f2d0efb42c8f5ad3de8be294fc7a83be55ecff7ecd953437e0fed981aebb14"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/implementation-plan.json",
+        "bytes": 13462,
+        "sha256": "438edf720d6e4c93b7cea99b7f8775838c11b926f981de0c64e9342feedaf66e"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-plan-review.json",
+        "bytes": 9178,
+        "sha256": "9fb5e4dfb9a738f6c107c01c47eb45c3f0baa74d1bc8a0aad605226887360ada"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-scope-assessment.json",
+        "bytes": 20717,
+        "sha256": "3473adf24a4fccaf8ecb56588a0be90e8e9191ea03cc984d91fcde3f9349d1b2"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/parent-objective.json",
+        "bytes": 1135,
+        "sha256": "83908d4491d98d964cbc1baf993d3c6d403070da63c4bc9a9fb088b09a682419"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/parent-task.json",
+        "bytes": 56655,
+        "sha256": "6b3f0534497773b2178f7d30b7a91ec1927db4d6f71728e2b7988958c5d8bf27"
+      },
+      {
+        "path": "docs/GITHUB_AGENT_OPERATIONS.md",
+        "bytes": 64930,
+        "sha256": "54df64cf91d534aa16149ee1d804c2a6310914130aaec1f985af611d3d1685a9"
+      },
+      {
+        "path": "tests/repository/_support/source_validation.py",
+        "bytes": 4947,
+        "sha256": "a5c2aa53a039c8912bccc60e03951ff233ad088f0be10fe66a091c0665b87782"
+      },
+      {
+        "path": "tests/repository/_support/workflow_scalars.py",
+        "bytes": 3037,
+        "sha256": "bcee88a6557b1697d06c690fe382216dd97fb3562c7b16e5726248a2f9ecdee8"
+      },
+      {
+        "path": "tests/repository/source_validation.py",
+        "bytes": 10861,
+        "sha256": "edfe4b432c212c0006e2a0905191b3cb45a9da094ce081e1f17e88076b3834ee"
+      }
+    ],
+    "approved_implementation_plan_sha256": "438edf720d6e4c93b7cea99b7f8775838c11b926f981de0c64e9342feedaf66e",
+    "independent_plan_review_sha256": "9fb5e4dfb9a738f6c107c01c47eb45c3f0baa74d1bc8a0aad605226887360ada"
+  },
+  "read_coverage": {
+    "entire_changed_executable_source_and_tests": "Read every line of .github/agent/source_validation.py, .github/workflows/tests.yml, tests/repository/source_validation.py, tests/repository/_support/source_validation.py and tests/repository/_support/workflow_scalars.py from exact private freeze.",
+    "documentation": "Read complete43-line added native-source-validation operations section and full workflow/doc diff against current base; unchanged operations text is not presented as newly reviewed code.",
+    "task_and_parent": "Read parent-objective and fragment completely. Frozen implementation-plan, independent plan review and scope assessment bytes exactly match previously completely read artifacts. Parsed full parent-task and independently verified semantic equality of the entire object, including all20 corrections/9decisions/4plans, to previously completely reviewed authenticated45 original_context; no parent context is dropped.",
+    "fixed_transport": "Reused previously completely read and rehashed unchanged fixed467 four-file transport closure and existing workflow source from plan review. No code change to that transport is in the candidate.",
+    "actual_subject_schemas": "Local Git467 lookup was unavailable, not evidence of a missing subject file. Corrected via authenticated readonly GitHub contents API at exact467 for scene manifest, visual workflow producer and scene geometry producer. Retained raw API originals/decoded source; inspected actual manifest and relevant session/geometry schema ranges. Actual manifest has46 scenes and208x47/1280x800 viewport matching validator.",
+    "startup_ownership": "Parent prepared mandatory MCP startup/impact/routing for this shared feature task and explicitly requested no child startup mutation. Child performed readonly status, parent-authorized private source freeze and readonly source/API/doc inspection; did not disturb branch/task/check ownership."
+  },
+  "findings": [
+    {
+      "id": "R1",
+      "severity": "P2",
+      "title": "Retain admitted hidden diagnostic members in the upload",
+      "path": ".github/workflows/tests.yml",
+      "lines": [
+        74,
+        84
+      ],
+      "problem": "The capture upload invokes actions/upload-artifact@v4 without include-hidden-files:true. Current v4.4+ excludes hidden members by default. The unchanged reviewed transport no-follow inventory/export permits safe dot-prefixed files/directories inside retained raw evidence and publishes their exact identities in diagnostics metadata. A safely collected member such as visual-diagnostics/raw/evidence/.detail is silently omitted from the uploaded original, while sibling diagnostics.json/isolation files allow the upload to succeed. This breaks complete original-byte preservation and later manifest verification.",
+      "primary_source": "https://raw.githubusercontent.com/actions/upload-artifact/v4/README.md",
+      "source_fact": "Official v4 README breaking changes and include-hidden-files input describe default hidden-member exclusion; inspected independently.",
+      "fixed_transport_basis": "capture_artifact.py _inventory/_publish/export_failure permit ordinary dot-prefixed names but reject unsafe components/types/links and enforce bounded no-follow export. capture_isolation.py collects only stopped/owned safe output into fresh upload destinations.",
+      "bounded_fix": "Enable include-hidden-files:true only for the admitted fixed transport capture roots. Keep current narrow run-owned paths; do not upload a checkout/temp parent or guessed roots. Add meaningful workflow retention assertion ensuring complete safe dot-member retention remains configured. No new evidence framework is needed."
+    },
+    {
+      "id": "R2",
+      "severity": "P2",
+      "title": "Produce safe metadata on the actual preflight CLI failure path",
+      "path": ".github/agent/source_validation.py",
+      "lines": [
+        365,
+        369
+      ],
+      "related_path": ".github/workflows/tests.yml:43-45,66-73",
+      "problem": "The real workflow runs the validate CLI before subject checkout. That CLI calls identity() directly, outside run() and its metadata finally. Invalid owner/rerun actor, ref, mode/subject or run identity raises there; capture is skipped and neither upload has an output path. The promised independent safe wrapper failure metadata is absent. The invalid-identity regression calls run() rather than the actual CLI/preflight path, so its retained-metadata assertions do not cover this real workflow behavior.",
+      "bounded_fix": "Use a common metadata-producing wrapper for validate-only and capture modes, and give the guard a step id. A successful guard has guard_passed:true and step_outcome:success while capture ok remains false/not attempted; failed guard retains safe failure metadata, false approvals and no capture root. Upload the capture metadata when present or the guard metadata otherwise. Keep guard failure before subject checkout/execution and never fall back to guessed capture paths. Add actual CLI/helper guard success/failure tests and workflow fallback-path assertions.",
+      "parent_response": "Parent agreed both findings and proposed exactly this small guard/common-wrapper/fallback repair after current managed precommit finishes; no corrected source has been reviewed in this v1 report."
+    }
+  ],
+  "whole_source_assessment": {
+    "parent_objective_alignment": "Aligned bounded stage1 implementation apart from the two failure-retention defects. It provides source-only native product capture infrastructure while preserving complete parent monitoring/fix task and honestly declaring later unpublished-checkpoint publisher/receipt and production activation gaps.",
+    "no_candidate_host_execution": "Driver imports only stdlib, uses bounded trusted Git identity subprocesses with credential/config/hooks/fsmonitor restrictions before contained execution, hashes all four fixed transport sources from an independent exact467 checkout, and invokes only fixed capture_isolation.py through python-I. Candidate source manifest is parsed as bounded data; candidate install/import/render is delegated to the unchanged reviewed isolated transport. Workflow has no candidate pip/import/test step and all three checkouts persist no credentials.",
+    "frozen_workflow_authority": "Identity binds exact repository, source mode, original and triggering actors, workflow SHA equality, content-addressed reserved tag name, exact subjectSHA and positive bounded run/attempt identities. Tag-name syntax does not establish actual effective no-update/no-delete protection; docs/plan correctly retain real separately reviewed protected create-only tag/whole-trigger/current-authority operation before first dispatch. No operation is performed or capability claimed here.",
+    "mode_isolation": "Compared full workflow diff: push/pull_request/default manual ordinary matrices, required job bodies and aggregate fast-check failure semantics remain intact. Opt-in or malformed nonempty source selections skip ordinary jobs under distinct source-only names and enter failing source guard when invalid. Current base has no synthetic probe job; undefined optional probe input is false and source identity refuses a future true conflicting mode; preserving a future independently introduced probe remains integration work, not an attested present capability.",
+    "output_admission": "Private per-run0600 command file lies outside all source/trusted/container writable roots. Parsing is bounded4096B, one exact newline-delimited artifact_root key only, admits direct generated UUID roots under actual owned non-symlink RUNNER_TEMP, suppresses missing/unsafe/interrupted output and never guesses a path. Normal directory link counts are correctly allowed; regular files reject hardlinks.",
+    "capture_and_failure_honesty": "Capture success additionally requires complete93-member46-scene inventory, candidate/session match, pass/removed-workspace state, scene hashes, actual fixed PNG dimensions and geometry. Individual verdicts remain pending; visual_approval/production_activation false. Nonzero/interrupted/suppressed/unsafe evidence never produces capture success; only admitted transport roots may upload. Pre-upload manifest contains no invented final GitHub job conclusion or future artifact IDs. Final actual job/artifact validation remains external after completion.",
+    "lifecycle": "Wrapper gives transport own process group,29-minute wait, TERM plus120-second cleanup opportunity and KILL/30-second reap on timeout. Interrupted/forced paths are never admitted as safe capture roots or certified cleanup. Fixed transport remains responsible for its actual owned containers/guards/loggers and uncertainty journals. No Pi candidate execution or source activation is introduced.",
+    "tests": "Read full offline boundary fixtures, negative identity/source/root/scene/artifact/hash/dimension/geometry cases, exact environment assertions, lifecycle signal fakes and limited fail-closed Actions-expression parser. New helpers do not run Docker/network/databases. Fixtures are explicitly synthetic and grant no PNG verdict. R2 identifies the one actual CLI/workflow retention gap masked by run-only identity tests.",
+    "documentation_and_task": "New operations text explicitly distinguishes source validation, native synthetic probe, ordinary required CI, individual visual acceptance and production activation. Complete parent task is semantically preserved and unique fragment records behavior without package-version change. No handed-off branch is edited by this feature."
+  },
+  "validation_evidence_limits": {
+    "tests_executed_by_reviewer": false,
+    "candidate_programs_imports_or_renders_executed": false,
+    "parent_reported_focused_pass_before_lint_refactor": "Not treated as independently verified final-tree checks.",
+    "managed_precommit": "Parent reports currently running; this review is not a check success/receipt and does not consume or modify running validation."
+  },
+  "remaining_acceptance": [
+    "Fix R1/R2 and obtain fresh full independent source review bound to the corrected exact tree/task.",
+    "Complete meaningful focused and mandatory managed precommit checks on final tree; fresh signature/task publication and exact final-head CI remain required.",
+    "Do not dispatch until separately concretely reviewed frozen-ref/protection/trigger/current-owner/permission/provenance/assignment/hold operation exists and is actually satisfied.",
+    "Keep final GitHub run/job/attempt/artifact originals separate from pre-upload manifest; verify original bytes and complete scene identities and inspect every full PNG individually.",
+    "No source-only stage1 publication establishes full45publication readiness, future UI checkpoint transport/receipt support, production main/runtime activation, old-head acceptance or successful dev merge.",
+    "Continue all qualifying parent PRs and repairs to actual successful dev merges; no parent completion is claimed."
+  ],
+  "authority_limits": {
+    "current_source_approved": false,
+    "plan_v2_approval_retained": true,
+    "CI_or_native_or_visual_pass": false,
+    "dispatch_ref_protection_private_control_or_runtime_mutation": false,
+    "merge_or_owner_policy_approval": false,
+    "source_repo_edits": 0,
+    "Pi_calls": 0,
+    "candidate_execution": 0,
+    "readonly_GitHub_calls_and_official_docs_only": true,
+    "private_freeze_report_writes_only": true
+  }
+}
