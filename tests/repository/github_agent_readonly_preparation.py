@@ -32,7 +32,10 @@ def test_actual_preparation_retains_hold_and_complete_published_context(
         controller.prepare(case, case.task, case.work, case.control)
     case.prepare(stage)
     assert durable(case.controls) == authority
-    assert controller.trusted_module("source_review").current(case.controls, case.repository, 1) is None
+    assert (
+        controller.trusted_module("source_review").current(case.controls, case.repository, 1)
+        is None
+    )
     assert case.task == task
     assert case.binding == binding
     assert case.binding["dev_base"] != case.task["base"]
@@ -137,7 +140,7 @@ def test_review_preparation_selects_prompt_and_retains_pending_assignment(
     assert not case.calls
 
 
-@pytest.mark.parametrize("kind, protocol", [("review", True), ("review", 2), ("correction", 1)])
+@pytest.mark.parametrize(("kind", "protocol"), [("review", True), ("review", 2), ("correction", 1)])
 def test_unsupported_source_protocol_creates_no_context_or_authority(
     tmp_path: Path, monkeypatch: Any, kind: str, protocol: Any
 ) -> None:

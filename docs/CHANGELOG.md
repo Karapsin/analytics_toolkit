@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Repair lint and formatting in read-only preparation regressions while preserving all assertions, protocol cases and resumable source-review safeguards.
+
 - Restore meaningful merge-readiness regression coverage with isolated private state and a healthy baseline before independently blocking stale reviews, wrong review Apps, failed fast checks and active writers.
 - Direct host-owned task-context mismatch notices to coordinator verification with an additive rendering status, preserving provenance holds and owner approval gates; controller activation and paired completion still require verified companion delivery eligibility.
 - Preserve a durable correction gate when verified coordinator dependencies return to planning, blocking earlier green heads through unavailable workers and restart; resolve restored controller conflicts without weakening pause retirement.
