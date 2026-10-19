@@ -30,7 +30,11 @@ distinguish executed, reused, and failed stages. Any tracked-tree or toolchain
 change invalidates the affected receipt. Do not commit unless every stage
 passes or has a current exact-match receipt; if an interpreter or dependency is
 missing, install it or explicitly report the blocker instead of skipping that
-stage.
+stage. Validation keeps the source and toolchain identity observed at the start
+of the run. A change detected at a stage boundary or before final certification
+invalidates the run; preserve the edits and rerun on the resulting tree, including
+managed coverage target updates. Earlier receipts retain their original identity.
+Legacy receipts are not reused, and commit readiness rechecks the toolchain.
 
 The artifact gate copies the project into a temporary source tree outside the
 checkout, builds one wheel and one sdist, validates their metadata and wheel
