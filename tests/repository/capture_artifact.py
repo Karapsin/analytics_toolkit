@@ -153,7 +153,10 @@ def test_failure_upload_remains_separate_and_always_runs() -> None:
     assert "if-no-files-found: error" in workflow
     assert "${{ github.run_id }}-${{ github.run_attempt }}" in workflow
     assert "ref: ${{ github.sha }}" in workflow
-    assert "run: python .agent-visual-controller/.github/agent/capture_artifact.py" in workflow
+    assert (
+        'run: python -I "$GITHUB_WORKSPACE/'
+        '.agent-visual-controller/.github/agent/capture_isolation.py"' in workflow
+    )
     assert "continue-on-error" not in workflow
 
 
