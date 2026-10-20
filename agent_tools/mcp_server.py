@@ -37,6 +37,10 @@ if str(REPO_ROOT) not in sys.path:
 from release_routines.lib.check_readme_dependencies import validate_readme_dependencies
 from release_routines.lib.project_metadata import load_project
 
+bootstrap_env = importlib.import_module(
+    f"{__package__}.bootstrap_env" if __package__ else "bootstrap_env"
+)
+
 DEFAULT_INDEX_DIR = docs_assistant.DEFAULT_INDEX_DIR
 CHECK_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "precommit_check.json"
 PRECOMMIT_STAGE_STATE_FILE = Path(DEFAULT_INDEX_DIR) / "precommit_stages.json"
@@ -422,9 +426,11 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
     )
     if health_result is not None:
         command_results.append(health_result)
+    cache_info: dict[str, Any] = {}
+    environment_reused = environment_reused and not bootstrap_env.refresh_requested()
     if not environment_reused:
-        for phase, command in _environment_commands(root_path, ensure_project_env):
-            result = _run_command(root_path, command)
+        phases, cache_info = _prepare_environment(root_path, ensure_project_env=ensure_project_env)
+        for phase, result in phases:
             command_results.append(result)
             if not result["ok"]:
                 return _tool_output(
@@ -519,6 +525,7 @@ def prepare_start(  # noqa: PLR0913 - public MCP input shape is intentionally ex
             },
             "environment": {
                 "reused": environment_reused,
+                **({"cache": cache_info} if cache_info else {}),
             },
             "startup_context": {"id": context["id"]},
         },
@@ -2682,6 +2689,24 @@ def _prepare_sync_commands(_root: Path) -> list[tuple[str, dict[str, Any]]]:
             },
         ),
     ]
+
+
+def _prepare_environment(
+    root: Path,
+    *,
+    ensure_project_env: bool,
+) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, Any]]:
+    commands = _environment_commands(root, ensure_project_env)
+    if bootstrap_env.cache_root() is not None:
+        results, cache = bootstrap_env.prepare(root, project=ensure_project_env, commands=commands)
+        return [("environment_cache", result) for result in results], cache
+    phases = []
+    for phase, command in commands:
+        result = _run_command(root, command)
+        phases.append((phase, result))
+        if not result["ok"]:
+            break
+    return phases, {}
 
 
 def _environment_commands(root: Path, ensure_project_env: bool) -> list[tuple[str, dict[str, Any]]]:
