@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
+import json
 import os
 import re
 import select
@@ -12,7 +14,9 @@ import sys
 import time
 from pathlib import Path
 
-from agent_tools import machine_signing, sessions
+from agent_tools import bootstrap_process, machine_signing, sessions
+
+SESSION_ID_LENGTH = 16
 
 
 class Bootstrap:
@@ -65,7 +69,8 @@ def _pump(master: int, stdin: int, deadline: float) -> None:
     while True:
         if bootstrap.stage != "ready" and time.monotonic() > deadline:
             msg = "Could not verify native Plan mode; no task input was forwarded."
-            raise RuntimeError(msg)
+            message = msg
+            raise RuntimeError(message)
         readable, _, _ = select.select([master, stdin], [], [], 0.2)
         if master in readable:
             try:
@@ -101,7 +106,8 @@ def launch(executable: str, root: Path, *, timeout: float = 90) -> int:
 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         msg = "Interactive launcher requires a terminal; use codex exec separately."
-        raise RuntimeError(msg)
+        message = msg
+        raise RuntimeError(message)
     stdin = sys.stdin.fileno()
     previous = termios.tcgetattr(stdin)
     pid, master = pty.fork()
@@ -155,27 +161,53 @@ def launch(executable: str, root: Path, *, timeout: float = 90) -> int:
                 os.waitpid(pid, 0)
 
 
-def main() -> int:
-    source, executable = Path(sys.argv[1]).resolve(), sys.argv[2]
-    directory = Path.home() / ".local/share/analytics-toolkit-agent/sessions"
-    root = sessions.create(source, directory / sessions.repository_key(source))
-    machine_signing.configure(root, machine_signing.ensure_key(Path.home()))
-    python = root / ".venv/bin/python"
-    subprocess.run([sys.executable, "-m", "venv", str(root / ".venv")], check=True)
-    subprocess.run(
-        [
-            str(python),
-            "-m",
-            "pip",
-            "install",
-            "-q",
-            "-r",
-            str(root / "agent_tools/requirements-mcp.txt"),
-        ],
-        check=True,
+def _resume_root(source: Path, directory: Path, identity: str) -> Path:
+    if len(identity) != SESSION_ID_LENGTH or any(
+        char not in "0123456789abcdef" for char in identity
+    ):
+        message = "Invalid bootstrap session ID."
+        raise RuntimeError(message)
+    root = directory / identity
+    if root.resolve() != directory.resolve() / identity or not (root / ".git").is_dir():
+        message = "Bootstrap session must be an owned clone in the session directory."
+        raise RuntimeError(message)
+    try:
+        state = sessions.load(root)
+    except (ValueError, OSError) as exc:
+        message = "Bootstrap session receipt is invalid; preserve the clone."
+        raise RuntimeError(message) from exc
+    if (
+        not isinstance(state, dict)
+        or state.get("id") != identity
+        or state.get("source") != str(source)
+        or state.get("phase") != "launching"
+    ):
+        message = "Resume requires this repository's session in launching phase."
+        raise RuntimeError(message)
+    if sessions.run(root, "git", "rev-parse", "--show-toplevel") != str(root.resolve()):
+        message = "Bootstrap session has an unexpected Git root."
+        raise RuntimeError(message)
+    sessions.clean(root)
+    if sessions.run(root, "git", "branch", "--show-current") != "dev":
+        message = "Bootstrap resume requires dev; preserve the existing branch."
+        raise RuntimeError(message)
+    return root
+
+
+def _prepare(source: Path, root: Path, *, refresh: bool) -> None:
+    directory = root / ".rag_index/bootstrap"
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    log = directory / "launcher.log"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "MCP_PYTHON": sys.executable,
+            "ATK_BOOTSTRAP_PROGRESS": "1",
+            "ATK_BOOTSTRAP_CACHE_DIR": str(bootstrap_env_directory(source)),
+            "ATK_BOOTSTRAP_REFRESH": "1" if refresh else "0",
+        }
     )
-    # The clone's tools must prepare its own environment and index before Plan mode starts.
-    subprocess.run(
+    result = subprocess.run(
         [
             str(root / "agent_tools/mcp_tool.sh"),
             "prepare-start",
@@ -185,18 +217,101 @@ def main() -> int:
             str(root),
         ],
         cwd=root,
-        check=True,
+        env=environment,
+        stdout=subprocess.PIPE,
+        text=True,
+        check=False,
     )
-    state = sessions.load(root)
-    state["phase"] = "planning"
-    sessions.save(root, state)
-    print(f"Session: {state['id']}\nClone: {root}\nStarting native Plan mode.", flush=True)
-    return launch(executable, root)
+    descriptor = os.open(log, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
+    with os.fdopen(descriptor, "w") as output:
+        output.write(result.stdout)
+    receipt: dict = {}
+    try:
+        receipt = json.loads(result.stdout)
+        ready = isinstance(receipt, dict) and receipt.get("ok") is True
+    except ValueError:
+        ready = False
+    if result.returncode != 0 or not ready:
+        message = f"Session preparation failed ({_failure_summary(receipt)}); receipt: {log}"
+        raise RuntimeError(message)
+
+
+def _failure_summary(receipt: object) -> str:
+    if not isinstance(receipt, dict):
+        return "invalid preparation receipt"
+    blockers = receipt.get("blockers")
+    blocker = blockers[0] if isinstance(blockers, list) and blockers else {}
+    blocker = blocker if isinstance(blocker, dict) else {}
+    details = receipt.get("result")
+    phase = details.get("phase", "bootstrap") if isinstance(details, dict) else "bootstrap"
+    excerpt = str(blocker.get("message") or blocker.get("excerpt") or receipt.get("error", ""))
+    if any(error in excerpt.lower() for error in bootstrap_process.NETWORK_ERRORS):
+        return f"{phase}: transient network failure"
+    lines = [line.strip() for line in excerpt.splitlines() if line.strip()]
+    cause = next(
+        (line for line in lines if line.startswith("ERROR:")), lines[-1] if lines else "failed"
+    )
+    return f"{phase}: {cause[:200]}"
+
+
+def bootstrap_env_directory(source: Path) -> Path:
+    override = os.environ.get("ATK_BOOTSTRAP_CACHE_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    return (
+        Path.home()
+        / ".local/share/analytics-toolkit-agent/wheels"
+        / sessions.repository_key(source)
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", type=Path)
+    parser.add_argument("executable")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--resume-bootstrap")
+    mode.add_argument("--refresh-bootstrap-cache", action="store_true")
+    args = parser.parse_args(argv)
+    source = args.source.resolve()
+    directory = (
+        Path.home()
+        / ".local/share/analytics-toolkit-agent/sessions"
+        / sessions.repository_key(source)
+    )
+    root = (
+        _resume_root(source, directory, args.resume_bootstrap)
+        if args.resume_bootstrap
+        else sessions.create(source, directory)
+    )
+    print(f"Session: {root.name}\nClone: {root}", flush=True)
+    try:
+        with bootstrap_process.lock(root / ".git/atk-bootstrap.lock", wait=False):
+            # Validate again after locking to prevent concurrent resume/launch races.
+            _resume_root(source, directory, root.name)
+            if args.resume_bootstrap:
+                # Refresh old failed clones before importing their bootstrap implementation.
+                refreshed = sessions.load(root)
+                refreshed["base"] = sessions.sync_dev(root)
+                sessions.save(root, refreshed)
+            machine_signing.configure(root, machine_signing.ensure_key(Path.home()))
+            _prepare(source, root, refresh=args.refresh_bootstrap_cache)
+            state = sessions.load(root)
+            state.update(phase="planning", base=sessions.run(root, "git", "rev-parse", "HEAD"))
+            sessions.save(root, state)
+    except (OSError, RuntimeError, subprocess.CalledProcessError, KeyboardInterrupt) as exc:
+        print(
+            f"Bootstrap stopped: {exc}\nResume from {source}: codex --resume-bootstrap {root.name}",
+            file=sys.stderr,
+        )
+        return 130 if isinstance(exc, KeyboardInterrupt) else 1
+    print("Starting native Plan mode.", flush=True)
+    return launch(args.executable, root)
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (RuntimeError, subprocess.CalledProcessError) as exc:
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
