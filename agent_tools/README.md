@@ -42,9 +42,9 @@ configuration; MCP servers are loaded when a session starts. Running
 commands above retain the manual JSON CLI.
 
 The project registration is optional (`required = false`) so a missing local
-environment does not prevent Codex from opening. The launcher never installs
-dependencies automatically; bootstrap failures report the command needed to
-repair the environment.
+environment does not prevent Codex from opening. The MCP stdio entrypoint does not install dependencies automatically; bootstrap
+failures report the command needed to repair the environment. The interactive
+`codex` launcher prepares its isolated session before opening the CLI.
 
 MCP tools return compact receipts by default. Successful summary responses omit
 internal command records; failures return a structured blocker with one bounded
@@ -59,13 +59,39 @@ tokens are unavailable to repository tools.
 
 Startup records an environment fingerprint and reuses a healthy `.venv` while
 requirements, project metadata, tox configuration, and the Python runtime are
-unchanged. Dependency installation is quiet when the fingerprint changes.
+unchanged. Interactive sessions share a private dependency wheelhouse under
+`~/.local/share/analytics-toolkit-agent/wheels/`, keyed by repository, Python/ABI,
+platform, requirements, project metadata, tox configuration, and preparation profile.
+Each clone owns its `.venv`; the toolkit is installed editable from that clone.
+A warm cache installs without PyPI, including editable build dependencies. Versions
+remain fixed until inputs change or an explicit cache refresh is requested.
+
+Cache population is serialized and published only after offline installation,
+`pip check`, and import verification. Incomplete or corrupted caches are rebuilt;
+a failed refresh preserves the previous healthy generation. Downloads default to
+a 120-second socket timeout and five connection retries, respecting `PIP_*`
+overrides. Streaming network errors retry the whole download at most three times
+with 2/5-second backoff, within a shared 15-minute deadline. Dependency conflicts
+and certificate/authentication failures stop immediately. Progress goes to stderr;
+full output and preparation receipts remain private below `.rag_index/bootstrap/`.
+`ATK_BOOTSTRAP_CACHE_DIR` can override the wheelhouse location.
 
 Bare `codex` from the canonical repository creates a private clone on `dev`,
 pulls before launch, prepares the repository MCP, and selects native Plan mode
 before accepting task input. Install this launcher with
 `python -m agent_tools.install_sessions` from the prepared project environment.
+After updating the launcher, rerun the installer and source
+`~/.local/share/analytics-toolkit-agent/codex.zsh` in existing terminals.
 Other directories and Codex commands continue to use the existing CLI.
+
+From the canonical checkout, `codex --resume-bootstrap <session-id>` continues a
+failed preparation in its original clone. It accepts only a clean `dev` clone in
+`launching` phase with no unfinished Git operation. It refreshes dev before loading
+the clone's preparation tools, and concurrent attempts are rejected. A failed
+preparation prints its session ID, receipt location, and resume command; it never
+enters Plan mode or deletes the clone. `codex --refresh-bootstrap-cache` creates a
+new isolated session and refreshes dependency versions even when inputs match.
+The first preparation requires PyPI; Git synchronization still requires its remote.
 
 Automatic handling accepts only the repository owner's PRs whose heads are SSH
 signed by an enrolled machine, plus this App's signed repair commits. The launcher
