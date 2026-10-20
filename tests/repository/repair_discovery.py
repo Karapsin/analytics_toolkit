@@ -109,6 +109,7 @@ def _discovery_with_inventory_failure(
     gh.api.side_effect = _inventory_api(metadata, failure, endpoint, status)
     gh.pages.side_effect = pages
     controls = Mock()
+    monkeypatch.setattr(controller.trusted_module("source_review"), "pending", lambda *args: False)
     controls.paused.return_value = False
     controls.correction.side_effect = lambda repository, number, head, digest: (
         {"reason": "fix", "changes": "fix"} if number == 2 else None

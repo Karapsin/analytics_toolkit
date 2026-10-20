@@ -30,27 +30,42 @@ def checks(base: str = "base", *, integration: str = "failure") -> list[dict[str
     ]
 
 
-def test_integration_failure_does_not_gate_dev_merge() -> None:
-    assert controller.ready({"mergeable": True, "labels": []}, checks(), "base", 17)
+def test_integration_failure_does_not_gate_dev_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    pr = owned_pr()
+    pr.update(mergeable=True, labels=[])
+    assert controller.ready(pr, checks(), "base", 17)
 
 
-def test_stale_review_wrong_app_and_failed_fast_checks_block_merge() -> None:
-    pr = {"mergeable": True, "labels": []}
-    assert not controller.ready(pr, checks("old-base"), "base", 17)
-    assert not controller.ready(pr, checks(), "base", 99)
-    failed = checks()
-    failed[1]["conclusion"] = "failure"
-    assert not controller.ready(pr, failed, "base", 17)
-    assert not controller.ready(
-        {"mergeable": True, "labels": [{"name": "agent:writing"}]}, checks(), "base", 17
-    )
+@pytest.mark.parametrize("condition", ["stale-base", "wrong-app", "failed-fast-check", "writing"])
+def test_stale_review_wrong_app_and_failed_fast_checks_block_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, condition: str
+) -> None:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    pr = owned_pr()
+    pr.update(mergeable=True, labels=[])
+    successful_checks = checks()
+    assert controller.ready(pr, successful_checks, "base", 17)
+
+    if condition == "stale-base":
+        successful_checks[0]["external_id"] = "old-base"
+    elif condition == "wrong-app":
+        successful_checks[0]["app"]["id"] = 99
+    elif condition == "failed-fast-check":
+        successful_checks[1]["conclusion"] = "failure"
+    else:
+        pr["labels"] = [{"name": "agent:writing"}]
+
+    assert not controller.ready(pr, successful_checks, "base", 17)
 
 
 def test_foreign_fork_is_not_a_trusted_model_job() -> None:
     pr = {
         "draft": False,
         "state": "open",
-        "base": {"ref": "dev"},
+        "base": {"ref": "dev", "repo": {"full_name": "owner/repo"}},
         "head": {"repo": {"full_name": "someone/fork"}},
     }
     assert not controller.trusted(pr, "owner/repo")
@@ -197,7 +212,7 @@ def owned_pr() -> dict[str, Any]:
         "number": 1,
         "draft": False,
         "state": "open",
-        "base": {"ref": "dev"},
+        "base": {"ref": "dev", "repo": {"full_name": "owner/repo"}},
         "user": {"type": "User", "login": "owner"},
         "head": {"sha": "a" * 40, "ref": "codex/feature", "repo": {"full_name": "owner/repo"}},
     }
@@ -548,6 +563,7 @@ def run_refresh_discovery(monkeypatch: Any) -> tuple[Any, dict[str, Any], list[A
     monkeypatch.setattr(controller, "signed_head", lambda *args: True)
     monkeypatch.setattr(controller, "task_metadata", lambda *args: metadata)
     controls = controller.trusted_module("review_control")
+    monkeypatch.setattr(controller.trusted_module("source_review"), "pending", lambda *args: False)
     monkeypatch.setattr(controls, "paused", lambda *args: False)
     monkeypatch.setattr(controls, "correction", lambda *args: None)
     return _RefreshDiscoveryGitHub(base), state, saved, metadata

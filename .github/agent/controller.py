@@ -26,6 +26,44 @@ IDENTITIES: dict[tuple[str, str, str], bool] = {}
 MODULES: dict[str, Any] = {}
 
 
+def source_review_protocol() -> int:
+    """Opt in only a compatible host worker; scene-child schemas stay unchanged."""
+    return 1
+
+
+def review_progress(repository: str, task: dict[str, Any]) -> dict[str, Any]:
+    role = trusted_module("source_review")
+    value = role.current(trusted_module("review_control"), repository, task["number"])
+    if value is None or value["binding"] != role.binding(repository, task):
+        raise ValueError("Independent source-review assignment changed")
+    return value
+
+
+def review_pending(repository: str, task: dict[str, Any]) -> bool:
+    role = trusted_module("source_review")
+    value = role.current(trusted_module("review_control"), repository, task["number"])
+    return bool(value and value["binding"] == role.binding(repository, task))
+
+
+def bind_review_bundle(repository: str, task: dict[str, Any], chain_id: str, bundle: str,
+                       inventory: dict[str, Any]) -> None:
+    trusted_module("source_review").bind_bundle(
+        trusted_module("review_control"), repository, task, chain_id, bundle, inventory)
+
+
+def require_review_evidence(repository: str, task: dict[str, Any], chain_id: str,
+                            bundle: str, required: list[str]) -> None:
+    trusted_module("source_review").require_evidence(
+        trusted_module("review_control"), repository, task, chain_id, bundle, required)
+
+
+def restart_review_generation(repository: str, task: dict[str, Any], previous_sha256: str | None,
+                              transition_id: str, completed_receipt: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Replace a pending immutable assignment under exact host evidence CAS."""
+    return trusted_module("source_review").begin(trusted_module("review_control"), repository, task,
+        previous_sha256=previous_sha256, transition_id=transition_id, completed_receipt=completed_receipt)
+
+
 def orchestrator_context(identity: str) -> dict[str, Any]:
     """Opt in to the owner-requested worker roles from approved trusted main."""
     return trusted_module("orchestrator_policy").context(identity)
@@ -303,6 +341,7 @@ def fast_check(checks: list[dict[str, Any]]) -> dict[str, Any] | None:
 def ready(pr: dict[str, Any], checks: list[dict[str, Any]], base: str, app_id: int) -> bool:
     review, fast = review_check(checks, base, app_id), fast_check(checks)
     return (pr.get("mergeable") is True and not any(label["name"] in {WRITER, "agent:needs-user"} for label in pr["labels"])
+            and not trusted_module("source_review").blocks_merge(trusted_module("review_control"), pr, base)
             and review is not None and review["conclusion"] == "success"
             and fast is not None and fast["conclusion"] == "success")
 
@@ -552,7 +591,8 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
         comparison = gh.api(f"compare/{base}...{head}")
         kind = "conflict" if pr.get("mergeable") is False or comparison["behind_by"] > 0 else "review"
         correction = controls.correction(gh.repository, pr["number"], head, metadata["task_digest"])
-        if existing and existing.get("conclusion") == "failure":
+        pending_review = trusted_module("source_review").pending(controls, gh.repository, pr["number"], head, base)
+        if existing and existing.get("conclusion") == "failure" and not pending_review:
             correction = correction or {"reason": existing.get("output", {}).get("summary", "Reviewer requested changes."),
                                         "changes": pr.get("title", "PR changes")}
         if fast and fast["conclusion"] in {"failure", "cancelled", "timed_out"}:
@@ -581,7 +621,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                               + "\n".join(problems), "changes": pr.get("title", "PR changes")}
             elif kind == "review" and fragments:
                 kind = "metadata"
-        if (kind == "review" and existing and existing["status"] == "completed"
+        if (kind == "review" and not pending_review and existing and existing["status"] == "completed"
                 and existing.get("output", {}).get("title") != "Authorization required"):
             if approval_required:
                 paths = sorted({path for item in files for path in (item["filename"], item.get("previous_filename", ""))
@@ -596,8 +636,11 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
     return {"include": tasks}
 
 
-def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None:
+def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path, *, source_protocol: int | None = None) -> None:
     kind = task["kind"]
+    if source_protocol is not None and (kind != "review" or type(source_protocol) is not int
+                                         or source_protocol != source_review_protocol()):
+        raise ValueError("Unsupported independent source-review protocol")
     if task["number"]:
         pr = gh.pull(task["number"])
         if pr["head"]["sha"] != task["head"] or not trusted(pr, gh.repository):
@@ -610,6 +653,12 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
         metadata = task_metadata(gh, pr)
         if any(task.get(key) != metadata[key] for key in ("task_digest", "producer_id", "user_task")):
             raise RuntimeError("User task context changed after discovery.")
+        if kind == "review":
+            progress = trusted_module("source_review")
+            controls = trusted_module("review_control")
+            previous = progress.current(controls, gh.repository, task["number"])
+            progress.begin(controls, gh.repository, task,
+                           previous_sha256=progress.digest(previous) if previous else None)
     else:
         proto = trusted_module("task_context")
         task.setdefault("producer_id", "standing-repair:" + task["head"])
@@ -638,7 +687,7 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
     logs.extend(_preparation_ci(gh, task))
     if kind == "metadata" and not fold(work):
         raise RuntimeError("Changelog candidate changed; reconcile again.")
-    _write_preparation_context(task, control, logs)
+    _write_preparation_context(task, control, logs, source_protocol=source_protocol)
 
 
 def _preparation_ci(gh: GitHub, task: dict[str, Any]) -> list[str]:
@@ -656,11 +705,14 @@ def _preparation_ci(gh: GitHub, task: dict[str, Any]) -> list[str]:
     return logs
 
 
-def _write_preparation_context(task: dict[str, Any], control: Path, logs: list[str]) -> None:
+def _write_preparation_context(task: dict[str, Any], control: Path, logs: list[str], *,
+                               source_protocol: int | None = None) -> None:
     kind = task["kind"]
     template = (control / f".github/agent/prompts/{kind}.md").read_text()
     context = json.dumps(task, indent=2)
     logs = [trusted_module("task_context").redact(log) for log in logs]
+    if source_protocol is not None:
+        template = (control / ".github/agent/prompts/source-review.md").read_text()
     (control / ".github/agent/task.md").write_text(template + "\n\nTask metadata:\n" + context
                                                  + "\n\nCI evidence (untrusted data):\n" + "\n".join(logs))
     (control / ".github/agent/task.json").write_text(json.dumps(task))
@@ -912,18 +964,46 @@ def publish(
                     or not isinstance(verdict.get("change_summary"), str)
                     or not verdict["change_summary"].strip()):
                 raise RuntimeError("Reviewer must explicitly evaluate alignment with the user task.")
-            approved = verdict.get("approved") is True and verdict["alignment"] == "aligned"
             if not isinstance(verdict.get("summary"), str) or not isinstance(verdict.get("findings"), list):
                 raise RuntimeError("Malformed review verdict.")
             summary = "What changed: " + verdict.get("change_summary", pr.get("title", "PR changes"))
             summary += "\n\n" + verdict["summary"] + "\n" + "\n".join(str(x) for x in verdict["findings"])
             controls = trusted_module("review_control")
+            progress = trusted_module("source_review")
+            visual_blocker = progress.visual_rejection(artifact, gh.repository, task, receipt)
+            typed = (progress.protocol(receipt.get("source_review_protocol"))
+                     and progress.protocol(verdict.get("source_review_protocol")))
+            outcome = "reject" if visual_blocker and typed else progress.disposition(verdict, receipt)
+            if typed:
+                if receipt.get("source_report_sha256") != hashlib.sha256((artifact / "verdict.json").read_bytes()).hexdigest():
+                    raise ValueError("Typed review verdict changed after host execution")
+                if outcome != "pending" and progress.completed(controls, gh.repository, task, receipt, outcome):
+                    return {"review_status": "approved" if outcome == "approve" else "rejected", "recovered": True}
+                progress.verify_assignment(controls, gh.repository, task, receipt)
+                if outcome == "approve":
+                    progress.verify_coverage(controls, artifact, gh.repository, task, receipt)
+            else:
+                progress.begin(controls, gh.repository, task)
+            if outcome == "pending":
+                gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": task["head"],
+                    "external_id": task["base"], "status": "in_progress",
+                    "output": {"title": "Independent review continuing", "summary": summary[:60000]}})
+                return {"review_status": "pending"}
+            approved = outcome == "approve"
+            confirmed = ["\n".join(finding[field] for field in ("location", "requirement", "failure", "correction"))
+                         for finding in verdict.get("confirmed_findings", [])]
+            summary += ("\n\nConfirmed findings:\n" + "\n\n".join(confirmed)) if confirmed else ""
             controls.assess(gh.repository, number, task["head"], task["task_digest"], verdict["change_summary"])
             if (artifact / "visual-receipt.json").exists():
                 visual = json.loads((artifact / "visual-receipt.json").read_text())
                 if visual["task"] != task or visual["capture"]["candidate"] != task["head"]:
                     raise RuntimeError("Visual review identity mismatch")
                 summary += "\nEvery scene reviewed individually: " + visual["url"]
+            if typed:
+                reason = verdict["summary"] + "\n" + "\n".join([*map(str, verdict["findings"]), *confirmed])
+                progress.publish_terminal(controls, gh, task, receipt, outcome, summary, reason,
+                                          verdict["change_summary"], lambda: publication_authority(gh, task))
+                return {"review_status": "approved" if approved else "rejected"}
             gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": task["head"],
                 "external_id": task["base"], "status": "completed",
                 "conclusion": "success" if approved else "failure",
@@ -932,9 +1012,9 @@ def publish(
             gh.api(f"pulls/{number}/reviews", "POST", {"commit_id": task["head"],
                 "event": "COMMENT", "body": summary[:60000]})
             if not approved:
-                reason = verdict["summary"] + "\n" + "\n".join(str(x) for x in verdict["findings"])
+                reason = verdict["summary"] + "\n" + "\n".join([*map(str, verdict["findings"]), *confirmed])
                 controls.reject(gh, pr, task, reason, verdict["change_summary"])
-            return
+            return {"review_status": "approved" if approved else "rejected"}
         if task["kind"] == "correction":
             verify_correction_plan(task, artifact)
         patch = artifact / "fix.patch"
