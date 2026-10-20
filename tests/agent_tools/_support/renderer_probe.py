@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib
+import json
 import struct
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from typing import Any
 from zipfile import ZipFile
 
 from tests._support.paths import REPO_ROOT
+from tests.agent_tools._support import raster_assets
 from tests.agent_tools._support.raster_transport import (
     bound_artifacts,
     source_binding,
@@ -45,7 +47,10 @@ def command(arguments: list[str], output: Path, name: str) -> dict[str, Any]:
             record["exit_code"] = result.returncode
         except (OSError, subprocess.TimeoutExpired) as exc:
             record.update(
-                exit_code=None, complete=False, failure=type(exc).__name__, message=str(exc)
+                exit_code=None,
+                complete=False,
+                failure=type(exc).__name__,
+                message=str(exc),
             )
         for kind, stream in (("stdout", stdout), ("stderr", stderr)):
             length = stream.tell()
@@ -91,8 +96,7 @@ def wheel_identity(path: Path) -> dict[str, Any]:
 def inspect_installed(output: Path) -> None:
     renderer = importlib.import_module("resvg_py")
     svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2">'
-        '<path d="M0 0h2v2H0"/></svg>'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><path d="M0 0h2v2H0"/></svg>'
     )
     png = bytes(renderer.svg_to_bytes(svg_string=svg))
     path = output / "api.png"
@@ -119,9 +123,29 @@ def inspect_installed(output: Path) -> None:
     write_report(output / "installed-api.json", report)
 
 
+def _verify_raster_index(output: Path) -> bool:
+    path = output / "raster.json"
+    if not path.exists():
+        return False
+    report = None
+    try:
+        report = json.loads(path.read_bytes())
+        raster_assets.verify_references(output, report)
+        return bool(report["complete"])
+    except (OSError, ValueError, KeyError) as exc:
+        if isinstance(report, dict):
+            report["complete"] = False
+            report.setdefault("missing", []).append("published_asset_verification:" + str(exc))
+            write_report(path, report)
+        return False
+
+
 def finish_probe(output: Path, report: dict[str, Any]) -> int:
     report["omissions"] = bound_artifacts(output)
-    report["complete"] = report["complete"] and not report["omissions"]
+    report["raster_index_verified"] = _verify_raster_index(output)
+    report["complete"] = (
+        report["complete"] and not report["omissions"] and report["raster_index_verified"]
+    )
     complete = write_report(output / "probe.json", report)
     return 0 if complete else 1
 
@@ -240,7 +264,10 @@ def collect_current(output: Path) -> int:
         "observations",
     )
     omissions = bound_artifacts(output)
-    complete = observed["complete"] and observed["exit_code"] == 0 and not omissions
+    index_verified = _verify_raster_index(output)
+    complete = (
+        observed["complete"] and observed["exit_code"] == 0 and not omissions and index_verified
+    )
     retained = write_report(
         output / "invocation.json",
         {
@@ -249,6 +276,7 @@ def collect_current(output: Path) -> int:
             "binding": source_binding(),
             "command": observed,
             "omissions": omissions,
+            "raster_index_verified": index_verified,
         },
     )
     return 0 if complete and retained else 1

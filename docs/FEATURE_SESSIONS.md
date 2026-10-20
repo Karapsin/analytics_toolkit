@@ -8,6 +8,29 @@ From the canonical checkout, launch a fresh isolated session with bare `codex`.
 The launcher creates and synchronizes a private clone before entering native
 Plan mode. Complete the plan there, then leave Plan mode for implementation.
 
+Dependencies are downloaded into a shared local wheelhouse on the first launch.
+Later sessions with matching Python, platform and requirement inputs install from
+that cache into their own `.venv`; the toolkit remains editable from each clone.
+Dependency versions change when those inputs change or when you explicitly refresh:
+
+```bash
+codex --refresh-bootstrap-cache
+```
+
+A failed preparation prints its ID, private log location and recovery command:
+
+```bash
+codex --resume-bootstrap <session-id>
+```
+
+Run recovery from the canonical checkout. It preserves the original clone and
+accepts only a clean `dev` session still in `launching` phase. The clone is refreshed
+before its tools run, and Plan mode opens only after successful preparation. A warm
+wheelhouse avoids PyPI; cloning and dev synchronization still need Git access.
+After updating the launcher, run `python -m agent_tools.install_sessions` from the
+prepared canonical environment and source the installed shell file in existing
+terminals: `source ~/.local/share/analytics-toolkit-agent/codex.zsh`.
+
 Use the repository tools from the session clone:
 
 ```bash

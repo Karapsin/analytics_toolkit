@@ -15,8 +15,8 @@ __all__ = ["raster_capture"]
 def _normalized_capture(state: dict[str, Any]) -> dict[str, Any]:
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5">'
-        '<style>.terminal-probe-matrix {font-family:monospace;font-size:20px}</style>'
-        '<g class="terminal-probe-matrix"><text x="1" y="2" textLength="3" '
+        "<style>.terminal-123-matrix {font-family:monospace;font-size:20px}</style>"
+        '<g class="terminal-123-matrix"><text x="1" y="2" textLength="3" '
         'text-decoration="underline" fill="#abcdef">é</text></g></svg>'
     )
     framed = capture._frame_svg(svg)
@@ -54,13 +54,18 @@ def test_twelve_images_keep_unmodified_inputs_and_bind_only_real_ordinary_output
         assert record["png"]["reused_ordinary_png"] is ordinary
         if ordinary:
             expected = (
-                state["retained"]["intermediate"] if identity.startswith("intermediate") else state["png"]
+                state["retained"]["intermediate"]
+                if identity.startswith("intermediate")
+                else state["png"]
             )
             assert base64.b64decode(record["png"]["content"], validate=True) == expected
         if "normalization" in record:
             assert "normalized_framed_svg" not in record["normalization"]
     exported = evidence.export_input_evidence(
-        state["svg"], state["framed"], state["png"], rasterization=state["metadata"]
+        state["svg"],
+        state["framed"],
+        state["png"],
+        rasterization=state["metadata"],
     )
     inputs = exported["inputs"]
     assert inputs["raw_svg"]["content"] == state["svg"]
@@ -73,7 +78,9 @@ def test_twelve_images_keep_unmodified_inputs_and_bind_only_real_ordinary_output
 
 @pytest.mark.parametrize("kind", ["svg", "png"])
 def test_original_and_normalized_stages_share_unchanged_exact_limits(
-    monkeypatch: pytest.MonkeyPatch, raster_capture: dict[str, Any], kind: str
+    monkeypatch: pytest.MonkeyPatch,
+    raster_capture: dict[str, Any],
+    kind: str,
 ) -> None:
     state = _normalized_capture(raster_capture)
     baseline = _comparisons(state)
@@ -90,7 +97,8 @@ def test_original_and_normalized_stages_share_unchanged_exact_limits(
 
 
 def test_missing_diagnostic_font_keeps_both_representations_explicitly_incomplete(
-    monkeypatch: pytest.MonkeyPatch, raster_capture: dict[str, Any]
+    monkeypatch: pytest.MonkeyPatch,
+    raster_capture: dict[str, Any],
 ) -> None:
     state = _normalized_capture(raster_capture)
     monkeypatch.setattr(

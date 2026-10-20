@@ -200,12 +200,12 @@ def test_border_scene_targets_are_actual_dialog_or_workspace_panes(scene: str) -
     targets = diagnostics._targets(app, scene)
     assert scene in diagnostics.BORDER_SCENES
     assert queries == (
-        ["#connections-picker"]
+        ["#connections-picker", "#connections-options"]
         if scene == "connections-searching"
         else [".query-pane", ".result-pane"]
     )
     assert [name for name, _widget, _rows in targets] == (
-        ["connections-border"]
+        ["connections-border", "connections-options-border"]
         if scene == "connections-searching"
         else ["query-pane", "result-pane"]
     )

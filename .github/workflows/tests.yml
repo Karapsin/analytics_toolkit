@@ -204,7 +204,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-      RASTER_BASE: 4a17e91b20b2683aca365f486e6217a141ef8c5b
+      RASTER_BASE: 9d65281dd78495d23cd02db4a4f14e86eb954030
       RASTER_PROFILE: ${{ matrix.env_name }}
     strategy:
       fail-fast: false
@@ -238,7 +238,7 @@ jobs:
       - name: Install raster regression fonts
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y fontconfig fonts-dejavu-core
+          sudo apt-get install --no-install-recommends -y fontconfig fonts-dejavu-core fonts-noto-cjk
           fc-match --format='%{family}\t%{file}\n' 'DejaVu Sans Mono'
 
       - name: Upgrade pip
@@ -254,12 +254,12 @@ jobs:
       - name: Install latest test environment
         id: latest
         if: ${{ !cancelled() && matrix.env_name != 'py39-min' }}
-        run: python -m pip install -e '.[tui,datalens]' pytest "Pillow>=10,<13" "resvg-py>=0.5,<0.6"
+        run: python -m pip install -e '.[tui,datalens]' pytest "Pillow>=10,<13" "resvg-py==0.3.2; python_version == '3.9'" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
 
       - name: Install minimum Python 3.9 test environment
         id: minimum
         if: ${{ !cancelled() && matrix.env_name == 'py39-min' }}
-        run: python -m pip install -c constraints/py39-min.txt -e '.[tui,datalens]' pytest==8.3.5 "Pillow>=10,<13" "resvg-py>=0.5,<0.6"
+        run: python -m pip install -c constraints/py39-min.txt -e '.[tui,datalens]' pytest==8.3.5 "Pillow>=10,<13" "resvg-py==0.3.2; python_version == '3.9'" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
 
       - name: Validate minimum dependency constraints
         if: matrix.env_name == 'py39-min'
@@ -278,7 +278,10 @@ jobs:
 
       - name: Require fast causal-diagnostic regressions
         if: ${{ !cancelled() && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
-        run: python -m pytest -q tests/agent_tools/raster_observations.py
+        run: >-
+          python -m pytest -q tests/agent_tools/raster_observations.py
+          tests/agent_tools/raster_assets.py tests/agent_tools/raster_fonts.py
+          tests/agent_tools/underline_geometry.py
 
       - name: Require actual renderer regression
         if: ${{ !cancelled() && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
@@ -322,7 +325,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-      RASTER_BASE: 4a17e91b20b2683aca365f486e6217a141ef8c5b
+      RASTER_BASE: 9d65281dd78495d23cd02db4a4f14e86eb954030
       RASTER_PROFILE: coverage
 
     steps:
@@ -338,7 +341,7 @@ jobs:
       - name: Install raster regression fonts
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y fontconfig fonts-dejavu-core
+          sudo apt-get install --no-install-recommends -y fontconfig fonts-dejavu-core fonts-noto-cjk
           fc-match --format='%{family}\t%{file}\n' 'DejaVu Sans Mono'
 
       - name: Install tox

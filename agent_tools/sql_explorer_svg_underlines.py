@@ -176,8 +176,24 @@ class _Context:
     chain: list[ET.Element] = field(default_factory=list)
 
 
+def _remove_underline(declarations: dict[str, str]) -> dict[str, str]:
+    cleaned = dict(declarations)
+    for key in ("text-decoration", "text-decoration-line"):
+        if "underline" in cleaned.get(key, "").split():
+            remaining = [
+                decoration for decoration in cleaned[key].split() if decoration != "underline"
+            ]
+            cleaned[key] = " ".join(remaining) or "none"
+    return cleaned
+
+
+def _serialize_declarations(declarations: dict[str, str]) -> str:
+    return ";".join(f"{key}:{value}" for key, value in declarations.items())
+
+
 class _Normalizer:
     def __init__(self, root: ET.Element) -> None:
+        self.root = root
         self.rules = _class_rules(root)
         self.records: list[dict[str, Any]] = []
         self.neutralize: list[tuple[ET.Element, set[str]]] = []
@@ -231,11 +247,57 @@ class _Normalizer:
         self.records.append(record)
         self.additions.append((context.text_parent, context.text_root, line))
 
+    def _terminal_classes(self) -> dict[str, str]:
+        # Clone all rules of affected classes in their original cascade order.
+        # The original classes remain untouched for titles/outside-terminal text.
+        names = {
+            name
+            for name, declarations in self.rules
+            if _remove_underline(declarations) != declarations
+        }
+        used = {name for name, _declarations in self.rules}
+        used.update(name for node in self.root.iter() for name in node.get("class", "").split())
+        replacements = {}
+        for name in sorted(names):
+            candidate = name + "-terminal-geometry"
+            while candidate in used:
+                candidate += "-copy"
+            used.add(candidate)
+            replacements[name] = candidate
+        for node in self.root.iter():
+            if node.tag.rsplit("}", 1)[-1] == "style" and node.text:
+                node.text = re.sub(
+                    r"([^{}]+)\{([^{}]*)\}",
+                    lambda match: self._clone_rule(match, replacements),
+                    node.text,
+                )
+        return replacements
+
+    @staticmethod
+    def _clone_rule(match: re.Match[str], replacements: dict[str, str]) -> str:
+        selector, body = match.groups()
+        name = selector.strip()[1:]
+        if selector.strip() != "." + name or name not in replacements:
+            return match.group(0)
+        cleaned = _serialize_declarations(_remove_underline(_declarations(body)))
+        return match.group(0) + f"\n.{replacements[name]} {{{cleaned}}}"
+
     def apply(self) -> None:
-        for node, remaining in self.neutralize:
-            inline = node.get("style", "").rstrip(";")
-            value = " ".join(sorted(remaining)) or "none"
-            node.set("style", inline + f";text-decoration:{value};text-decoration-line:{value}")
+        replacements = self._terminal_classes()
+        for node, _remaining in self.neutralize:
+            # Remove each declaration at its origin. An inline override does not
+            # reliably cancel native decoration propagated by an ancestor.
+            for key, value in _remove_underline(node.attrib).items():
+                if key in ("text-decoration", "text-decoration-line"):
+                    node.set(key, value)
+            if "style" in node.attrib:
+                node.set(
+                    "style",
+                    _serialize_declarations(_remove_underline(_declarations(node.attrib["style"]))),
+                )
+            classes = node.get("class", "").split()
+            if any(name in replacements for name in classes):
+                node.set("class", " ".join(replacements.get(name, name) for name in classes))
         for parent, text, line in reversed(self.additions):
             parent.insert(list(parent).index(text) + 1, line)
 

@@ -27,12 +27,17 @@ MAX_BYTES = 512 * 1024
 MAX_LIFECYCLE_BYTES = 8192
 BORDER_ROWS_PER_REGION = 9
 BORDER_SCENES = frozenset({"connections-searching", "result-success"})
+COMPLETION_SCENES = frozenset(
+    {"completion-columns", "completion-empty-columns", "completion-narrowed"}
+)
 SCENES = frozenset(
     {
         "database-picker",
         "find-replace",
         "column-ruler-scrolled",
         "completion-columns",
+        "completion-empty-columns",
+        "completion-narrowed",
         "keyboard-multicursor",
         "editor-command-caret",
         "new-file",
@@ -262,7 +267,10 @@ def _selector_geometry_findings(name: str, state: dict[str, Any], findings: list
 
 
 def _selector_text_findings(
-    name: str, entry: dict[str, Any], expected: str, findings: list[str]
+    name: str,
+    entry: dict[str, Any],
+    expected: str,
+    findings: list[str],
 ) -> None:
     for layer in ("widget_rows", "composed_rows"):
         rows = entry.get(layer, [])
@@ -279,7 +287,10 @@ def _selector_text_findings(
 
 
 def selector_readiness_snapshot(
-    app: Any, scene: str, *, terminal: dict[str, Any] | None = None
+    app: Any,
+    scene: str,
+    *,
+    terminal: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Collect observations even when selector visibility blocks production capture."""
     if terminal is None:
@@ -329,8 +340,9 @@ def _targets(app: Any, scene: str) -> list[tuple[str, Any, int]]:
             (
                 "connections-border",
                 app.screen.query_one("#connections-picker"),
-                BORDER_ROWS_PER_REGION,
+                12,
             ),
+            ("connections-options-border", app.screen.query_one("#connections-options"), 12),
         ]
     elif scene == "result-success":
         targets = [
@@ -350,10 +362,14 @@ def _targets(app: Any, scene: str) -> list[tuple[str, Any, int]]:
             ("new-file-dialog", dialog, max(1, dialog.region.height)),
             ("new-file-name", app.screen.query_one("#new-file-name"), 3),
         ]
-    elif scene == "completion-columns":
+    elif scene in COMPLETION_SCENES:
         targets = [
             ("completion-anchor", app.active_workspace.editor, 3),
-            ("completion-popup", app.active_workspace.completion_menu, 5),
+            (
+                "completion-popup",
+                app.active_workspace.completion_menu,
+                app.active_workspace.completion_menu.content_region.height,
+            ),
         ]
     elif scene == "column-ruler-scrolled":
         editor = app.active_workspace.editor
@@ -493,7 +509,11 @@ def _collect_region_rows(
 
 
 def _crop_caret_span(
-    span: dict[str, Any], left: int, right: int, *, retained: bool
+    span: dict[str, Any],
+    left: int,
+    right: int,
+    *,
+    retained: bool,
 ) -> tuple[dict[str, Any] | None, bool]:
     """Keep zero-width suffixes with their retained base, even across style spans."""
     position = span["x"]
@@ -523,7 +543,11 @@ def _crop_caret_span(
 
 
 def _caret_cells(
-    rows: list[dict[str, Any]], *, x: int, y: int, width: int
+    rows: list[dict[str, Any]],
+    *,
+    x: int,
+    y: int,
+    width: int,
 ) -> dict[str, Any] | None:
     """Crop already collected terminal cells; never render or refresh a second time."""
     row = next((item for item in rows if item["y"] == y), None)
@@ -582,12 +606,21 @@ def _caret_mapping(editor: Any, selection: Any) -> dict[str, Any]:
 
 
 def _observe_caret_layers(
-    caret: dict[str, Any], regions: list[dict[str, Any]], result: dict[str, Any]
+    caret: dict[str, Any],
+    regions: list[dict[str, Any]],
+    result: dict[str, Any],
 ) -> None:
     name = f"multicursor:caret:{caret['index']}"
     if caret["clipped"]:
         result["missing"].append(f"{name}:clipped")
-    region = next((entry for entry in regions if entry["name"] == "multicursor-editor"), {})
+    region = next(
+        (
+            entry
+            for entry in regions
+            if entry["name"] in {"multicursor-editor", "completion-anchor"}
+        ),
+        {},
+    )
     x, y = caret["screen_cell"]
     width = min(caret["cell_width"], MAX_CELLS)
     if width < caret["cell_width"]:
@@ -627,7 +660,10 @@ def _collect_caret(editor: Any, selection: Any, index: int, result: dict[str, An
 
 
 def _multicursor_diagnostics(
-    app: Any, result: dict[str, Any], *, scene: str = "keyboard-multicursor"
+    app: Any,
+    result: dict[str, Any],
+    *,
+    scene: str = "keyboard-multicursor",
 ) -> None:
     """Observe actual state separately from fixture expectations without changing either."""
     snapshot: dict[str, Any] = {
@@ -642,7 +678,9 @@ def _multicursor_diagnostics(
     }
     if scene == "editor-command-caret":
         snapshot["expected"].update(
-            positions=[[1, 14]], keyboard_mode=False, focused_widget_id="command-input"
+            positions=[[1, 14]],
+            keyboard_mode=False,
+            focused_widget_id="command-input",
         )
     result["multicursor"] = snapshot
     try:
@@ -926,14 +964,29 @@ def _editor_diagnostics(app: Any, scene: str, result: dict[str, Any]) -> None:
                 for key in ("position", "window_size", "window_virtual_size")
             }
     _scene_state_diagnostics(app, scene, result)
-    if scene == "completion-columns":
+    if scene in COMPLETION_SCENES:
         editor = app.active_workspace.editor
         _, cursor_y = editor.wrapped_document.location_to_offset(editor.cursor_location)
         result["completion"] = {
             "active_row": editor.scrollable_content_region.y + cursor_y - int(editor.scroll_y),
             "viewport": _region_record(editor.scrollable_content_region),
             "popup": _region_record(app.active_workspace.completion_menu.region),
+            "focus": {
+                "class": type(app.focused).__name__,
+                "id": getattr(app.focused, "id", None),
+            },
+            "scroll_offset": list(editor.scroll_offset),
+            "editor_focused": editor.has_focus,
         }
+        result["multicursor"] = {
+            "carets": [],
+            "findings": [],
+            "scope": "observed completion carets; no fixture positions substituted",
+        }
+        for index, selection in enumerate(editor.cursor_selections[:MAX_REGIONS]):
+            _collect_caret(editor, selection, index, result)
+        if editor.cursor_count > MAX_REGIONS:
+            result["omissions"].append("completion:caret_limit")
 
 
 def _collect_target_region(
@@ -979,12 +1032,24 @@ def _border_sample_clips(region: Region) -> list[Region]:
     clips = [Region(0, y, min(width, MAX_CELLS), 1) for y in sorted({0, height - 1})]
     side_rows = sorted({1, height // 2, height - 2} - {0, height - 1})
     clips.extend(
-        Region(x, y, 1, 1)
-        for y in side_rows
-        if 0 < y < height - 1
-        for x in sorted({0, width - 1})
+        Region(x, y, 1, 1) for y in side_rows if 0 < y < height - 1 for x in sorted({0, width - 1})
     )
     return clips
+
+
+def _searching_border_clips(widget: Any) -> list[Region]:
+    """Observe consecutive right-edge cells across the dialog's central interruption band."""
+    region = widget.region
+    clips = _border_sample_clips(region)
+    # Use the same screen rows for both nested borders, derived from dialog geometry.
+    dialog = widget if widget.id == "connections-picker" else widget.parent
+    first = dialog.region.y + dialog.region.height // 2
+    extra = [
+        Region(region.width - 1, screen_y - region.y, 1, 1)
+        for screen_y in range(first + 1, first + 4)
+        if region.y < screen_y < region.bottom - 1 and region.width > 0
+    ]
+    return list(dict.fromkeys([*extra, *clips]))
 
 
 def _border_sample(widget: Any, composed: Any, clip: Region) -> dict[str, Any]:
@@ -1016,7 +1081,8 @@ def _border_sample(widget: Any, composed: Any, clip: Region) -> dict[str, Any]:
         if row is None or row["cells"] != clip.width or row["truncated"]:
             sample["missing"].append(layer + ":unavailable_or_clipped")
     sample["layers_equal"] = rendered_rows_equal(
-        sample["styled_widget_row"], sample["compositor_row"]
+        sample["styled_widget_row"],
+        sample["compositor_row"],
     )
     return sample
 
@@ -1078,8 +1144,21 @@ def _collect_border_raw(widget: Any, entry: dict[str, Any], result: dict[str, An
         result["missing"].append(entry["name"] + ":raw_content:" + type(error).__name__)
 
 
+def _decorative_border_roles(widget: Any) -> dict[str, str]:
+    try:
+        return {
+            side: getattr(widget.styles, "border_" + side)[0]
+            for side in ("left", "right")
+        }
+    except (AttributeError, IndexError, RuntimeError, TypeError, ValueError) as error:
+        return {"missing": type(error).__name__}
+
+
 def _collect_border_region(
-    target: tuple[str, Any, int], composed: Any, result: dict[str, Any], row_budget: int
+    target: tuple[str, Any, int],
+    composed: Any,
+    result: dict[str, Any],
+    row_budget: int,
 ) -> int:
     """Share scene budgets while keeping raw content distinct from styled border output."""
     name, widget, requested_rows = target
@@ -1093,6 +1172,7 @@ def _collect_border_region(
     result["regions"].append(entry)
     try:
         entry["geometry"] = _selector_child_state(widget)
+        entry["decorative_border_roles"] = _decorative_border_roles(widget)
         if entry["geometry"]["ancestors_truncated"]:
             result["omissions"].append(name + ":ancestor_limit")
         if not widget.display or not widget.visible or not widget.region.area:
@@ -1102,6 +1182,8 @@ def _collect_border_region(
             _collect_border_raw(widget, entry, result)
             row_budget -= 1
         clips = _border_sample_clips(widget.region)
+        if name in {"connections-border", "connections-options-border"}:
+            clips = _searching_border_clips(widget)
         selected = clips[: min(row_budget, max(0, requested_rows - 1))]
         entry["coverage"] = _border_coverage(widget.region, selected)
         if len(selected) != len(clips):

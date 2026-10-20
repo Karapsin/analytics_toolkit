@@ -42,9 +42,9 @@ configuration; MCP servers are loaded when a session starts. Running
 commands above retain the manual JSON CLI.
 
 The project registration is optional (`required = false`) so a missing local
-environment does not prevent Codex from opening. The launcher never installs
-dependencies automatically; bootstrap failures report the command needed to
-repair the environment.
+environment does not prevent Codex from opening. The MCP stdio entrypoint does not install dependencies automatically; bootstrap
+failures report the command needed to repair the environment. The interactive
+`codex` launcher prepares its isolated session before opening the CLI.
 
 MCP tools return compact receipts by default. Successful summary responses omit
 internal command records; failures return a structured blocker with one bounded
@@ -59,13 +59,39 @@ tokens are unavailable to repository tools.
 
 Startup records an environment fingerprint and reuses a healthy `.venv` while
 requirements, project metadata, tox configuration, and the Python runtime are
-unchanged. Dependency installation is quiet when the fingerprint changes.
+unchanged. Interactive sessions share a private dependency wheelhouse under
+`~/.local/share/analytics-toolkit-agent/wheels/`, keyed by repository, Python/ABI,
+platform, requirements, project metadata, tox configuration, and preparation profile.
+Each clone owns its `.venv`; the toolkit is installed editable from that clone.
+A warm cache installs without PyPI, including editable build dependencies. Versions
+remain fixed until inputs change or an explicit cache refresh is requested.
+
+Cache population is serialized and published only after offline installation,
+`pip check`, and import verification. Incomplete or corrupted caches are rebuilt;
+a failed refresh preserves the previous healthy generation. Downloads default to
+a 120-second socket timeout and five connection retries, respecting `PIP_*`
+overrides. Streaming network errors retry the whole download at most three times
+with 2/5-second backoff, within a shared 15-minute deadline. Dependency conflicts
+and certificate/authentication failures stop immediately. Progress goes to stderr;
+full output and preparation receipts remain private below `.rag_index/bootstrap/`.
+`ATK_BOOTSTRAP_CACHE_DIR` can override the wheelhouse location.
 
 Bare `codex` from the canonical repository creates a private clone on `dev`,
 pulls before launch, prepares the repository MCP, and selects native Plan mode
 before accepting task input. Install this launcher with
 `python -m agent_tools.install_sessions` from the prepared project environment.
+After updating the launcher, rerun the installer and source
+`~/.local/share/analytics-toolkit-agent/codex.zsh` in existing terminals.
 Other directories and Codex commands continue to use the existing CLI.
+
+From the canonical checkout, `codex --resume-bootstrap <session-id>` continues a
+failed preparation in its original clone. It accepts only a clean `dev` clone in
+`launching` phase with no unfinished Git operation. It refreshes dev before loading
+the clone's preparation tools, and concurrent attempts are rejected. A failed
+preparation prints its session ID, receipt location, and resume command; it never
+enters Plan mode or deletes the clone. `codex --refresh-bootstrap-cache` creates a
+new isolated session and refreshes dependency versions even when inputs match.
+The first preparation requires PyPI; Git synchronization still requires its remote.
 
 Automatic handling accepts only the repository owner's PRs whose heads are SSH
 signed by an enrolled machine, plus this App's signed repair commits. The launcher
@@ -301,7 +327,43 @@ Verify its final hash and `png_sha256` against the full scene PNG. Parsed styles
 also retain SVG text-decoration attributes. Existing parsed-element and 512 KiB
 limits, atomic publication, readiness and geometry checks stay in force.
 GitHub-only diagnostics support identification of the first failing layer;
-they do not repair or clear the visibility finding. A demonstrated repair
+they do not repair or clear the visibility finding.
+
+For `completion-empty-columns`, `completion-narrowed` and
+`connections-searching`, `export_observation` wraps the single actual
+`export_screenshot` invocation. It snapshots the recording Console under Rich's
+own recording lock before delegating `export_svg` once, then restores the method
+even on exceptions. It retains raw segment text, controls, stream-cell extents
+and original style properties separately from SVG-resolved styling. Dependency
+versions, installed module hashes and bounded source excerpts identify the
+actual exporter/compositor implementation. Unsupported recording APIs, source
+limits, controls and ambiguous Rich line-clip mappings remain explicit missing
+observations. The complete observation shares a 512 KiB bound; overflow is
+incomplete evidence. Overlapping SVG text candidates do not by themselves
+establish a whitespace omission mechanism.
+
+The completion scenes now retain actual primary/secondary caret-cell rows,
+focus, scroll, preferences and popup geometry. Searching-dialog evidence samples
+both nested borders, including consecutive right-edge cells through the dialog's
+central band, while preserving exact native/compositor comparisons and explicit
+unsampled intervals within the existing 24-row budget.
+
+`ordinary_raster_stages` retains actual intermediate/final PNG bytes for these
+export traces and phase scenes. `phase_comparisons` is a diagnostic-only
+control/aligned pair for `column-ruler-scrolled`, `keyboard-multicursor` and
+`editor-command-caret`. It moves only existing generated underline centers to
+the nearest final pixel center, by at most half a final pixel. Mapping includes
+supported ancestor translations/scales/matrices, nested viewBoxes and
+aspect-ratio placement; unsupported CSS, rotation, skew, singular transforms or
+definition-only geometry fail explicitly. Text, endpoints, stroke thickness,
+colors, opacity and clips remain intact. Each variant retains direct, actual
+2× intermediate and once-Lanczos-reduced PNGs, with exact SVGs, displacement
+records and invocation identity. No alignment is adopted by ordinary rendering.
+
+All comparison sections share the existing 4 MiB SVG and decoded-PNG limits,
+counting logical duplicate bytes before deduplication. Encoded geometry above the\nexporter's 8 MiB per-file limit loses asset content with explicit incomplete\ntransport status, preserving hashes and lengths. Missing intermediates,
+renderer failures and omitted bytes remain incomplete; successful diagnosis
+is neither a production correction nor a visual approval. A demonstrated repair
 needs renewed independent planning and review, exact-head CI and all 46
 candidate-bound geometry/full-PNG verdicts.
 
@@ -393,7 +455,9 @@ SVG export boundary before supersampling. It resolves generated terminal class,
 inline and inherited underline styling, then derives butt-ended strokes from the
 actual span x/y/textLength, resolved color and font size. Baseline offset and
 thickness are both 0.1em. Existing transforms and clips still apply. Only converted
-native underline decoration is neutralized to avoid duplicate decoration; text,
+native underline decoration is removed at its attribute, inline, class or inherited
+origin to avoid duplicate decoration. Shared classes receive terminal-only copies
+at the same cascade position, leaving outside-terminal text unchanged. Text,
 other decorations, glyph colors, positions, widths and terminal behavior stay
 intact. Span widths handle spaces, expanded tabs, wide and combining text without
 counting characters. Ambiguous geometry or unsupported underline syntax raises
@@ -407,12 +471,22 @@ decoded byte length and original SHA256. The provenance file separately records
 each envelope SHA256; replay validates both identities before UTF-8 decoding.
 No captured SVG whitespace is trimmed or normalized. Fast envelope regressions
 reject malformed base64, changed lengths, changed bytes and mismatched identities.
-The same fixed continuous-underline criterion must reject the original and accept the
-normalized output; no-underline, shifted-cell, wrong-color and clipping controls
-remain required. Ordinary GitHub matrix and tox latest/minimum/coverage jobs run
-it explicitly before the full suite, without renderer skips. Test-only
-`resvg-py>=0.5,<0.6` and Pillow plus GitHub fontconfig/DejaVu provisioning leave
-public dependencies and font declarations unchanged. A failed reproduction must
+Captured-original visibility is recorded as observed: recovery pixels show that
+these originals can satisfy the unchanged 32-channel-contrast and 70%-continuous-width
+predicate. Normalized output must satisfy it; removing the generated stroke,
+no-underline, shifted-cell, wrong-color and clipping controls must still fail.
+Synthetic Unicode cases request Noto Sans CJK JP, provisioned with fonts-noto-cjk.
+A fontconfig observation retains the actual file/face, hash and character coverage;
+a rendered missing-glyph control distinguishes real glyphs from tofu. Production
+and captured font declarations remain unchanged, and renderer selection is unknown.
+Ordinary GitHub matrix and tox latest/minimum/coverage jobs run it explicitly before
+the full suite, without renderer skips. Test-only renderer requirements select
+`resvg-py==0.3.2` on Python 3.9 and `resvg-py>=0.5,<0.6` on Python 3.10–3.14.
+Canonical Python 3.11 coverage retains the latter range. Pillow and GitHub
+fontconfig/DejaVu provisioning remain unchanged, as do public dependencies and font
+declarations. The fast configuration regression evaluates the actual workflow
+installation arguments and tox requirements, including conflicting unconditional
+renderer requirements, coverage and SDK contracts. A failed reproduction must
 retain its environment evidence for renewed planning. These tests and comparisons
 supply no visual approval: all 46 fresh full-scene verdicts and exact-head CI
 remain required.
@@ -424,38 +498,81 @@ coverage retains the corresponding `raster-coverage-...` artifact even on failur
 The versioned `raster.json` enumerates both captured scenes and synthetic space,
 expanded-tab, wide-glyph and combining-mark cases before any assertion can hide a
 later control. Each original/plain/normalized variant, plus applicable wrong-color
-and clipped controls, retains exact base64 SVG, direct PNG, actual 2x intermediate
-and once-reduced PNG bytes. Pixel observations cover only the unchanged predicate's
+and clipped controls, retains exact SVG, direct PNG, actual 2x intermediate
+and once-reduced PNG bytes through the indexed asset format below. Pixel observations cover only the unchanged predicate's
 three sampled rows at the target and shifted cell, recording RGB values, channel
 differences and qualifying runs. These are separately labeled reproductions, not
 the earlier capture or reused pytest invocations. Fixture-envelope and decoded
 export identities remain separate; the predicate, thresholds and strict failures
-are unchanged.
+are unchanged. The renderer-failure regression keeps both mapped samples inside
+its fake viewport so a failed intermediate cannot hide later observations.
+Artifact-admission regressions use a dedicated output directory, keeping unrelated
+temporary project fixtures outside the admitted artifact set.
 
 `tests/agent_tools/_support/renderer_probe.py` runs a disposable Python 3.9
-environment before the ordinary incompatible installation. It downloads only the
-selected diagnostic `resvg-py==0.3.2` candidate, records wheel/metadata identities
-and Requires-Python, installs it under the latest/minimum dependency distinction,
-checks the actual API and renders the identical raster cases. Installation reports,
-versions, command arguments, stdout/stderr and exit codes are retained. After a
-strict raster failure, the probe still records pip-check and freeze results and
-returns failure; focused tests cover this ordering in both disposable profiles.
-A failed case stays failed; this probe neither adopts 0.3.2 nor changes the required 0.5
-installation. Standard-library-only transport lets even pre-install failures be
-reported. Successfully installed ordinary profiles collect the same observations
-before their required renderer regression; canonical coverage collects once before
-its first assertion and preserves that first report.
+environment before the ordinary installation. It downloads the diagnostic
+`resvg-py==0.3.2` candidate, records wheel/metadata identities and Requires-Python,
+installs it under the latest/minimum dependency distinction, checks the actual API
+and renders the identical raster cases. Installation reports, versions, command
+arguments, stdout/stderr and exit codes are retained. After a strict raster failure,
+the probe still records pip-check and freeze results and returns failure; focused
+tests cover this ordering in both disposable profiles. A failed case stays failed.
+Standard-library-only transport lets even pre-install failures be reported.
 
-The existing separate 4 MiB SVG/decoded-PNG budgets still apply across each
-report. Reports are bounded to 8 MiB, command streams to 1 MiB each; omissions and
+Historical candidate `c831556e16e51bb38496139e3251e781cbeb2de1`, GitHub run
+`39409847151`, supplied complete latest/minimum Python 3.9 probe evidence: all nine
+strict raster tests passed in each disposable environment with the Linux x86_64
+0.3.2 wheel (SHA256
+`30e4e92062c93e782506e54d39a96116a1eaaff5b0e08ff94c5f52452b061c75`).
+The wheel metadata declares Python >=3.9; those measured installation/API/raster
+results establish this tested environment, not every platform. Ordinary Python 3.9
+jobs in that run still failed the old unconditional >=0.5 installation. The selected
+environment markers now apply the measured renderer to ordinary latest/minimum
+tests, which still require fresh clean installation, full-suite and pip-check
+validation. Disposable probe success never substitutes for ordinary required jobs
+or visual review. `agent_tools/requirements-mcp.txt` retains >=0.5,<0.6 for the
+Python 3.10+ MCP runtime and its bootstrap/capture/integration consumers; Python 3.9
+raster-test compatibility does not establish full MCP support. Successfully installed
+ordinary profiles collect the same observations before their required renderer
+regression; canonical coverage collects once before its first assertion and preserves
+that first report.
+
+Ordinary CI raster reports use `raster-asset-index/v1`: `raster.json` references
+hash-addressed case JSON and complete SVG/PNG files under its adjacent `assets/`
+directory. Each reference records its relative path, exact byte length and SHA256;
+PNG records retain stage identity and actual dimensions. Repeated font metadata
+uses explicit `raster-metadata/v1` references. Verify references and hashes before
+reading case observations; both the writer and final probe admission verify them.
+Publication is atomic, collection failures remain failures, and successful earlier
+stages survive later failures. Visual-capture geometry JSON transport is unchanged.
+
+CI raster diagnostics admit up to 4 MiB of SVG inputs and 8 MiB of decoded PNG
+stage bytes across each report. Every stage occurrence consumes this logical budget,
+even when identical bytes share one indexed asset. Production visual comparisons
+retain their separate 4 MiB SVG and decoded-PNG limits. Reports and individual
+assets remain bounded to 8 MiB and total transport to 64 MiB. Exact limits are
+accepted; overflow retains identities and explicitly marks evidence incomplete.
+Command streams are bounded to 1 MiB each; omissions and
 failed/unavailable probes explicitly make evidence incomplete. Font availability
 and file hashes are system observations, never renderer-selected-font proof.
 Source hashes include the exact fixture envelopes, decoded-source provenance,
 loader and rendering helpers. Reports distinguish the approved plan-review input
-from historical diagnostic bindings and the actual GitHub checkout, candidate,
-workflow revision, run/attempt/job and profile. Unavailable runtime fields remain
-explicitly unavailable; fixed reviewed-input hashes never stand in for a new
-execution head. The coordinator must bind the final artifact, checkpoint, producer
+from historical diagnostic bindings, retained prior review inputs, and the actual
+GitHub checkout, candidate, workflow revision, run/attempt/job and profile.
+The current bounded recovery records plan
+`f07026f0f0028ea1ef576e1fbc41fe78ed95300ef50a47b4ce2ddcb853d427d8`
+against pinned dev `9d65281dd78495d23cd02db4a4f14e86eb954030`, with its
+separate task and review-input digests. The preceding `4e2bdf2b…` inputs remain
+under `historical_recovery_binding`, and `5533aa7e…` remains under
+`historical_primary_binding`. All four earlier review-input bindings,
+including `50b5f512…` and the saved `06272f5a…` checkpoint, remain explicitly
+historical. The workflow's `RASTER_BASE` identifies this pinned input; reports
+retain its observed value separately from the reviewed-input base, so drift is
+visible rather than replaced by a fixed expected value.
+These input identities never certify a future execution, capture, visual verdict
+or merge. Unavailable runtime fields remain explicitly unavailable; fixed
+reviewed-input hashes never stand in for a new execution head. The coordinator
+must bind the final artifact, checkpoint, producer
 and consumer receipts. A fast regression changes retained fixture bytes and CI
 identities independently to detect stale provenance. Missing evidence is not a
 successful comparison. Fresh
@@ -592,6 +709,35 @@ refocusing or recollection. Before the assertion sequence, the fixture settles t
 expanded layout, focuses and scrolls the field into view without animation, then
 checks that its full region is visible with space below. Existing menu visibility,
 placement and scroll-out assertions remain intact; production positioning is unchanged.
+
+Export observation retains the original stream, including controls, separately
+from Rich's control-filtered, width-cropped export coordinates from the same
+recording snapshot. Effective foreground/background colors use the invocation's
+theme, including default, reverse and dim behavior. Raw-control uncertainty and
+incomplete dependency observations remain explicit.
+
+Capture restores only proven omitted ASCII-space underline segments using that
+snapshot, the generated matrix geometry and an existing, validated line clip.
+Missing clips or ambiguous geometry reject restoration. Raw/framed originals
+remain separate from restoration, normalization and final-pixel-center alignment
+records and hashes. Alignment changes only generated underline Y centers by at
+most half a final pixel; the single 2× render and Lanczos reduction remain intact.
+Unaligned controls and original font comparisons remain separately identifiable.
+
+The searching-dialog border continuity trial is diagnostic only. It requires
+matching native/compositor cells, solid decorative border roles and the same
+export's glyph/style/clip evidence. It adds thin vertical geometry only to
+verified contiguous cells, preserving glyphs, corners, overlays and intentional
+gaps. Stage images and mapped pixel observations require independent assessment;
+unsampled edges and other omissions remain incomplete. Ordinary borders do not
+use the trial. All comparison assets share existing 4 MiB SVG/PNG limits and
+8 MiB per-file/64 MiB transport limits. The separate existing 8 MiB CI raster
+diagnostic PNG budget does not raise production comparison limits.
+
+Selector regressions await actual scene/modal/child readiness before querying or
+interacting, with a controlled mount gate covering delayed initialization.
+Completion-popup diagnostics request the actual content height, within the
+unchanged shared row budget, including the one-suggestion narrowed scene.
 
 The quality job always attempts to upload generated `coverage.json` under a unique
 run/attempt/head-bound artifact name, including when the coverage ratchet fails.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import math
 import platform
 import re
@@ -17,10 +18,16 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from agent_tools.sql_explorer_render_diagnostics import digest
+from agent_tools.sql_explorer_svg_borders import (
+    border_continuity_trial,
+    border_pixel_observations,
+)
+from agent_tools.sql_explorer_svg_phase import align_generated_underlines
 from agent_tools.sql_explorer_svg_underlines import normalize_terminal_underlines
 
 MAX_SVG_BYTES = 4 * 1024 * 1024
 MAX_COMPARISON_PNG_BYTES = 4 * 1024 * 1024
+MAX_CAPTURE_FILE_BYTES = 8 * 1024 * 1024
 COMPARISON_FONT = "DejaVu Sans Mono"
 MAX_PROBE_BYTES = 16 * 1024
 MAX_FONT_REQUESTS = 8
@@ -127,6 +134,11 @@ def export_input_evidence(
             inputs["supersampling_svg"] = supersampling_svg(framed_svg).encode("utf-8")
             inputs["normalized_framed_svg"] = normalization["normalized_framed_svg"].encode("utf-8")
             inputs["normalized_supersampling_svg"] = rasterization["svg"]["content"].encode("utf-8")
+    if rasterization is not None:
+        for section in ("whitespace_restoration", "alignment"):
+            for name, value in rasterization.get(section, {}).items():
+                if name.endswith("_svg") and isinstance(value, str):
+                    inputs[name] = value.encode("utf-8")
     total = sum(len(data) for data in inputs.values())
     complete = total <= MAX_SVG_BYTES
     records = {}
@@ -154,9 +166,7 @@ def export_input_evidence(
         "fonts": _font_context(svg),
     }
     if rasterization is not None:
-        result["rasterization"] = {
-            key: value for key, value in rasterization.items() if key != "svg"
-        }
+        result["rasterization"] = _raster_metadata(rasterization)
         result["rasterization"]["svg_input"] = (
             "inputs.normalized_supersampling_svg"
             if rasterization.get("normalization", {}).get("converted")
@@ -253,6 +263,7 @@ def rasterize_framed_svg(
     *,
     retained_pngs: dict[str, bytes] | None = None,
     normalize_underlines: bool = True,
+    align_underlines: bool = True,
 ) -> tuple[bytes, dict[str, Any]]:
     """Render at twice the target size, then perform exactly one Lanczos reduction."""
     from PIL import Image  # noqa: PLC0415 - optional agent capture dependency.
@@ -260,7 +271,12 @@ def rasterize_framed_svg(
     normalized, conversions = (
         normalize_terminal_underlines(framed_svg) if normalize_underlines else (framed_svg, [])
     )
-    svg = supersampling_svg(normalized)
+    aligned, alignment = (
+        align_generated_underlines(normalized)
+        if normalize_underlines and align_underlines
+        else (normalized, [])
+    )
+    svg = supersampling_svg(aligned)
     intermediate = _render_svg(svg)
     dimensions = _png_dimensions(intermediate)
     expected = [size * SUPERSAMPLE_FACTOR for size in RASTER_VIEWPORT]
@@ -285,6 +301,13 @@ def rasterize_framed_svg(
             "byte_length": len(encoded),
             "sha256": digest(encoded),
             "content": svg,
+        },
+        "alignment": {
+            "conversions": alignment,
+            "unaligned_framed_svg": normalized,
+            "aligned_framed_svg": aligned,
+            "unaligned_sha256": digest(normalized.encode("utf-8")),
+            "aligned_sha256": digest(aligned.encode("utf-8")),
         },
         "normalization": {
             "converted": bool(conversions),
@@ -551,6 +574,18 @@ def _retained_raster_stage(
     return result
 
 
+def _raster_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    result = {key: value for key, value in metadata.items() if key != "svg"}
+    for section in ("normalization", "whitespace_restoration", "alignment"):
+        if section in result:
+            result[section] = {
+                key: value
+                for key, value in result[section].items()
+                if not key.endswith("_svg")
+            }
+    return result
+
+
 def _caret_raster_stages(
     png: bytes,
     metadata: dict[str, Any],
@@ -559,7 +594,8 @@ def _caret_raster_stages(
     ordinary: bool,
 ) -> dict[str, Any]:
     common = {
-        **metadata,
+        **_raster_metadata(metadata),
+        "svg": metadata["svg"],
         "framing": "unchanged target frame in doubled outer viewport",
         "sizing": "2560x1600 render; one Lanczos reduction to 1280x800",
         "status": "pending",
@@ -601,7 +637,8 @@ def caret_rasterization_comparisons(
             {stage + "_original_normalized": record for stage, record in ordinary.items()}
         )
         normalized, conversions = normalize_terminal_underlines(framed_svg)
-        variants["direct_original_normalized"] = _svg_comparison_record(normalized, conversions)
+        aligned = rasterization.get("alignment", {}).get("aligned_framed_svg", normalized)
+        variants["direct_original_normalized"] = _svg_comparison_record(aligned, conversions)
     else:
         variants.update({stage + "_original": record for stage, record in ordinary.items()})
     control = inputs["framed_dejavu"]
@@ -610,7 +647,8 @@ def caret_rasterization_comparisons(
         stages = _comparison_stages(control_svg, normalize=False)
         if converted:
             normalized, conversions = normalize_terminal_underlines(control_svg)
-            variants["direct_dejavu_normalized"] = _svg_comparison_record(normalized, conversions)
+            aligned, _alignment = align_generated_underlines(normalized)
+            variants["direct_dejavu_normalized"] = _svg_comparison_record(aligned, conversions)
             normalized_stages = _comparison_stages(control_svg, normalize=True)
             variants.update(
                 {
@@ -700,6 +738,224 @@ def _validate_caret_raster_stages(result: dict[str, Any]) -> None:
             record.update(status="failed", reason=reason)
             result["missing"].append(identity + ":" + reason)
             result["complete"] = False
+
+
+def retained_stage_evidence(retained: dict[str, bytes]) -> dict[str, Any]:
+    """Keep actual ordinary invocation bytes, never a hash-only intermediate."""
+    stages = {}
+    missing = []
+    total = sum(len(data) for data in retained.values())
+    for stage in ("intermediate", "final"):
+        data = retained.get(stage)
+        if data is None:
+            missing.append(stage + ":unavailable")
+            continue
+        retained_stage = _retained_raster_stage({"svg": {}}, data, ordinary=True)
+        record = retained_stage["png"]
+        record["invocation"] = "ordinary scene rasterization"
+        if retained_stage["status"] != "ok":
+            missing.append(stage + ":" + retained_stage["reason"])
+        if total > MAX_COMPARISON_PNG_BYTES:
+            record.pop("content", None)
+        stages[stage] = record
+    if total > MAX_COMPARISON_PNG_BYTES:
+        missing.append("combined_png_byte_limit")
+    return {"complete": not missing, "missing": missing, "stages": stages}
+
+
+def phase_rasterization_comparisons(
+    framed_svg: str,
+    png: bytes,
+    *,
+    rasterization: dict[str, Any],
+    intermediate_png: bytes | None,
+) -> dict[str, Any]:
+    """Retain an unaligned control and separately bind the ordinary aligned stages."""
+    if "svg" not in rasterization or "processing" not in rasterization:
+        return {"complete": False, "missing": ["ordinary_raster_metadata_unavailable"]}
+    normalization = rasterization.get("normalization", {})
+    control = (
+        rasterization.get("alignment", {}).get("unaligned_framed_svg")
+        or normalization.get("normalized_framed_svg")
+        or framed_svg
+    )
+    variants = {
+        "direct_control": _svg_comparison_record(control, []),
+        **{
+            stage + "_control": record
+            for stage, record in _comparison_stages(control, normalize=False).items()
+        },
+    }
+    try:
+        aligned, displacements = align_generated_underlines(control, RASTER_VIEWPORT)
+        if displacements:
+            variants["direct_aligned"] = _svg_comparison_record(aligned, displacements)
+            variants.update(
+                {
+                    stage + "_aligned": record
+                    for stage, record in (
+                        _caret_raster_stages(png, rasterization, intermediate_png, ordinary=True)
+                        if digest(aligned.encode("utf-8"))
+                        == rasterization.get("alignment", {}).get("aligned_sha256")
+                        else _comparison_stages(aligned, normalize=False)
+                    ).items()
+                }
+            )
+        else:
+            variants.update(
+                {
+                    stage + "_aligned": {"status": "omitted", "reason": "no_generated_strokes"}
+                    for stage in ("direct", "intermediate", "reduced")
+                }
+            )
+    except (ET.ParseError, KeyError, TypeError, ValueError) as error:
+        variants.update(
+            {
+                stage + "_aligned": {
+                    "status": "failed",
+                    "reason": type(error).__name__ + ": " + str(error)[:256],
+                }
+                for stage in ("direct", "intermediate", "reduced")
+            }
+        )
+    for identity, record in variants.items():
+        record["stage"] = identity.split("_", 1)[0]
+        record["representation"] = identity.split("_", 1)[1]
+        record["invocation"] = (
+            "ordinary scene rasterization"
+            if record.get("png", {}).get("reused_ordinary_png") is True
+            else "diagnostic reproduction; unchanged source input"
+        )
+    result = _bounded_comparisons(
+        variants, png, {"available": False, "qualification": "unchanged declarations only"}
+    )
+    _validate_caret_raster_stages(result)
+    return result
+
+
+def border_rasterization_comparisons(
+    framed_svg: str,
+    png: bytes,
+    observation: dict[str, Any],
+    terminal: dict[str, Any],
+    *,
+    raw_svg: str,
+    rasterization: dict[str, Any],
+    intermediate_png: bytes | None,
+) -> dict[str, Any]:
+    """A diagnostic trial only; partial perimeter coverage remains incomplete."""
+    control = rasterization.get("alignment", {}).get("aligned_framed_svg", framed_svg)
+    try:
+        trial, records = border_continuity_trial(
+            control, observation, terminal, raw_svg=raw_svg
+        )
+    except (ET.ParseError, KeyError, TypeError, ValueError) as error:
+        return {"complete": False, "missing": [type(error).__name__ + ":" + str(error)]}
+    variants = {
+        "direct_control": _svg_comparison_record(control, []),
+        "direct_trial": _svg_comparison_record(trial, records),
+        **{
+            stage + "_control": record
+            for stage, record in _caret_raster_stages(
+                png, rasterization, intermediate_png, ordinary=True
+            ).items()
+        },
+        **{
+            stage + "_trial": record
+            for stage, record in _comparison_stages(trial, normalize=False).items()
+        },
+    }
+    for identity, record in variants.items():
+        record["stage"] = identity.split("_", 1)[0]
+        record["representation"] = identity.split("_", 1)[1]
+    result = _bounded_comparisons(
+        variants, png, {"available": False, "qualification": "unchanged declarations"}
+    )
+    _validate_caret_raster_stages(result)
+    result["conversion_records"] = records
+    result["scope"] = "diagnostic only; ordinary borders unchanged"
+    result["native_missing"] = terminal.get("missing", [])
+    result["native_omissions"] = terminal.get("omissions", [])
+    result["pixel_continuity"] = {}
+    for stage in ("direct", "intermediate", "reduced"):
+        trial_record = result["variants"][stage + "_trial"]
+        control_record = result["variants"][stage + "_control"]
+        try:
+            observed = border_pixel_observations(
+                trial,
+                base64.b64decode(trial_record["png"]["content"], validate=True),
+                base64.b64decode(control_record["png"]["content"], validate=True),
+            )
+        except (OSError, KeyError, TypeError, ValueError) as error:
+            observed = {"complete": False, "missing": [type(error).__name__]}
+        result["pixel_continuity"][stage] = observed
+        if not observed["complete"]:
+            result["complete"] = False
+            result["missing"].append(stage + ":pixel_observation_incomplete")
+    if not records or terminal.get("missing") or terminal.get("omissions"):
+        result["complete"] = False
+        result["missing"].append("partial_or_unavailable_border_evidence")
+    return result
+
+
+def _encoded_assets(value: Any) -> list[dict[str, Any]]:
+    assets = []
+    if isinstance(value, dict):
+        if value.get("encoding") in {"UTF-8", "base64"} and "byte_length" in value:
+            assets.append(value)
+        for child in value.values():
+            assets.extend(_encoded_assets(child))
+    elif isinstance(value, list):
+        for child in value:
+            assets.extend(_encoded_assets(child))
+    return assets
+
+
+def _bound_capture_file(geometry: dict[str, Any], sections: list[dict[str, Any]]) -> None:
+    serialized_size = len(json.dumps(geometry, indent=2, sort_keys=True).encode("utf-8")) + 1
+    if serialized_size <= MAX_CAPTURE_FILE_BYTES:
+        return
+    for asset in _encoded_assets(geometry):
+        asset.pop("content", None)
+    for section in [*sections, geometry.get("export_input_evidence", {})]:
+        section["complete"] = False
+        section.setdefault("missing", []).append("capture_geometry_file_limit")
+    geometry["capture_transport"] = {
+        "complete": False,
+        "missing": ["capture_geometry_file_limit"],
+        "observed_byte_length": serialized_size,
+        "per_file_byte_limit": MAX_CAPTURE_FILE_BYTES,
+    }
+
+
+def bound_capture_comparisons(geometry: dict[str, Any]) -> None:
+    """Share comparison limits across additive sections, counting logical duplicate bytes."""
+    sections = [
+        geometry[name]
+        for name in (
+            "rasterization_comparisons",
+            "phase_comparisons",
+            "ordinary_raster_stages",
+            "border_continuity_trial",
+        )
+        if name in geometry
+    ]
+    assets = [asset for section in sections for asset in _encoded_assets(section)]
+    limits = {"UTF-8": MAX_SVG_BYTES, "base64": MAX_COMPARISON_PNG_BYTES}
+    totals = {
+        encoding: sum(item["byte_length"] for item in assets if item["encoding"] == encoding)
+        for encoding in limits
+    }
+    exceeded = [encoding for encoding in limits if totals[encoding] > limits[encoding]]
+    for section in sections:
+        section["shared_capture_budget"] = {"logical_bytes": totals, "limits": limits}
+        if exceeded:
+            section["complete"] = False
+            section.setdefault("missing", []).append("shared_capture_comparison_byte_limit")
+    for asset in assets:
+        if asset["encoding"] in exceeded:
+            asset.pop("content", None)
+    _bound_capture_file(geometry, sections)
 
 
 def _observed_font_files(context: dict[str, Any], font: dict[str, Any]) -> dict[str, Any]:

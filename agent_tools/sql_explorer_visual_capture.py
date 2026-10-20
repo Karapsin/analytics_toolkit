@@ -5,25 +5,38 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
+from contextlib import suppress
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 from xml.etree import ElementTree as ET
 
+from agent_tools.sql_explorer_export_observer import (
+    bound_observation,
+    map_export_spans,
+    observe_export,
+)
 from agent_tools.sql_explorer_render_diagnostics import (
     BORDER_SCENES,
     SCENES,
+    digest,
     render_diagnostics,
     selector_readiness_snapshot,
     terminal_diagnostics,
 )
 from agent_tools.sql_explorer_svg_evidence import (
+    border_rasterization_comparisons,
+    bound_capture_comparisons,
     caret_rasterization_comparisons,
     export_input_evidence,
+    phase_rasterization_comparisons,
     rasterization_comparisons,
     rasterize_framed_svg,
+    retained_stage_evidence,
 )
+from agent_tools.sql_explorer_svg_whitespace import restore_omitted_underlines
 from agent_tools.sql_explorer_visual import TERMINAL_COLUMNS, TERMINAL_ROWS, VIEWPORT
 from agent_tools.sql_explorer_visual_scene import (
     VisualExplorerApp,
@@ -59,13 +72,27 @@ def _write_png(
     *,
     framed_svg: str | None = None,
     retained_pngs: dict[str, bytes] | None = None,
+    export_observation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     framed = framed_svg if framed_svg is not None else _frame_svg(svg)
+    original = framed
+    restorations: list[dict[str, Any]] = []
+    if export_observation is not None:
+        framed, restorations = restore_omitted_underlines(
+            framed, export_observation, raw_svg=svg
+        )
     png, rasterization = (
         rasterize_framed_svg(framed)
         if retained_pngs is None
         else rasterize_framed_svg(framed, retained_pngs=retained_pngs)
     )
+    rasterization["whitespace_restoration"] = {
+        "conversions": restorations,
+        "original_framed_svg": original,
+        "original_framed_sha256": digest(original.encode("utf-8")),
+        "restored_framed_svg": framed,
+        "restored_framed_sha256": digest(framed.encode("utf-8")),
+    }
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(png)
     return rasterization
@@ -79,6 +106,42 @@ def _scene_ready(app: App[object]) -> bool:
     return not isinstance(app, VisualExplorerApp) or (
         app.creation_scene_ready and app._scene_state_ready()  # noqa: SLF001
     )
+
+
+def _observed_screenshot(
+    app: App[object], scene: str, geometry: dict[str, Any], evidence: Path
+) -> str:
+    observation: dict[str, Any] = {}
+    failed = True
+    try:
+        with observe_export() as observation:
+            svg = app.export_screenshot(title=f"SQL Explorer — {scene}")
+        try:
+            map_export_spans(observation, svg)
+        except (ET.ParseError, KeyError, TypeError, ValueError) as error:
+            observation["complete"] = False
+            observation["missing"].append("svg_mapping:" + type(error).__name__)
+        failed = False
+        return svg
+    finally:
+        geometry["export_observation"] = bound_observation(observation)
+        if failed:
+            _retain_export_failure(geometry, evidence)
+
+
+def _retain_export_failure(geometry: dict[str, Any], evidence: Path) -> None:
+    """Retain failed observations without masking the original exporter exception."""
+    temporary = evidence.with_suffix(".tmp")
+    try:
+        temporary.write_text(
+            json.dumps(geometry, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        temporary.replace(evidence)
+    except OSError:
+        logging.getLogger(__name__).exception("Could not retain failed export observation")
+    finally:
+        with suppress(OSError):
+            temporary.unlink(missing_ok=True)
 
 
 def _capture_frame(
@@ -96,17 +159,65 @@ def _capture_frame(
     terminal = terminal_diagnostics(app, scene) if scene in SCENES | BORDER_SCENES else None
     if terminal is not None and "source_selector" in terminal:
         geometry["selector_readiness"] = selector_readiness_snapshot(app, scene, terminal=terminal)
-    svg = app.export_screenshot(title=f"SQL Explorer — {scene}")
+    observed_scene = scene in {
+        "completion-empty-columns",
+        "completion-narrowed",
+        "connections-searching",
+    }
+    if observed_scene:
+        svg = _observed_screenshot(app, scene, geometry, evidence)
+    else:
+        svg = app.export_screenshot(title=f"SQL Explorer — {scene}")
     if terminal is None:
         _write_png(svg, screenshot)
         return
+    geometry.update(
+        _diagnostic_frame(
+            app,
+            scene,
+            svg,
+            terminal,
+            screenshot,
+            export_observation=geometry.get("export_observation"),
+        )
+    )
+    bound_capture_comparisons(geometry)
+    temporary = evidence.with_suffix(".tmp")
+    temporary.write_text(json.dumps(geometry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(evidence)
+
+
+def _diagnostic_frame(
+    app: App[object],
+    scene: str,
+    svg: str,
+    terminal: dict[str, Any],
+    screenshot: Path,
+    *,
+    export_observation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    geometry: dict[str, Any] = {}
+    observed_scene = scene in {
+        "completion-empty-columns",
+        "completion-narrowed",
+        "connections-searching",
+    }
     framed_svg = _frame_svg(svg)
     caret_scene = scene in {"keyboard-multicursor", "editor-command-caret"}
+    retain_stages = caret_scene or observed_scene or scene == "column-ruler-scrolled"
     retained: dict[str, bytes] = {}
     rasterization = (
-        _write_png(svg, screenshot, framed_svg=framed_svg, retained_pngs=retained)
-        if caret_scene
-        else _write_png(svg, screenshot, framed_svg=framed_svg)
+        _write_png(
+            svg,
+            screenshot,
+            framed_svg=framed_svg,
+            retained_pngs=retained,
+            export_observation=export_observation,
+        )
+        if retain_stages
+        else _write_png(
+            svg, screenshot, framed_svg=framed_svg, export_observation=export_observation
+        )
     )
     png = screenshot.read_bytes()
     geometry["render_diagnostics"] = render_diagnostics(app, scene, svg, framed_svg, png, terminal)
@@ -119,6 +230,9 @@ def _capture_frame(
         "keyboard-multicursor",
         "editor-command-caret",
         "new-file",
+        "completion-empty-columns",
+        "completion-narrowed",
+        "column-ruler-scrolled",
         "connections-searching",
         "result-success",
     }:
@@ -133,9 +247,26 @@ def _capture_frame(
             rasterization=rasterization,
             intermediate_png=retained.get("intermediate"),
         )
-    temporary = evidence.with_suffix(".tmp")
-    temporary.write_text(json.dumps(geometry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(evidence)
+    if scene == "connections-searching" and export_observation is not None:
+        geometry["border_continuity_trial"] = border_rasterization_comparisons(
+            framed_svg,
+            png,
+            export_observation,
+            terminal,
+            raw_svg=svg,
+            rasterization=rasterization,
+            intermediate_png=retained.get("intermediate"),
+        )
+    if retain_stages:
+        geometry["ordinary_raster_stages"] = retained_stage_evidence(retained)
+    if scene in {"column-ruler-scrolled", "keyboard-multicursor", "editor-command-caret"}:
+        geometry["phase_comparisons"] = phase_rasterization_comparisons(
+            framed_svg,
+            png,
+            rasterization=rasterization,
+            intermediate_png=retained.get("intermediate"),
+        )
+    return geometry
 
 
 def _timeout_diagnostics(

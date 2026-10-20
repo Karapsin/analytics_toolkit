@@ -106,7 +106,9 @@ def test_mounted_multicursor_observation_preserves_state_and_maps_all_layers(
 
 @pytest.mark.parametrize(("line", "column"), [("界e\u0301\tZ", 3), ("界\tZ", 0), ("界\tZ", 2)])
 def test_mounted_unicode_and_tab_mapping_uses_terminal_cells(
-    tmp_path: Path, line: str, column: int
+    tmp_path: Path,
+    line: str,
+    column: int,
 ) -> None:
     async def exercise() -> None:
         app = sql_explorer_visual_scene.create_scene(
@@ -267,7 +269,10 @@ def test_unavailable_state_and_mapping_probes_are_explicit() -> None:
     [("MAX_ROWS", 1), ("MAX_CELLS", 8), ("MAX_REGIONS", 1)],
 )
 def test_scene_collection_limits_cannot_report_complete_caret_evidence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: str, value: int
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    limit: str,
+    value: int,
 ) -> None:
     async def exercise() -> None:
         app = sql_explorer_visual_scene.create_scene(
@@ -341,7 +346,7 @@ def test_svg_caret_decoration_attributes_survive_reduced_layer_evidence() -> Non
     svg = (
         '<svg><defs><clipPath id="terminal-line-5"><rect y="0" height="20"/>'
         '</clipPath></defs><g clip-path="url(#terminal-line-5)" text-decoration="underline">'
-        '<text>界</text></g></svg>'
+        "<text>界</text></g></svg>"
     )
     terminal = {"regions": [{"composed_rows": [{"y": 5}]}]}
     result = diagnostics.svg_diagnostics(svg, terminal)
@@ -389,7 +394,9 @@ def test_padding_marks_and_state_mismatches_are_reported_without_repair() -> Non
     [(8, 1, "e\u0301\u0327"), (7, 1, " "), (6, 1, " "), (9, 1, "Z")],
 )
 def test_caret_crop_keeps_cross_span_marks_only_with_their_complete_base(
-    x: int, width: int, expected: str
+    x: int,
+    width: int,
+    expected: str,
 ) -> None:
     base_style = Style(color="#123456", bgcolor="#345678", underline=True)
     mark_style = Style(color="#abcdef", bgcolor="#654321", italic=True)

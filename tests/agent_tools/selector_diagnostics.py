@@ -6,6 +6,7 @@ from importlib.metadata import version
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from analytics_toolkit.sql_explorer.create_table_screen import CreateTableScreen
 from rich.segment import Segment
 from rich.style import Style
 from textual.app import App
@@ -16,6 +17,7 @@ from textual.widgets import Collapsible, Select
 from agent_tools import sql_explorer_render_diagnostics as diagnostics
 from agent_tools import sql_explorer_visual, sql_explorer_visual_scene
 from tests._support.paths import REPO_ROOT
+from tests.agent_tools._support import wait_for_scene
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,11 +38,7 @@ def test_repaired_selector_evidence_is_complete_visible_and_ready(
     async def exercise() -> None:
         app = _scene(scene, tmp_path)
         async with app.run_test(size=(208, 47)) as pilot:
-            await pilot.pause()
-            for _attempt in range(20):
-                if app.creation_scene_ready:
-                    break
-                await pilot.pause()
+            await wait_for_scene(app, pilot)
             assert app.creation_scene_ready
             terminal = diagnostics.terminal_diagnostics(app, scene)
             snapshot = terminal["source_selector"]
@@ -94,7 +92,7 @@ def test_selector_keyboard_switch_and_expanded_arrow_are_scoped(tmp_path: Path) 
     async def exercise() -> None:
         app = _scene("create-table-schema", tmp_path)
         async with app.run_test(size=(208, 47)) as pilot:
-            await pilot.pause()
+            await wait_for_scene(app, pilot)
             selector = app.screen.query_one("#create-table-source", Select)
             # Another Select has identical internal child IDs; it must never be collected.
             other = Select([("unrelated", "unrelated")], allow_blank=False, id="other-select")
@@ -126,7 +124,7 @@ def test_child_failure_is_reported_when_outer_selector_remains_present(
     async def exercise() -> None:
         app = _scene("create-table-schema", tmp_path)
         async with app.run_test(size=(208, 47)) as pilot:
-            await pilot.pause()
+            await wait_for_scene(app, pilot)
             selector = app.screen.query_one("#create-table-source", Select)
             label = selector.query_one("SelectCurrent > Static#label")
             if failure == "missing":
@@ -172,6 +170,57 @@ def test_child_failure_is_reported_when_outer_selector_remains_present(
                 assert expected in snapshot["collection_missing"]
             else:
                 assert not snapshot["collection_missing"]
+
+    asyncio.run(exercise())
+
+
+def test_delayed_modal_mount_blocks_selector_queries_until_scene_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def exercise() -> None:
+        entered, release, waiting = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        original = CreateTableScreen.on_mount
+        calls = []
+        queries = []
+
+        async def delayed_mount(screen: CreateTableScreen) -> None:
+            entered.set()
+            await release.wait()
+            calls.append(screen)
+            original(screen)
+
+        monkeypatch.setattr(CreateTableScreen, "on_mount", delayed_mount)
+        app = _scene("create-table-schema", tmp_path)
+        async with app.run_test(size=(208, 47)) as pilot:
+            await asyncio.wait_for(entered.wait(), 10)
+
+            async def query_after_readiness() -> Select:
+                waiting.set()
+                await wait_for_scene(app, pilot)
+                queries.append(app.screen.query_one("#create-table-source", Select))
+                return queries[-1]
+
+            task = asyncio.create_task(query_after_readiness())
+            try:
+                await asyncio.wait_for(waiting.wait(), 10)
+                assert not calls
+                assert not queries
+                assert not task.done()
+                assert not app.creation_scene_ready
+                release.set()
+                selector = await asyncio.wait_for(task, 10)
+                assert len(calls) == 1
+                assert queries == [selector]
+                assert selector.is_mounted
+                assert app.creation_scene_ready
+                selector.focus()
+                await pilot.press("enter")
+                assert selector.expanded
+            finally:
+                release.set()
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
 
     asyncio.run(exercise())
 

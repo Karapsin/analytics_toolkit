@@ -9,15 +9,17 @@ import json
 import math
 import platform
 import traceback
-import xml.etree.ElementTree as ET
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from xml.etree import ElementTree as ET
+
+from agent_tools.sql_explorer_svg_underlines import normalize_terminal_underlines
 
 from agent_tools import sql_explorer_svg_evidence as evidence
-from agent_tools.sql_explorer_svg_underlines import normalize_terminal_underlines
 from tests._support.paths import REPO_ROOT
-from tests.agent_tools._support import raster_transport
+from tests.agent_tools._support import raster_assets, raster_transport
+from tests.agent_tools._support.raster_fonts import observe_test_font
 from tests.agent_tools._support.raster_transport import source_binding
 from tests.agent_tools._support.svg_fixtures import decode_captured_svg
 
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
     from PIL import Image
 
 MAX_REPORT_BYTES = 8 * 1024 * 1024
+MAX_DIAGNOSTIC_PNG_BYTES = 8 * 1024 * 1024
 _ERRORS = (OSError, ValueError, RuntimeError, TypeError, LookupError, AssertionError, ET.ParseError)
 SYNTHETIC_CASES = (
     ("space", " ", 12.2),
@@ -48,7 +51,7 @@ class _Budget:
         self.missing: list[str] = []
 
     def retain(self, kind: str, data: bytes) -> dict[str, Any]:
-        limit = evidence.MAX_SVG_BYTES if kind == "svg" else evidence.MAX_COMPARISON_PNG_BYTES
+        limit = evidence.MAX_SVG_BYTES if kind == "svg" else MAX_DIAGNOSTIC_PNG_BYTES
         self.used[kind] += len(data)
         record = _identity(data)
         if self.used[kind] > limit:
@@ -152,6 +155,7 @@ def _variants(
 ) -> tuple[dict[str, str], list[dict[str, Any]]]:
     normalized, conversions = normalize_terminal_underlines(svg)
     variants = {"original": svg, "plain": api._without_underline(svg), "normalized": normalized}
+    variants["stroke-removed"] = api._without_generated_strokes(normalized)
     if synthetic:
         root = ET.fromstring(normalized)
         line = next(node for node in root.iter() if node.get("data-terminal-underline") == "1")
@@ -160,6 +164,10 @@ def _variants(
         variants["clipped"], _ = normalize_terminal_underlines(
             api._whitespace_svg(text, width, clipped=True)
         )
+        if not text.isspace():
+            variants["missing-glyph"] = api._without_underline(
+                api._whitespace_svg("\U0010ffff", width)
+            )
     return variants, conversions
 
 
@@ -276,15 +284,28 @@ def _case_snapshot(name: str, factory: Any, api: Any, budget: _Budget) -> dict[s
         observed = _observe_case(case, api, budget)
         context = evidence._font_context(case["variants"]["original"])
         font = evidence._comparison_font()
+        synthetic_text = case["mapping_inputs"].get("text")
+        file_context = context if synthetic_text is None else {"system_matches": []}
         observed["fonts"] = {
             "context": context,
             "comparison": font,
-            "files": evidence._observed_font_files(context, font),
+            "files": evidence._observed_font_files(file_context, font),
+            "file_scope": (
+                "Captured SVG requests and comparison font"
+                if synthetic_text is None
+                else "Comparison font here; synthetic family file/coverage in synthetic_glyph_font"
+            ),
         }
         fonts_complete = font["available"] and observed["fonts"]["files"]["complete"]
         if not fonts_complete:
             observed["missing"] = ["font_observations_incomplete"]
         observed["complete"] = observed["complete"] and fonts_complete
+        if "text" in case["mapping_inputs"]:
+            glyph_font = observe_test_font(case["mapping_inputs"]["text"])
+            observed["fonts"]["synthetic_glyph_font"] = glyph_font
+            if not glyph_font["complete"]:
+                observed.setdefault("missing", []).append("synthetic_font_coverage_incomplete")
+            observed["complete"] = observed["complete"] and glyph_font["complete"]
     except _ERRORS:
         observed.update(complete=False, **_failure())
     return observed
@@ -323,12 +344,14 @@ def collect_report(api: Any) -> dict[str, Any]:
         result["complete"] = result["complete"] and observed["complete"]
     result["missing"] = sorted({*result["missing"], *budget.missing})
     result["observed_byte_totals"] = budget.used
-    result["limits"] = {"svg": evidence.MAX_SVG_BYTES, "png": evidence.MAX_COMPARISON_PNG_BYTES}
+    result["limits"] = {"svg": evidence.MAX_SVG_BYTES, "png": MAX_DIAGNOSTIC_PNG_BYTES}
     result["complete"] = result["complete"] and not result["missing"]
     return result
 
 
 def write_report(path: Path, report: dict[str, Any]) -> bool:
+    if "cases" in report:
+        return raster_assets.write_index(path, report, max_bytes=MAX_REPORT_BYTES)
     return raster_transport.write_report(path, report, max_bytes=MAX_REPORT_BYTES)
 
 

@@ -527,7 +527,10 @@ class VisualExplorerApp(SqlExplorerApp):
         if not self._restore_primary_overflow_tab():
             return
         _refresh_evidence_if_mounted(
-            self, self.visual_scene_id, self.visual_evidence_path, self.visual_manifest_path
+            self,
+            self.visual_scene_id,
+            self.visual_evidence_path,
+            self.visual_manifest_path,
         )
 
     def scene_readiness_details(self) -> dict[str, Any]:
@@ -921,7 +924,8 @@ def _pane_gaps(workspace: Any, panes: list[Any]) -> bool:
 
 
 def _required_element_evidence(
-    app: App[Any], required: list[str]
+    app: App[Any],
+    required: list[str],
 ) -> tuple[dict[str, dict[str, Any]], dict[str, bool]]:
     elements: dict[str, dict[str, Any]] = {}
     assertions: dict[str, bool] = {}
@@ -1018,7 +1022,9 @@ def _ruler_evidence(app: VisualExplorerApp) -> dict[str, Any]:
             "strip_observation": {
                 "widget": ruler_strip_observation(original, widget_row, width=region.width),
                 "compositor": ruler_strip_observation(
-                    composed_crop, compositor_row, width=region.width
+                    composed_crop,
+                    compositor_row,
+                    width=region.width,
                 ),
                 "compositor_screen_lengths": {
                     "characters": len(composed_original.text),
@@ -1117,8 +1123,7 @@ def _new_file_alignment_assertions(app: App[Any]) -> dict[str, bool]:
     top, bottom = dialog.y - viewport.y, viewport.bottom - dialog.bottom
     return {
         "new_file_center_middle": (
-            screen.styles.align_horizontal == "center"
-            and screen.styles.align_vertical == "middle"
+            screen.styles.align_horizontal == "center" and screen.styles.align_vertical == "middle"
         ),
         "new_file_dialog_contained": (
             dialog.width > 0 and dialog.height > 0 and min(left, right, top, bottom) >= 0
@@ -1129,7 +1134,9 @@ def _new_file_alignment_assertions(app: App[Any]) -> dict[str, bool]:
 
 
 def _optional_scene_evidence(
-    app: App[Any], scene_id: str, assertions: dict[str, bool]
+    app: App[Any],
+    scene_id: str,
+    assertions: dict[str, bool],
 ) -> dict[str, Any]:
     """Collect optional observations in their original order before publication."""
     selector_snapshot = None
@@ -1212,7 +1219,9 @@ def _button_color_assertions(app: App[Any]) -> dict[str, bool]:
 
 
 def _assert_changed_controls(
-    app: VisualExplorerApp, scene_id: str, assertions: dict[str, bool]
+    app: VisualExplorerApp,
+    scene_id: str,
+    assertions: dict[str, bool],
 ) -> None:
     workspace = app.active_workspace
     editor = workspace.editor
