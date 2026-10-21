@@ -6,7 +6,15 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from agent_tools import machine_signing, mcp_server, session_cleanup, sessions, task_context
+from agent_tools import (
+    local_review,
+    machine_signing,
+    mcp_server,
+    session_cleanup,
+    sessions,
+    task_context,
+)
+from tests.agent_tools._support.local_review import signed_receipt
 from tests.agent_tools.sessions import git, planning
 from tests.agent_tools.sessions import source as source  # noqa: PLC0414 - imported pytest fixture.
 
@@ -35,6 +43,7 @@ def submitted(source: Path, tmp_path: Path) -> tuple[Path, dict[str, Any]]:
     state.update(pr=12, publication_sha=git(root, "rev-parse", "HEAD"))
     sessions.save(root, state)
     git(root, "push", "origin", state["branch"])
+    review = signed_receipt(root)
     pr = {
         "number": 12,
         "url": "https://github.test/pull/12",
@@ -43,7 +52,9 @@ def submitted(source: Path, tmp_path: Path) -> tuple[Path, dict[str, Any]]:
         "headRefOid": state["publication_sha"],
         "headRefName": state["branch"],
         "baseRefName": "dev",
-        "body": task_context.attachment(root),
+        "body": task_context.attachment(root)
+        + "\n"
+        + local_review.protocol(root).attachment(review),
         "labels": [],
         "reviews": [],
         "statusCheckRollup": [],
@@ -52,6 +63,7 @@ def submitted(source: Path, tmp_path: Path) -> tuple[Path, dict[str, Any]]:
 
 
 def no_network(monkeypatch: Any, pr: dict[str, Any]) -> None:
+    monkeypatch.setattr(task_context, "repository_identity", lambda root: "owner/repo")
     real = sessions.run
     monkeypatch.setattr(sessions, "pr_info", lambda root, target=None: pr)
 

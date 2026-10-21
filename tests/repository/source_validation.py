@@ -26,7 +26,7 @@ def test_dispatch_modes_cannot_mint_skipped_normal_fast_success(event, mode, sub
     arguments = {"event": event, "mode": mode, "subject": subject, "probe": probe}
     assert bool(expression(jobs["source-validation"]["if"], **arguments)) is selected
     assert bool(expression(jobs["visual-isolation-probe"]["if"], **arguments)) is probe_selected
-    for job in ("fast-checks", "tests", "sdk-conformance", "quality"):
+    for job in ("fast-checks", "tests", "quality"):
         assert bool(expression(jobs[job]["if"], **arguments)) is not (selected or probe_selected)
         name = expression(jobs[job]["name"], **arguments)
         if selected:

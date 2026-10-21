@@ -55,6 +55,7 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
     proto = trusted_module("task_context")
     body = pr.get("body") or ""
     head = pr["head"]["sha"]
+    message = ""
     if (proto.MARKER not in body and proto.ARCHIVE_MARKER not in body
             and pr["user"].get("type") == "Bot"):
         # Older App repairs inherit the already-authorized standing repair task.
@@ -63,7 +64,7 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
         actor = value["producer_id"]
     else:
         value = proto.parse(body, api=gh.api)
-        if value["source"] == "standing-integration-repair" and pr["user"].get("type") != "Bot":
+        if value["source"] in {"standing-integration-repair", "standing-validation-repair"} and pr["user"].get("type") != "Bot":
             raise ValueError("Only the trusted App can inherit the standing repair authority.")
         directory = os.environ.get("AGENT_CONTROL_DIR")
         if not directory:
@@ -74,7 +75,45 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
     if branch.startswith(("codex/telegram-feature-", "codex/orchestrator-")) and not trusted_module("review_control").enrolled_feature(
             gh.repository, branch, proto.digest(value)):
         raise ValueError("Feature context does not match the host-owned request.")
-    return {"user_task": value, "task_digest": proto.digest(value), "producer_id": actor}
+    return {"user_task": value, "task_digest": proto.digest(value), "producer_id": actor,
+            **({"local_review_required": True} if "\nAgent-Review-Policy: local-v1" in message else {})}
+
+
+def admit_local_review(gh: GitHub, pr: dict[str, Any], base: str, metadata: dict[str, Any]) -> bool:
+    """Verify machine evidence, never ask a GitHub model to repeat local review."""
+    proto = trusted_module("local_review")
+    receipt = proto.extract(pr.get("body") or "")
+    if receipt is None:
+        if metadata.get("local_review_required"):
+            raise ValueError("Signed local-review policy requires a matching receipt")
+        return False  # Historical handoffs still receive independent Pi review.
+    head = pr["head"]["sha"]
+    payload = receipt.get("payload")
+    if not isinstance(payload, dict):
+        raise ValueError("Malformed local review payload")
+    if payload.get("head") != head:
+        if metadata["producer_id"].startswith(("author:", "standing-repair:")):
+            return False  # A trusted conflict/repair mutation needs fresh Pi review.
+        raise ValueError("Local review receipt belongs to a different candidate")
+    directory, allowed = os.environ.get("AGENT_CONTROL_DIR"), os.environ.get("AGENT_ALLOWED_SIGNERS")
+    if not directory or not allowed:
+        raise ValueError("Host-owned reviewer enrollment is unavailable")
+    tree = command("git", "rev-parse", head + "^{tree}", cwd=Path(directory))
+    reviewed_base = payload.get("base")
+    payload = proto.validate_binding(receipt, repository=gh.repository, head=head, base=reviewed_base,
+        tree=tree, task_digest=metadata["task_digest"], producer_id=metadata["producer_id"])
+    proto.verify_signature(receipt, Path(allowed))
+    if reviewed_base != base:
+        return False  # Dev advanced after handoff; a fresh Pi review owns revalidation.
+    if not _current_discovery_target(gh, pr, base):
+        raise ValueError("PR changed during local review verification")
+    trusted_module("review_control").assess(gh.repository, pr["number"], head,
+        metadata["task_digest"], payload["summary"])
+    gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head, "external_id": base,
+        "status": "completed", "conclusion": "success", "output": {
+            "title": "Independent local review verified", "summary": payload["summary"]
+            + "\n\nReviewer: " + payload["reviewer_id"] + "; receipt: " + proto.digest(receipt)}})
+    return True
 
 
 def rejection_check(gh: GitHub, pr: dict[str, Any], base: str, reason: str,
@@ -388,6 +427,7 @@ def _record_run(gh: GitHub, state: dict[str, Any], run: dict[str, Any]) -> None:
     previous.update(sha=tested_sha, status=run["status"], conclusion=run["conclusion"],
                     url=run["html_url"], event=run["event"], attempt=run["run_attempt"],
                     updated=run["updated_at"])
+    previous["workflow"] = run.get("path", previous.get("workflow", ".github/workflows/sql-integration.yml"))
     if previous.get("closed_unmerged"):
         previous["needs"] = []
     if run["status"] == "completed" and not unchanged and not previous.get("closed_unmerged"):
@@ -408,6 +448,8 @@ def _resolve_runs(gh: GitHub, state: dict[str, Any]) -> None:
     ancestry: dict[tuple[str, str], bool] = {}
     for failure in state["runs"].values():
         for green in state["runs"].values():
+            if failure.get("workflow", ".github/workflows/sql-integration.yml") != green.get("workflow", ".github/workflows/sql-integration.yml"):
+                continue
             if green["status"] != "completed" or not green.get("merged", True):
                 continue
             common = set(failure.get("needs", [])) & set(green.get("green", []))
@@ -443,7 +485,9 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     # before its merge by the same path as ordinary PRs.
     proto = trusted_module("task_context")
     producer = "standing-repair:" + base
-    context = proto.repair_context(base, producer)
+    validation = any(state["runs"][str(run)].get("workflow", "").endswith(("tests.yml", "compatibility.yml"))
+                     for run in failures)
+    context = proto.repair_context(base, producer, validation=validation)
     task = {"kind": "repair", "number": 0, "head": base, "base": base,
              "branch": REPAIR_BRANCH + base[:12], "runs": failures,
              "producer_id": producer, "user_task": context, "task_digest": proto.digest(context)}
@@ -451,6 +495,9 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     task["failure_key"] = evidence.fingerprint([
         {"run": run, "needs": sorted(state["runs"][str(run)].get("needs", []))}
         for run in sorted(failures)])
+    task["failure_scopes"] = sorted({
+        state["runs"][str(run)].get("workflow", ".github/workflows/sql-integration.yml") + ":" + name
+        for run in failures for name in state["runs"][str(run)].get("needs", [])})
     try:
         inventory = evidence.inventory(gh, failures)
     except RuntimeError as exc:
@@ -480,6 +527,12 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
     # Cursor overlaps by a minute; active runs are always polled by immutable ID.
     runs = gh.pages("actions/workflows/sql-integration.yml/runs?branch=dev&per_page=100&created=%3E%3D"
                     + quote(state.get("cursor", state["started"]), safe=""), "workflow_runs")
+    for workflow in ("tests.yml", "compatibility.yml"):
+        for run in gh.pages("actions/workflows/" + workflow + "/runs?branch=dev&per_page=100&created=%3E%3D"
+                            + quote(state.get("cursor", state["started"]), safe=""), "workflow_runs"):
+            if (run.get("event") == "push" and run.get("head_branch") == "dev"
+                    and run.get("path") == ".github/workflows/" + workflow):
+                runs.append(dict(run, path=".github/workflows/" + workflow))
     for run in runs:
         _record_run(gh, state, run)
     for key, run in list(state["runs"].items()):
@@ -579,8 +632,15 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                 kind = "correction"
                 correction = {"reason": "Changelog metadata cannot be folded; correct these fragments:\n"
                               + "\n".join(problems), "changes": pr.get("title", "PR changes")}
-            elif kind == "review" and fragments:
+            elif kind == "review" and fragments and "atk-local-review:v1" not in (pr.get("body") or ""):
                 kind = "metadata"
+        if kind == "review" and not (existing and existing.get("conclusion") == "success"):
+            try:
+                if admit_local_review(gh, pr, base, metadata):
+                    continue
+            except (RuntimeError, ValueError, OSError) as error:
+                rejection_check(gh, pr, base, str(error), pr.get("title", "Local review provenance"))
+                continue
         if (kind == "review" and existing and existing["status"] == "completed"
                 and existing.get("output", {}).get("title") != "Authorization required"):
             if approval_required:

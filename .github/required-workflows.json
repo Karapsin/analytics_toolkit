@@ -12,6 +12,17 @@
             "success"
           ],
           "required_jobs": []
+        },
+        {
+          "name": "compatibility",
+          "path": ".github/workflows/compatibility.yml",
+          "classification": "advisory_push",
+          "event": "push",
+          "allowed_conclusions": [
+            "success"
+          ],
+          "required_jobs": [],
+          "reason": "Full compatibility runs after merge; failures belong to a separate Pi repair worker and do not gate dev PR merges."
         }
       ],
       "conditional_checks": [],

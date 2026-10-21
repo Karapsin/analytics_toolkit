@@ -6,6 +6,31 @@ The GitHub App reviews feature PRs targeting `dev`. The subscription-backed
 Codex worker runs on the private Raspberry Pi; GitHub runs all repository tests
 and SQL Explorer scene captures. No OpenAI API key is used.
 
+## Local review and one-way publication
+
+Feature requests and development through Telegram are disabled. Initial independent
+review and correction happen on the developing machine before publication. A signed
+receipt binds the exact source, task and dev base to the separate reviewer session.
+The local reviewer uses an immutable dev provider/schema, outside candidate project
+configuration. First installation requires a separately reviewed private bootstrap
+bundle; candidate code cannot select its own executable file provider.
+
+The orchestrator remains responsible for admission, checks, coordination and merges.
+The GitHub coding agent resolves conflicts only. Dedicated Pi repair agents own
+pre-merge CI and post-merge compatibility/integration failures; changed heads and
+changed bases receive independent Pi review. Published work never returns to the
+developing machine. Dev checks retain lint/type/coverage/artifact requirements while
+application runtime checks use Python 3.14. Full compatibility and SDK checks run
+after merge and during release validation.
+
+Repair limits count completed repair candidates, including rejected/no-patch coding
+turns, rather than unrelated dev advances. Reconciliation identifies a post-merge
+episode by its oldest unresolved workflow run; verified green retires that run.
+Three unsuccessful candidates pause the episode and retain its private work.
+Authenticated PR controls resume PR incidents. `/resume_repair <incident-id>` allows
+the pinned Telegram owner to resume a post-merge incident; anonymous messages cannot.
+The currently stopped Pi service stays paused until a separate activation decision.
+
 ## Failed visual capture artifacts
 
 The trusted `agent-visual` workflow exports a separate failed-capture artifact

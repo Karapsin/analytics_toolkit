@@ -1,0 +1,102 @@
+name: compatibility
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: ${{ matrix.env_name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.9"
+            env_name: py39-latest
+          - python-version: "3.10"
+            env_name: py310-latest
+          - python-version: "3.11"
+            env_name: py311-latest
+          - python-version: "3.12"
+            env_name: py312-latest
+          - python-version: "3.13"
+            env_name: py313-latest
+          - python-version: "3.14"
+            env_name: py314-latest
+          - python-version: "3.9"
+            env_name: py39-min
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install latest test environment
+        if: matrix.env_name != 'py39-min'
+        run: python -m pip install -e '.[tui,datalens]' pytest
+
+      - name: Install minimum Python 3.9 test environment
+        if: matrix.env_name == 'py39-min'
+        run: python -m pip install -c constraints/py39-min.txt -e '.[tui,datalens]' pytest==8.3.5
+
+      - name: Validate minimum dependency constraints
+        if: matrix.env_name == 'py39-min'
+        run: |
+          python -m release_routines.lib.check_minimum_constraints
+          python -m pip check
+
+      - name: Compile package and tests
+        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
+
+      - name: Run tests
+        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q
+
+      - name: Freeze environment
+        if: always()
+        run: python -m pip freeze
+
+  sdk-conformance:
+    name: ${{ matrix.env_name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env_name: [py310-sdk31, py310-sdk32]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: python -m pip install "tox>=4,<5"
+      - run: tox -e ${{ matrix.env_name }}
+
+  compatibility-checks:
+    name: compatibility-checks
+    needs: [tests, sdk-conformance]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every compatibility profile
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PYTHON'
+          import json, os
+          assert all(job['result'] == 'success' for job in json.loads(os.environ['RESULTS']).values())
+          PYTHON

@@ -101,7 +101,7 @@ def test_lifecycle_excludes_every_other_job_without_changing_default_modes(
     probing = event == "workflow_dispatch" and not lifecycle and probe and not source
     assert bool(expression(jobs["source-validation"]["if"], **args)) is source
     assert bool(expression(jobs["visual-isolation-probe"]["if"], **args)) is probing
-    for name in ("tests", "sdk-conformance", "quality", "fast-checks"):
+    for name in ("tests", "quality", "fast-checks"):
         assert bool(expression(jobs[name]["if"], **args)) is not (selected or source or probing)
         if selected:
             assert expression(jobs[name]["name"], **args).startswith("Lifecycle-diagnostic-only")
