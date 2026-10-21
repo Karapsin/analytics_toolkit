@@ -34,7 +34,7 @@ def validate(value: Any) -> dict[str, Any]:
     if any(not isinstance(value[k], str) or IDENTITY.fullmatch(value[k]) is None
            for k in ("task_id", "producer_id")):
         raise ValueError("Invalid task or producer identity.")
-    if value["source"] not in {"user", "standing-integration-repair"}:
+    if value["source"] not in {"user", "standing-integration-repair", "standing-validation-repair"}:
         raise ValueError("Unsupported task authority.")
     if not isinstance(value["starting_prompt"], str) or not value["starting_prompt"].strip():
         raise ValueError("The original user prompt is required; summaries are not substitutes.")
@@ -364,10 +364,10 @@ def verify_commit(value: dict[str, Any], message: str) -> str:
     return actors[0]
 
 
-def repair_context(task_id: str, producer: str) -> dict[str, Any]:
+def repair_context(task_id: str, producer: str, *, validation: bool = False) -> dict[str, Any]:
     return {"version": 1, "task_id": task_id, "producer_id": producer,
-            "source": "standing-integration-repair", "corrections": [],
-            "starting_prompt": "User-authorized standing task: monitor advisory integration "
+            "source": "standing-validation-repair" if validation else "standing-integration-repair", "corrections": [],
+            "starting_prompt": "User-authorized standing task: monitor post-merge validation and advisory integration "
             "through completion and repair failures until green. Include fast non-integration "
             "regression coverage. Use GitHub for tests and captures; never run them on the Pi. "
             "Every repair requires a separate independent reviewer and fast CI. "

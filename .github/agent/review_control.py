@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 import threading
 import time
 from contextlib import closing, contextmanager
@@ -21,6 +22,58 @@ PHASES = frozenset({"agent:writing", "agent:planning", "agent:reviewing",
 _STATUS_LOCKS: dict[tuple[str, str, int], Any] = {}
 _STATUS_GUARD = threading.Lock()
 _STATUS_DEPTH = threading.local()
+_COORDINATOR_AUTHORITY: Any = None
+_COORDINATOR_GUARD = threading.Lock()
+
+
+def _coordinator_authority() -> Any:
+    """Load only the fixed protected siblings, isolated per controller instance."""
+    with _COORDINATOR_GUARD:
+        return _load_coordinator_authority()
+
+
+def _load_coordinator_authority() -> Any:
+    global _COORDINATOR_AUTHORITY
+    if _COORDINATOR_AUTHORITY is None:
+        import importlib.util
+        name = "_atk_coordinator_" + secrets.token_hex(16)
+        path = Path(__file__).with_name("coordinator_authority.py")
+        spec = importlib.util.spec_from_file_location(name, path, submodule_search_locations=[str(path.parent)])
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Checked coordinator implementation unavailable")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            for key in list(sys.modules):
+                if key == name or key.startswith(name + "."):
+                    sys.modules.pop(key, None)
+            raise
+        _COORDINATOR_AUTHORITY = module
+    return _COORDINATOR_AUTHORITY
+
+
+def __getattr__(name: str) -> Any:
+    if name == "CoordinatorAuthorityPending":
+        return _coordinator_authority().CoordinatorAuthorityPending
+    raise AttributeError(name)
+
+
+def prerequisite_authority_snapshot(repository: str, scope: dict[str, Any]) -> dict[str, Any]:
+    """Observe the full receipt-selected control scope without authority writes."""
+    return _coordinator_authority().prerequisite_authority_snapshot(repository, scope)
+
+
+def renew_coordinator_checked(
+    gh: Any, pr: dict[str, Any], binding: dict[str, Any], task_digest: str, *,
+    scope: dict[str, Any], expected_authority: dict[str, Any], proof_sha256: str,
+    caller_binding: dict[str, Any],
+) -> dict[str, Any]:
+    """CAS only the matching hold to renewed planning; no external permission."""
+    return _coordinator_authority().renew_coordinator_checked(
+        gh, pr, binding, task_digest, scope=scope, expected_authority=expected_authority,
+        proof_sha256=proof_sha256, caller_binding=caller_binding)
 
 
 @contextmanager
@@ -155,6 +208,11 @@ def connect() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS coordinator_renewals (
           repository TEXT, number INTEGER, request TEXT, binding TEXT, head TEXT, digest TEXT,
           PRIMARY KEY(repository, number, request));
+        CREATE TABLE IF NOT EXISTS coordinator_checked_renewals (
+          repository TEXT NOT NULL, number INTEGER NOT NULL, request TEXT NOT NULL,
+          binding_sha256 TEXT NOT NULL, transition_sha256 TEXT NOT NULL UNIQUE,
+          receipt_json TEXT NOT NULL, receipt_sha256 TEXT NOT NULL, created REAL NOT NULL,
+          PRIMARY KEY(repository,number,request,binding_sha256));
         CREATE TABLE IF NOT EXISTS feature_amendments (
           repository TEXT, number INTEGER, head TEXT, created REAL,
           PRIMARY KEY(repository, number));

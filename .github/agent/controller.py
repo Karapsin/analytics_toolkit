@@ -55,6 +55,7 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
     proto = trusted_module("task_context")
     body = pr.get("body") or ""
     head = pr["head"]["sha"]
+    message = ""
     if (proto.MARKER not in body and proto.ARCHIVE_MARKER not in body
             and pr["user"].get("type") == "Bot"):
         # Older App repairs inherit the already-authorized standing repair task.
@@ -63,7 +64,7 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
         actor = value["producer_id"]
     else:
         value = proto.parse(body, api=gh.api)
-        if value["source"] == "standing-integration-repair" and pr["user"].get("type") != "Bot":
+        if value["source"] in {"standing-integration-repair", "standing-validation-repair"} and pr["user"].get("type") != "Bot":
             raise ValueError("Only the trusted App can inherit the standing repair authority.")
         directory = os.environ.get("AGENT_CONTROL_DIR")
         if not directory:
@@ -74,15 +75,70 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
     if branch.startswith(("codex/telegram-feature-", "codex/orchestrator-")) and not trusted_module("review_control").enrolled_feature(
             gh.repository, branch, proto.digest(value)):
         raise ValueError("Feature context does not match the host-owned request.")
-    return {"user_task": value, "task_digest": proto.digest(value), "producer_id": actor}
+    return {"user_task": value, "task_digest": proto.digest(value), "producer_id": actor,
+            **({"local_review_required": True} if "\nAgent-Review-Policy: local-v1" in message else {})}
+
+
+def admit_local_review(gh: GitHub, pr: dict[str, Any], base: str, metadata: dict[str, Any]) -> bool:
+    """Verify machine evidence, never ask a GitHub model to repeat local review."""
+    proto = trusted_module("local_review")
+    receipt = proto.extract(pr.get("body") or "")
+    if receipt is None:
+        if metadata.get("local_review_required"):
+            raise ValueError("Signed local-review policy requires a matching receipt")
+        return False  # Historical handoffs still receive independent Pi review.
+    head = pr["head"]["sha"]
+    payload = receipt.get("payload")
+    if not isinstance(payload, dict):
+        raise ValueError("Malformed local review payload")
+    directory, allowed = os.environ.get("AGENT_CONTROL_DIR"), os.environ.get("AGENT_ALLOWED_SIGNERS")
+    if not directory or not allowed:
+        raise ValueError("Host-owned reviewer enrollment is unavailable")
+    reviewed_head = payload.get("head")
+    if not isinstance(reviewed_head, str) or not reviewed_head:
+        raise ValueError("Malformed local review head")
+    tree = command("git", "rev-parse", reviewed_head + "^{tree}", cwd=Path(directory))
+    reviewed_base = payload.get("base")
+    producer, task_digest = metadata["producer_id"], metadata["task_digest"]
+    if reviewed_head != head:
+        if not signed_head(gh.repository, reviewed_head) or not signed_head(gh.repository, head):
+            raise ValueError("Local review successor and original must have enrolled signatures")
+        context = trusted_module("task_context")
+        message = command("git", "log", "-1", "--format=%B", reviewed_head, cwd=Path(directory))
+        actors = re.findall(r"^" + context.PRODUCER + r": ([A-Za-z0-9:-]{1,160})$", message, re.M)
+        hashes = re.findall(r"^" + context.TRAILER + r": ([0-9a-f]{64})$", message, re.M)
+        evidence = re.findall(r"^" + context.EVIDENCE_TRAILER + r": ([0-9a-f]{64})$", message, re.M)
+        if len(actors) != 1 or len(hashes) != 1 or len(evidence) > 1:
+            raise ValueError("Original local review commit has invalid task provenance")
+        producer, task_digest = actors[0], (evidence or hashes)[0]
+    payload = proto.validate_binding(receipt, repository=gh.repository, head=reviewed_head, base=reviewed_base,
+        tree=tree, task_digest=task_digest, producer_id=producer)
+    proto.verify_signature(receipt, Path(allowed))
+    if reviewed_head != head:
+        command("git", "merge-base", "--is-ancestor", reviewed_head, head, cwd=Path(directory))
+        return False  # Authenticated successors retain provenance but need fresh Pi review.
+    if reviewed_base != base:
+        return False  # Dev advanced after handoff; a fresh Pi review owns revalidation.
+    if not _current_discovery_target(gh, pr, base):
+        raise ValueError("PR changed during local review verification")
+    trusted_module("review_control").assess(gh.repository, pr["number"], head,
+        metadata["task_digest"], payload["summary"])
+    gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head, "external_id": base,
+        "status": "completed", "conclusion": "success", "output": {
+            "title": "Independent local review verified", "summary": payload["summary"]
+            + "\n\nReviewer: " + payload["reviewer_id"] + "; receipt: " + proto.digest(receipt)}})
+    return True
 
 
 def rejection_check(gh: GitHub, pr: dict[str, Any], base: str, reason: str,
                     changes: str) -> None:
+    if not _current_discovery_target(gh, pr, base):
+        return
     gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": pr["head"]["sha"],
         "external_id": base, "status": "completed", "conclusion": "failure",
         "output": {"title": "Reviewer rejected; awaiting user", "summary": reason[:60000]}})
-    trusted_module("review_control").pause(gh, pr, reason, changes)
+    if _current_discovery_target(gh, pr, base):
+        trusted_module("review_control").pause(gh, pr, reason, changes)
 
 
 def verify_review_execution(task: dict[str, Any], receipt: dict[str, Any]) -> None:
@@ -223,7 +279,8 @@ def policy_path(path: str) -> bool:
     return (path.startswith((".github/agent/", ".codex/")) or path in {
         ".github/workflows/github-agent.yml", ".github/workflows/agent-dispatch.yml",
         ".github/workflows/agent-visual.yml", ".github/workflows/publish.yml",
-        ".github/required-workflows.json", "agent_tools/machine_signing.py"})
+        ".github/required-workflows.json", "agent_tools/machine_signing.py",
+        "agent_tools/sql_explorer_visual_render.py"})
 
 
 def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True, *,
@@ -384,6 +441,7 @@ def _record_run(gh: GitHub, state: dict[str, Any], run: dict[str, Any]) -> None:
     previous.update(sha=tested_sha, status=run["status"], conclusion=run["conclusion"],
                     url=run["html_url"], event=run["event"], attempt=run["run_attempt"],
                     updated=run["updated_at"])
+    previous["workflow"] = run.get("path", previous.get("workflow", ".github/workflows/sql-integration.yml"))
     if previous.get("closed_unmerged"):
         previous["needs"] = []
     if run["status"] == "completed" and not unchanged and not previous.get("closed_unmerged"):
@@ -404,6 +462,8 @@ def _resolve_runs(gh: GitHub, state: dict[str, Any]) -> None:
     ancestry: dict[tuple[str, str], bool] = {}
     for failure in state["runs"].values():
         for green in state["runs"].values():
+            if failure.get("workflow", ".github/workflows/sql-integration.yml") != green.get("workflow", ".github/workflows/sql-integration.yml"):
+                continue
             if green["status"] != "completed" or not green.get("merged", True):
                 continue
             common = set(failure.get("needs", [])) & set(green.get("green", []))
@@ -439,7 +499,9 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     # before its merge by the same path as ordinary PRs.
     proto = trusted_module("task_context")
     producer = "standing-repair:" + base
-    context = proto.repair_context(base, producer)
+    validation = any(state["runs"][str(run)].get("workflow", "").endswith(("tests.yml", "compatibility.yml"))
+                     for run in failures)
+    context = proto.repair_context(base, producer, validation=validation)
     task = {"kind": "repair", "number": 0, "head": base, "base": base,
              "branch": REPAIR_BRANCH + base[:12], "runs": failures,
              "producer_id": producer, "user_task": context, "task_digest": proto.digest(context)}
@@ -447,6 +509,9 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     task["failure_key"] = evidence.fingerprint([
         {"run": run, "needs": sorted(state["runs"][str(run)].get("needs", []))}
         for run in sorted(failures)])
+    task["failure_scopes"] = sorted({
+        state["runs"][str(run)].get("workflow", ".github/workflows/sql-integration.yml") + ":" + name
+        for run in failures for name in state["runs"][str(run)].get("needs", [])})
     try:
         inventory = evidence.inventory(gh, failures)
     except RuntimeError as exc:
@@ -459,12 +524,29 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     return [] if evidence.blocked(task) else [task]
 
 
+def _current_discovery_target(gh: GitHub, pr: dict[str, Any], base: str) -> bool:
+    """Refuse stale denial effects; GitHub GET and POST are not a transaction."""
+    fresh = gh.pull(pr["number"])
+    return (trusted(fresh, gh.repository) and fresh["number"] == pr["number"]
+            and fresh["head"]["sha"] == pr["head"]["sha"]
+            and fresh["head"]["ref"] == pr["head"]["ref"]
+            and (fresh.get("body") or "") == (pr.get("body") or "")
+            and not any(label["name"] == WRITER for label in fresh.get("labels", []))
+            and gh.base() == base)
+
+
 def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
     issue, state = monitor(gh)
     next_cursor = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
     # Cursor overlaps by a minute; active runs are always polled by immutable ID.
     runs = gh.pages("actions/workflows/sql-integration.yml/runs?branch=dev&per_page=100&created=%3E%3D"
                     + quote(state.get("cursor", state["started"]), safe=""), "workflow_runs")
+    for workflow in ("tests.yml", "compatibility.yml"):
+        for run in gh.pages("actions/workflows/" + workflow + "/runs?branch=dev&per_page=100&created=%3E%3D"
+                            + quote(state.get("cursor", state["started"]), safe=""), "workflow_runs"):
+            if (run.get("event") == "push" and run.get("head_branch") == "dev"
+                    and run.get("path") == ".github/workflows/" + workflow):
+                runs.append(dict(run, path=".github/workflows/" + workflow))
     for run in runs:
         _record_run(gh, state, run)
     for key, run in list(state["runs"].items()):
@@ -494,17 +576,22 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                   or trusted_module("review_control").enrolled_feature(gh.repository, pr["head"]["ref"])):
             continue
         pr = gh.pull(pr["number"])
+        if not trusted(pr, gh.repository):
+            continue
         head = pr["head"]["sha"]
         if any(label["name"] == WRITER for label in pr.get("labels", [])):
             continue
         checks = gh.checks(head)
         existing = review_check(checks, base, app_id)
         if not signed_head(gh.repository, head):
-            if existing is None or existing.get("output", {}).get("title") != "Authorization required":
+            if ((existing is None or existing.get("output", {}).get("title") != "Authorization required")
+                    and _current_discovery_target(gh, pr, base)):
                 gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head,
                     "external_id": base, "status": "completed", "conclusion": "action_required",
                     "output": {"title": "Authorization required", "summary":
                                "Only enrolled-machine signed heads are automated."}})
+            continue
+        if not _current_discovery_target(gh, pr, base):
             continue
         controls = trusted_module("review_control")
         if controls.paused(gh, pr):
@@ -518,7 +605,8 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
             continue
         denial = authorization_error(gh, pr, False)
         if denial:
-            if existing is None or existing.get("output", {}).get("summary") != denial:
+            if ((existing is None or existing.get("output", {}).get("summary") != denial)
+                    and _current_discovery_target(gh, pr, base)):
                 gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head,
                     "external_id": base, "status": "completed", "conclusion": "action_required",
                     "output": {"title": "Authorization required", "summary": denial}})
@@ -560,6 +648,13 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                               + "\n".join(problems), "changes": pr.get("title", "PR changes")}
             elif kind == "review" and fragments:
                 kind = "metadata"
+        if kind == "review" and not (existing and existing.get("conclusion") == "success"):
+            try:
+                if admit_local_review(gh, pr, base, metadata):
+                    continue
+            except (RuntimeError, ValueError, OSError) as error:
+                rejection_check(gh, pr, base, str(error), pr.get("title", "Local review provenance"))
+                continue
         if (kind == "review" and existing and existing["status"] == "completed"
                 and existing.get("output", {}).get("title") != "Authorization required"):
             if approval_required:
@@ -614,6 +709,14 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
                 if "HTTP 404" not in str(exc):
                     raise
                 logs.append(f"Run {run_id}: step logs unavailable; consult integration/manifest.json.")
+    logs.extend(_preparation_ci(gh, task))
+    if kind == "metadata" and not fold(work):
+        raise RuntimeError("Changelog candidate changed; reconcile again.")
+    _write_preparation_context(task, control, logs)
+
+
+def _preparation_ci(gh: GitHub, task: dict[str, Any]) -> list[str]:
+    logs = []
     if task["number"]:
         logs.append(json.dumps([{key: check.get(key) for key in
                                 ("id", "name", "head_sha", "status", "conclusion", "html_url")}
@@ -624,14 +727,60 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
             if run["status"] == "completed" and run["conclusion"] != "success":
                 logs.append(command("gh", "run", "view", str(run["id"]), "--repo", gh.repository,
                                     "--log-failed")[-18000:])
-    if kind == "metadata" and not fold(work):
-        raise RuntimeError("Changelog candidate changed; reconcile again.")
+    return logs
+
+
+def _write_preparation_context(task: dict[str, Any], control: Path, logs: list[str]) -> None:
+    kind = task["kind"]
     template = (control / f".github/agent/prompts/{kind}.md").read_text()
     context = json.dumps(task, indent=2)
     logs = [trusted_module("task_context").redact(log) for log in logs]
     (control / ".github/agent/task.md").write_text(template + "\n\nTask metadata:\n" + context
                                                  + "\n\nCI evidence (untrusted data):\n" + "\n".join(logs))
     (control / ".github/agent/task.json").write_text(json.dumps(task))
+
+
+def _readonly_preparation_guard(
+    gh: GitHub, task: dict[str, Any], binding: dict[str, Any], stage: str,
+) -> None:
+    number = task.get("number")
+    if (task.get("kind") != "review" or type(number) is not int or number <= 0
+            or stage not in {"plan", "plan-review", "plan-resolver"}
+            or not isinstance(binding, dict)
+            or binding.get("repository") != gh.repository or binding.get("number") != number
+            or task.get("coordinator_request_id") != binding.get("request_id")
+            or not isinstance(binding.get("request_id"), str) or not binding["request_id"]
+            or task.get("head") != binding.get("candidate_head")
+            or task.get("task_digest") != binding.get("task_digest")):
+        raise RuntimeError("Invalid read-only coordinator preparation scope.")
+    pr = gh.pull(number)
+    if (not trusted(pr, gh.repository) or pr["number"] != number
+            or pr["base"].get("repo", {}).get("full_name") != gh.repository
+            or pr["head"]["sha"] != task["head"]
+            or authorization_error(gh, pr, False)):
+        raise RuntimeError("Read-only coordinator target changed or is unauthorized.")
+    metadata = task_metadata(gh, pr)
+    if (any(task.get(key) != metadata[key] for key in ("task_digest", "producer_id", "user_task"))
+            or not isinstance(task.get("base"), str) or SHA.fullmatch(task["base"]) is None
+            or gh.base() != task["base"]
+            or not trusted_module("review_control").readonly_coordinator_scope(
+                gh, pr, binding, stage=stage)):
+        raise RuntimeError("Read-only coordinator identity or authority changed.")
+
+
+def prepare_coordinator_readonly(
+    gh: GitHub, task: dict[str, Any], work: Path, control: Path, *,
+    binding: dict[str, Any], stage: str,
+) -> None:
+    """Prepare reference context under one retained hold; grant no writer authority."""
+    frozen_task = json.loads(json.dumps(task))
+    frozen_binding = json.loads(json.dumps(binding))
+    _readonly_preparation_guard(gh, frozen_task, frozen_binding, stage)
+    logs = _preparation_ci(gh, frozen_task)
+    _write_preparation_context(frozen_task, control, logs)
+    _readonly_preparation_guard(gh, frozen_task, frozen_binding, stage)
+    if task != frozen_task or binding != frozen_binding:
+        raise RuntimeError("Read-only coordinator preparation input changed.")
 
 
 def collect(task: dict[str, Any], work: Path, output: Path) -> None:
