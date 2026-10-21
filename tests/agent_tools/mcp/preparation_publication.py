@@ -202,6 +202,7 @@ def test_confirmed_absence_uses_existing_publication_once(
         return sessions.handoff(root)
 
     monkeypatch.setattr(sessions, "push", push)
+    monkeypatch.setattr(preparation, "_review_preparation", lambda root: None)
     result = preparation.prepare(item.root)
     assert result["pr"] == 12
     assert pushes == [item.work]

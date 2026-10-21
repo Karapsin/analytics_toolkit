@@ -11,6 +11,8 @@ import pytest
 from agent_tools.local_review_files import Files, complete_coverage, serve
 
 from agent_tools import local_review, mcp_server, sessions, task_context
+from agent_tools import release_preparation as preparation
+from tests.agent_tools._support.local_review import signed_receipt
 from tests.agent_tools.handoff import no_network, submitted
 from tests.agent_tools.sessions import git
 from tests.agent_tools.sessions import source as source  # noqa: PLC0414
@@ -28,6 +30,60 @@ def candidate(source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(local_review, "validation", lambda root: {"ok": True, "fixture": True})
     monkeypatch.setattr(task_context, "repository_identity", lambda root: "owner/repo")
     return root
+
+
+@pytest.mark.parametrize("failure", ["environment", "checks", None])
+def test_release_preparation_obtains_review_before_real_push_gate(
+    candidate: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str | None,
+) -> None:
+    head = git(candidate, "rev-parse", "HEAD")
+    (local_review.directory(candidate) / (head + ".json")).unlink()
+    with pytest.raises(RuntimeError, match="local review is required"):
+        sessions.push(candidate)
+    pr = sessions.pr_info(candidate)
+    order = []
+
+    def environment(root, *, ensure_project_env):
+        assert root == candidate
+        assert ensure_project_env
+        assert not (root / ".venv").exists()  # Unprepared fresh session clone.
+        order.append("environment")
+        return [("project", {"ok": failure != "environment"})], {}
+
+    def checks(**kwargs):
+        assert kwargs == {"level": "precommit", "root": str(candidate)}
+        assert order == ["environment"]
+        order.append("checks")
+        return {"ok": failure != "checks"}
+
+    def review(root):
+        assert order == ["environment", "checks"]
+        receipt = signed_receipt(root)
+        pr["body"] = (
+            task_context.attachment(root) + "\n" + local_review.protocol(root).attachment(receipt)
+        )
+        order.append("review")
+        return receipt
+
+    monkeypatch.setattr(mcp_server, "_verify_precommit_success", lambda root: {"ok": False})
+    monkeypatch.setattr(mcp_server, "_prepare_environment", environment)
+    monkeypatch.setattr(mcp_server, "run_checks", checks)
+    monkeypatch.setattr(local_review, "review", review)
+    found = iter([None, pr])
+    monkeypatch.setattr(preparation, "_published_preparation", lambda *args: next(found))
+    monkeypatch.setattr(preparation, "_recover_preparation_handoff", lambda *args: None)
+    if failure:
+        with pytest.raises(RuntimeError, match=r"setup failed|validation failed"):
+            preparation._handoff_preparation(candidate, candidate, {"candidate_sha": head})
+        assert "review" not in order
+        assert sessions.load(candidate)["phase"] == "feature"
+        return
+    result = preparation._handoff_preparation(candidate, candidate, {"candidate_sha": head})
+    assert result["number"] == pr["number"]
+    assert order == ["environment", "checks", "review"]
+    assert sessions.load(candidate)["handoffs"][-1]["sha"] == head
 
 
 def test_published_receipt_is_bound_to_head_tree_task_and_private_enrollment(

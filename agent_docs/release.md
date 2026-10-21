@@ -14,7 +14,8 @@ prepares one new four-part version, with carry at 19, and preserves historical n
 2. Call `release_workflow(action="merge-dev", summary=None)` (CLI:
    `release-workflow --action merge-dev [--summary "Release summary"]`).
    The tool synchronizes origin/dev in an isolated workspace, folds fragments,
-   prepares version/README/release notes, and publishes a signed preparation PR
+   prepares version/README/release notes, runs local pre-commit validation and
+   fresh independent local review, then publishes a signed preparation PR
    to dev through the existing task attachment and independent-review workflow.
    A release without unreleased entries requires a summary, including README-only
    releases. Never push a release metadata commit directly to dev.
