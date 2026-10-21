@@ -57,6 +57,37 @@ def test_fragment_api_failure_does_not_invent_a_rejection_then_retries(
     assert controller.discover(gh, 17)["include"][0]["kind"] == "metadata"
 
 
+def test_local_receipt_cannot_skip_required_fragment_folding(
+    run_refresh_discovery: Any, monkeypatch: Any
+) -> None:
+    gh, _, _, _ = run_refresh_discovery
+    pull = gh.pull
+
+    def locally_reviewed(number: int) -> Any:
+        return dict(pull(number), body="<!-- atk-local-review:v1 signed receipt -->")
+
+    monkeypatch.setattr(gh, "pull", locally_reviewed)
+    admitted = []
+    monkeypatch.setattr(controller, "admit_local_review", lambda *args: admitted.append(args))
+    task = next(item for item in controller.discover(gh, 17)["include"] if item["number"] == 1)
+    assert task["kind"] == "metadata"
+    assert not any(args[1]["number"] == 1 for args in admitted)
+    # Folding produces a new head. Its old local receipt must then yield a fresh Pi review.
+    pages = gh.pages
+    monkeypatch.setattr(
+        gh,
+        "pages",
+        lambda path, key=None: (
+            [dict(item, status="removed") for item in pages(path, key)]
+            if path.startswith("pulls/1/")
+            else pages(path, key)
+        ),
+    )
+    monkeypatch.setattr(controller, "admit_local_review", lambda *args: False)
+    task = next(item for item in controller.discover(gh, 17)["include"] if item["number"] == 1)
+    assert task["kind"] == "review"
+
+
 def test_removed_fragment_is_not_read_or_recreated(
     run_refresh_discovery: Any, monkeypatch: Any
 ) -> None:

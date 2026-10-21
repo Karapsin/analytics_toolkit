@@ -632,7 +632,7 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                 kind = "correction"
                 correction = {"reason": "Changelog metadata cannot be folded; correct these fragments:\n"
                               + "\n".join(problems), "changes": pr.get("title", "PR changes")}
-            elif kind == "review" and fragments and "atk-local-review:v1" not in (pr.get("body") or ""):
+            elif kind == "review" and fragments:
                 kind = "metadata"
         if kind == "review" and not (existing and existing.get("conclusion") == "success"):
             try:
