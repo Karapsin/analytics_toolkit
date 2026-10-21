@@ -91,18 +91,32 @@ def admit_local_review(gh: GitHub, pr: dict[str, Any], base: str, metadata: dict
     payload = receipt.get("payload")
     if not isinstance(payload, dict):
         raise ValueError("Malformed local review payload")
-    if payload.get("head") != head:
-        if metadata["producer_id"].startswith(("author:", "standing-repair:")):
-            return False  # A trusted conflict/repair mutation needs fresh Pi review.
-        raise ValueError("Local review receipt belongs to a different candidate")
     directory, allowed = os.environ.get("AGENT_CONTROL_DIR"), os.environ.get("AGENT_ALLOWED_SIGNERS")
     if not directory or not allowed:
         raise ValueError("Host-owned reviewer enrollment is unavailable")
-    tree = command("git", "rev-parse", head + "^{tree}", cwd=Path(directory))
+    reviewed_head = payload.get("head")
+    if not isinstance(reviewed_head, str) or not reviewed_head:
+        raise ValueError("Malformed local review head")
+    tree = command("git", "rev-parse", reviewed_head + "^{tree}", cwd=Path(directory))
     reviewed_base = payload.get("base")
-    payload = proto.validate_binding(receipt, repository=gh.repository, head=head, base=reviewed_base,
-        tree=tree, task_digest=metadata["task_digest"], producer_id=metadata["producer_id"])
+    producer, task_digest = metadata["producer_id"], metadata["task_digest"]
+    if reviewed_head != head:
+        if not signed_head(gh.repository, reviewed_head) or not signed_head(gh.repository, head):
+            raise ValueError("Local review successor and original must have enrolled signatures")
+        context = trusted_module("task_context")
+        message = command("git", "log", "-1", "--format=%B", reviewed_head, cwd=Path(directory))
+        actors = re.findall(r"^" + context.PRODUCER + r": ([A-Za-z0-9:-]{1,160})$", message, re.M)
+        hashes = re.findall(r"^" + context.TRAILER + r": ([0-9a-f]{64})$", message, re.M)
+        evidence = re.findall(r"^" + context.EVIDENCE_TRAILER + r": ([0-9a-f]{64})$", message, re.M)
+        if len(actors) != 1 or len(hashes) != 1 or len(evidence) > 1:
+            raise ValueError("Original local review commit has invalid task provenance")
+        producer, task_digest = actors[0], (evidence or hashes)[0]
+    payload = proto.validate_binding(receipt, repository=gh.repository, head=reviewed_head, base=reviewed_base,
+        tree=tree, task_digest=task_digest, producer_id=producer)
     proto.verify_signature(receipt, Path(allowed))
+    if reviewed_head != head:
+        command("git", "merge-base", "--is-ancestor", reviewed_head, head, cwd=Path(directory))
+        return False  # Authenticated successors retain provenance but need fresh Pi review.
     if reviewed_base != base:
         return False  # Dev advanced after handoff; a fresh Pi review owns revalidation.
     if not _current_discovery_target(gh, pr, base):

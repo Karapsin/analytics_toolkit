@@ -57,21 +57,105 @@ def test_fragment_api_failure_does_not_invent_a_rejection_then_retries(
     assert controller.discover(gh, 17)["include"][0]["kind"] == "metadata"
 
 
-def test_local_receipt_cannot_skip_required_fragment_folding(
-    run_refresh_discovery: Any, monkeypatch: Any
-) -> None:
-    gh, _, _, _ = run_refresh_discovery
+@pytest.fixture
+def local_receipt_discovery(
+    run_refresh_discovery: Any,
+    monkeypatch: Any,
+    invalid: str | None,
+) -> Any:
+    gh, _, _, metadata = run_refresh_discovery
     pull = gh.pull
+    proto = controller.trusted_module("local_review")
+    old_head = pull(1)["head"]["sha"]
+    original_message = controller.trusted_module("task_context").trailers(
+        metadata["user_task"], metadata["producer_id"]
+    )
+    receipt = {
+        "payload": {
+            "version": 1,
+            "kind": "local-source-review",
+            "mode": "read-only",
+            "repository": gh.repository,
+            "head": old_head,
+            "base": gh.base(),
+            "tree": "tree",
+            "task_digest": metadata["task_digest"],
+            "producer_id": metadata["producer_id"],
+            "reviewer_id": "reviewer:00000000-0000-0000-0000-000000000000",
+            "approved": True,
+            "alignment": "aligned",
+            "execution_sha256": "a" * 64,
+            "summary": "Locally approved",
+        },
+        "signature": "signature verified by host enrollment",
+    }
+    successor = []
 
     def locally_reviewed(number: int) -> Any:
-        return dict(pull(number), body="<!-- atk-local-review:v1 signed receipt -->")
+        pr = pull(number)
+        if number != 1:
+            return pr
+        return dict(
+            pr,
+            body=proto.attachment(receipt),
+            head=dict(pr["head"], sha=successor[0] if successor else old_head),
+        )
 
     monkeypatch.setattr(gh, "pull", locally_reviewed)
-    admitted = []
-    monkeypatch.setattr(controller, "admit_local_review", lambda *args: admitted.append(args))
+    verified = []
+
+    def verify_signature(*args: Any) -> None:
+        if invalid == "signature":
+            message = "Invalid local review signature"
+            raise ValueError(message)
+        verified.append(args)
+
+    monkeypatch.setattr(proto, "verify_signature", verify_signature)
+    monkeypatch.setattr(
+        controller,
+        "signed_head",
+        lambda repository, head: not (invalid == "unsigned" and successor and head == successor[0]),
+    )
+    monkeypatch.setenv("AGENT_CONTROL_DIR", "/trusted")
+    monkeypatch.setenv("AGENT_ALLOWED_SIGNERS", "/trusted/signers")
+    commands = []
+
+    def command(*args: str, **kwargs: Any) -> str:
+        commands.append(args)
+        if args[:2] == ("git", "rev-parse"):
+            assert args[2] == old_head + "^{tree}"
+            return "tree"
+        if args[:2] == ("git", "log"):
+            assert args[-1] == old_head
+            return (
+                original_message.replace(receipt["payload"]["task_digest"], "f" * 64)
+                if invalid == "provenance"
+                else original_message
+            )
+        assert args == ("git", "merge-base", "--is-ancestor", old_head, successor[0])
+        if invalid == "ancestry":
+            message = "Reviewed commit is not an ancestor"
+            raise RuntimeError(message)
+        return ""
+
+    monkeypatch.setattr(controller, "command", command)
+    return gh, metadata, old_head, successor, verified, commands
+
+
+@pytest.mark.parametrize("changed_producer", [False, True])
+@pytest.mark.parametrize("enriched_task", [False, True])
+@pytest.mark.parametrize("invalid", [None, "signature", "ancestry", "unsigned", "provenance"])
+def test_local_receipt_cannot_skip_required_fragment_folding(
+    local_receipt_discovery: Any,
+    monkeypatch: Any,
+    changed_producer: bool,
+    enriched_task: bool,
+    invalid: str | None,
+) -> None:
+    gh, metadata, old_head, successor, verified, commands = local_receipt_discovery
     task = next(item for item in controller.discover(gh, 17)["include"] if item["number"] == 1)
     assert task["kind"] == "metadata"
-    assert not any(args[1]["number"] == 1 for args in admitted)
+    assert not verified
     # Folding produces a new head. Its old local receipt must then yield a fresh Pi review.
     pages = gh.pages
     monkeypatch.setattr(
@@ -83,9 +167,22 @@ def test_local_receipt_cannot_skip_required_fragment_folding(
             else pages(path, key)
         ),
     )
-    monkeypatch.setattr(controller, "admit_local_review", lambda *args: False)
+    successor.append("c" * 40)
+    if changed_producer:
+        metadata["producer_id"] = "author:independent-correction"
+    if enriched_task:
+        metadata["task_digest"] = "e" * 64
+    if invalid:
+        with pytest.raises((ValueError, RuntimeError)):
+            controller.admit_local_review(gh, gh.pull(1), gh.base(), metadata)
+        return
     task = next(item for item in controller.discover(gh, 17)["include"] if item["number"] == 1)
     assert task["kind"] == "review"
+    assert task["head"] == successor[0]
+    assert task["producer_id"] == metadata["producer_id"]
+    assert task["task_digest"] == metadata["task_digest"]
+    assert len(verified) == 1
+    assert ("git", "merge-base", "--is-ancestor", old_head, successor[0]) in commands
 
 
 def test_removed_fragment_is_not_read_or_recreated(
