@@ -148,8 +148,9 @@ Restoring context does not transfer owner approval from the source PR.
    Its GitHub coding role only resolves conflicts. Separate Pi repair agents own
    pre-merge CI, post-merge compatibility and integration failures. Changed heads
    and changed dev bases receive fresh independent Pi review. Published work never
-   returns to its developing machine. Three unsuccessful repair candidates pause
-   the incident; retained evidence survives retries and restarts.
+   returns to its developing machine. Diagnostic accounting and retained evidence
+   survive retries, changed heads, partial repairs and restarts; no new retry limit
+   applies. Established repair controls and holds remain in force.
 10. Handoff refreshes clean dev. Recover interrupted publication with `push`,
     interrupted handoff with `handoff`, and pending dev refresh with `sync`.
     Dirty shared work is preserved and reported. Optional `feedback --pr <number>`

@@ -210,7 +210,9 @@ def review(root: Path) -> dict[str, Any]:
         "to activate automation.\n"
         "The trusted caller supplies exact-tree mandatory check receipts below. "
         "Paired implementation evidence is source/CI evidence, never policy approval "
-        "or proof of deployment. Apply the final approved scope after prior tasks were cancelled.\n"
+        "or proof of deployment. Assess the complete original task, chronological corrections "
+        "and explicit user replacements. Do not infer cancellation of earlier obligations. "
+        "Distinguish obligations explicitly deferred outside this PR from its acceptance criteria.\n"
         + json.dumps(
             {
                 "subject": subject,

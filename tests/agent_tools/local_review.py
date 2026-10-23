@@ -208,6 +208,7 @@ root, job, head, base, mode, thread = sys.argv[1:7]
 names = ('GH_TOKEN', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'SSH_AUTH_SOCK')
 assert not any(name in os.environ for name in names)
 job = Path(job)
+(job / 'reviewer-input.txt').write_text(sys.stdin.read(), encoding='utf-8')
 files = Files(Path(root), head, base, job / 'served.jsonl')
 if mode == 'failure':
     raise SystemExit(7)
@@ -244,8 +245,42 @@ def test_fresh_review_execution_and_fail_closed_publication(
     mode: str,
     error: str | None,
 ) -> None:
+    original = task_context.read(candidate)
+    replacement = "/replace_reference " + json.dumps(
+        {
+            "reference": "Implement the plan",
+            "replacement": (
+                "Implement the workflow redesign. Automations remain stopped; PR #9 is "
+                "outstanding and deferred outside this PR. Separate Pi agents repair CI "
+                "failures and independently review changed heads/bases. No new retry limit."
+            ),
+        }
+    )
+    context = {
+        **original,
+        "version": 2,
+        "starting_prompt": "stop all current gh automations. concentrate on merging PR #9",
+        "corrections": [
+            "Implement the plan.",
+            "Keep the orchestrator; initial review stays on the developing machine.",
+            replacement,
+        ],
+        "plans": [],
+        "images": [],
+        "replacements": [{"reference": "Implement the plan", "user_index": 2}],
+        "decisions": [],
+    }
+    active = task_context.directory(candidate) / "active.json"
+    active.write_text(json.dumps(context), encoding="utf-8")
+    git(
+        candidate,
+        *sessions.commit_options(candidate),
+        "commit",
+        "--allow-empty",
+        "-m",
+        "Amended workflow task" + task_context.commit_trailers(candidate),
+    )
     head = git(candidate, "rev-parse", "HEAD")
-    (local_review.directory(candidate) / (head + ".json")).unlink()
     thread = str(uuid.uuid4())
     monkeypatch.setenv("GITHUB_TOKEN", "synthetic-never-forwarded")
     monkeypatch.setattr(
@@ -273,6 +308,17 @@ def test_fresh_review_execution_and_fail_closed_publication(
         assert receipt["payload"]["head"] == head
         assert receipt["payload"]["reviewer_id"] == "reviewer:" + thread
         assert local_review.review(candidate) == receipt
+    inputs = list(local_review.directory(candidate).glob("run-*/reviewer-input.txt"))
+    assert len(inputs) == 1
+    prompt = inputs[0].read_text(encoding="utf-8")
+    payload = json.loads(prompt[prompt.index("{"):])
+    assert payload["user_task"] == task_context.protocol().public_context(context)
+    assert payload["user_task"]["starting_prompt"] == context["starting_prompt"]
+    assert payload["user_task"]["corrections"] == context["corrections"]
+    assert payload["user_task"]["replacements"] == context["replacements"]
+    assert "after prior tasks were cancelled" not in prompt
+    assert "Do not infer cancellation of earlier obligations" in prompt
+    assert "explicitly deferred outside this PR" in prompt
 
 
 def test_reviewer_cli_cannot_resume_author_or_enable_shell(

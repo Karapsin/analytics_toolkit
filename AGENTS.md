@@ -121,7 +121,8 @@ owns checks and merging; the GitHub coding agent only resolves conflicts.
 Separate Pi repair agents own all post-publication failures, including pre-merge
 CI, post-merge compatibility and integration. No task returns to the developing
 machine. Mutated heads and changed bases require fresh independent Pi review.
-Three unsuccessful repair candidates pause an incident. Rejections describe changes and reasons in plain Telegram
+Repair accounting preserves incident continuity without introducing a retry limit.
+Rejections describe changes and reasons in plain Telegram
 alerts without approval buttons. Genuine unanswered questions, owner veto/cancel,
 provenance failures and subscription/authentication limits pause the appropriate
 work; routine reviewer rejection does not require an owner resume command.

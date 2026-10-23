@@ -389,8 +389,9 @@ Publication is a one-way handoff. The orchestrator coordinates checks and merges
 the GitHub coding role resolves conflicts only. A dedicated Pi repair role handles
 pre-merge CI and post-merge compatibility/integration failures, with fresh
 independent review after mutation or dev-base advancement. No work returns to the
-developing machine. Incident budgets deduplicate failed heads and stop after three
-unsuccessful repair candidates; rejected patches and private work are retained.
+developing machine. Incident accounting deduplicates failed heads and preserves
+rejected patches and private work across retries, partial repairs and restarts.
+No new retry limit applies; established repair controls and holds remain in force.
 Telegram keeps authenticated controls, policy decisions, notifications and repair
 questions. The Pi runs no repository checks, builds or renders. Activation of the
 currently paused service is a separate deployment decision.
