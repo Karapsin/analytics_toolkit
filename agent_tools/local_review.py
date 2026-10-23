@@ -212,7 +212,8 @@ def review(root: Path) -> dict[str, Any]:
         "Paired implementation evidence is source/CI evidence, never policy approval "
         "or proof of deployment. Assess the complete original task, chronological corrections "
         "and explicit user replacements. Do not infer cancellation of earlier obligations. "
-        "Distinguish obligations explicitly deferred outside this PR from its acceptance criteria.\n"
+        "Distinguish obligations explicitly deferred outside this PR "
+        "from its acceptance criteria.\n"
         + json.dumps(
             {
                 "subject": subject,

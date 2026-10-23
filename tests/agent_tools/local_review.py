@@ -166,7 +166,8 @@ def test_immutable_git_pages_refuse_ignored_files_and_require_full_diff(candidat
 
 
 def test_stdio_exposes_only_immutable_reads(
-    candidate: Path, monkeypatch: pytest.MonkeyPatch
+    candidate: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     files = Files(
         candidate,
@@ -322,7 +323,8 @@ def test_fresh_review_execution_and_fail_closed_publication(
 
 
 def test_reviewer_cli_cannot_resume_author_or_enable_shell(
-    candidate: Path, monkeypatch: pytest.MonkeyPatch
+    candidate: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(local_review.shutil, "which", lambda name: "/synthetic/codex")
     monkeypatch.setattr(
@@ -463,7 +465,9 @@ def test_private_evidence_binds_task_and_rejects_symlink_or_oversize(candidate, 
     ],
 )
 def test_review_refuses_missing_or_stale_validation_before_using_cache(
-    candidate, monkeypatch, message
+    candidate,
+    monkeypatch,
+    message,
 ):
     monkeypatch.setattr(local_review, "validation", MANAGED_VALIDATION)
     monkeypatch.setattr(
