@@ -91,6 +91,7 @@ Generated from package version bumps and recent commit history.
 - Made isolated Codex startup resilient to download timeouts, reuse validated dependency wheels, and resume interrupted preparation
 - Move initial feature review locally, retain one-way orchestration and separate Pi repair, split fast checks from compatibility validation, and preserve reviewed successor and release-preparation publication.
 - Align local-review task scope and Telegram operations with owner amendments, preserving deferred PR #9, stopped automations and existing repair controls without a new retry limit.
+- Corrected local-review prompt wrapping and regression-test formatting while preserving the workflow redesign and existing validation gates.
 
 ## 1.3.12.5 - 2026-10-14
 
