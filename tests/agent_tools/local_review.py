@@ -312,7 +312,7 @@ def test_fresh_review_execution_and_fail_closed_publication(
     inputs = list(local_review.directory(candidate).glob("run-*/reviewer-input.txt"))
     assert len(inputs) == 1
     prompt = inputs[0].read_text(encoding="utf-8")
-    payload = json.loads(prompt[prompt.index("{"):])
+    payload = json.loads(prompt[prompt.index("{") :])
     assert payload["user_task"] == task_context.protocol().public_context(context)
     assert payload["user_task"]["starting_prompt"] == context["starting_prompt"]
     assert payload["user_task"]["corrections"] == context["corrections"]
