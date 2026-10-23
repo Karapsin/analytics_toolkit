@@ -60,6 +60,7 @@ def test_managed_matrix_runs_without_python38_and_preserves_other_profiles(tmp_p
         "py310-latest",
         "py310-sdk31",
         "py310-sdk32",
+        "py311-latest",
         "py312-latest",
         "py313-latest",
         "py314-latest",
@@ -75,7 +76,7 @@ def test_github_and_tox_profiles_exclude_python38_and_retain_minimum_dependencie
     assert "PYTHON38" not in configuration["testenv"]["base_python"]
     assert "constraints/py39-min.txt" in configuration["testenv"]["commands_pre"]
     assert "min: python -m pip check" in configuration["testenv"]["commands"]
-    workflow = (REPO_ROOT / ".github/workflows/tests.yml").read_text()
+    workflow = (REPO_ROOT / ".github/workflows/compatibility.yml").read_text()
     matrix = workflow.split("\n  tests:\n", 1)[1].split("\n  sdk-conformance:\n", 1)[0]
     profiles = re.findall(r'python-version: "([0-9.]+)"\n\s+env_name: ([a-z0-9-]+)', matrix)
     assert set(profiles) == {

@@ -185,7 +185,7 @@ jobs:
 
   fast-checks:
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only fast checks' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only fast checks' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only fast checks' || 'fast-checks' }}
-    needs: [tests, sdk-conformance, quality]
+    needs: [tests, quality]
     if: always() && !(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)
     runs-on: ubuntu-latest
     steps:
@@ -200,80 +200,27 @@ jobs:
 
   tests:
     if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only tests' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only tests' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only tests' || matrix.env_name }}
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only tests' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only tests' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only tests' || 'py314-latest' }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - python-version: "3.9"
-            env_name: py39-latest
-          - python-version: "3.10"
-            env_name: py310-latest
-          - python-version: "3.11"
-            env_name: py311-latest
-          - python-version: "3.12"
-            env_name: py312-latest
-          - python-version: "3.13"
-            env_name: py313-latest
-          - python-version: "3.14"
-            env_name: py314-latest
-          - python-version: "3.9"
-            env_name: py39-min
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Set up Python
+      - name: Set up newest supported Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.14"
           cache: pip
-
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-      - name: Install latest test environment
-        if: matrix.env_name != 'py39-min'
-        run: python -m pip install -e '.[tui,datalens]' pytest
-
-      - name: Install minimum Python 3.9 test environment
-        if: matrix.env_name == 'py39-min'
-        run: python -m pip install -c constraints/py39-min.txt -e '.[tui,datalens]' pytest==8.3.5
-
-      - name: Validate minimum dependency constraints
-        if: matrix.env_name == 'py39-min'
-        run: |
-          python -m release_routines.lib.check_minimum_constraints
-          python -m pip check
-
-      - name: Compile package and tests
-        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
-
-      - name: Run tests
-        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q
-
-      - name: Freeze environment
+      - name: Install tox
+        run: python -m pip install "tox>=4,<5"
+      - name: Run canonical tests and unchanged coverage floors
+        run: tox -e coverage
+      - name: Retain canonical coverage JSON
         if: always()
-        run: python -m pip freeze
-
-  sdk-conformance:
-    if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only SDK' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only SDK' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only SDK conformance' || matrix.env_name }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        env_name: [py310-sdk31, py310-sdk32]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+        uses: actions/upload-artifact@v4
         with:
-          python-version: "3.10"
-          cache: pip
-      - run: python -m pip install "tox>=4,<5"
-      - run: tox -e ${{ matrix.env_name }}
+          name: canonical-coverage-${{ github.sha }}
+          path: coverage.json
+          if-no-files-found: ignore
 
   quality:
     if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
@@ -293,5 +240,9 @@ jobs:
       - name: Install tox
         run: python -m pip install --upgrade "tox>=4,<5"
 
-      - name: Run lint, type, coverage, and artifact gates
-        run: tox -e lint,type,coverage,artifacts
+      - name: Set up artifact Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Run lint, type, and artifact gates
+        run: tox -e lint,type,artifacts

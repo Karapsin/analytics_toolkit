@@ -105,15 +105,21 @@ configure_python311() {
   PYTHON311="$(pyenv_python 3.11.15)"
 }
 
+configure_latest_python() {
+  require_command pyenv
+  export PYTHON314
+  PYTHON314="$(pyenv_python 3.14.5)"
+}
+
 run_coverage_gate() {
   require_command tox
-  configure_python311
+  configure_latest_python
   run_stage tox-coverage tox -e coverage
 }
 
 run_artifact_gate() {
   require_command tox
-  configure_python311
+  configure_latest_python
   run_stage tox-artifacts tox -e artifacts
 }
 
@@ -126,7 +132,7 @@ run_matrix_gate() {
     return 2
   fi
   configure_python_matrix
-  run_stage tox-matrix tox run-parallel -p "${parallelism}" -e py39-latest,py39-min,py310-latest,py310-sdk31,py310-sdk32,py312-latest,py313-latest,py314-latest
+  run_stage tox-matrix tox run-parallel -p "${parallelism}" -e py39-latest,py39-min,py310-latest,py310-sdk31,py310-sdk32,py311-latest,py312-latest,py313-latest,py314-latest
 }
 
 run_quick_gate() {
@@ -140,7 +146,6 @@ run_quick_gate() {
 run_full_gate() {
   run_coverage_gate
   run_artifact_gate
-  run_matrix_gate
 }
 
 if [ "${mode}" = "--static" ]; then

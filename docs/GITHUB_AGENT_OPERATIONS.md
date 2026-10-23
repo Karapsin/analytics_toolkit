@@ -6,6 +6,34 @@ The GitHub App reviews feature PRs targeting `dev`. The subscription-backed
 Codex worker runs on the private Raspberry Pi; GitHub runs all repository tests
 and SQL Explorer scene captures. No OpenAI API key is used.
 
+## Local review and one-way publication
+
+Feature requests and development through Telegram are disabled. Initial independent
+review and correction happen on the developing machine before publication. A signed
+receipt binds the exact source, task and dev base to the separate reviewer session.
+The local reviewer uses an immutable dev provider/schema, outside candidate project
+configuration. First installation requires a separately reviewed private bootstrap
+bundle; candidate code cannot select its own executable file provider.
+
+The orchestrator remains responsible for admission, checks, coordination and merges.
+The GitHub coding agent resolves conflicts only. Dedicated Pi repair agents own
+pre-merge CI and post-merge compatibility/integration failures; changed heads and
+changed bases receive independent Pi review. Published work never returns to the
+developing machine. Dev checks retain lint/type/coverage/artifact requirements while
+application runtime checks use Python 3.14. Full compatibility and SDK checks run
+after merge and during release validation.
+
+Repair accounting records completed candidates, including rejected/no-patch coding
+turns, and deduplicates failed heads without introducing a retry limit. Reconciliation
+identifies a post-merge episode by its oldest unresolved workflow run; verified green
+retires that run. Retained evidence and incident/task bindings survive restarts,
+changed heads and partial repairs. Established controls and genuine holds remain;
+publication never clears persisted pauses or resets private state.
+Authenticated PR controls resume PR incidents. `/resume_repair <incident-id>` allows
+the pinned Telegram owner to resume a genuinely held post-merge incident; anonymous
+messages cannot. The currently stopped Pi service stays paused until a separate
+activation decision. PR #9 remains outstanding and deferred outside PR #53.
+
 ## Failed visual capture artifacts
 
 The trusted `agent-visual` workflow exports a separate failed-capture artifact
@@ -882,33 +910,39 @@ correction pause is read. Evidence and cancellation holds survive restart recove
 Recovery leaves displayed labels to normal reconciliation and never records
 protected approval. Local signed-PR corrections do not need App feature enrollment.
 
-In GitHub Alerts, send `/prompt_agent <feature request>`. Anonymous channel
-commands and answers require the pinned owner's **Confirm request/answer** button;
-that authenticates the exact message and does not approve a feature or bypass review.
-Identified owner messages are authenticated directly. No other user can allocate a worker.
+### Developing-machine features and Telegram controls
 
-A fresh read-only agent validates the request. A separate native Codex Plan-mode
-session, driven through the private App Server, inspects context and asks questions
-in Telegram. No prompt-only planning fallback is accepted. Answer by
-replying to the latest question message or with `/reply_agent <request-id> <answers>`.
-Multiple requests have independent IDs. `/cancel_agent <request-id>` invalidates
-queued and running results. Replies to stale question messages are rejected.
+Create features on the developing machine using the
+[local publication procedure](../agent_docs/development.md#fresh-agent-sequence).
+Initial planning, independent review and correction happen there. A rejected
+candidate stays local until a fresh independent reviewer approves its exact source,
+task and dev base. Publish the signed PR and review receipt for a permanent handoff
+to the Pi; published tasks never return to the developing machine.
 
-After questions are answered, a fresh read-only agent reviews the plan against
-the original prompt and chronological responses. Only an exact approval tied to
-the task, plan and dev SHA allows a separate coding session to start. Changed dev
-or user scope requires planning and review again. Coding questions pause work,
-preserve its private patch, and return through Telegram and plan review before
-implementation resumes. An invalid request asks for user correction; a rejected
-implementation plan returns to a fresh planning round with the findings.
+Telegram feature submission and Pi feature planning/coding are disabled. GitHub
+Alerts retains notifications, authenticated operational controls, policy decisions
+and answers to genuine questions from published repair/review work.
+Answer an existing request by replying to its latest question message or with
+`/reply_agent <request-id> <answers>`. Anonymous channel answers require the pinned
+owner's **Confirm request/answer** button; identified owner messages are authenticated
+directly. Confirmation authenticates the exact answer and grants no policy approval.
+Multiple requests have independent IDs; stale question replies are rejected.
+`/cancel_agent <request-id>` invalidates queued and running results.
 
-The Pi only performs source inspection/edits and lightweight trusted Git/controller
+Separate Pi repair agents handle published CI, compatibility and integration
+failures. They preserve the original task, chronological answers and private patch.
+Genuine unanswered questions pause affected work for authenticated answers, followed
+by renewed planning/review where scope changes. Independent Pi reviewers assess
+changed heads or dev bases. The orchestrator coordinates this cycle and merging;
+the GitHub coding role resolves conflicts only.
+
+The Pi performs source inspection/edits and lightweight trusted Git/controller
 operations. It never executes repository programs, tests, builds, installs or scenes.
-All heavy checks run on GitHub; the final PR receives another fresh independent
-reviewer. Original prompts and answers are attached automatically with credential
-redaction, bound to signed commit trailers. Request state and notifications survive
-worker restarts. The subscription worker retains its VPN wrapper, model configuration,
-Airflow schedules and ten-worker limit.
+GitHub runs all checks. Original prompts and answers are attached automatically with
+credential redaction and signed commit bindings. Request state and notifications
+survive worker restarts. Existing VPN, model configuration, Airflow schedules and
+the ten-worker limit remain configured; automations stay stopped pending separate
+activation.
 
 Reviewers can inspect a host-owned immutable evidence snapshot for companion worker
 and bot changes. Its manifest binds source/test files to hashes, repository commit
