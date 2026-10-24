@@ -274,6 +274,14 @@ machine signature, plus this App's signed repair commits. The private host owns
 GitHub account keys nor files in a PR modify that registry. Private signing keys
 remain on their originating machines.
 
+Signed local review receipts use the separate `atk-local-review-v1` SSH signature
+namespace. A machine whose local reviews the host verifies needs its registry entry
+to permit that namespace in addition to commit signing, for example
+`mac namespaces="git,atk-local-review-v1" ssh-ed25519 ...`. Entries limited to
+`namespaces="git"` keep signing commits, but their local review receipts are
+rejected, so the published PR fails admission. Only the owner decides which
+machines are enrolled and which namespaces each entry permits.
+
 Every feature PR attaches the starting user prompt and subsequent corrections,
 with credentials redacted. The digest is bound to its signed head. Every review
 uses a fresh read-only Codex session separate from its authors. The reviewer
