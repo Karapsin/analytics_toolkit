@@ -50,6 +50,32 @@ Implementation spans this toolkit repository and the companion `Karapsin/self_ho
 worker. Private, task-bound review evidence supplies the accepted companion commit,
 complete source/test evidence, independent source review and exact-SHA CI.
 The selected accepted companion is
+`a180fa739798ef8429afc00e0474dcbd74546d06`, as requested in
+[comment 6386874527](https://github.com/Karapsin/analytics_toolkit/pull/53#issuecomment-6386874527).
+It supersedes `af6162e72107562d4bbeb0948f87a9d235ef92ca` and addresses the
+administrative-pause finding: `Jobs.pause()` atomically stores the maximum of the
+existing pause and the new cooldown. In-flight allowance/authentication failures
+therefore preserve the exact administrative sentinel and longer finite pauses.
+The supplied regressions exercise actual planning, request, candidate-review and
+source-review failure paths after a separate SQLite connection establishes the
+pause, plus ordinary cooldown creation, shorter-pause extension and explicit
+administrative release. Existing repair, capacity and source-review coverage,
+including restart continuity and repeated-patch holds, remains applicable.
+
+Catalogue source `worker-rollout-source-a180fa739798` supplies the successor's
+source receipt `rollout/worker-a180fa739798/source-receipt.json`, SHA256
+`8f10ddecb5f72a3793247b12dbd06c7bfe3792a1c9e0d9c74a9a793f5348a98e`, and
+successful exact-commit
+[Repository Checks](https://github.com/Karapsin/self_host/actions/runs/40112482686).
+The same directory's `source-supplement-00.json`, SHA256
+`9e75009f4aa2e69563fad8d7dac90ad4f1edd8efdba4d02247d57d269f969ead`, supplies
+the previously omitted administrative-barrier regressions, test-matrix document,
+source-review tests and model-capacity tests. Its `acceptance-review.json`, SHA256
+`086642b5a6d2f3ac42e6d62a2cd6e4bf8e3eb0233b7d998182e6eb6ccedd7d82`, records
+complete independent acceptance through behaviour/safety and tests/docs lenses.
+No further companion edits are planned.
+
+Historical provenance: the previously selected companion was
 `af6162e72107562d4bbeb0948f87a9d235ef92ca`, replacing the earlier verification
 candidate `7cb3b91aabc500055db0cff6ea2b77f88ca2bac8`. The supplied independent
 acceptance record `rollout/worker-af6162e72107/acceptance-review.json` has SHA256
@@ -64,14 +90,16 @@ under the same evidence directory, together with successful exact-commit
 For this post-handoff Pi correction, the coordinator-owned private binding is already
 provisioned in the Pi review-evidence catalogue, as clarified by the owner in
 [comment 6372220942](https://github.com/Karapsin/analytics_toolkit/pull/53#issuecomment-6372220942).
-Catalogue source `worker-rollout-source-af6162e72107` binds the exact companion commit,
-source receipt and Repository Checks run above; the acceptance record is available
-at the path and SHA256 above. The developing-machine file
+The historical catalogue source `worker-rollout-source-af6162e72107` and its
+acceptance record remain provenance. Use `worker-rollout-source-a180fa739798` and
+the successor receipt, supplement, acceptance record and Repository Checks run
+above for this correction. The developing-machine file
 `.git/atk-local-review-evidence.json` serves local review before handoff only; this Pi
 correction does not use it and requires no provisioning or changes to that file.
-Carry the complete chronological task, including this clarification, through the
-existing correction publication and review bindings. Bind the current task digest;
-do not reuse a historical digest. Private companion source stays outside this
+Carry the complete chronological task, including the latest successor answer,
+through the existing coordinator-owned correction publication and review bindings.
+Bind the current task digest to the final toolkit head and dev base; do not reuse a
+historical digest. Private companion source stays outside this
 repository. Supplied companion acceptance replaces the unresolved external
 verification prerequisite; no `pr_dev_merge` dependency or companion-edit contingency
 is introduced. Any newly demonstrated substantive defect requires separate planning
