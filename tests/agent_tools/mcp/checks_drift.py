@@ -90,7 +90,7 @@ def test_prior_stages_keep_original_identity_and_changed_tree_reruns_all_stages(
     calls.clear()
     result = mcp_server.run_checks(level="precommit", root=str(root))
     assert result["ok"] is True
-    assert calls == ["static", "coverage", "artifacts", "matrix"]
+    assert calls == ["static", "coverage", "artifacts"]
     assert result["result"]["reused_stage_count"] == 0
     current = mcp_server._working_tree_fingerprint(root)
     assert current != initial
@@ -148,7 +148,7 @@ def test_last_reused_stage_cannot_certify_a_new_tree(
 
     def reuse(context, stage, command):
         receipt = original(context, stage, command)
-        if stage == "matrix":
+        if stage == "artifacts":
             assert receipt is not None
             (root / "README.md").write_text("Changed after final reuse lookup\n")
         return receipt
@@ -174,7 +174,7 @@ def test_final_completion_rechecks_toolchain_after_all_stage_results(
 
     monkeypatch.setattr(mcp_server, "_execute_check_commands", completed)
     _blocked(mcp_server.run_checks(level="precommit", root=str(root)))
-    assert calls == ["static", "coverage", "artifacts", "matrix"]
+    assert calls == ["static", "coverage", "artifacts"]
     assert not (root / mcp_server.CHECK_STATE_FILE).exists()
     assert {
         row["toolchain_fingerprint"]

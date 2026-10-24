@@ -334,6 +334,7 @@ def test_interrupted_signed_commit_recovers_without_incrementing_again(
         preparation._publish_preparation(tmp_path, state)
     preparation._publish_preparation(tmp_path, state)
     assert len(commits) == 1
+    assert "\nAgent-Review-Policy: local-v1" in commits[0][-1]
     assert signatures == ["signed-candidate"]
     assert state["candidate_sha"] == "signed-candidate"
     assert state["pr"] == 12
