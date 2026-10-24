@@ -82,6 +82,18 @@ Generated from package version bumps and recent commit history.
 - Prevent precommit stage reuse and certification across observed source or toolchain changes
 - Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
 - Add a source-pinned purpose-separated capture receiver with truthful bounded transport and immutable retry evidence
+- Add receipt-bound transactional coordinator authority renewal with strict replay checks
+- Isolate candidate visual installation and capture from the GitHub runner and retain bounded host-owned diagnostics.
+- Preserve native capture failure diagnostics, produced renderer artifacts and safe post-cleanup evidence without weakening glyph or isolation checks.
+- Protect and promote the exact shared visual-rendering infrastructure helper without admitting adjacent tools or application code.
+- Add isolated nonproduction native-capture source validation; exclude Python 3.8 runtime checks while preserving Python 3.9 minimum-dependency coverage.
+- Add a source-pinned contained lifecycle diagnostic for the published PR39 baseline with separate uninstrumented and observed results.
+- Preserve coordinator-held read-only preparation and reject stale closed-PR discovery denials.
+- Made isolated Codex startup resilient to download timeouts, reuse validated dependency wheels, and resume interrupted preparation
+- Move initial feature review locally, retain one-way orchestration and separate Pi repair, split fast checks from compatibility validation, and preserve reviewed successor and release-preparation publication.
+- Align local-review task scope and Telegram operations with owner amendments, preserving deferred PR #9, stopped automations and existing repair controls without a new retry limit.
+- Corrected local-review prompt wrapping and regression-test formatting while preserving the workflow redesign and existing validation gates.
+- Bound PR #53 companion evidence to the accepted pause-preserving successor, retaining historical provenance and all administrative holds.
 
 ## 1.3.12.5 - 2026-10-14
 

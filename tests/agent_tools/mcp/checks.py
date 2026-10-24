@@ -1,14 +1,118 @@
 from __future__ import annotations
 
+import subprocess
+
 from tests.agent_tools._support.mcp import (
     Path,
     _command_result,
+    _git,
     _init_git_repo,
     _write_minimal_repo_files,
     json,
     mcp_server,
     pytest,
 )
+
+
+def test_exact_content_receipt_survives_staging_and_commit_but_rejects_changes(
+    tmp_path, monkeypatch
+):
+    root = _write_minimal_repo_files(tmp_path / "content")
+    _init_git_repo(root)
+    monkeypatch.setattr(mcp_server, "_precommit_toolchain_fingerprint", lambda root: "tools")
+    (root / "feature.txt").write_text("Checked feature\n")
+    mcp_server._record_precommit_success(
+        root, mcp_server._working_tree_fingerprint(root), [_command_result("all checks", "passed")]
+    )
+    original = mcp_server._working_content_fingerprint(root)
+    _git(root, "add", "--all")
+    assert mcp_server._verify_precommit_success(root)["ok"]
+    _git(
+        root,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "Checked candidate",
+    )
+    assert mcp_server._working_content_fingerprint(root) == original
+    assert mcp_server._verify_precommit_success(root)["ok"]
+    (root / "feature.txt").write_text("Unreviewed mutation\n")
+    assert not mcp_server._verify_precommit_success(root)["ok"]
+    (root / "feature.txt").write_text("Checked feature\n")
+    monkeypatch.setattr(mcp_server, "_precommit_toolchain_fingerprint", lambda root: "new-tools")
+    assert not mcp_server._verify_precommit_success(root)["ok"]
+
+
+def test_content_receipt_transfer_preserves_deletions_and_symlink_targets(tmp_path, monkeypatch):
+    root = _write_minimal_repo_files(tmp_path / "content")
+    _init_git_repo(root)
+    monkeypatch.setattr(mcp_server, "_precommit_toolchain_fingerprint", lambda root: "tools")
+    (root / "README.md").unlink()
+    (root / "link").symlink_to("pyproject.toml")
+    mcp_server._record_precommit_success(
+        root, mcp_server._working_tree_fingerprint(root), [_command_result("all checks", "passed")]
+    )
+    _git(root, "add", "--all")
+    _git(
+        root,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "Checked deletion and link",
+    )
+    assert mcp_server._verify_precommit_success(root)["ok"]
+    (root / "link").unlink()
+    (root / "link").symlink_to("docs")
+    assert not mcp_server._verify_precommit_success(root)["ok"]
+
+
+@pytest.mark.parametrize("tracked", [False, True])
+def test_content_receipt_rejects_changed_carriage_return_filename(tmp_path, monkeypatch, tracked):
+    root = _write_minimal_repo_files(tmp_path / "content")
+    _init_git_repo(root)
+    monkeypatch.setattr(mcp_server, "_precommit_toolchain_fingerprint", lambda root: "tools")
+    source = root / "feature\rname.txt"
+    source.write_text("Checked content")
+    if tracked:
+        _git(root, "add", "--all")
+    mcp_server._record_precommit_success(
+        root, mcp_server._working_tree_fingerprint(root), [_command_result("all checks", "passed")]
+    )
+    _git(root, "add", "--all")
+    _git(
+        root,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "Checked odd filename",
+    )
+    assert mcp_server._verify_precommit_success(root)["ok"]
+    source.write_text("Unchecked content")
+    assert not mcp_server._verify_precommit_success(root)["ok"]
+
+
+def test_content_receipt_rejects_absent_gitlink(tmp_path):
+    root = _write_minimal_repo_files(tmp_path / "content")
+    _init_git_repo(root)
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    _git(root, "update-index", "--add", "--cacheinfo", f"160000,{commit},missing-submodule")
+    assert not (root / "missing-submodule").exists()
+    assert mcp_server._working_content_fingerprint(root) is None
 
 
 def test_precommit_check_plan_separates_ordered_stages() -> None:
@@ -22,7 +126,6 @@ def test_precommit_check_plan_separates_ordered_stages() -> None:
         "release_routines/pre_commit_checks.sh --static",
         "release_routines/pre_commit_checks.sh --coverage",
         "release_routines/pre_commit_checks.sh --artifacts",
-        "release_routines/pre_commit_checks.sh --matrix",
     ]
 
 
@@ -46,14 +149,14 @@ def test_precommit_checks_stop_before_later_stages_when_static_gate_fails(
 
     assert commands == ["release_routines/pre_commit_checks.sh --static"]
     assert result["result"]["level"] == "precommit"
-    assert result["result"]["command_count"] == 4
+    assert result["result"]["command_count"] == 3
     assert result["result"]["failed_command_index"] == 0
     assert result["result"]["stages"][0]["status"] == "failed"
     assert result["result"]["failure_changed"] is True
     assert result["result"]["failure_signature"]
 
 
-def test_precommit_emits_stages_and_seeds_python38_compatible_pip() -> None:
+def test_precommit_emits_stages_and_uses_the_pinned_pip_seed() -> None:
     script = (mcp_server.REPO_ROOT / "release_routines" / "pre_commit_checks.sh").read_text(
         encoding="utf-8"
     )
@@ -68,7 +171,7 @@ def test_precommit_emits_stages_and_seeds_python38_compatible_pip() -> None:
     assert "run_stage tox-artifacts tox -e artifacts" in script
     assert 'local parallelism="${PRECOMMIT_PARALLELISM:-3}"' in script
     assert "tox run-parallel" in script
-    assert "py311-latest" not in next(
+    assert "py311-latest" in next(
         line for line in script.splitlines() if "run_stage tox-matrix" in line
     )
 
@@ -184,15 +287,13 @@ def test_precommit_resumes_successful_stages_for_identical_tree_and_toolchain(
     ]
     assert commands == [
         "release_routines/pre_commit_checks.sh --artifacts",
-        "release_routines/pre_commit_checks.sh --matrix",
     ]
     assert second["ok"] is True
     assert second["result"]["reused_stage_count"] == 2
-    assert second["result"]["executed_stage_count"] == 2
+    assert second["result"]["executed_stage_count"] == 1
     assert [stage["status"] for stage in second["result"]["stages"]] == [
         "reused",
         "reused",
-        "executed",
         "executed",
     ]
 

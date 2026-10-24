@@ -202,6 +202,7 @@ def test_release_status_records_release_check_fingerprint(
     assert result["ok"] is True
     assert result["result"]["release_check_verification"]["ok"] is True
     assert commands == [
+        "release_routines/pre_commit_checks.sh --matrix",
         "release_routines/scripts/check_package_metadata.sh",
         "release_routines/scripts/check_readme_dependencies.sh",
         "release_routines/scripts/check_docs_links.sh",
