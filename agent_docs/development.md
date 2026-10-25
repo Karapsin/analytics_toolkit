@@ -10,18 +10,19 @@ status calls report changes without repeating routing and command details. Use
 `run_checks(area=..., level="focused")` for focused validation and
 `run_checks(level="precommit")` before every commit.
 
-The managed pre-commit check runs four ordered stages. A fast static gate checks
+The managed pre-commit check runs three ordered stages. A fast static gate checks
 metadata, minimum constraints, documentation, compileall, Ruff, and mypy. The
-coverage stage is the canonical Python 3.11 test run and enforces 90% branch
+coverage stage is the canonical Python 3.14 test run and enforces 90% branch
 coverage, plus the stricter committed statement and branch ratchets in
-`release_routines/coverage_targets.json`. Artifact smoke tests run next, followed
-by the Python 3.8 through 3.14 compatibility matrix and the Python 3.8
-minimum-dependency environment. Python
-3.11 is omitted from that matrix because coverage already exercises it. The matrix
+`release_routines/coverage_targets.json`. Artifact smoke tests run next on Python
+3.14. Static tooling retains its pinned Python 3.11 runtime. The full Python
+3.9 through 3.14 compatibility matrix and Python 3.9 minimum-dependency environment
+run after dev merges and during release validation, outside the dev merge gate. The matrix
 also runs offline DataLens conformance on Python 3.10 with SDK 3.1.0 and 3.2.0.
 The matrix defaults to three parallel tox workers; set `PRECOMMIT_PARALLELISM` to a
 positive integer to tune local resource use. The minimum environment must also
-pass `pip check`.
+pass `pip check`. Runtime validation starts at Python 3.9; package support metadata
+and static syntax targets retain the public Python 3.8 floor.
 
 Each successful managed stage writes a private receipt below `.rag_index/`.
 Interrupted or failed runs may reuse a stage for 24 hours only when the working
@@ -30,7 +31,11 @@ distinguish executed, reused, and failed stages. Any tracked-tree or toolchain
 change invalidates the affected receipt. Do not commit unless every stage
 passes or has a current exact-match receipt; if an interpreter or dependency is
 missing, install it or explicitly report the blocker instead of skipping that
-stage.
+stage. Validation keeps the source and toolchain identity observed at the start
+of the run. A change detected at a stage boundary or before final certification
+invalidates the run; preserve the edits and rerun on the resulting tree, including
+managed coverage target updates. Earlier receipts retain their original identity.
+Legacy receipts are not reused, and commit readiness rechecks the toolchain.
 
 The artifact gate copies the project into a temporary source tree outside the
 checkout, builds one wheel and one sdist, validates their metadata and wheel
@@ -132,13 +137,20 @@ Restoring context does not transfer owner approval from the source PR.
    session-owned feature branch.
 5. Run focused checks and `version_bump(...)` (creates a unique fragment).
 6. Run mandatory `run_checks(level="precommit")`, then workflow status.
-7. Commit explicit paths with `git_workflow(action="commit", ...)`, which pushes
-   the feature branch and opens its PR to dev.
+7. Commit explicit paths with `git_workflow(action="commit", ...)`. Before any
+   publication this starts a fresh independent read-only local reviewer. Rejected
+   candidates stay local for correction and another fresh review. `review` retries
+   review of a committed candidate; `push` retries publication after approval.
 8. Publication verifies the signed head and task attachment, archives the task,
    and hands ownership to the Pi. Finish with the PR link without waiting for
    review, approval, CI or merge. Never edit a handed-off branch.
-9. The Pi handles conflicts, corrections, GitHub checks, review and merging.
-   Reviewer rejection starts fresh correction and independent review agents.
+9. The orchestrator verifies signed local approval, coordinates checks and merges.
+   Its GitHub coding role only resolves conflicts. Separate Pi repair agents own
+   pre-merge CI, post-merge compatibility and integration failures. Changed heads
+   and changed dev bases receive fresh independent Pi review. Published work never
+   returns to its developing machine. Diagnostic accounting and retained evidence
+   survive retries, changed heads, partial repairs and restarts; no new retry limit
+   applies. Established repair controls and holds remain in force.
 10. Handoff refreshes clean dev. Recover interrupted publication with `push`,
     interrupted handoff with `handoff`, and pending dev refresh with `sync`.
     Dirty shared work is preserved and reported. Optional `feedback --pr <number>`

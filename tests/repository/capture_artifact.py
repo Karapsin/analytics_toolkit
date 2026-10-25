@@ -4,7 +4,8 @@ import hashlib
 import importlib.util
 import json
 import os
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -12,9 +13,6 @@ from agent_tools import sql_explorer_visual as visual
 from agent_tools import sql_explorer_visual_process as visual_process
 from tests._support.paths import REPO_ROOT
 from tests.repository._support.capture_transport import fake_transport
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
     "capture_artifact", REPO_ROOT / ".github/agent/capture_artifact.py"
@@ -150,26 +148,6 @@ def test_unsafe_or_oversized_export_fails_without_complete_manifest(
     assert not (tmp_path / "out/diagnostics.json").exists()
 
 
-@pytest.mark.parametrize("timed_out", [False, True])
-def test_capture_child_retains_both_streams_and_timeout_partial_bytes(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    timed_out: bool,
-) -> None:
-    observed = fake_transport(monkeypatch, timed_out=timed_out)
-    diagnostic = tmp_path / "process/editor"
-    with pytest.raises(visual.VisualReviewError, match="complete diagnostics"):
-        visual._run(["python", "-m", "capture"], cwd=tmp_path, timeout=1, diagnostics=diagnostic)
-    assert (diagnostic / "stdout.bin").read_bytes() == b"partial output\n"
-    assert (diagnostic / "stderr.bin").read_bytes() == b"different error\n"
-    record = json.loads((diagnostic / "execution.json").read_bytes())
-    assert record["timed_out"] is timed_out
-    assert record["returncode"] == (-9 if timed_out else 7)
-    assert record["outputs_complete"] is not timed_out
-    assert observed["protocol"].closed is True
-    assert observed["transport"].closed is True
-
-
 def test_failure_upload_remains_separate_and_always_runs() -> None:
     # Exact trusted workflow policy, as in the repository workflow provenance tests.
     workflow = (REPO_ROOT / ".github/workflows/agent-visual.yml").read_text()
@@ -177,7 +155,10 @@ def test_failure_upload_remains_separate_and_always_runs() -> None:
     assert "if-no-files-found: error" in workflow
     assert "${{ github.run_id }}-${{ github.run_attempt }}" in workflow
     assert "ref: ${{ github.sha }}" in workflow
-    assert "run: python .agent-visual-controller/.github/agent/capture_artifact.py" in workflow
+    assert (
+        'run: python -I "$GITHUB_WORKSPACE/'
+        '.agent-visual-controller/.github/agent/capture_isolation.py"' in workflow
+    )
     assert "continue-on-error" not in workflow
 
 
@@ -223,6 +204,187 @@ def test_descriptor_read_rejects_replacement_without_following_or_blocking(
     assert replaced is True
 
 
+@pytest.mark.parametrize("replacement", ["parent", "leaf"])
+def test_descriptor_publication_never_writes_through_replaced_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement: str,
+) -> None:
+    destination = tmp_path / "artifact"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    victim = outside / "data.bin"
+    victim.write_bytes(b"original")
+    real_open = artifact.os.open
+    replaced = False
+
+    def opening(name: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        nonlocal replaced
+        if name == "data.bin" and flags & os.O_WRONLY and not replaced:
+            replaced = True
+            if replacement == "parent":
+                (destination / "raw").rename(destination / "old-raw")
+                (destination / "raw").symlink_to(outside, target_is_directory=True)
+            else:
+                (destination / "raw/data.bin").symlink_to(victim)
+        return real_open(name, flags, *args, **kwargs)
+
+    monkeypatch.setattr(artifact.os, "open", opening)
+    with pytest.raises((OSError, ValueError), match=r"Artifact|symbolic|levels|exists|directory"):
+        artifact._publish(destination, [("raw/data.bin", b"changed")])
+    assert victim.read_bytes() == b"original"
+    assert replaced is True
+
+
+@pytest.mark.parametrize("failure_stage", ["copy", "first-child"])
+def test_early_capture_failure_retains_session_as_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_stage: str
+) -> None:
+    review = "review-session-only"
+    evidence = tmp_path / visual.STATE_ROOT / review
+    session_file = visual.session_path(tmp_path, review)
+    session_file.parent.mkdir(parents=True)
+    session_file.write_text(
+        json.dumps(
+            {
+                "review_id": review,
+                "content_fingerprint": "pinned-dev-content",
+                "capture_mode": visual.CAPTURE_MODE,
+                "capture": {"status": "pending"},
+                "scenes": {"command-completion": {"capture": "pending", "geometry": ""}},
+            }
+        )
+    )
+    monkeypatch.setattr(visual, "content_fingerprint", lambda _root: "pinned-dev-content")
+    monkeypatch.setattr(visual, "_host_python", lambda _root: "unused-python")
+    monkeypatch.setattr(visual, "start_review", lambda *_args, **_kwargs: {"review_id": review})
+    calls: list[str] = []
+
+    def fail() -> None:
+        message = "failure before evidence: " + failure_stage
+        raise visual.VisualReviewError(message)
+
+    def copy_tree(_root: Path, _checkout: Path) -> None:
+        calls.append("copy")
+        if failure_stage == "copy":
+            fail()
+
+    def child(_command: list[str], **_kwargs: Any) -> None:
+        calls.append("first-child")
+        fail()
+
+    monkeypatch.setattr(visual, "_copy_review_tree", copy_tree)
+    monkeypatch.setattr(visual, "_run", child)
+    assert artifact.capture_artifact(tmp_path, IDENTITY) is False
+    assert calls == (["copy"] if failure_stage == "copy" else ["copy", "first-child"])
+    assert (evidence / "geometry").is_dir()
+    assert (evidence / "screenshots").is_dir()
+    assert not any(path.is_file() for path in evidence.rglob("*"))
+
+    output = tmp_path / "visual-diagnostics"
+    manifest = json.loads((output / "diagnostics.json").read_bytes())
+    raw = (output / "raw/session.json").read_bytes()
+    assert raw == session_file.read_bytes()
+    assert manifest["files"] == {
+        "raw/session.json": {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+    }
+    assert manifest["collection_complete"] is False
+    assert manifest["process_output_complete"] is None
+    assert manifest["visual_approval"] is False
+    assert manifest["session_file"] == "raw/session.json"
+    assert manifest["raw_evidence_prefix"] == "raw/evidence/"
+    assert manifest["capture_result"]["ok"] is False
+    assert manifest["capture_result"]["action"] == "capture"
+    assert all(manifest[key] == value for key, value in IDENTITY.items())
+    session = json.loads(raw)
+    assert session["capture"]["status"] == "failed"
+    assert session["capture"]["workspace_removed"] is True
+    assert session["capture"]["error"] == "failure before evidence: " + failure_stage
+    assert session["scenes"]["command-completion"]["capture"] == "pending"
+    assert not (tmp_path / "visual-artifact").exists()
+    assert not (tmp_path / visual.RECEIPT).exists()
+
+
+def test_pinned_legacy_capture_retains_available_geometry_with_unknown_stream_coverage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise unchanged dev capture failure, which has no per-child stream files."""
+    review = "review-legacy"
+    evidence = tmp_path / visual.STATE_ROOT / review
+    session_file = visual.session_path(tmp_path, review)
+    session_file.parent.mkdir(parents=True)
+    session_file.write_text(
+        json.dumps(
+            {
+                "review_id": review,
+                "content_fingerprint": "pinned-dev-content",
+                "capture_mode": visual.CAPTURE_MODE,
+                "capture": {"status": "pending"},
+                "scenes": {"command-completion": {"capture": "pending", "geometry": ""}},
+            }
+        )
+    )
+    monkeypatch.setattr(visual, "content_fingerprint", lambda _root: "pinned-dev-content")
+    monkeypatch.setattr(visual, "_copy_review_tree", lambda _root, _checkout: None)
+    monkeypatch.setattr(visual, "start_review", lambda *_args, **_kwargs: {"review_id": review})
+    geometry = json.dumps(
+        {
+            "scene_id": "command-completion",
+            "ok": False,
+            "checks": [{"name": "command overlay geometry", "pass": False}],
+            "export_input_evidence": {"original": "界λ" * 40000},
+        },
+        ensure_ascii=False,
+    ).encode()
+
+    def failed_child(command: list[str], **_kwargs: Any) -> None:
+        target = Path(command[command.index("--evidence") + 1])
+        target.write_bytes(geometry)
+        message = "original legacy child assertion"
+        raise visual.VisualReviewError(message)
+
+    monkeypatch.setattr(visual, "_run", failed_child)
+    assert artifact.capture_artifact(tmp_path, IDENTITY) is False
+    output = tmp_path / "visual-diagnostics"
+    manifest = json.loads((output / "diagnostics.json").read_bytes())
+    assert manifest["collection_complete"] is True
+    assert manifest["process_output_complete"] is None
+    assert manifest["visual_approval"] is False
+    assert set(manifest["files"]) == {
+        "raw/session.json",
+        "raw/evidence/geometry/command-completion.json",
+    }
+    assert (output / "raw/evidence/geometry/command-completion.json").read_bytes() == geometry
+    session = json.loads((output / "raw/session.json").read_bytes())
+    assert session["capture"]["status"] == "failed"
+    assert session["capture"]["workspace_removed"] is True
+    assert session["capture"]["error"] == "original legacy child assertion"
+    assert session["scenes"]["command-completion"]["capture"] == "pending"
+    assert not (evidence / "process").exists()
+    assert not (tmp_path / "visual-artifact").exists()
+
+
+@pytest.mark.parametrize("timed_out", [False, True])
+def test_capture_child_retains_both_streams_and_timeout_partial_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    timed_out: bool,
+) -> None:
+    observed = fake_transport(monkeypatch, timed_out=timed_out)
+    diagnostic = tmp_path / "process/editor"
+    with pytest.raises(visual.VisualReviewError, match="complete diagnostics"):
+        visual._run(["python", "-m", "capture"], cwd=tmp_path, timeout=1, diagnostics=diagnostic)
+    assert (diagnostic / "stdout.bin").read_bytes() == b"partial output\n"
+    assert (diagnostic / "stderr.bin").read_bytes() == b"different error\n"
+    record = json.loads((diagnostic / "execution.json").read_bytes())
+    assert record["timed_out"] is timed_out
+    assert record["returncode"] == (-9 if timed_out else 7)
+    assert record["outputs_complete"] is not timed_out
+    assert observed["protocol"].closed is True
+    assert observed["transport"].closed is True
+
+
+
 def test_child_output_capacity_is_bounded_and_marked_incomplete(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -266,35 +428,3 @@ def test_process_cleanup_freezes_all_output_before_artifact_export(
     assert record["outputs_complete"] is False
     if failure == "descendant":
         assert record["drain_timeout"] is True
-
-
-@pytest.mark.parametrize("replacement", ["parent", "leaf"])
-def test_descriptor_publication_never_writes_through_replaced_destination(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    replacement: str,
-) -> None:
-    destination = tmp_path / "artifact"
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    victim = outside / "data.bin"
-    victim.write_bytes(b"original")
-    real_open = artifact.os.open
-    replaced = False
-
-    def opening(name: Any, flags: int, *args: Any, **kwargs: Any) -> int:
-        nonlocal replaced
-        if name == "data.bin" and flags & os.O_WRONLY and not replaced:
-            replaced = True
-            if replacement == "parent":
-                (destination / "raw").rename(destination / "old-raw")
-                (destination / "raw").symlink_to(outside, target_is_directory=True)
-            else:
-                (destination / "raw/data.bin").symlink_to(victim)
-        return real_open(name, flags, *args, **kwargs)
-
-    monkeypatch.setattr(artifact.os, "open", opening)
-    with pytest.raises((OSError, ValueError), match=r"Artifact|symbolic|levels|exists|directory"):
-        artifact._publish(destination, [("raw/data.bin", b"changed")])
-    assert victim.read_bytes() == b"original"
-    assert replaced is True

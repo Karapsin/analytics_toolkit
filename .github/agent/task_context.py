@@ -34,7 +34,7 @@ def validate(value: Any) -> dict[str, Any]:
     if any(not isinstance(value[k], str) or IDENTITY.fullmatch(value[k]) is None
            for k in ("task_id", "producer_id")):
         raise ValueError("Invalid task or producer identity.")
-    if value["source"] not in {"user", "standing-integration-repair"}:
+    if value["source"] not in {"user", "standing-integration-repair", "standing-validation-repair"}:
         raise ValueError("Unsupported task authority.")
     if not isinstance(value["starting_prompt"], str) or not value["starting_prompt"].strip():
         raise ValueError("The original user prompt is required; summaries are not substitutes.")
@@ -138,10 +138,19 @@ def require_resolved(value: dict[str, Any]) -> None:
         "\u201cImplement the plan\u201d or `[Image #1]`. "
         "Require attached evidence or an explicit user replacement of the missing requirement."
     )
-    prompts = [
-        value["starting_prompt"],
-        *[prompt.replace(example, "") for prompt in value["corrections"]],
-    ]
+    prompts = [value["starting_prompt"], *value["corrections"]]
+    for sequence, prompt in enumerate(prompts):
+        # A later recovery message can quote the actual earlier approval while
+        # reproducing that same exact plan. Resolve only that bound quotation;
+        # other quoted requirements and later implementation requests still gate.
+        for plan in value.get("plans", []):
+            index = plan["approval_index"]
+            if index is None or index >= sequence - 1 or plan["text"].rstrip("\n") not in prompt:
+                continue
+            approval = value["corrections"][index]
+            for left, right in (('"', '"'), ("\u201c", "\u201d")):
+                prompt = prompt.replace(left + approval + right, "")
+        prompts[sequence] = prompt.replace(example, "")
     replacements = {item["reference"] for item in value.get("replacements", [])}
     images = {item["reference"] for item in value.get("images", [])}
     missing = {reference for prompt in prompts for reference in re.findall(r"\[Image\s+#?\d+\]", prompt, re.I)
@@ -364,10 +373,10 @@ def verify_commit(value: dict[str, Any], message: str) -> str:
     return actors[0]
 
 
-def repair_context(task_id: str, producer: str) -> dict[str, Any]:
+def repair_context(task_id: str, producer: str, *, validation: bool = False) -> dict[str, Any]:
     return {"version": 1, "task_id": task_id, "producer_id": producer,
-            "source": "standing-integration-repair", "corrections": [],
-            "starting_prompt": "User-authorized standing task: monitor advisory integration "
+            "source": "standing-validation-repair" if validation else "standing-integration-repair", "corrections": [],
+            "starting_prompt": "User-authorized standing task: monitor post-merge validation and advisory integration "
             "through completion and repair failures until green. Include fast non-integration "
             "regression coverage. Use GitHub for tests and captures; never run them on the Pi. "
             "Every repair requires a separate independent reviewer and fast CI. "

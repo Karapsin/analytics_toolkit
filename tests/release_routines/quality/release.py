@@ -96,15 +96,22 @@ def test_sql_function_signature_check_reports_missing_export_and_malformed_block
 def test_repository_minimum_constraints_match_runtime_dependencies() -> None:
     project = load_project(REPO_ROOT / "pyproject.toml")
     dependencies = [str(requirement) for requirement in project["dependencies"]]
-    constraints = (REPO_ROOT / "constraints" / "py38-min.txt").read_text(encoding="utf-8")
+    constraints = (REPO_ROOT / "constraints" / "py39-min.txt").read_text(encoding="utf-8")
 
     assert validate_minimum_constraints(dependencies, constraints) == []
 
 
 def test_github_test_matrix_installs_optional_tui_dependencies() -> None:
-    workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github" / "workflows" / "compatibility.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert workflow.count("-e '.[tui,datalens]'") == 2
+    fast = (REPO_ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+    assert "tox -e coverage" in fast
+    tox = (REPO_ROOT / "tox.ini").read_text(encoding="utf-8")
+    coverage = tox.split("[testenv:coverage]", 1)[1].split("[testenv:artifacts]", 1)[0]
+    assert "-e .[tui,datalens]" in coverage
 
 
 def test_auth_integration_jobs_keep_mcp_out_of_airflow_environment() -> None:

@@ -80,6 +80,14 @@ Use these MCP tools for the corresponding agent workflow steps:
   `task_context(action="append", user_prompt=...)`. Private originals live under
   `.git/atk-tasks/`; the PR workflow attaches redacted context automatically and
   binds its digest to the signed head. Launcher-only preparation may omit the prompt.
+- Record assistant clarification questions, including every offered option, with
+  `task_context(action="question", evidence={"text": "<exact question>"})` before
+  asking. Bind the actual response with `answer-question`, its returned
+  `question_id`, and the exact `user_prompt`; use `correction_index` when that
+  response is already recorded. Never record assistant text as a user message.
+  Record the exact proposed plan with `plan`, then bind actual implementation
+  approval with `approve-plan`. Use the wrapper's `--evidence-file` option when
+  the active MCP server has not yet reloaded the extended interface.
 - RAG retrieval: `docs(query, mode="search"|"ask", top_k=3)`.
 - Consolidated implementation preflight: `change_impact`.
 - Per-startup response and retry accounting: `workflow_metrics`.
@@ -114,8 +122,15 @@ and hands the published PR to the Pi. Local agents finish with the PR link;
 they do not wait for review, approval, GitHub checks or merge and do not correct
 handed-off branches. `git_workflow(action="handoff")` recovers an interrupted
 handoff. Publication failures retain local ownership.
-The Pi owns conflicts, fast CI, automatic fresh correction agents and independent
-review until approved. Rejections describe changes and reasons in plain Telegram
+Before publication a fresh independent read-only local reviewer must approve the
+exact source, dev base and task; rejection starts another local correction/review
+cycle. Signed review evidence travels with the PR. The orchestrator stays and
+owns checks and merging; the GitHub coding agent only resolves conflicts.
+Separate Pi repair agents own all post-publication failures, including pre-merge
+CI, post-merge compatibility and integration. No task returns to the developing
+machine. Mutated heads and changed bases require fresh independent Pi review.
+Repair accounting preserves incident continuity without introducing a retry limit.
+Rejections describe changes and reasons in plain Telegram
 alerts without approval buttons. Genuine unanswered questions, owner veto/cancel,
 provenance failures and subscription/authentication limits pause the appropriate
 work; routine reviewer rejection does not require an owner resume command.
@@ -347,7 +362,7 @@ specific documentation update that would make future RAG retrieval unambiguous.
 - Keep `.connections` out of the repo. Tests should create a temporary `.connections` and chdir into that temp project.
 - Use existing structured parsers for SQL/table names (`sqlparse`, `sqlglot`) instead of ad hoc parsing where those modules already do the job.
 - At the end of every non-documentation change, run `run_checks(level="precommit")` before committing, even if focused tests were run earlier. For documentation-only changes, full checks are not required; run focused tests only when the documentation change affects tested paths or generated artifacts. Treat test failures and pytest warnings as issues to fix before finishing; the final test run should pass with no warning summary.
-- Managed pre-commit validation runs ordered static, coverage, artifact, and Python-version matrix stages. Coverage is the canonical Python 3.11 test run; a stage failure stops downstream work, and only exact-tree, exact-toolchain successful-stage receipts may be reused. The final successful run must pass every stage.
+- Managed pre-commit validation runs ordered static, Python 3.14 coverage, and Python 3.14 artifact stages. Static tooling retains its pinned runtime. The full compatibility/minimum-dependency/SDK matrix runs after merges and during releases. A stage failure stops downstream work, and only exact-tree, exact-toolchain successful-stage receipts may be reused. The final successful run must pass every stage.
 - SQL integration `all` is the exhaustive local profile and includes the
   destructive database, staging, and authentication fault groups. The GitHub
   agent queues advisory candidate validation before merge with zero skipped
@@ -365,7 +380,7 @@ specific documentation update that would make future RAG retrieval unambiguous.
   let the advisory push workflows execute without waiting for them.
 - Once a coherent batch of changes is done, run `git_workflow(action="commit", message="...")`, replacing `...` with a short description of the changes.
 
-Telegram feature requests require separate validity, read-only planning, independent
-plan review and coding sessions. Questions pause work until authenticated owner
-answers arrive. The exact prompt, responses, plan and dev SHA bind the approval.
-No coding before that approval; every resulting PR gets another separate reviewer.
+Telegram feature requests and feature development are disabled. Features start
+on a developing machine. Telegram retains authenticated operational controls,
+policy decisions, notifications and answers to genuine repair questions. Existing
+Pi automation remains paused until a separately authorized activation.

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "kind": "independent-read-only-concrete-plan-review",
+  "reviewer": "/root/review_separate_visual_repair_final_source",
+  "decision": "approve_source_implementation_plan_with_later_activation_ordering_constraint",
+  "findings_blocking_source_implementation": [],
+  "reviewed_plan": {
+    "path": "/private/tmp/trusted-render-helper-promotion-concrete-plan-v1.json",
+    "sha256": "29c0958f0e5576ca586377ac581e458be18338231dd34fc94fe87996945ddec1"
+  },
+  "verified_current_source_hashes": {
+    ".github/agent/controller.py": "4ad12163c313fa3d8a05682081954ebc03ddb01052a65765cc908558572f5e4e",
+    ".github/agent/automation_promotion.py": "eda982dc05d5e27d76a0b66eb7c364de4e726f7fc8d33633b72c42caedf54f27",
+    "tests/repository/automation_promotion.py": "7f40b1eb5f6ff71833e15527c3e43a0f8eb1b6f98ecc71089fa697e802be6527"
+  },
+  "scope_assessment": {
+    "authorization": "The complete existing user objective authorizes fixing the demonstrated trusted transitive-closure defect. Implement on a fresh task/branch through normal MCP workflow and carry the complete authenticated parent9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14 plus chronological corrections and new independent plan provenance. No new owner clarification is needed to implement the narrow source proposal.",
+    "approved_minimum": "Add exactly the literal agent_tools/sql_explorer_visual_render.py to the existing controller.policy_path fixed-path set; add focused real policy/authorization/projection regressions, operations documentation and an independently owned changelog fragment. No prefix, basename pattern, normalization broadening, renderer, capture harness, package/UI, AGENTS, packaging or handed-off PR45 edits are approved by this plan.",
+    "boundary_effect": "The shared policy predicate governs BOTH exact-head owner protection and infrastructure promotion eligibility. Adding this one literal therefore also protects every future helper edit or rename touching that endpoint. It does not make arbitrary agent_tools code eligible for main. This is the appropriate boundary for a helper directly executed by trusted probe/capture infrastructure.",
+    "protected_approval": "Changing controller.py itself remains a protected change requiring fresh final-head independent source/alignment review, required CI and authentic exact-head delegated/owner policy authorization. This plan grants none of those decisions."
+  },
+  "existing_mechanism_reviewed": {
+    "policy": "Read controller.policy_path and authorization_error. Authorization checks both filename and previous_filename and retains enrolled signature, exact head and private/current owner authority behavior.",
+    "projection": "Read complete automation_promotion.py and existing temporary-Git tests. run filters both rename endpoints by policy_path; project independently refuses non-policy paths, accepts only regular Git blobs, compares current main to previous dev, stages exact approved merged blobs and refuses independent main changes. The activation path verifies merge/head/tree/dev ancestry, exact fast/source review identity, owner/task authority before staging and again before nonforce main push, with main CAS.",
+    "closure": "The supplied PR45 source/acceptance records describe trusted probe import of this fixed helper and a production capture caller. Its helper SHA2284b4c7bc162ed0c408ed033c637a3adcd4743cab615aab6ecf44e67fe0ac07 agrees with the retained combined freeze/source-reviewV5 record. The actual467768b9… PR45 Git object is absent from this current clean clone; local object/source lookup failed, and no resulting empty-stream hash was treated as helper evidence. Exact live PR45/source/native acceptance equality remains an explicit later activation preflight, not independently attested here.",
+    "alternative": "Moving the authoritative renderer policy into .github/agent with a wrapper would also create an eligible protected path, but changes the already reviewed helper, capture import/loader and native probe closure. It requires new source/native/full46evidence and introduces extra import/call pairing. No stronger necessary security property is gained over one exact protected literal with the existing projection/authority/CAS controls; it is a larger and less direct fix for this defect."
+  },
+  "required_focused_regressions": [
+    "Exact helper path accepted; sibling, nested, suffixed, similar-basename, package/UI and arbitrary agent_tools paths rejected by actual predicate/projector calls. Do not inspect source spelling as a substitute.",
+    "Real disposable Git projection of the exact merged regular helper, with unrelated package/UI/tools and all release bytes unchanged. Include missing helper on original main, already-identical content and independently edited main refusal as appropriate to existing fixture patterns.",
+    "Both rename directions must trigger protected authorization through actual filename/previous_filename inventory handling; projection must never introduce a non-policy opposite endpoint. Retain existing signature, exact-head/current owner veto, merge/tree/base review and main-CAS tests.",
+    "Use managed focused and mandatory precommit validation after implementation and fresh independent complete-source review before publication. No tests, imports, scenes or candidate programs on Pi."
+  ],
+  "mandatory_later_activation_ordering_constraint": {
+    "demonstrated_mechanism": "automation_promotion.run skips an identity already recorded in done. Processing PR45 under the old predicate can promote its eligible probe while omitting the helper, then permanently mark that identity done. Installing the new predicate later does not automatically backfill the omitted helper.",
+    "parent_commitment": "Parent states PR45 remains OPEN at467768b9bed2c90a0dfba85ef2eea6ac6868f8d6 with ordinary CI in progress and no delegated policy approval posted by the root. Parent commits to withholding that decision until the narrow policy feature has actually merged and activated, proof/controller compatibility has been revalidated and actual activation done-state has been read. This review did not independently query that live state.",
+    "required_guard": "Before PR45 activation, bind and read actual immutable activation state and prove it was not prematurely processed under the old policy. Verify the new exact predicate/controller/helper closure and current worker/catalogue/controller compatibility through a separately reviewed concrete operation. No source merge alone satisfies those gates.",
+    "already_processed_case": "If45 is already recorded done or partially projected, do not erase done-state, fake a replay, manually copy the helper, mutate a completed operation, or claim the closure complete. Prepare a separate concrete authenticated exact-helper backfill using the existing regular-blob projection, exact merged/head/source/CI/owner/task checks and main CAS; independently review and authorize that operation before execution.",
+    "remaining_runtime": "Existing completedv7 and active875 remain immutable historical operations. New controller policy invalidates any426 proof assumption pinned tob59 unless separately revalidated. Any required compatibility/catalogue installation preserves all source evidence, capacity/CAS, natural drain, owned holds and paused/ordinary health gates."
+  },
+  "remaining_gates": [
+    "Fresh normal feature branch/task, complete parent context, implementation and exact focused/full mandatory checks, independent source review, signed dev PR publication/handoff.",
+    "Final-head protected owner/delegated decision and successful actual dev merge; exact approved controller activation through existing trusted projector and separately reviewed runtime/controller compatibility, without manual copying or broadening promotion.",
+    "Only after exact policy activation and the ordering guard may PR45 activation claim its shared trusted helper is included. Verify exact helper/caller hashes and all current authority conditions; no package/UI files reach main outside release.",
+    "All retained PR9/10/39/37/15 dependencies, actual successful qualifyingPRdev merges, source/provenance holds, full Q/options/A, live labels/notifications, tenworkers and singleton30minute orchestrator obligations remain open."
+  ],
+  "authority_limits": {
+    "only_requested_local_review_report_written": true,
+    "candidate_edits": false,
+    "candidate_programs_imports_tests_or_scenes_executed": false,
+    "network_or_pi_operations": false,
+    "source_ci_native_visual_or_owner_approval": false,
+    "main_or_worker_activation": false,
+    "existing_done_state_or_completed_operation_mutated": false,
+    "pr45_or_parent_complete": false,
+    "all_prs_merged": false
+  }
+}

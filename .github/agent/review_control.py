@@ -8,9 +8,10 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -21,6 +22,58 @@ PHASES = frozenset({"agent:writing", "agent:planning", "agent:reviewing",
 _STATUS_LOCKS: dict[tuple[str, str, int], Any] = {}
 _STATUS_GUARD = threading.Lock()
 _STATUS_DEPTH = threading.local()
+_COORDINATOR_AUTHORITY: Any = None
+_COORDINATOR_GUARD = threading.Lock()
+
+
+def _coordinator_authority() -> Any:
+    """Load only the fixed protected siblings, isolated per controller instance."""
+    with _COORDINATOR_GUARD:
+        return _load_coordinator_authority()
+
+
+def _load_coordinator_authority() -> Any:
+    global _COORDINATOR_AUTHORITY
+    if _COORDINATOR_AUTHORITY is None:
+        import importlib.util
+        name = "_atk_coordinator_" + secrets.token_hex(16)
+        path = Path(__file__).with_name("coordinator_authority.py")
+        spec = importlib.util.spec_from_file_location(name, path, submodule_search_locations=[str(path.parent)])
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Checked coordinator implementation unavailable")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            for key in list(sys.modules):
+                if key == name or key.startswith(name + "."):
+                    sys.modules.pop(key, None)
+            raise
+        _COORDINATOR_AUTHORITY = module
+    return _COORDINATOR_AUTHORITY
+
+
+def __getattr__(name: str) -> Any:
+    if name == "CoordinatorAuthorityPending":
+        return _coordinator_authority().CoordinatorAuthorityPending
+    raise AttributeError(name)
+
+
+def prerequisite_authority_snapshot(repository: str, scope: dict[str, Any]) -> dict[str, Any]:
+    """Observe the full receipt-selected control scope without authority writes."""
+    return _coordinator_authority().prerequisite_authority_snapshot(repository, scope)
+
+
+def renew_coordinator_checked(
+    gh: Any, pr: dict[str, Any], binding: dict[str, Any], task_digest: str, *,
+    scope: dict[str, Any], expected_authority: dict[str, Any], proof_sha256: str,
+    caller_binding: dict[str, Any],
+) -> dict[str, Any]:
+    """CAS only the matching hold to renewed planning; no external permission."""
+    return _coordinator_authority().renew_coordinator_checked(
+        gh, pr, binding, task_digest, scope=scope, expected_authority=expected_authority,
+        proof_sha256=proof_sha256, caller_binding=caller_binding)
 
 
 @contextmanager
@@ -73,11 +126,40 @@ def status_transition(
         raise ValueError("Invalid status transition")
     deadline = time.monotonic() + 30
 
+    def budget() -> None:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("PR status display did not converge")
+
+    def label_names(value: Any, maximum: int) -> set[str]:
+        if type(value) is not list or len(value) > maximum:
+            raise ValueError("Invalid PR status labels")
+        names: set[str] = set()
+        for item in value:
+            name = item.get("name") if type(item) is dict else None
+            if type(name) is not str or not name or len(name) > 100 or name in names:
+                raise ValueError("Invalid or repeated PR status label")
+            names.add(name)
+        return names
+
+    def labels() -> set[str]:
+        names: set[str] = set()
+        for page in range(1, 12):
+            budget()
+            batch = gh.api(f"issues/{number}/labels?per_page=100&page={page}")
+            current = label_names(batch, 100)
+            if names & current or len(names) + len(current) > 1000:
+                raise ValueError("PR status label pagination repeated or exceeded capacity")
+            names.update(current)
+            if len(batch) < 100:
+                return names
+        raise ValueError("PR status label pagination incomplete")
+
     def snapshot() -> tuple[dict[str, Any], set[str], bool, str | None] | None:
+        budget()
         fresh = gh.pull(number)
         if fresh["state"] != expected_state or fresh["head"]["sha"] != head:
             return None
-        names = {item["name"] for item in gh.api(f"issues/{number}/labels")}
+        names = labels()
         fresh = dict(fresh, labels=[{"name": name} for name in sorted(names)])
         if expected_state == "closed":
             required = PAUSED in names  # Closed cleanup changes phases only.
@@ -87,6 +169,7 @@ def status_transition(
         target = "" if required else choose(fresh)
         if target is not None and target != "" and target not in PHASES:
             raise ValueError("Unknown PR status phase")
+        budget()
         latest = gh.pull(number)
         if latest["state"] != expected_state or latest["head"]["sha"] != head:
             return None
@@ -95,35 +178,51 @@ def status_transition(
             required, target = True, ""
         return dict(latest, labels=fresh["labels"]), names, required, target
 
+    def desired(state: tuple[dict[str, Any], set[str], bool, str | None]) -> set[str]:
+        _fresh, names, required, target = state
+        result = names - (PHASES & remove)
+        if target is not None:
+            result -= PHASES
+            if target:
+                result.add(target)
+        if required:
+            result.add(PAUSED)
+        elif attention is not None and expected_state == "open":
+            result.discard(PAUSED)
+        return result
+
     with _status_lock(gh.repository, number):
         for _ in range(24):
             state = snapshot()
             if state is None:
                 return None  # Never transfer the old head's attention decision.
-            fresh, names, required, target = state
-            conflicts = names & PHASES & remove
-            if target is not None:
-                conflicts |= (names & PHASES) - {target}
-            if not required and attention is not None and expected_state == "open":
-                conflicts |= names & {PAUSED}
-            missing = PAUSED if required and PAUSED not in names else target if target and target not in names else ""
-            if not conflicts and not missing:
-                return fresh
-            if time.monotonic() >= deadline:
-                break
-            if conflicts:
-                name = sorted(conflicts)[0]
-                try:
-                    gh.api(f"issues/{number}/labels/{name}", "DELETE")
-                except Exception:
-                    # Only a successful authenticated label read proving absence
-                    # can turn a concurrent deletion into success. Head changes
-                    # and failed reads cannot conceal a persistent/auth error.
-                    observed = {item["name"] for item in gh.api(f"issues/{number}/labels")}
-                    if name in observed:
-                        raise
-            else:
-                gh.api(f"issues/{number}/labels", "POST", {"labels": [missing]})
+            if desired(state) == state[1]:
+                return state[0]
+            # Reproject current activity/private attention and complete labels
+            # immediately before replacement. The callback owns its data source;
+            # this display helper does not invent a fresh request/authority API.
+            state = snapshot()
+            if state is None:
+                return None
+            wanted = desired(state)
+            if wanted == state[1]:
+                return state[0]
+            if len(wanted) > 1000:
+                raise ValueError("Projected PR status labels exceeded capacity")
+            budget()
+            try:
+                response = gh.api(f"issues/{number}/labels", "PUT", {"labels": sorted(wanted)})
+                label_names(response, 1000)
+            except Exception:
+                # A lost response can follow an accepted replacement. Only fresh
+                # authenticated reads may establish convergence; otherwise keep
+                # the diagnostic and let ordinary reconciliation retry later.
+                observed = snapshot()
+                if observed is None:
+                    return None
+                if desired(observed) == observed[1]:
+                    return observed[0]
+                raise
         raise TimeoutError("PR status display did not converge")
 
 
@@ -155,6 +254,11 @@ def connect() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS coordinator_renewals (
           repository TEXT, number INTEGER, request TEXT, binding TEXT, head TEXT, digest TEXT,
           PRIMARY KEY(repository, number, request));
+        CREATE TABLE IF NOT EXISTS coordinator_checked_renewals (
+          repository TEXT NOT NULL, number INTEGER NOT NULL, request TEXT NOT NULL,
+          binding_sha256 TEXT NOT NULL, transition_sha256 TEXT NOT NULL UNIQUE,
+          receipt_json TEXT NOT NULL, receipt_sha256 TEXT NOT NULL, created REAL NOT NULL,
+          PRIMARY KEY(repository,number,request,binding_sha256));
         CREATE TABLE IF NOT EXISTS feature_amendments (
           repository TEXT, number INTEGER, head TEXT, created REAL,
           PRIMARY KEY(repository, number));
@@ -300,6 +404,80 @@ def coordinator_held(gh: Any, pr: dict[str, Any]) -> bool:
     with connect() as db:
         return db.execute("SELECT 1 FROM coordinator_holds WHERE repository=? AND number=?",
                           (gh.repository, pr["number"])).fetchone() is not None
+
+
+def _coordinator_target_valid(gh: Any, pr: dict[str, Any], binding: Any) -> bool:
+    if not isinstance(binding, dict):
+        return False
+    head, digest = binding.get("candidate_head"), binding.get("task_digest")
+    if not all((isinstance(head, str), isinstance(digest, str))):
+        return False
+    return all((
+        pr.get("state") == "open", binding.get("repository") == gh.repository,
+        isinstance(binding.get("request_id"), str), bool(binding.get("request_id")),
+        type(binding.get("revision")) is int,
+        isinstance(binding.get("revision"), int) and binding["revision"] >= 0,
+        re.fullmatch(r"[0-9a-f]{40}", head) is not None,
+        head == pr["head"]["sha"], re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
+    ))
+
+
+def readonly_coordinator_scope(
+    gh: Any, pr: dict[str, Any], binding: dict[str, Any], *, stage: str,
+) -> bool:
+    """Permit only fresh read-only planning while its exact dependency stays held.
+
+    This predicate processes no owner commands and changes no authority. It is
+    never a coding, publication, hold-release, review or merge capability.
+    """
+    if stage not in {"plan", "plan-review", "plan-resolver"} or not _coordinator_target_valid(gh, pr, binding):
+        return False
+    with closing(connect()) as db, db:
+        db.execute("BEGIN")
+        rows = db.execute(
+            "SELECT request,binding FROM coordinator_holds WHERE repository=? AND number=?",
+            (gh.repository, pr["number"]),
+        ).fetchall()
+        if (len(rows) != 1 or rows[0]["request"] != binding["request_id"]
+                or rows[0]["binding"] != json.dumps(binding, sort_keys=True)):
+            return False
+        pause, veto_row = _authority_records(db, gh.repository, pr["number"], pr["head"]["sha"])
+        amendment = db.execute(
+            "SELECT 1 FROM feature_amendments WHERE repository=? AND number=?",
+            (gh.repository, pr["number"]),
+        ).fetchone()
+        return pause is None and veto_row is None and amendment is None
+
+
+def replace_coordinator(
+    gh: Any, pr: dict[str, Any], expected: dict[str, Any], replacement: dict[str, Any],
+) -> bool:
+    """CAS a reviewed inventory without briefly retiring its factual merge gate."""
+    if not (_coordinator_target_valid(gh, pr, expected) and _coordinator_target_valid(gh, pr, replacement)):
+        return False
+    predecessor = hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()
+    if (expected["request_id"] != replacement["request_id"]
+            or replacement["revision"] <= expected["revision"]
+            or replacement.get("task_digest") != expected["task_digest"]
+            or replacement.get("coordinator_predecessor_sha256") != predecessor):
+        return False
+    encoded = json.dumps(replacement, sort_keys=True)
+    with closing(connect()) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT binding FROM coordinator_holds WHERE repository=? AND number=? AND request=?",
+            (gh.repository, pr["number"], expected["request_id"]),
+        ).fetchone()
+        if row is None:
+            return False  # A retired hold can never be reinstalled by a replay.
+        if row["binding"] == encoded:
+            return True  # Exact predecessor identity binds a lost-response replay.
+        if row["binding"] != json.dumps(expected, sort_keys=True):
+            return False
+        return bool(db.execute(
+            "UPDATE coordinator_holds SET binding=? WHERE repository=? AND number=? AND request=? AND binding=?",
+            (encoded, gh.repository, pr["number"], expected["request_id"], row["binding"]),
+        ).rowcount)
 
 
 def release_coordinator(gh: Any, pr: dict[str, Any], binding: dict[str, Any]) -> bool:

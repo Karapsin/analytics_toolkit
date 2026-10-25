@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional
 
+from rich.text import Text
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
@@ -27,6 +28,22 @@ if TYPE_CHECKING:
     from textual.app import ComposeResult
 
 
+class BooleanCheckbox(Checkbox):
+    """Use explicit ASCII marks even when the native toggle glyph has low contrast."""
+
+    def _render_button(self) -> Text:
+        color = "#A7AAAB" if self.disabled else "#D88900" if self.has_focus else "#E0E0E0"
+        return Text("[x]" if self.value else "[ ]", style=f"bold {color}")
+
+    def render(self) -> Text:
+        # ToggleButton's native render uses its own glyph property, not this
+        # helper. Render the indicator here while retaining native events.
+        indicator = self._render_button()
+        indicator.append(" ")
+        indicator.append_text(self.label)
+        return indicator
+
+
 class ColumnRow(Horizontal):
     def __init__(self, name: str = "", data_type: str = "") -> None:
         super().__init__(classes="create-column-row")
@@ -37,7 +54,7 @@ class ColumnRow(Horizontal):
             self.initial_name, placeholder="column name", classes="create-column-name"
         )
         yield EditableInput(self.initial_type, placeholder="SQL type", classes="create-column-type")
-        yield Button("\u00d7", classes="remove-column", tooltip="Remove column")
+        yield Button("x", classes="remove-column", tooltip="Remove column")
 
 
 class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str, Any]]]):
@@ -50,7 +67,7 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
         Binding("enter", "form_enter", "Choose", priority=True),
     ]
     DEFAULT_CSS = """
-    CreateTableScreen { align: center middle; background: $background 75%; }
+    CreateTableScreen { align: center middle; background: $background 75%; layers: base overlay; }
     #create-table-dialog {
         width: 86; max-width: 95%; height: auto; max-height: 95%;
         border: solid $accent; background: $panel; padding: 1 2;
@@ -65,11 +82,17 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
     .remove-column {
         width: 3; min-width: 3; height: 1; min-height: 1;
         border: none; padding: 0; margin-top: 1;
+        color: $text; background: $surface; text-style: bold;
     }
+    .remove-column:focus { color: $background; background: $accent; }
     #create-from-sql { height: 7; border: solid $panel-lighten-2; }
     #create-basic-flags { height: auto; }
     #create-basic-flags Checkbox { height: 1; padding: 0; border: none; }
-    #create-type-options { height: auto; max-height: 5; border: none; color: $accent; }
+    #create-type-options {
+        display: none; layer: overlay; overlay: screen; dock: top;
+        height: auto; max-height: 5; border: none;
+        color: $text; background: $surface;
+    }
     #create-table-actions { height: 3; align-horizontal: right; margin-top: 1; }
     #create-table-actions Button { margin-left: 1; }
     .create-advanced-field { height: 3; }
@@ -102,12 +125,11 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
                 with Vertical(id="create-table-schema"):
                     for name, data_type in self.draft.get("rows", [("", "")]):
                         yield ColumnRow(name, data_type)
-                yield OptionList(id="create-type-options", wrap=False)
                 yield Button("+ column", id="create-add-column")
                 yield TextArea(str(self.draft.get("from_sql", "")), id="create-from-sql")
                 with Vertical(id="create-basic-flags"):
                     for name in ("insert_data", "skip_if_exists", "drop_if_exists"):
-                        yield Checkbox(
+                        yield BooleanCheckbox(
                             f"{name}: {bool(self.draft.get(name, False))}",
                             bool(self.draft.get(name, False)),
                             id=f"create-{name}",
@@ -144,16 +166,20 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
             with Horizontal(id="create-table-actions"):
                 yield Button("Cancel", id="create-table-cancel")
                 yield Button("Create", id="create-table-submit")
+        yield OptionList(id="create-type-options", wrap=False)
 
     def on_mount(self) -> None:
         self._update_source()
         self.query_one("#create-table-name", Input).focus()
+        self.set_interval(0.1, self._position_types)
 
     def _update_source(self) -> None:
         sql_mode = self.query_one("#create-table-source", Select).value == "from_sql"
         self.query_one("#create-table-schema").display = not sql_mode
         self.query_one("#create-add-column").display = not sql_mode
-        self.query_one("#create-type-options").display = not sql_mode
+        if sql_mode:
+            self.type_matches = ()
+            self._show_types()
         self.query_one("#create-from-sql").display = sql_mode
         self.query_one("#create-insert_data", Checkbox).disabled = not sql_mode
         for widget in self.query(".create-advanced-label, .create-advanced-field"):
@@ -195,6 +221,27 @@ class CreateTableScreen(CreateTableKeyboardMixin, ModalScreen[Optional[Dict[str,
         menu.add_options(self.type_matches)
         menu.highlighted = self.type_index if self.type_matches else None
         menu.display = bool(self.type_matches)
+        self.call_after_refresh(self._position_types)
+
+    def _position_types(self) -> None:
+        menu = self.query_one("#create-type-options", OptionList)
+        field = self.type_input
+        if not self.type_matches or field is None or not field.is_mounted or not field.has_focus:
+            menu.display = False
+            return
+        viewport = self.query_one("#create-table-fields").content_region
+        region = field.region
+        available = min(viewport.bottom, self.size.height) - region.bottom
+        if region.y < viewport.y or available < 1:
+            menu.display = False
+            return
+        menu.styles.width = region.width
+        menu.styles.height = min(5, len(self.type_matches), available)
+        menu.styles.offset = (region.x, region.bottom)
+        menu.display = True
+
+    def on_resize(self) -> None:
+        self.call_after_refresh(self._position_types)
 
     def on_descendant_focus(self, event: events.DescendantFocus) -> None:
         if isinstance(event.widget, Input) and event.widget.has_class("create-column-type"):

@@ -1,0 +1,160 @@
+{
+  "schema": "independent-native-source-validation-stage1-full-source-security-review/v2",
+  "reviewer": "/root/review_native_source_validation_stage1_plan",
+  "created_at_utc": "2026-10-19T07:34:02.686812+00:00",
+  "decision": "approve_complete_exact_source_payload",
+  "completeness": "complete",
+  "findings": [],
+  "binding": {
+    "base": "71422731e51af15a104b65915873d576bf0024c0",
+    "branch": "codex/19ac2eeff8284a2f-9e48bab3",
+    "reviewed_state": "Exact current working source/task payload, not an invented committed/pushed head. Approved source bytes are explicitly bound below; final commit/task/check/signature publication requires its own genuine evidence.",
+    "inventory": {
+      "path": "/private/tmp/native-source-validation-stage1-independent-source-review-freeze-v2-1792395156426032000/manifest.json",
+      "bytes": 2668,
+      "sha256": "00be4f2dd954f11af2e59c3e9380bcb6aee1eb7bb84a72248b054d41d71c1125"
+    },
+    "files": [
+      {
+        "path": ".github/agent/source_validation.py",
+        "bytes": 15080,
+        "sha256": "41484d03067f3cea2a2c80128730f688a0fc65c72ed4c44d70ef96918f7ed04e"
+      },
+      {
+        "path": ".github/workflows/tests.yml",
+        "bytes": 7862,
+        "sha256": "5d80b2995098bf7cd273575d1eabb73c2e774705abbe77fc7268476926f9a104"
+      },
+      {
+        "path": "agent_tools/changelog/0eb3fa30706b49a28f53c050ebd40f4a.md",
+        "bytes": 142,
+        "sha256": "b5f2d0efb42c8f5ad3de8be294fc7a83be55ecff7ecd953437e0fed981aebb14"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/implementation-plan.json",
+        "bytes": 13462,
+        "sha256": "438edf720d6e4c93b7cea99b7f8775838c11b926f981de0c64e9342feedaf66e"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-plan-review.json",
+        "bytes": 9178,
+        "sha256": "9fb5e4dfb9a738f6c107c01c47eb45c3f0baa74d1bc8a0aad605226887360ada"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-scope-assessment.json",
+        "bytes": 20717,
+        "sha256": "3473adf24a4fccaf8ecb56588a0be90e8e9191ea03cc984d91fcde3f9349d1b2"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/independent-source-review-v1.json",
+        "bytes": 14996,
+        "sha256": "40add89e399f1679d5d489c04a555d5bec84d8c3252b533235ebfb2e8e301508"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/parent-objective.json",
+        "bytes": 1135,
+        "sha256": "83908d4491d98d964cbc1baf993d3c6d403070da63c4bc9a9fb088b09a682419"
+      },
+      {
+        "path": "agent_tools/task_evidence/f1e82167c2e64157817a1d98677d5a4d/parent-task.json",
+        "bytes": 56655,
+        "sha256": "6b3f0534497773b2178f7d30b7a91ec1927db4d6f71728e2b7988958c5d8bf27"
+      },
+      {
+        "path": "docs/GITHUB_AGENT_OPERATIONS.md",
+        "bytes": 65332,
+        "sha256": "bbde23cc968696c0dedaf0942b9f102d89160424f79097f3fc6305efeb89e17c"
+      },
+      {
+        "path": "tests/repository/_support/source_validation.py",
+        "bytes": 4947,
+        "sha256": "a5c2aa53a039c8912bccc60e03951ff233ad088f0be10fe66a091c0665b87782"
+      },
+      {
+        "path": "tests/repository/_support/workflow_scalars.py",
+        "bytes": 3037,
+        "sha256": "bcee88a6557b1697d06c690fe382216dd97fb3562c7b16e5726248a2f9ecdee8"
+      },
+      {
+        "path": "tests/repository/source_validation.py",
+        "bytes": 12731,
+        "sha256": "b1e6bdb0674305d3a2f48f72fd033ac5c2d226cdff34daec67fe63f0021d2671"
+      }
+    ],
+    "all13_frozen_and_current_checkout_files_rehashed_after_read": true,
+    "recheck_mismatches": [],
+    "approved_implementation_plan_sha256": "438edf720d6e4c93b7cea99b7f8775838c11b926f981de0c64e9342feedaf66e",
+    "independent_plan_review_sha256": "9fb5e4dfb9a738f6c107c01c47eb45c3f0baa74d1bc8a0aad605226887360ada",
+    "prior_original_source_review": {
+      "path": "/private/tmp/minimal-native-source-validation-stage1-independent-full-source-review-v1.json",
+      "bytes": 14996,
+      "sha256": "40add89e399f1679d5d489c04a555d5bec84d8c3252b533235ebfb2e8e301508"
+    }
+  },
+  "read_coverage": {
+    "complete_corrected_executable_and_test_source": "Freshly read every line of corrected .github/agent/source_validation.py, complete tests.yml and tests/repository/source_validation.py, plus both unchanged but re-read tests/repository/_support/source_validation.py and workflow_scalars.py. A combined tool response truncated one workflow middle range; separately read the entire omitted53-89 range. No unread source gap remains.",
+    "documentation": "Read complete current native-source-validation section and full v1\u2192v2 source/workflow/doc diff. Reused previous current-base diff for unchanged surrounding operations text; no claim that all unrelated64KB documentation was newly reviewed.",
+    "parent_task_and_evidence": "Rehashed exact approved plan/review/scope, entire original parent-task/objective and fragment against v1. They are unchanged; complete original objective reading and entire parent-task semantic equality from v1 remain valid. Newly retained independent-source-review-v1.json exactly equals the original prior report; it correctly preserves rejected old bytes/history rather than claiming they are current approval.",
+    "fixed_transport_and_subject_contract": "Fixed467 hashes unchanged and match previously independently rehashed/read transport closure. Reused authenticated exact467 scene-manifest/session/geometry producer originals from v1; current schema checks still match actual46-scene208x47/1280x800 subject contract.",
+    "shared_checkout_ownership": "Readonly review uses parent completed MCP startup/impact/routing context and explicit no-child-startup-mutation instruction. No candidate code/import/test, private controller access or repository edit performed."
+  },
+  "previous_findings_resolution": [
+    {
+      "id": "R1",
+      "status": "resolved",
+      "path": ".github/workflows/tests.yml:75-86",
+      "actual_source_resolution": "Capture upload now explicitly sets include-hidden-files:true. Paths remain exclusively wrapper-admitted run-owned visual-artifact, visual-diagnostics and isolation-diagnostics children; no root/checkouts or guessed destinations are added. Safely retained dot-prefixed diagnostic members are therefore not silently filtered by upload-artifact defaults.",
+      "regression_source": "test_workflow_retains_hidden_originals_and_early_guard_metadata inspects the actual source-validation upload step and asserts include-hidden-files plus admitted-root guard, preserving the external-action configuration contract.",
+      "primary_source_basis": "https://raw.githubusercontent.com/actions/upload-artifact/v4/README.md"
+    },
+    {
+      "id": "R2",
+      "status": "resolved",
+      "path": ".github/agent/source_validation.py:283-380; .github/workflows/tests.yml:43-74",
+      "actual_source_resolution": "Both CLI paths now call main\u2192run, with validate_only using the same private metadata/finalization boundary. Guard checks identity before reading subject root environment or invoking transport. Success records guard_passed:true, capture_attempted:false, capture ok:false and observed guard step_outcome:success; invalid guard records false/failed state and no capture root. Workflow has id:guard before both subject/transport checkouts, and always-upload metadata condition/path select capture metadata or fallback guard metadata. A downstream checkout/preparation failure can therefore retain the already produced guard record without inventing a capture attempt/result.",
+      "regression_source": "test_real_guard_command_retains_metadata_without_subject_checkout_or_capture calls actual main([validate],env) for both valid/invalid identities after deleting every source-root environment key, and asserts no transport invocation, correct guard/step state, false capture/visual state and absent future job/artifact claims. Workflow-shape assertions cover guard placement and fallback condition/path."
+    }
+  ],
+  "complete_source_security_assessment": {
+    "parent_alignment": "The exact implementation follows the approved bounded v2 plan for an infrastructure-only native source-validation mode. It addresses a real premerge evidence gap while preserving the complete monitoring/fix objective, actual product acceptance and current authority boundaries. No new universal receiver/admission framework is required or introduced.",
+    "ordinary_CI_and_mode_roles": "Current-base push/pull_request/default-manual ordinary job bodies, matrices, names and aggregate failure semantics remain intact. Manual opt-in flag or nonempty subject chooses only source validation; malformed flag/subject reaches explicit guard failure while ordinary jobs carry distinct skipped source-only names. Current base has no native synthetic probe job; code anticipates/rejects future conflicting true probe mode without claiming that such a probe is presently implemented by this feature. Future integration must preserve both distinct roles.",
+    "authority_identity": "Driver requires exact repository, workflow_dispatch event, original and triggering/rerun owner actor, source flag,40hex subject/workflow, workflow-file SHA equality, content-addressed reserved tag name and positive bounded run/attempt identities. It does not treat tag spelling as actual effective protection. Plan/docs explicitly retain separately reviewed create-only protected-tag/trigger/actor/permission/current provenance/task/ownership/hold operation before dispatch.",
+    "host_execution_trust": "Only stdlib and fixed trusted transport execute on the runner host. Exact separate Git HEADs and all four fixed467 transport source hashes are verified before invoking python-I on the fixed transport; Git probes strip credentials/global/system configuration and disable hooks/fsmonitor. Candidate manifest is parsed as bounded data. No candidate-selected host helper or candidate host install/import/test/render step exists.",
+    "source_and_environment_confinement": "Control, fixed transport, subject and temporary roots must be actual owned absolute non-symlink directories and pairwise nonoverlapping. Subject stays in pristine checkout while unchanged trusted transport runs its independent writable container copy. Explicit child environment contains only required nonsecret PATH/temp/identity plus private output; GH/App tokens, proxy/Python/Git injection variables and Actions output command file are not forwarded into candidate containers.",
+    "private_output_admission": "Wrapper owns0600 private command file outside source/trusted/container writable roots. It bounds reads4096B and admits a single exact assignment to a real direct atk-visual UUID child of actual RUNNER_TEMP. Invalid/empty/duplicate/multiline/oversized/outside/symlink output fails or remains unavailable; interrupted transport output is never admitted. Wrapper emits only admitted artifact path, plus its independently owned metadata path. No guessed roots or unsafe-writer output become uploads.",
+    "transport_lifecycle": "Invocation isolates its process group, waits bounded29min, requests TERM, allows120sec for trusted cleanup and uses KILL plus bounded reap only on timeout. Interrupted/forced cases remain failure and do not expose capture roots or certify cleanup. Fixed reviewed transport remains responsible for actual owned containers/network/guards/loggers and uncertainty/refusal evidence; feature does not alter those semantics or run anything onPi.",
+    "complete_capture_contract": "A reported successful capture must contain exactly capture.json plus46PNG/46geometry members, match candidate/session/scene identities and pass/removed-workspace state, match every recorded SHA, retain full1280x800PNG headers and actual geometry ok per scene. Uploaded evidence is still data from candidate execution, not independent source approval or individual PNG acceptance. Individual verdicts remain explicitly pending.",
+    "failure_and_result_honesty": "Nonzero/interrupted/suppressed/unsafe/incomplete transport/capture cannot set capture ok. Safe guard metadata now survives early identity failure; admitted failed diagnostic roots retain complete bytes including hidden members. Metadata distinguishes guard pass from actual capture attempt. Pre-upload final_job_conclusion/uploaded_artifacts remain null; external actual completed GitHub metadata must be obtained separately without rewriting originals. visual_approval and production_activation remain false throughout.",
+    "tests_and_helpers": "Full offline fixture and negative test source covers mode selection, actual CLI guard behavior, exact environment/trusted path, source/head/root/scene contract refusal, output admission, artifact membership/hash/dimension/geometry failures, regular-file link safety and lifecycle signals. Limited AST workflow evaluator fails closed for unsupported constructs. Synthetic headers/fixtures explicitly are not visual verdicts; tests use fake subprocess/transport boundaries with no Docker/network/database dependency.",
+    "documentation_and_task_preservation": "Current operations section accurately states future operation/frozen ref and separate final-job artifact review requirements, no production activation/full45readiness claim, and newly truthful early-guard/hidden-byte retention. Complete parent task and rejected-review history remain unchanged. Unique fragment records implementation without package-version edits. SQL Explorer source/harness/scene manifest/fixed trusted transport and handed-off branches are not changed."
+  },
+  "validation_evidence_limits": {
+    "reviewer_executed_programs_tests_candidate_imports_renders": false,
+    "Pi_or_private_control_calls": 0,
+    "current_checks": "Parent reports a new managed focused check is running. This report neither independently observes nor grants its success and does not substitute for mandatory final-tree focused/precommit/exact-head CI.",
+    "old_check_stop": "Parent reported deliberate cancellation of owned coverage run before source edits; not relabelled a passing receipt or a candidate test failure by this reviewer."
+  },
+  "remaining_genuine_gates": [
+    "Complete final-tree focused and full managed precommit validation, final signed/task-bound publication and exact-head CI. Source approval is not a check receipt.",
+    "Before any first dispatch, separately concretely review and satisfy actual frozen content-addressed ref protection/create-only operation, complete trigger census, real actor/API permission, current exact subject enrollment/task ownership and genuine holds. Source publication and session-only dev merge waiver establish none of those operational facts.",
+    "After actual job completion retain authenticated exact run/attempt/job conclusions and artifact IDs/digests/download originals separately; verify safe complete extraction and all scene/content identities.",
+    "Open every actual full PNG individually and preserve all geometry/visual failures. Native synthetic acceptance and this infrastructure source approval are not full product acceptance or proof that PR45 five UI defects are repaired.",
+    "Future unpublished UI checkpoint publication and any strictly necessary external receipt import remain separate actual reviewed implementations, not present capabilities.",
+    "Main projection/runtime activation, genuine owner/security/provenance/veto/cancel/operational holds remain independent; this report grants no authority to change them.",
+    "All qualifying parent PRs and repairs still need actual successful dev merges; no parent completion is claimed."
+  ],
+  "authority_limits": {
+    "exact_bound_source_payload_approved": true,
+    "candidate_commit_signature_full_task_attachment_approved": false,
+    "CI_native_visual_or_product_acceptance_pass": false,
+    "first_dispatch_or_tag_protection_creation_authorized": false,
+    "main_projection_runtime_activation_or_hold_release_authorized": false,
+    "owner_policy_or_waiver_expansion": false,
+    "full_PR45_publication_path_ready": false,
+    "PR_merge_or_parent_completion_claim": false,
+    "repository_edits": 0,
+    "candidate_execution_or_tests": 0,
+    "Pi_calls": 0,
+    "private_freeze_and_original_review_report_only": true
+  }
+}

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from release_routines.lib import quality_diagnostics
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from typing import Any, NoReturn
@@ -20,6 +22,7 @@ DEFAULT_BASELINE = PROJECT_ROOT / "release_routines" / "baselines" / "quality_de
 RUFF_TARGETS = ("analytics_toolkit", "atk", "tests", "agent_tools", "release_routines")
 MYPY_TARGETS = ("analytics_toolkit", "atk")
 SCHEMA_VERSION = 1
+MAX_ERROR_DETAILS = 2000
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,20 @@ def _run_command(command: Sequence[str], cwd: Path) -> CommandResult:
         stdout=completed.stdout,
         stderr=completed.stderr,
     )
+
+
+def _recorded_command(
+    command: Sequence[str],
+    root: Path,
+    runner: CommandRunner,
+) -> CommandResult:
+    try:
+        result = runner(command, root)
+    except (OSError, QualityDebtError) as exc:
+        quality_diagnostics.retain(command, root, None, "", str(exc))
+        raise
+    quality_diagnostics.retain(command, root, result.returncode, result.stdout, result.stderr)
+    return result
 
 
 def _normalize_path(raw_path: str, root: Path) -> str:
@@ -182,7 +199,7 @@ def _validate_tool_result(result: CommandResult, tool_name: str) -> None:
     details = (result.stderr or result.stdout).strip()
     message = f"{tool_name} failed to run (exit {result.returncode})."
     if details:
-        message = f"{message}\n{details}"
+        message = f"{message}\n{details[:MAX_ERROR_DETAILS]}"
     _raise_quality_error(message)
 
 
@@ -190,18 +207,20 @@ def collect_ruff_findings(
     root: Path,
     runner: CommandRunner = _run_command,
 ) -> dict[str, FindingCounts]:
-    lint_result = runner(
+    lint_result = _recorded_command(
         ("ruff", "check", "--output-format", "json", *RUFF_TARGETS),
         root,
+        runner,
     )
     _validate_tool_result(lint_result, "Ruff lint")
     lint_findings = parse_ruff_json(lint_result.stdout, root)
     if lint_result.returncode == 1 and not lint_findings:
         _raise_quality_error("Ruff lint reported debt but returned no parseable findings.")
 
-    format_result = runner(
+    format_result = _recorded_command(
         ("ruff", "format", "--check", *RUFF_TARGETS),
         root,
+        runner,
     )
     _validate_tool_result(format_result, "Ruff format")
     format_findings = parse_ruff_format_output(format_result.stdout, root)
@@ -214,9 +233,10 @@ def collect_mypy_findings(
     root: Path,
     runner: CommandRunner = _run_command,
 ) -> dict[str, FindingCounts]:
-    result = runner(
+    result = _recorded_command(
         (sys.executable, "-m", "mypy", "-O", "json", *MYPY_TARGETS),
         root,
+        runner,
     )
     _validate_tool_result(result, "Mypy")
     findings = parse_mypy_json_lines(result.stdout, root)

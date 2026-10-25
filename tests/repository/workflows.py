@@ -37,7 +37,8 @@ def test_dev_workflows_classify_tests_as_required_and_integration_as_advisory() 
     manifest = read_json(ROOT / ".github/required-workflows.json")
     required = {entry["name"]: entry for entry in manifest["branches"]["dev"]["workflows"]}
 
-    assert set(required) == {"tests"}
+    assert set(required) == {"tests", "compatibility"}
+    assert required["compatibility"]["classification"] == "advisory_push"
     assert required["tests"]["classification"] == "required_push"
     integration = next(
         entry

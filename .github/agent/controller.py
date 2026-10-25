@@ -55,6 +55,7 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
     proto = trusted_module("task_context")
     body = pr.get("body") or ""
     head = pr["head"]["sha"]
+    message = ""
     if (proto.MARKER not in body and proto.ARCHIVE_MARKER not in body
             and pr["user"].get("type") == "Bot"):
         # Older App repairs inherit the already-authorized standing repair task.
@@ -63,26 +64,82 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
         actor = value["producer_id"]
     else:
         value = proto.parse(body, api=gh.api)
-        if value["source"] == "standing-integration-repair" and pr["user"].get("type") != "Bot":
+        if value["source"] in {"standing-integration-repair", "standing-validation-repair"} and pr["user"].get("type") != "Bot":
             raise ValueError("Only the trusted App can inherit the standing repair authority.")
         directory = os.environ.get("AGENT_CONTROL_DIR")
         if not directory:
             raise RuntimeError("Trusted signature checkout is unavailable.")
         message = command("git", "log", "-1", "--format=%B", head, cwd=Path(directory))
         actor = proto.verify_commit(value, message)
+        verify_task_images(value, Path(directory), head)
     branch = pr["head"].get("ref", "")
     if branch.startswith(("codex/telegram-feature-", "codex/orchestrator-")) and not trusted_module("review_control").enrolled_feature(
             gh.repository, branch, proto.digest(value)):
         raise ValueError("Feature context does not match the host-owned request.")
-    return {"user_task": value, "task_digest": proto.digest(value), "producer_id": actor}
+    return {"user_task": value, "task_digest": proto.digest(value), "producer_id": actor,
+            **({"local_review_required": True} if "\nAgent-Review-Policy: local-v1" in message else {})}
+
+
+def admit_local_review(gh: GitHub, pr: dict[str, Any], base: str, metadata: dict[str, Any]) -> bool:
+    """Verify machine evidence, never ask a GitHub model to repeat local review."""
+    proto = trusted_module("local_review")
+    receipt = proto.extract(pr.get("body") or "")
+    if receipt is None:
+        if metadata.get("local_review_required"):
+            raise ValueError("Signed local-review policy requires a matching receipt")
+        return False  # Historical handoffs still receive independent Pi review.
+    head = pr["head"]["sha"]
+    payload = receipt.get("payload")
+    if not isinstance(payload, dict):
+        raise ValueError("Malformed local review payload")
+    directory, allowed = os.environ.get("AGENT_CONTROL_DIR"), os.environ.get("AGENT_ALLOWED_SIGNERS")
+    if not directory or not allowed:
+        raise ValueError("Host-owned reviewer enrollment is unavailable")
+    reviewed_head = payload.get("head")
+    if not isinstance(reviewed_head, str) or not reviewed_head:
+        raise ValueError("Malformed local review head")
+    tree = command("git", "rev-parse", reviewed_head + "^{tree}", cwd=Path(directory))
+    reviewed_base = payload.get("base")
+    producer, task_digest = metadata["producer_id"], metadata["task_digest"]
+    if reviewed_head != head:
+        if not signed_head(gh.repository, reviewed_head) or not signed_head(gh.repository, head):
+            raise ValueError("Local review successor and original must have enrolled signatures")
+        context = trusted_module("task_context")
+        message = command("git", "log", "-1", "--format=%B", reviewed_head, cwd=Path(directory))
+        actors = re.findall(r"^" + context.PRODUCER + r": ([A-Za-z0-9:-]{1,160})$", message, re.M)
+        hashes = re.findall(r"^" + context.TRAILER + r": ([0-9a-f]{64})$", message, re.M)
+        evidence = re.findall(r"^" + context.EVIDENCE_TRAILER + r": ([0-9a-f]{64})$", message, re.M)
+        if len(actors) != 1 or len(hashes) != 1 or len(evidence) > 1:
+            raise ValueError("Original local review commit has invalid task provenance")
+        producer, task_digest = actors[0], (evidence or hashes)[0]
+    payload = proto.validate_binding(receipt, repository=gh.repository, head=reviewed_head, base=reviewed_base,
+        tree=tree, task_digest=task_digest, producer_id=producer)
+    proto.verify_signature(receipt, Path(allowed))
+    if reviewed_head != head:
+        command("git", "merge-base", "--is-ancestor", reviewed_head, head, cwd=Path(directory))
+        return False  # Authenticated successors retain provenance but need fresh Pi review.
+    if reviewed_base != base:
+        return False  # Dev advanced after handoff; a fresh Pi review owns revalidation.
+    if not _current_discovery_target(gh, pr, base):
+        raise ValueError("PR changed during local review verification")
+    trusted_module("review_control").assess(gh.repository, pr["number"], head,
+        metadata["task_digest"], payload["summary"])
+    gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head, "external_id": base,
+        "status": "completed", "conclusion": "success", "output": {
+            "title": "Independent local review verified", "summary": payload["summary"]
+            + "\n\nReviewer: " + payload["reviewer_id"] + "; receipt: " + proto.digest(receipt)}})
+    return True
 
 
 def rejection_check(gh: GitHub, pr: dict[str, Any], base: str, reason: str,
                     changes: str) -> None:
+    if not _current_discovery_target(gh, pr, base):
+        return
     gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": pr["head"]["sha"],
         "external_id": base, "status": "completed", "conclusion": "failure",
         "output": {"title": "Reviewer rejected; awaiting user", "summary": reason[:60000]}})
-    trusted_module("review_control").pause(gh, pr, reason, changes)
+    if _current_discovery_target(gh, pr, base):
+        trusted_module("review_control").pause(gh, pr, reason, changes)
 
 
 def verify_review_execution(task: dict[str, Any], receipt: dict[str, Any]) -> None:
@@ -223,7 +280,9 @@ def policy_path(path: str) -> bool:
     return (path.startswith((".github/agent/", ".codex/")) or path in {
         ".github/workflows/github-agent.yml", ".github/workflows/agent-dispatch.yml",
         ".github/workflows/agent-visual.yml", ".github/workflows/publish.yml",
-        ".github/required-workflows.json", "agent_tools/machine_signing.py"})
+        ".github/workflows/agent-visual-profile.yml",
+        ".github/required-workflows.json", "agent_tools/machine_signing.py",
+        "agent_tools/sql_explorer_visual_render.py"})
 
 
 def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True, *,
@@ -384,6 +443,7 @@ def _record_run(gh: GitHub, state: dict[str, Any], run: dict[str, Any]) -> None:
     previous.update(sha=tested_sha, status=run["status"], conclusion=run["conclusion"],
                     url=run["html_url"], event=run["event"], attempt=run["run_attempt"],
                     updated=run["updated_at"])
+    previous["workflow"] = run.get("path", previous.get("workflow", ".github/workflows/sql-integration.yml"))
     if previous.get("closed_unmerged"):
         previous["needs"] = []
     if run["status"] == "completed" and not unchanged and not previous.get("closed_unmerged"):
@@ -404,6 +464,8 @@ def _resolve_runs(gh: GitHub, state: dict[str, Any]) -> None:
     ancestry: dict[tuple[str, str], bool] = {}
     for failure in state["runs"].values():
         for green in state["runs"].values():
+            if failure.get("workflow", ".github/workflows/sql-integration.yml") != green.get("workflow", ".github/workflows/sql-integration.yml"):
+                continue
             if green["status"] != "completed" or not green.get("merged", True):
                 continue
             common = set(failure.get("needs", [])) & set(green.get("green", []))
@@ -439,7 +501,9 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     # before its merge by the same path as ordinary PRs.
     proto = trusted_module("task_context")
     producer = "standing-repair:" + base
-    context = proto.repair_context(base, producer)
+    validation = any(state["runs"][str(run)].get("workflow", "").endswith(("tests.yml", "compatibility.yml"))
+                     for run in failures)
+    context = proto.repair_context(base, producer, validation=validation)
     task = {"kind": "repair", "number": 0, "head": base, "base": base,
              "branch": REPAIR_BRANCH + base[:12], "runs": failures,
              "producer_id": producer, "user_task": context, "task_digest": proto.digest(context)}
@@ -447,6 +511,9 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     task["failure_key"] = evidence.fingerprint([
         {"run": run, "needs": sorted(state["runs"][str(run)].get("needs", []))}
         for run in sorted(failures)])
+    task["failure_scopes"] = sorted({
+        state["runs"][str(run)].get("workflow", ".github/workflows/sql-integration.yml") + ":" + name
+        for run in failures for name in state["runs"][str(run)].get("needs", [])})
     try:
         inventory = evidence.inventory(gh, failures)
     except RuntimeError as exc:
@@ -459,12 +526,29 @@ def _integration_tasks(gh: GitHub, state: dict[str, Any], base: str,
     return [] if evidence.blocked(task) else [task]
 
 
+def _current_discovery_target(gh: GitHub, pr: dict[str, Any], base: str) -> bool:
+    """Refuse stale denial effects; GitHub GET and POST are not a transaction."""
+    fresh = gh.pull(pr["number"])
+    return (trusted(fresh, gh.repository) and fresh["number"] == pr["number"]
+            and fresh["head"]["sha"] == pr["head"]["sha"]
+            and fresh["head"]["ref"] == pr["head"]["ref"]
+            and (fresh.get("body") or "") == (pr.get("body") or "")
+            and not any(label["name"] == WRITER for label in fresh.get("labels", []))
+            and gh.base() == base)
+
+
 def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
     issue, state = monitor(gh)
     next_cursor = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
     # Cursor overlaps by a minute; active runs are always polled by immutable ID.
     runs = gh.pages("actions/workflows/sql-integration.yml/runs?branch=dev&per_page=100&created=%3E%3D"
                     + quote(state.get("cursor", state["started"]), safe=""), "workflow_runs")
+    for workflow in ("tests.yml", "compatibility.yml"):
+        for run in gh.pages("actions/workflows/" + workflow + "/runs?branch=dev&per_page=100&created=%3E%3D"
+                            + quote(state.get("cursor", state["started"]), safe=""), "workflow_runs"):
+            if (run.get("event") == "push" and run.get("head_branch") == "dev"
+                    and run.get("path") == ".github/workflows/" + workflow):
+                runs.append(dict(run, path=".github/workflows/" + workflow))
     for run in runs:
         _record_run(gh, state, run)
     for key, run in list(state["runs"].items()):
@@ -494,17 +578,22 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                   or trusted_module("review_control").enrolled_feature(gh.repository, pr["head"]["ref"])):
             continue
         pr = gh.pull(pr["number"])
+        if not trusted(pr, gh.repository):
+            continue
         head = pr["head"]["sha"]
         if any(label["name"] == WRITER for label in pr.get("labels", [])):
             continue
         checks = gh.checks(head)
         existing = review_check(checks, base, app_id)
         if not signed_head(gh.repository, head):
-            if existing is None or existing.get("output", {}).get("title") != "Authorization required":
+            if ((existing is None or existing.get("output", {}).get("title") != "Authorization required")
+                    and _current_discovery_target(gh, pr, base)):
                 gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head,
                     "external_id": base, "status": "completed", "conclusion": "action_required",
                     "output": {"title": "Authorization required", "summary":
                                "Only enrolled-machine signed heads are automated."}})
+            continue
+        if not _current_discovery_target(gh, pr, base):
             continue
         controls = trusted_module("review_control")
         if controls.paused(gh, pr):
@@ -518,7 +607,8 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
             continue
         denial = authorization_error(gh, pr, False)
         if denial:
-            if existing is None or existing.get("output", {}).get("summary") != denial:
+            if ((existing is None or existing.get("output", {}).get("summary") != denial)
+                    and _current_discovery_target(gh, pr, base)):
                 gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head,
                     "external_id": base, "status": "completed", "conclusion": "action_required",
                     "output": {"title": "Authorization required", "summary": denial}})
@@ -560,6 +650,13 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                               + "\n".join(problems), "changes": pr.get("title", "PR changes")}
             elif kind == "review" and fragments:
                 kind = "metadata"
+        if kind == "review" and not (existing and existing.get("conclusion") == "success"):
+            try:
+                if admit_local_review(gh, pr, base, metadata):
+                    continue
+            except (RuntimeError, ValueError, OSError) as error:
+                rejection_check(gh, pr, base, str(error), pr.get("title", "Local review provenance"))
+                continue
         if (kind == "review" and existing and existing["status"] == "completed"
                 and existing.get("output", {}).get("title") != "Authorization required"):
             if approval_required:
@@ -597,6 +694,8 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
     if kind in {"conflict", "repair", "correction"} and task["head"] != task["base"]:
         subprocess.run(["git", "merge", "--no-commit", "--no-ff", task["base"]], cwd=work,
                        capture_output=True, check=False)
+    if kind == "conflict":
+        route_preparation_conflicts(gh, task, work)
     logs = []
     if kind == "repair":
         if not task.get("runs"):
@@ -614,6 +713,54 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
                 if "HTTP 404" not in str(exc):
                     raise
                 logs.append(f"Run {run_id}: step logs unavailable; consult integration/manifest.json.")
+    logs.extend(_preparation_ci(gh, task))
+    if kind == "metadata" and not fold(work):
+        raise RuntimeError("Changelog candidate changed; reconcile again.")
+    _write_preparation_context(task, control, logs)
+
+
+def unresolved_conflict_paths(work: Path) -> list[str]:
+    """Read the unresolved index without quoting or splitting unusual filenames."""
+    raw = command("git", "diff", "--name-only", "--diff-filter=U", "-z",
+                  "--no-ext-diff", "--no-textconv", cwd=work, raw_stdout=True)
+    if not isinstance(raw, bytes) or (raw and not raw.endswith(b"\0")):
+        raise RuntimeError("Unavailable or malformed unresolved conflict paths.")
+    try:
+        paths = raw[:-1].decode("utf-8").split("\0") if raw else []
+    except UnicodeError as error:
+        raise RuntimeError("Unavailable UTF-8 conflict paths.") from error
+    if any(not path or path.startswith("/") or any(
+            part in {"", ".", ".."} for part in path.split("/")) for path in paths):
+        raise RuntimeError("Malformed unresolved conflict paths.")
+    return paths
+
+
+def route_preparation_conflicts(gh: GitHub, task: dict[str, Any], work: Path) -> None:
+    """Stop the generic worker before it receives conflicts it cannot edit."""
+    controls = trusted_module("review_control")
+    snapshot = controls.correction_snapshot(gh.repository, task["number"])
+    paths = unresolved_conflict_paths(work)
+    if any(path.startswith(".git/") or path in {".git", ".connections", ".env"} for path in paths):
+        raise RuntimeError("Unresolved sensitive files; maintainer review required.")
+    protected = [path for path in paths if path.startswith(".github/agent/")
+                 or path == ".github/workflows/github-agent.yml"]
+    if not protected:
+        return
+    if not task["number"]:
+        raise RuntimeError("Protected conflicts require an existing PR correction scope.")
+    pr = publication_authority(gh, task)
+    reason = ("Protected conflict resolution requires a fresh correction plan and independent review: "
+              + json.dumps(protected)
+              + ". Preserve the existing PR changes and current dev; protected exact-head approval still applies.")
+    if not controls.require_correction(
+            gh.repository, task["number"], task["head"], task["task_digest"], reason,
+            pr.get("title", "PR changes"), expected=snapshot):
+        raise RuntimeError("Correction findings changed during execution; preserve the newer request.")
+    raise RuntimeError("Protected conflicts; fresh correction planning queued. " + reason)
+
+
+def _preparation_ci(gh: GitHub, task: dict[str, Any]) -> list[str]:
+    logs = []
     if task["number"]:
         logs.append(json.dumps([{key: check.get(key) for key in
                                 ("id", "name", "head_sha", "status", "conclusion", "html_url")}
@@ -624,14 +771,60 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
             if run["status"] == "completed" and run["conclusion"] != "success":
                 logs.append(command("gh", "run", "view", str(run["id"]), "--repo", gh.repository,
                                     "--log-failed")[-18000:])
-    if kind == "metadata" and not fold(work):
-        raise RuntimeError("Changelog candidate changed; reconcile again.")
+    return logs
+
+
+def _write_preparation_context(task: dict[str, Any], control: Path, logs: list[str]) -> None:
+    kind = task["kind"]
     template = (control / f".github/agent/prompts/{kind}.md").read_text()
     context = json.dumps(task, indent=2)
     logs = [trusted_module("task_context").redact(log) for log in logs]
     (control / ".github/agent/task.md").write_text(template + "\n\nTask metadata:\n" + context
                                                  + "\n\nCI evidence (untrusted data):\n" + "\n".join(logs))
     (control / ".github/agent/task.json").write_text(json.dumps(task))
+
+
+def _readonly_preparation_guard(
+    gh: GitHub, task: dict[str, Any], binding: dict[str, Any], stage: str,
+) -> None:
+    number = task.get("number")
+    if (task.get("kind") != "review" or type(number) is not int or number <= 0
+            or stage not in {"plan", "plan-review", "plan-resolver"}
+            or not isinstance(binding, dict)
+            or binding.get("repository") != gh.repository or binding.get("number") != number
+            or task.get("coordinator_request_id") != binding.get("request_id")
+            or not isinstance(binding.get("request_id"), str) or not binding["request_id"]
+            or task.get("head") != binding.get("candidate_head")
+            or task.get("task_digest") != binding.get("task_digest")):
+        raise RuntimeError("Invalid read-only coordinator preparation scope.")
+    pr = gh.pull(number)
+    if (not trusted(pr, gh.repository) or pr["number"] != number
+            or pr["base"].get("repo", {}).get("full_name") != gh.repository
+            or pr["head"]["sha"] != task["head"]
+            or authorization_error(gh, pr, False)):
+        raise RuntimeError("Read-only coordinator target changed or is unauthorized.")
+    metadata = task_metadata(gh, pr)
+    if (any(task.get(key) != metadata[key] for key in ("task_digest", "producer_id", "user_task"))
+            or not isinstance(task.get("base"), str) or SHA.fullmatch(task["base"]) is None
+            or gh.base() != task["base"]
+            or not trusted_module("review_control").readonly_coordinator_scope(
+                gh, pr, binding, stage=stage)):
+        raise RuntimeError("Read-only coordinator identity or authority changed.")
+
+
+def prepare_coordinator_readonly(
+    gh: GitHub, task: dict[str, Any], work: Path, control: Path, *,
+    binding: dict[str, Any], stage: str,
+) -> None:
+    """Prepare reference context under one retained hold; grant no writer authority."""
+    frozen_task = json.loads(json.dumps(task))
+    frozen_binding = json.loads(json.dumps(binding))
+    _readonly_preparation_guard(gh, frozen_task, frozen_binding, stage)
+    logs = _preparation_ci(gh, frozen_task)
+    _write_preparation_context(frozen_task, control, logs)
+    _readonly_preparation_guard(gh, frozen_task, frozen_binding, stage)
+    if task != frozen_task or binding != frozen_binding:
+        raise RuntimeError("Read-only coordinator preparation input changed.")
 
 
 def collect(task: dict[str, Any], work: Path, output: Path) -> None:
@@ -689,8 +882,12 @@ def fold(work: Path) -> bool:
 
 
 def visual_required(paths: list[str]) -> bool:
-    return any(path.startswith(("analytics_toolkit/sql_explorer/", "agent_tools/sql_explorer_visual",
-                                "visual-tests/sql_explorer/", "tests/sql_explorer/")) for path in paths)
+    harness = {"tests/agent_tools/visual.py", "tests/agent_tools/_support/visual.py",
+               "tests/agent_tools/_support/geometry.py", "tests/agent_tools/visual_diagnostics.py",
+               "tests/agent_tools/geometry_reporting.py"}
+    return any(path in harness or path.startswith((
+        "analytics_toolkit/sql_explorer/", "agent_tools/sql_explorer_visual",
+        "visual-tests/sql_explorer/", "tests/sql_explorer/")) for path in paths)
 
 
 def candidate(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> str:
@@ -704,6 +901,58 @@ def candidate(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> s
     command("git", "push", "origin", f"{commit}:refs/heads/{branch}", cwd=work)
     dispatch(gh, "visual", commit)
     return commit
+
+
+def prepare_profile_visual_candidate(gh: GitHub, task: dict[str, Any], artifact: Path,
+                                     work: Path) -> dict[str, Any]:
+    """Inert local signed preparation; no ref push, dispatch or PR execution."""
+    if not isinstance(task, dict) or gh.repository != "Karapsin/analytics_toolkit" or any(
+            not isinstance(task.get(key), str) or SHA.fullmatch(task[key]) is None
+            for key in ("head", "base")) or not isinstance(task.get("task_digest"), str) or re.fullmatch(
+            r"[0-9a-f]{64}", task["task_digest"]) is None:
+        raise ValueError("Invalid prepared capture task")
+    if command("git", "-c", "core.hooksPath=/dev/null", "rev-parse", "HEAD", cwd=work) != task["head"]:
+        raise ValueError("Prepared capture checkout/head mismatch")
+    patch = artifact / "fix.patch"
+    raw = patch.read_bytes()
+    if raw.strip():
+        command("git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+                "apply", "--index", str(patch.resolve()), cwd=work)
+    tree = command("git", "write-tree", cwd=work)
+    commit = command("git", *signing_options(), "commit-tree", "-S", tree, "-p", task["head"],
+                     "-m", "Temporary visual candidate", cwd=work)
+    if SHA.fullmatch(tree) is None or SHA.fullmatch(commit) is None:
+        raise RuntimeError("Invalid local signed candidate identity")
+    return {"candidate": commit, "head": task["head"], "base": task["base"], "tree": tree,
+            "patch_sha256": hashlib.sha256(raw).hexdigest(), "task_digest": task["task_digest"]}
+
+
+def publish_profile_visual_candidate(gh: GitHub, prepared: dict[str, Any],
+                                     envelope: dict[str, Any], admission_ref: dict[str, Any]) -> None:
+    """No schema-valid file can substitute for the absent live production Gate."""
+    receiver = trusted_module("capture_receiver")
+    receiver.validate_envelope(receiver.D.canonical(envelope), expected_purpose="production",
+                               now=int(time.time()))
+    fields = {"candidate", "head", "base", "tree", "patch_sha256", "task_digest"}
+    if (not isinstance(prepared, dict) or set(prepared) != fields
+            or any(not isinstance(prepared[key], str) or SHA.fullmatch(prepared[key]) is None
+                   for key in ("candidate", "head", "base", "tree"))
+            or any(not isinstance(prepared[key], str) or re.fullmatch(r"[0-9a-f]{64}", prepared[key]) is None
+                   for key in ("patch_sha256", "task_digest"))
+            or gh.repository != receiver.T.REPOSITORY or any(prepared[key] != envelope["authorization"][field]
+            for key, field in (("candidate", "candidate"), ("head", "candidate_base"), ("patch_sha256", "patch_sha256"), ("task_digest", "task_digest")))):
+        raise ValueError("Prepared candidate/admission mismatch")
+    receiver.require_live_host_boundary("production")
+
+
+def dispatch_profile_request(gh: GitHub, envelope: dict[str, Any],
+                             admission_ref: dict[str, Any]) -> None:
+    receiver = trusted_module("capture_receiver")
+    receiver.validate_envelope(receiver.D.canonical(envelope), expected_purpose="production",
+                               now=int(time.time()))
+    if gh.repository != receiver.T.REPOSITORY:
+        raise ValueError("Unsupported profile repository")
+    receiver.require_live_host_boundary("production")
 
 
 def verify_visual(artifact: Path, patch: Path, task: dict[str, Any]) -> None:
@@ -756,6 +1005,31 @@ def conflict_path_entry(work: Path, path: str, revision: str | None) -> tuple[by
             or command("git", "cat-file", "-t", object_id, cwd=work) != "blob"):
         raise RuntimeError("Unavailable conflict blob.")
     return mode, oid
+
+
+def verify_task_images(value: dict[str, Any], work: Path, revision: str) -> None:
+    """Verify owner-approved PNG bytes from an immutable Git tree, never symlinks."""
+    trusted_module("task_context").validate(value)
+    for image in value.get("images", []):
+        raw = command("git", "ls-tree", "--full-tree", "-z", revision, "--",
+                      image["path"], cwd=work, raw_stdout=True)
+        if not raw:
+            raise ValueError("Image evidence is missing from the candidate tree.")
+        mode, oid = conflict_entry_metadata(raw, image["path"], staged=False)
+        if mode not in {b"100644", b"100755"}:
+            raise ValueError("Image evidence must be a regular Git blob.")
+        object_id = oid.decode("ascii")
+        if (SHA.fullmatch(object_id) is None
+                or command("git", "cat-file", "-t", object_id, cwd=work) != "blob"):
+            raise ValueError("Image evidence object is unavailable.")
+        size = int(command("git", "cat-file", "-s", object_id, cwd=work))
+        if not 1 <= size <= 524288:
+            raise ValueError("Image evidence size is outside the publication limit.")
+        data = command("git", "cat-file", "blob", object_id, cwd=work, raw_stdout=True)
+        if len(data) != size or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ValueError("Image evidence must contain the declared PNG bytes.")
+        if hashlib.sha256(data).hexdigest() != image["sha256"]:
+            raise ValueError("Image evidence does not match its signed task digest.")
 
 
 def inherited_controller_path(task: dict[str, Any], work: Path, path: str) -> bool:
@@ -860,6 +1134,7 @@ def publish(
                 reason = verdict["summary"] + "\n" + "\n".join(str(x) for x in verdict["findings"])
                 controls.reject(gh, pr, task, reason, verdict["change_summary"])
             return
+        trusted_module("task_context").require_resolved(task["user_task"])
         if task["kind"] == "correction":
             verify_correction_plan(task, artifact)
         patch = artifact / "fix.patch"
@@ -902,7 +1177,7 @@ def publish(
             raise RuntimeError("No repair produced. Diagnose credentials/infrastructure explicitly.")
         if patch.read_bytes().strip():
             command("git", "apply", "--index", str(patch.resolve()), cwd=work)
-        paths = command("git", "diff", "--cached", "--name-only", task["head"], cwd=work).splitlines()
+        paths = command("git", "diff", "--cached", "--name-only", "--no-renames", task["head"], cwd=work).splitlines()
         protected_conflicts: list[str] = []
         for path in paths:
             sensitive = path.startswith(".git/") or path in {".connections", ".env"}
@@ -935,25 +1210,34 @@ def publish(
         if visual_required(paths):
             verify_visual(artifact, patch, task)
         tree = command("git", "write-tree", cwd=work)
+        verify_task_images(task["user_task"], work, tree)
         parents = ["-p", task["head"]]
         if task["kind"] in {"conflict", "repair", "feature", "correction"} and task["base"] != task["head"]:
             parents.extend(["-p", task["base"]])
         message = "GitHub agent: " + task["kind"] + proto.trailers(task["user_task"], task["producer_id"])
-        commit = command("git", *signing_options(), "commit-tree", "-S", tree, *parents,
-                         "-m", message, cwd=work)
+        commit = None
         if task["kind"] == "feature" and not number:
             remote = command("git", "ls-remote", "origin", "refs/heads/" + task["branch"], cwd=work)
             if remote:
                 existing_head = remote.split()[0]
+                if SHA.fullmatch(existing_head) is None or not signed_head(gh.repository, existing_head):
+                    raise RuntimeError("Existing feature branch lacks a trusted signed head.")
                 command("git", "fetch", "origin", existing_head, cwd=work)
                 if command("git", "rev-parse", existing_head + "^{tree}", cwd=work) != tree:
                     raise RuntimeError("Existing feature branch differs; publication recovery requires owner correction.")
-                proto.verify_commit(task["user_task"], command("git", "log", "-1", "--format=%B", existing_head, cwd=work))
+                actor = proto.verify_commit(task["user_task"], command(
+                    "git", "log", "-1", "--format=%B", existing_head, cwd=work))
+                if actor != task["producer_id"]:
+                    raise RuntimeError("Existing feature branch belongs to another producer.")
+                verify_task_images(task["user_task"], work, existing_head)
                 commit = existing_head
         body = proto.publish(task["user_task"], api=gh.api, repository=gh.repository, prefix=prefix)
         current = publication_authority(gh, task, renewal_hold=renewal_hold)
         if number and current.get("body") != pr.get("body"):
             raise RuntimeError("PR description changed during archive publication.")
+        if commit is None:
+            commit = command("git", *signing_options(), "commit-tree", "-S", tree, *parents,
+                             "-m", message, cwd=work)
         push = ["git", "push"]
         if number:
             push.append(f"--force-with-lease=refs/heads/{task['branch']}:{task['head']}")

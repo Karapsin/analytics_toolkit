@@ -1,0 +1,162 @@
+{
+  "actual_semantic_changed_paths": [
+    "/additive_checked_receipt/migration",
+    "/caller_binding_contract/lock_and_order",
+    "/canonical_encoding_and_bounds/budget_enforcement",
+    "/canonical_encoding_and_bounds/canonical_json",
+    "/checked_mutation_algorithm/transaction_order",
+    "/literal_authority_snapshot/schema_validation",
+    "/literal_implementation_scope/constraints",
+    "/literal_implementation_scope/production",
+    "/meaningful_validation_plan",
+    "/revision_basis",
+    "/schema"
+  ],
+  "alignment": "aligned",
+  "all_v2_sections_assessed": [
+    "schema",
+    "revision_basis",
+    "status",
+    "author_role",
+    "starting_user_prompt",
+    "task",
+    "baseline",
+    "complete_parent_context",
+    "literal_implementation_scope",
+    "canonical_encoding_and_bounds",
+    "scope_contract",
+    "literal_authority_snapshot",
+    "eligibility_in_the_control_transaction",
+    "caller_binding_contract",
+    "additive_checked_receipt",
+    "checked_mutation_algorithm",
+    "meaningful_validation_plan",
+    "source_review_and_activation_gates"
+  ],
+  "author_diff": {
+    "bytes": 34869,
+    "path": "/private/tmp/checked-coordinator-authority-plan-v1-v2.diff",
+    "sha256": "aa99ef5e2947f486dc8c9b7351663aef80d9ead3916d37a6c0ba36b216fa115c"
+  },
+  "checks_claimed": "None. All observations here are source/data assessment; no test/native/visual/source implementation/CI/merge/deployment success is inferred.",
+  "closed_findings": [
+    {
+      "assessment": "V2 now requires real ordinary main-database objects for all ten literal names; fixed columns/types/legacy nullability/defaults/PKs; receipt NOT NULL and actual nonpartial ordinary single-column UNIQUE transition metadata; rejection of unexpected persistent/temporary triggers, generated/hidden columns and foreign keys. Validation remains inside the same read transaction or BEGIN IMMEDIATE. After the LAST receipt INSERT, exact eight-column receipt readback/canonical identity/audit-time verification and fresh nine-table post-authority equality are mandatory BEFORE commit. Actual SQLite rogue-trigger/schema/index and injected final-readback rollback tests are explicit. This closes the post-INSERT side-effect gap without modifying authority scope or permitting schema cleanup.",
+      "id": "P1-SCHEMA-POSTINSERT",
+      "status": "closed_in_plan"
+    },
+    {
+      "assessment": "Caller contract now explicitly names actual SupervisorLock.assert_current_owner(), immediately before and after synchronous API call under the real owned lock, prohibits an invented alias or self_host edit here and binds future actual-lock/wrong-thread refusal tests. Actual source prerequisites.py:84 and Gate.owned agree.",
+      "id": "P2-REAL-LOCK-NAME",
+      "status": "closed_in_plan"
+    },
+    {
+      "assessment": "Every dictionary key, including opaque metadata, must be exact built-in str before sorting/encoding; key strings count at object child depth and consume string/node/depth/UTF8 budgets; active container cycles are rejected and repeated noncyclic serialization occurrences count individually. Explicit non-string/custom/subclass/cycle and boundary tests cover the canonical key-coercion gap.",
+      "id": "P2-JSON-KEY-TYPES",
+      "status": "closed_in_plan"
+    }
+  ],
+  "complete_original_task": {
+    "bytes": 55949,
+    "path": "/private/tmp/capture-positive-verifier-design-sources-v1/pr45-full-task.json",
+    "sha256": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14"
+  },
+  "completeness": "complete",
+  "decision": "approve_plan",
+  "exact_preservation_assessment": {
+    "fully_unchanged_core_contracts": [
+      "all canonical sizes/integer bounds/local lock/deadline budget",
+      "all nine raw table columns/selection/type encoding/hash and snapshot shape",
+      "caller exact fields/equality/external meaning and before/after freshness semantics",
+      "checked receipt DDL/body/identity/insert-only semantics",
+      "public checked signature and input validation",
+      "complete exact replay path",
+      "closed success result schema/values",
+      "closed refusal codes"
+    ],
+    "fully_unchanged_sections": [
+      "baseline",
+      "complete_parent_context",
+      "scope_contract",
+      "eligibility_in_the_control_transaction",
+      "source_review_and_activation_gates"
+    ],
+    "judgment": "Complete held review receipt selection, inner-versus-full hash distinction, current-versus-anchor identities and derived branch union remain intact. Exact own current correction is allowed/preserved; any second own hold and current wrong-task correction deny. Peer current correction/renewal and any hold/pause/amendment/current veto deny. All selected historical rows still participate in raw CAS. Only exact own hold-to-renewal and immutable checked receipt may change. Replay still requires identical retained caller/proof/pre-state and the exact unchanged derived post-state with no own holds; no legacy adoption, receipt refresh, fallback, durable action token or global atomicity claim is introduced.",
+    "validation": "All original eleven validation obligations remain. Only failure/readback/schema/key cases were strengthened. Existing legacy renewal/replacement tests, deterministic actual SQLite concurrency/rollback, managed focused and four-stage mandatory precommit, and final exact-head independent source/CI/policy gates remain required."
+  },
+  "findings": [],
+  "fixed_module_closure": {
+    "approved_paths": [
+      ".github/agent/review_control.py",
+      ".github/agent/coordinator_authority.py",
+      ".github/agent/coordinator_contract.py",
+      ".github/agent/coordinator_snapshot.py",
+      ".github/agent/coordinator_transition.py"
+    ],
+    "assessment": "V2 incorporates exactly the reviewed fixed sibling split and roles. It retains public API/error facades and shared exception identity in review_control, works with existing standalone trusted-module loading, forbids ambient path fallback/caller-selected names or arguments, omits unused modules and requires plan revision for additional production modules. This is organizational scope only; no new authority, endpoint, callback or consumer is admitted."
+  },
+  "full_task_alignment": "Exact55949-byte9e parent retains all20 corrections,9 decisions,4 plans and full question/options/answer. The bounded API prerequisite fits the explicit reliable-tooling-repair objective without dropping PR9/10/15/37/39 and46-scene/dependency/process obligations, all-qualifying-dev-merges monitoring, concurrency10, truthful agent:writing labels, authenticated Q/A, independent resolver, singleton30minute/open-PR orchestrator, sparse notifications and no-heavy-Pi constraints. This plan cannot establish parent completion.",
+  "nontransferable_delivery_gates": [
+    "This approves only exact V2 plan e71e2bf56ca2b9b233866622c84190d6e88f9f750f852a05f0f25e3a917d4fad. Root may proceed with its managed feature start/revalidation and implementation under this plan; a changed dev or material scope requires reassessment.",
+    "Implementation still requires fresh complete exact-final-source/task review separate from authors, meaningful actual focused tests and every mandatory precommit stage, signed publication, genuine current exact-head protected policy decision and required CI before dev merge. No source/CI/protected approval is supplied here.",
+    "Actual installed875/426 LEGACY_PINS/source_review.mode blocker is unchanged. New helper closure and receipt schema cannot be projected/activated just because dev source, compatibility JSON or heartbeat is available. A genuine separately reviewed protocol/pin transition plus fresh actual schema/source/catalogue/rehearsal/final-byte/operational review remains necessary.",
+    "The self_host positive verifier/transfer AND recovery wiring and mandatory preexecution receiver/source-pin are separate unfinished capabilities. This API alone authenticates no GitHub/native/visual/source-deployment fact, modifies no question/pause and enables no oldAPI fallback. Later code/publication each need new complete admission.",
+    "No completed or cancelled rollout may be retargeted/replayed; genuine owner veto/cancel/security/enrollment/provenance/authentication/globalfreeze/drain holds remain intact. Main package/UI projection remains outside this API plan."
+  ],
+  "plan": {
+    "bytes": 55244,
+    "path": "/private/tmp/checked-coordinator-authority-concrete-plan-v2.json",
+    "sha256": "e71e2bf56ca2b9b233866622c84190d6e88f9f750f852a05f0f25e3a917d4fad"
+  },
+  "previous_complete_independent_review": {
+    "bytes": 15722,
+    "path": "/private/tmp/checked-coordinator-authority-independent-complete-plan-review-v1.json",
+    "sha256": "8104639952992bded1e3ed5156e784d7744d489016b42ed12ae2db262cb73fc7"
+  },
+  "previous_plan": {
+    "bytes": 48911,
+    "path": "/private/tmp/checked-coordinator-authority-concrete-plan-v1.json",
+    "sha256": "624d0dac8480d9566127ca40b4159be6b5ada226ce990c72220964fec969151c"
+  },
+  "review_method": "Re-assessed the complete V2 using the prior complete actual-source/full-task assessment, independently computed every semantic V1-to-V2 change, read every changed clause and all revision provenance, compared unchanged sections for exact structured equality, and freshly rebound all five actual baseline source hashes. No candidate source edited/imported/executed, no tests/SQLite experiment/Pi action/network mutation/owner approval/activation performed.",
+  "reviewer": "/root/review_combined_native_ui_source",
+  "schema": "atk.checked-coordinator-authority.independent-complete-plan-review.v2",
+  "source_rebinding": [
+    {
+      "bytes": 52165,
+      "exact_match": true,
+      "expected_sha256": "1001a4becfef6683f98355299cf797a7d640da9fe12be1f8515dd7b30b4e11d4",
+      "path": ".github/agent/review_control.py",
+      "sha256": "1001a4becfef6683f98355299cf797a7d640da9fe12be1f8515dd7b30b4e11d4"
+    },
+    {
+      "bytes": 16764,
+      "exact_match": true,
+      "expected_sha256": "73814216efc9b8a961abbc31c080ced75c0a308052c51121d2869b2801e1f730",
+      "path": "tests/repository/coordinator_holds.py",
+      "sha256": "73814216efc9b8a961abbc31c080ced75c0a308052c51121d2869b2801e1f730"
+    },
+    {
+      "bytes": 67233,
+      "exact_match": true,
+      "expected_sha256": "135ab8044097f1c885f963a07c05623b78dc8d4df89ef4089b4973224d55d3c9",
+      "path": "/private/tmp/atk-prerequisite-contract-self-host/self_host/services/github_agent/prerequisites.py",
+      "sha256": "135ab8044097f1c885f963a07c05623b78dc8d4df89ef4089b4973224d55d3c9"
+    },
+    {
+      "bytes": 213092,
+      "exact_match": true,
+      "expected_sha256": "2c49929b440ab57b300d56c829d9510b45f0b02095dfefd15e977fcc46098325",
+      "path": "/private/tmp/atk-prerequisite-contract-self-host/self_host/services/github_agent/intake.py",
+      "sha256": "2c49929b440ab57b300d56c829d9510b45f0b02095dfefd15e977fcc46098325"
+    },
+    {
+      "bytes": 160482,
+      "exact_match": true,
+      "expected_sha256": "9def09715b79f73e283cea27ae6e82b72fdd533d229ff1775fe7f6db41f5eb30",
+      "path": "/private/tmp/atk-prerequisite-contract-self-host/self_host/services/github_agent/source_review.py",
+      "sha256": "9def09715b79f73e283cea27ae6e82b72fdd533d229ff1775fe7f6db41f5eb30"
+    }
+  ],
+  "unread_evidence": []
+}

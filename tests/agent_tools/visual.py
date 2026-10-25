@@ -17,6 +17,7 @@ from agent_tools import (
     sql_explorer_visual_capture,
     sql_explorer_visual_scene,
 )
+from tests.agent_tools._support.geometry import assert_scene_geometry
 from tests.agent_tools._support.mcp import _init_git_repo, _write_minimal_repo_files
 
 
@@ -129,7 +130,7 @@ def test_visual_scene_publishes_complete_geometry(scene_id: str, tmp_path: Path)
 
     asyncio.run(exercise())
     geometry = json.loads(evidence.read_text(encoding="utf-8"))
-    assert geometry["ok"] is True, geometry["assertions"]
+    assert_scene_geometry(scene_id, geometry, mcp_server.REPO_ROOT / ".rag_index/visual-failures")
 
 
 def test_visual_evidence_refresh_ignores_screen_teardown(tmp_path: Path) -> None:
@@ -383,7 +384,8 @@ def test_headless_capture_exports_real_application_frame(
     )
     assert json.loads(evidence.read_text())["ok"] is True
     assert len(rendered) == 1
-    assert "SELECT" in "".join(ET.fromstring(rendered[0][0]).itertext())
+    # Caret-specific text preservation is covered by the focused rendering regressions.
+    assert "FROM" in "".join(ET.fromstring(rendered[0][0]).itertext())
     assert rendered[0][1] == png
 
 
@@ -396,3 +398,60 @@ def test_headless_frame_keeps_fixed_viewport_without_cropping(view_box: str) -> 
     assert screen.attrib["viewBox"] == view_box
     assert screen.attrib["preserveAspectRatio"] == "xMidYMid meet"
     assert "SQL" in "".join(screen.itertext())
+
+
+@pytest.mark.parametrize("incorrect_index", [0, 1])
+def test_unidentified_button_color_failures_cannot_overwrite_each_other(
+    incorrect_index: int, tmp_path: Path
+) -> None:
+    palette = {"surface": "#171A1D", "accent": "#D88900"}
+    buttons = [
+        SimpleNamespace(
+            id=None,
+            classes={"remove-column"},
+            has_focus=False,
+            disabled=False,
+            styles=SimpleNamespace(
+                background=sql_explorer_visual_scene.Color.parse(
+                    palette["accent" if index == incorrect_index else "surface"]
+                )
+            ),
+        )
+        for index in range(2)
+    ]
+    buttons.append(
+        SimpleNamespace(
+            id="create-table-submit",
+            classes=set(),
+            has_focus=True,
+            disabled=False,
+            styles=SimpleNamespace(
+                background=sql_explorer_visual_scene.Color.parse(palette["accent"])
+            ),
+        )
+    )
+    application = SimpleNamespace(
+        screen=SimpleNamespace(query=lambda _selector: buttons),
+        get_css_variables=lambda: palette,
+        console=SimpleNamespace(color_system="256"),
+        size=SimpleNamespace(width=208, height=47),
+    )
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({"scenes": [{"id": "buttons", "required_elements": []}]}),
+        encoding="utf-8",
+    )
+    evidence = tmp_path / "buttons.json"
+    sql_explorer_visual_scene._write_evidence(
+        cast("Any", application), "buttons", evidence, manifest
+    )
+    geometry = json.loads(evidence.read_text(encoding="utf-8"))
+    assertions = geometry["assertions"]
+    for index in range(2):
+        assert assertions[f"button_focus_color:SimpleNamespace.remove-column[{index}]"] == (
+            index != incorrect_index
+        )
+    assert assertions["button_focus_color:create-table-submit"] is True
+    assert "button_focus_color:None" not in assertions
+    assert len(assertions) == 3
+    assert geometry["ok"] is False

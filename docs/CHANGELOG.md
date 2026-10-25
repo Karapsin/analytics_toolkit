@@ -18,6 +18,11 @@ Generated from package version bumps and recent commit history.
 - Retire only the exact inspected publication pause during verified recovery; preserve replacement evidence, cancellation and newer same-reason holds with fast restart regressions.
 
 - Preserve provenance and owner pauses when recording feature answers; retain overlapping amendments separately and keep the exact renewed-planning hold through failed publication, retiring it only after verifying the signed successor.
+- Preserve plans, images and clarification context; recover Pi tooling, default recommended choices, filter alerts and support ten workers.
+
+- Validate approved PNG evidence in staged and recovered Git trees before publication, repair focused CI fixtures, and pin the corrected staged RPI companion.
+- Preserve merged MinIO builds and changelog history, retain publication regressions within strict lint gates, and align RPI rollout with the corrected companion pin.
+
 - Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
 
 - Add the worker-compatible scoped merge entrypoint so unrelated live jobs do not starve ready PRs; preserve every merge gate and protect unpublished branches during cleanup.
@@ -76,6 +81,57 @@ Generated from package version bumps and recent commit history.
 - Split paired-evidence digest assertions to satisfy Ruff PT018 while preserving both validation checks.
 - Reconcile coordinator mismatch notices and notification lookup metadata with current controller authority, preserve hold regressions and require refreshed final-source companion delivery validation before merge or activation.
 - Apply canonical formatting to the provenance-hold regression while preserving all cases and assertions within the 700-line test-module limit.
+- Preserve available failed visual capture artifacts through the trusted workflow without changing candidate harnesses or treating unknown stream coverage as complete.
+- Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
+- Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
+- Prevent precommit stage reuse and certification across observed source or toolchain changes
+- Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
+- Add a source-pinned purpose-separated capture receiver with truthful bounded transport and immutable retry evidence
+- Add receipt-bound transactional coordinator authority renewal with strict replay checks
+- Isolate candidate visual installation and capture from the GitHub runner and retain bounded host-owned diagnostics.
+- Preserve native capture failure diagnostics, produced renderer artifacts and safe post-cleanup evidence without weakening glyph or isolation checks.
+- Protect and promote the exact shared visual-rendering infrastructure helper without admitting adjacent tools or application code.
+- Add isolated nonproduction native-capture source validation; exclude Python 3.8 runtime checks while preserving Python 3.9 minimum-dependency coverage.
+- Add a source-pinned contained lifecycle diagnostic for the published PR39 baseline with separate uninstrumented and observed results.
+- Preserve coordinator-held read-only preparation and reject stale closed-PR discovery denials.
+- Made isolated Codex startup resilient to download timeouts, reuse validated dependency wheels, and resume interrupted preparation
+- Move initial feature review locally, retain one-way orchestration and separate Pi repair, split fast checks from compatibility validation, and preserve reviewed successor and release-preparation publication.
+- Align local-review task scope and Telegram operations with owner amendments, preserving deferred PR #9, stopped automations and existing repair controls without a new retry limit.
+- Corrected local-review prompt wrapping and regression-test formatting while preserving the workflow redesign and existing validation gates.
+- Bound PR #53 companion evidence to the accepted pause-preserving successor, retaining historical provenance and all administrative holds.
+- Reconcile the capture receiver with current dev and route protected conflicts to guarded correction planning before worker launch.
+
+- Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
+- Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
+- SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
+- Preserve SQL Explorer multicursor selection, clipboard spreading and readable thin carets; stabilize armed-directory scene setup and semantic readiness, correct quality and scrollbar typing failures, retain CODE6 fixes and changelog history, and add focused service-free regressions.
+- Improve SQL Explorer multicursors, clipboard spreading and readable carets; add bounded four-way picker rasterization evidence.
+- Correct SQL Explorer disabled-color regression CSS resolution and SVG evidence lint without changing diagnostic output or multicursor behavior.
+- Preserve SQL Explorer multicursors, clipboard spreading and readable carets; reconcile dev changelog history, retain bounded checkbox and picker diagnostics, correct diagnostic lint/formatting, and extend service-free regressions.
+- Correct SQL Explorer diagnostic fixture context, preserve bounded region collection during lint cleanup, and normalize diagnostic regression formatting.
+- Preserve SQL Explorer multicursor changes while retaining bounded type-menu observations, serialization/scaling comparison controls, and canonical GitHub coverage JSON for evidence-led repairs.
+- Preserve SQL Explorer multicursor editing while supersampling visual captures, stabilizing the type-menu viewport regression, and covering editor lifecycle and clipped highlights.
+- Declare Pillow in GitHub and tox test environments and format supersampling regressions without changing their assertions.
+- Bound SQL Explorer cursor snapshots to live undo/redo history across editing, indentation, history eviction, and document resets, with focused lifecycle regressions.
+- Fix SQL Explorer document resets to clear obsolete multicursors, preferred columns and history; cover reset rendering and editing and complete history/idle test fixtures.
+- Fix detached SQL Explorer reset regressions to use an active Textual app while asserting editors remain unmounted and retaining cursor/history cleanup checks.
+- Preserve SQL spaces and expanded tabs beneath primary and secondary thin carets, including completion separators, wrapping, and scrolling.
+- Preserve SQL Explorer cell colors beneath focused thin carets after CSS resolution, strengthen real-renderer regressions, and reconcile dev documentation and changelog history.
+- Normalize SQL Explorer caret regression signatures and assertions without changing rendering coverage.
+- Reconcile SQL Explorer with current dev capture safeguards, preserving exporter regressions, operations guidance and complete feature changelog history.
+- Preserve SQL Explorer ruler presentation and add bounded multicursor state, caret-layer and lossless export diagnostics with focused regressions for independent visual reassessment.
+- Preserve SQL Explorer caret diagnostic text and styles with focused Unicode regressions, retain bounded dialog/ruler evidence, and distinguish journal read failures from empty results.
+- Preserve SQL Explorer multicursors and dev safeguards; add bounded callback-order and original-strip evidence for ruler diagnosis with focused regressions and diagnostic lint/format corrections.
+- Order SQL Explorer tab/database scene focus initialization and compare native styled rows with compositor output while preserving raw diagnostics and production behavior.
+- Fix SQL Explorer diagnostic regression import ordering and formatting while preserving multicursor, clipboard, caret, and capture coverage.
+- Fix SQL Explorer diagnostic regression import ordering and formatting while preserving all assertions.
+- Preserve mount-ordered SQL Explorer scenes and strict regressions, correct diagnostic test formatting/imports, and retain bounded caret raster stages, explicit malformed-stage failures, and native dialog/results border evidence for GitHub diagnosis.
+- Center SQL filename dialogs with mounted resize regressions, preserve current-dev validation safeguards and Python profiles, and correct diagnostic lint/format findings without weakening assertions.
+- Preserve SQL Explorer caret underlines in PNG exports with span-derived strokes, causal raster coverage, lossless captured-SVG fixtures and current-dev safeguards.
+- Preserve SQL Explorer editing while retaining bounded causal raster evidence, a disposable Python 3.9 renderer probe, current-versus-historical provenance regressions and behavior-preserving quality corrections for GitHub validation.
+- Replace managed PR status labels atomically while preserving unrelated labels and recovering uncertain responses
+- Reconcile signed task plans, questions, images and provenance with archived transport; retain RPI coordination, full visual routing and complete quality diagnostics without weakening approval or validation gates.
+- Fix diagnostic tool-version lookup lint and visual/publication regression regex formatting, preserving missing-tool metadata, error propagation and all validation gates.
 - Retain complete failed GitHub visual capture diagnostics and both child output streams without granting visual approval
 
 ## 1.3.12.5 - 2026-10-14

@@ -214,3 +214,42 @@ def test_creation_ignores_unrelated_control_events() -> None:
             assert app.session.executed == []
 
     asyncio.run(exercise())
+
+
+def test_source_label_and_arrow_follow_keys_and_dropdown_selection() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(208, 47)) as pilot:
+            app._command_create_table([])
+            await pilot.pause()
+            screen = app.screen
+            source = screen.query_one("#create-table-source", Select)
+            source.focus()
+            for key, expected in (("right", "from_sql"), ("left", "table_schema")):
+                await pilot.press(key)
+                await pilot.pause()
+                assert source.value == expected
+                label = source.query_one("SelectCurrent > Static#label")
+                row = screen._compositor.render_strips()[label.region.y]
+                assert expected in row.crop(label.region.x, label.region.right).text
+            await pilot.press("enter")
+            await pilot.pause()
+            assert source.expanded
+            arrow = source.query_one("SelectCurrent > .up-arrow")
+            row = screen._compositor.render_strips()[arrow.region.y]
+            assert "▲" in row.crop(arrow.region.x, arrow.region.right).text
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            assert source.value == "from_sql"
+            assert not source.expanded
+            label = source.query_one("SelectCurrent > Static#label")
+            row = screen._compositor.render_strips()[label.region.y]
+            assert "from_sql" in row.crop(label.region.x, label.region.right).text
+            await pilot.press("enter", "escape")
+            await pilot.pause()
+            assert app.screen is screen
+            assert not source.expanded
+            assert source.value == "from_sql"
+            assert app.session.executed == []
+
+    asyncio.run(exercise())

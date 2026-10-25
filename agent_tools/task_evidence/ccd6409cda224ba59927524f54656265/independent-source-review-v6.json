@@ -1,0 +1,449 @@
+{
+  "schema": "capture-receiver-first-unit-complete-independent-source-review/v6",
+  "reviewer": "/root/review_separate_visual_repair_full_images",
+  "created_at": "2026-10-18T22:28:30.989213+00:00",
+  "decision": "request_changes",
+  "approve_source": false,
+  "completeness": "complete whole39-file source/task/contract assessment",
+  "source_inventory": "/private/tmp/capture-receiver-first-unit-full-source-inventory-v6.json",
+  "source_inventory_sha256": "915cbbd3334c75f20dbe00c91c143dc4f5fd88546782bc8d1593fbf9ea3805bc",
+  "snapshot": "/private/tmp/capture-receiver-first-unit-full-source-v6-snapshot",
+  "root": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/12e8faacb520/c6ae69d3fbfb4367",
+  "branch": "codex/c6ae69d3fbfb4367-9835247a",
+  "base": "f66a80ebe4b3c28dbca17fbc58c2d6ffe464bb01",
+  "task_id": "ccd6409cda224ba59927524f54656265",
+  "task_context_digest": "377ddbd0a9d928f071731b0b6b9acdd75f830a0dfe93380aeac77c4dca8e40b4",
+  "complete_membership_count": 39,
+  "all_39_current_members_assessed": true,
+  "all_39_sizes_and_hashes_verified": true,
+  "records": [
+    {
+      "path": ".github/agent/capture_data.py",
+      "bytes": 16792,
+      "sha256": "22b5ac820ec1a7eb5072b8d90dbcea7f2abe025e784ff4def094d13df7bfa5cc",
+      "full_source_or_data_assessed": true,
+      "method": "Full455lines read: fixed parsing/schema evaluator, shared Budget/reservation arithmetic, anchored Store/immutable publication/bounded lease. Reservation change closes previous payload-order gap."
+    },
+    {
+      "path": ".github/agent/capture_receiver.py",
+      "bytes": 50141,
+      "sha256": "b2036da2028078112a7bc0d2f7b170e1be44764d9559b2770b063b42fa8ae2f6",
+      "full_source_or_data_assessed": true,
+      "method": "Full1190lines read: purpose/source/App/monitor/candidate guards, genuine Pending host/history boundaries, source primitive, runner rejection retention and sibling-private rehearsal lifecycle."
+    },
+    {
+      "path": ".github/agent/capture_receiver.schema.json",
+      "bytes": 20058,
+      "sha256": "7931d1a5044d2ae3149ab9ba5bf75e18ac6ca08fbc1d24a9aba70b279339b7cf",
+      "full_source_or_data_assessed": true,
+      "method": "Full parsed closed schema read; equals full companion receiver schema exactly, hash7931 unchanged; strict int semantics enforced by custom validator."
+    },
+    {
+      "path": ".github/agent/capture_transport.py",
+      "bytes": 49260,
+      "sha256": "227b50f5cae3a1ad83970f5dbbdd474a3bc5b441e4dc729867fa6568747fe02f",
+      "full_source_or_data_assessed": true,
+      "method": "Full1164lines read: fixed HTTP/privacy/lifecycle/accounting, Journal/receipts/reconciliation/validators and discovery. Two remaining identity-classifier findings recorded; no positive source verdict."
+    },
+    {
+      "path": ".github/agent/controller.py",
+      "bytes": 60964,
+      "sha256": "f2e5fd2826911dc5e24e18966697d23c04bd4d0332913547574a1c5397a96124",
+      "full_source_or_data_assessed": true,
+      "method": "Complete source read in contiguous1-260/261-520/521-780/781-1040/1041-end ranges. Additive prepare/publish/dispatch APIs separated from existing legacy controller; prepared feature-parent check retained. Final root46 composition still pending."
+    },
+    {
+      "path": ".github/agent/dispatch.py",
+      "bytes": 4234,
+      "sha256": "d557a9af8760c26d9b63ac5c7e737c2720f40e1a051eb88e11573010efed6ea2",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": ".github/agent/fixtures/capture_receiver_sentinel_v1/manifest.json",
+      "bytes": 727,
+      "sha256": "eb60d90cc22d40e30dccaa22051ae007b40e74b57d2d8b6d52bac77df8d831dd",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": ".github/agent/fixtures/capture_receiver_sentinel_v1/sentinel.py",
+      "bytes": 806,
+      "sha256": "2faca1b4528b6d7da1be6906a3273544e3b417c88dd87191e30c5b450f29cab2",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": ".github/required-workflows.json",
+      "bytes": 3314,
+      "sha256": "38e29115ae37803af517fa6ab0b387659ae130857cb589e5c008cd566d1c4058",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": ".github/workflows/agent-dispatch.yml",
+      "bytes": 1129,
+      "sha256": "c762504288aa691d59a30eb4dfbfa261c6a7c1424944ed88774d8eae2396ad23",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": ".github/workflows/agent-visual-profile.yml",
+      "bytes": 3571,
+      "sha256": "f5f05c3a354703fda660b56f95f668b5766d0da29a6a72088cf8e532c088a9cd",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/changelog/eac78c0aa4454931a33194abaad234f9.md",
+      "bytes": 118,
+      "sha256": "3fbd2beaadb4dcde55fdebd9dcb6cd5d7648a9d5cfaefa9e98c8dbecfe390748",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/approved-receiver-plan-v2.json",
+      "bytes": 107552,
+      "sha256": "05b6ce5bd5d4adbf84c33efaea781e052d360033a23e1af879a48aa33ef2a0df",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/approved-wire-v2.json",
+      "bytes": 66171,
+      "sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/candidate-base-clarification-v1.json",
+      "bytes": 1873,
+      "sha256": "5e5d31f2cf31933cb30231e7482d56ac73b5f98fe5e9c051c1f11a33dfc7542f",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/candidate-base-independent-review-v1.json",
+      "bytes": 4762,
+      "sha256": "16aa92c768bcedc40c911fff2366f39fe18a841c833a8a2ea470f16a7b31b779",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-plan-review-v2.json",
+      "bytes": 27510,
+      "sha256": "b51128799c83e3c16e794f87d9ac925ee63bac0d0295ee5187eafc6838f4797b",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-source-review-v2.json",
+      "bytes": 26326,
+      "sha256": "49a93fe49c47fb1f1d97dc0c608988fd9e6541d33cc0edb258ed33f67a9b7e7d",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-source-review-v4.json",
+      "bytes": 17594,
+      "sha256": "947942778be4871a488f1e12699119fab9fa57c22059d233062609e20aeb2540",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-source-review-v5.json",
+      "bytes": 31971,
+      "sha256": "2da6f62bf8773373283941590a397b7fe774d06e70a365e2ca81b4b346d7d526",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/native-image-independent-assessment-v1.json",
+      "bytes": 7487,
+      "sha256": "a45fb9c29ed23d2401e29a280b6ea2738adf64f7d695168667bd01cfd4506a9a",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/parent-objective.json",
+      "bytes": 55949,
+      "sha256": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/source-corrections-v3.json",
+      "bytes": 5417,
+      "sha256": "42502feba4348d4009db5fee2780104a3f6453a3914779c85ab42921c0b29207",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/source-corrections-v5.json",
+      "bytes": 2518,
+      "sha256": "96881ea4813c8abd6f4355b82ac8a768ec633b33d6146ae1a6f48615d95ee82a",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/source-corrections-v6.json",
+      "bytes": 4655,
+      "sha256": "c4d8bfa606ed019dd59d63f4640a207c3370109bb9d705678ae279febce7d16d",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/source-provenance.json",
+      "bytes": 738,
+      "sha256": "565c635c522892a7b1b0aa3828fd9eb32dab54b4582a70050443b06f47a582c3",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/validation-history-v3.json",
+      "bytes": 2490,
+      "sha256": "48e77f08d2cec164d8e50703f0683e86d7f120a5a695610b7b59184c35f63d9f",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "docs/GITHUB_AGENT_OPERATIONS.md",
+      "bytes": 65688,
+      "sha256": "4c407e147f1c9c548ee96df5ea4b75cc1735d4c8459cb1a548e33a30ca01d6ef",
+      "full_source_or_data_assessed": true,
+      "method": "Entire document read contiguous1-230/231-470/471-720/721-end. Source/Gate/history/original-retrieval/activation limits remain explicitly pending; no operational capability claimed."
+    },
+    {
+      "path": "tests/repository/_support/capture_capacity.py",
+      "bytes": 2644,
+      "sha256": "fa880202bca145129270d6165e5e0c87dece31fe8ea2ecbaf517537a2c2541d8",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "tests/repository/_support/capture_native.py",
+      "bytes": 12300,
+      "sha256": "b37abaad50773b7ae0c10ff28b1eae7e00636d8147654714bc19fc2cd9521fbf",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "tests/repository/_support/capture_profile.py",
+      "bytes": 6378,
+      "sha256": "08ade7d8329d72ba2d458250538f3b3dad2d70e3b8f96ad234d18e06a5ef6c7c",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "tests/repository/_support/fixtures/capture_receiver_v2/approved45.json",
+      "bytes": 58918,
+      "sha256": "4ba5a68dc7bed2a92f230a25421c5f77021c94b205d6c15576eb2219f30ee73c",
+      "full_source_or_data_assessed": true,
+      "method": "Complete metadata/App comment plus all four full decoded source bodies read; each decoded SHA independently verified. Sealed source is test data, not imported or executed by reviewer."
+    },
+    {
+      "path": "tests/repository/capture_capacity.py",
+      "bytes": 6864,
+      "sha256": "eeaee14e35374b898dbea6d1d03677ce1fd6bcd89c710c39945049e2b8a8a7a9",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "tests/repository/capture_corrections.py",
+      "bytes": 15969,
+      "sha256": "57829849d24bc5ab4681595c6c5339a8c0c3849b83efd0561c704801dff98bf0",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "tests/repository/capture_projection.py",
+      "bytes": 1896,
+      "sha256": "21fb3d764a86ce455e29a26d4c6e0200c5a17911fd20b779d1de30a02f92caf4",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "tests/repository/capture_receiver.py",
+      "bytes": 9980,
+      "sha256": "760cb11b219c38a2a61327b09a6358c18b1759aa2ea995a9483f4f2874118a5e",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "tests/repository/capture_rehearsal.py",
+      "bytes": 3744,
+      "sha256": "5801141df6a6a3d1cda83772bb8bce7280907765cae5cc49d27ffbe000d4639d",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "tests/repository/capture_store.py",
+      "bytes": 5756,
+      "sha256": "c95bbde176c7d7a75e508a509b2fbfa7f45490dea85c81a6f007b48ee982cc2b",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    },
+    {
+      "path": "tests/repository/capture_transport.py",
+      "bytes": 11763,
+      "sha256": "f552e31fe9d09d5dea43827f712289625efd0b99fbfdeaecc41cc83bf75f4ef1",
+      "full_source_or_data_assessed": true,
+      "method": "Complete current text/structured-data read. Formal schema repetition assessed by full distinct schema reads plus exact independent parsed equality; full task parent independently equal to archived current correction. No source execution."
+    }
+  ],
+  "bindings": {
+    "managed_task_original": {
+      "path": "/private/tmp/capture-receiver-first-unit-managed-task-context-v6.json",
+      "sha256": "4a919b2c23c6832158f6d98fc2e75d554ddae6df7db0b1ecd0dcd25ba5b41028"
+    },
+    "full_archived_parent_sha256": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+    "approved_plan_sha256": "05b6ce5bd5d4adbf84c33efaea781e052d360033a23e1af879a48aa33ef2a0df",
+    "wire_sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba",
+    "independent_plan_review_sha256": "b51128799c83e3c16e794f87d9ac925ee63bac0d0295ee5187eafc6838f4797b",
+    "exact_v5_to_v6_diff": {
+      "path": "/private/tmp/capture-receiver-first-unit-v5-to-v6.patch",
+      "sha256": "080a09102f6c712c4487fc78d2fa40ebf5c13411ea07c85c005e13327290d2ee",
+      "changed_paths": [
+        ".github/agent/capture_data.py",
+        ".github/agent/capture_transport.py",
+        "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-source-review-v5.json",
+        "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/source-corrections-v6.json",
+        "docs/GITHUB_AGENT_OPERATIONS.md",
+        "tests/repository/_support/capture_capacity.py",
+        "tests/repository/capture_capacity.py"
+      ]
+    },
+    "whole_delta_from_base": {
+      "path": "/private/tmp/capture-receiver-first-unit-base-to-v6.patch",
+      "sha256": "fae9a9534dcaa306ae03540a438dd45762ff2e12d8d12bb5930e1fffc8ae02ab"
+    },
+    "focused_log_sha256": "df4395caa74a662f5b3b59de79281e920f09f126d58134aeadf5edf8cf3d49c5"
+  },
+  "review_method": [
+    "Fresh complete current source read, not a diff-only or previous-finding-only check: all runtime modules/controller/dispatch, fixed schema/workflows/classification/fixture, all tests/support, full operations docs and current39 contextual records. All exact snapshot hashes independently checked before and after assessment.",
+    "Complete current63016-byte managed task read in bounded continuations, including original all-PR corrections/questions/options/answers/four original plans and every later source corrective provenance. Independently verified full archived parent equals parsed first current correction and exact9e hash; archival strings are not new human authority.",
+    "Full approved receiver plan semantic sections and all formal distinct transport schemas read. Independent structural equality of all five transport definitions and mandatory-semantic list permits deduplicating identical formal copies; full normative receiver schema read and equals companion. Complete independent plan review and previous full source rejection/corrective histories read, retained unchanged; no historical verdict transferred.",
+    "All four sealed PR45 source strings and actual full App comment read and independently hashed; actual PR comment remains negative monitor example. These fake administrative component sources are not native/platform acceptance.",
+    "V5/V6 immutable snapshot comparison independently confirms exactly declared seven changed paths, with no source delta hidden by copied historical inventory fields. Exact V5→V6 and base→V6 patch hashes verified. Runtime/test changed hunks read directly; duplicated inserted review/correction records read as complete current files.",
+    "Only trusted local file/JSON/hash/text inspections and this new private report/progress write. No candidate/helper imports, AST/compile, programs/tests, build/render, SSH/Pi/API/network/DB/lock/service, approval, Git mutation or operation performed."
+  ],
+  "prior_findings": [
+    {
+      "id": "RECEIVER-V2-PRIVATE-RESPONSE-RETENTION",
+      "status": "closed_in_source",
+      "assessment": "Body and all delivered safe-string-header token-taint checks; private quarantine before safe Pending; complete abnormal open/read/close path and truthful private-unavailable handling retained."
+    },
+    {
+      "id": "RECEIVER-V2-CROSS-RUN-DURABILITY",
+      "status": "closed_as_explicit_missing_capability",
+      "assessment": "Bridge authenticates source/comment/monitor, retains bounded navigation and unconditionally Pending before POST because genuine host durable history is unavailable. No fresh ephemeral root/nonce workaround."
+    },
+    {
+      "id": "RECEIVER-V2-STRICT-WIRE-PARITY",
+      "status": "closed_in_source",
+      "assessment": "body_ref exact shape and strict bytes integer checked before dictionary equality. Header Retry-After/remaining2147483647 max enforced parser and validator; normative schema/wire unchanged."
+    },
+    {
+      "id": "RECEIVER-V2-RUN-IDENTITY-PROOF",
+      "status": "closed_as_explicit_missing_positive_retrieval",
+      "assessment": "Pre-POST real epoch/monotonic time retained. verified_run refuses apparent navigation match Pending until actual authenticated receiver originals/interval exist; discover records incomplete."
+    },
+    {
+      "id": "RECEIVER-V2-MONITOR-IDENTITY",
+      "status": "closed_in_source",
+      "assessment": "Actual open nonPR agent:state monitor is fully enumerated within5x100 and exact eligible singleton required. Authentic App PR45 record is explicitly negative; positives synthetic."
+    },
+    {
+      "id": "RECEIVER-V2-JOINT-BUDGET",
+      "status": "prior_defect_closed_with_v6_reservation",
+      "assessment": "Shared HTTP/Store/source/fixture/generated-index Budget; current response reservation is prepaid after actual request cost. Future retained-copy credit remains conservative; no limit raised."
+    },
+    {
+      "id": "RECEIVER-V2-LIVE-WRITER-UPLOAD",
+      "status": "closed_in_source",
+      "assessment": "Work/streams/resource journal start in separate private execution sibling, and only safe stopped descriptor/hash-verified copies enter upload root. Actual sealed lifecycle fake checks failed quarantine/live reader."
+    },
+    {
+      "id": "RECEIVER-V2-PREPARED-PARENT-BINDING",
+      "status": "closed_in_source",
+      "assessment": "Closed strict prepared record and actual checkout/task binding; prepared.head equals envelope candidate_base. Distinct dev base retained for genuine future Gate."
+    },
+    {
+      "id": "RECEIVER-V4-ABNORMAL-HTTP-EXIT-LOSES-OBSERVATION",
+      "status": "closed_in_source",
+      "assessment": "Unexpected/interrupted open/read and close errors converge on common observation/private retention; safe pending-unavailable if storage fails; known status survives."
+    },
+    {
+      "id": "RECEIVER-V5-POST-PAYLOAD-BUDGET-RESERVATION-LOSES-OBSERVATION",
+      "status": "closed_in_source",
+      "assessment": "Actual canonical request charged before reserve_response. Held=8*limit+131080, worst admitted actual=8*limit+131073; whole maximum reserved pre-open. Settlement only releases unused bytes and grants paid copy credit. Unexpected settlement keeps safe actual status/hash pending-unavailable and no replay."
+    }
+  ],
+  "findings": [
+    {
+      "id": "RECEIVER-V6-MALFORMED-NESTED-IDENTITY-ESCAPES-UNCERTAIN",
+      "severity": "P2",
+      "path": ".github/agent/capture_transport.py",
+      "lines": [
+        393,
+        403,
+        406,
+        429,
+        456,
+        459,
+        550
+      ],
+      "title": "Well-formed JSON with malformed nested identity fields escapes outcome classification instead of producing an immutable uncertain receipt",
+      "requirement": "Approved plan bounded_host_transport_response_contract.mandatory_semantics and endpoint_outcome_policy require malformed, missing or mismatching successful identities to remain uncertain while retaining actual observed status/body and no guessed resource ID; the receipt must support append-only later discovery.",
+      "source_evidence": "comment_identity dereferences value.get(user,{}) and value.get(performed_via_github_app,{}) without first checking those values are dictionaries. In the source-ref201 branch outcome dereferences value.get(object,{}) the same way. D.parse accepts JSON null, arrays and scalars as valid nested data. For a complete201 with matching outer identity and object:null (or user:null/performed_via_github_app:null on the comment branch), .get raises AttributeError. The parse-only try/except does not surround identity classification. Journal has written started and body.bin and HTTP has privately retained observation, but outcome aborts before validate_receipt/receipt.json. Restart refuses Unresolved and normal receipt-based discover has no receipt to consume. This is a static source deduction, not a real network or candidate execution claim.",
+      "required_correction": "Make endpoint identity predicates total over bounded parsed JSON: explicitly validate nested mapping/strict scalar shapes before field access and return false for malformed identity. Route all malformed/missing/mismatching success bodies through existing actual-status uncertain receipt handling, preserving private body/hash and at-most-one POST. Reuse safe predicates on discovery paths so malformed authenticated metadata yields truthful incomplete evidence rather than bypassing finalization. Do not convert malformed evidence into rejected, posted or created_response and do not catch arbitrary errors into success.",
+      "meaningful_regressions": "Use actual HTTP plus Journal after-effect opener with complete201 source bodies whose object is null/list/string/int and comment bodies with otherwise-valid outer identity but user/App null/list/scalar. Assert exact201/body/hash retained, immutable state uncertain, null comment ID, one effect, cached restart no repost, and bounded discovery remains incomplete for malformed identities. Retain the current abnormal-read/close, credential-taint and reservation tests."
+    },
+    {
+      "id": "RECEIVER-V6-SOURCE-REFERENCE-SUCCESS-OMITS-URL-BINDING",
+      "severity": "P2",
+      "path": ".github/agent/capture_transport.py",
+      "lines": [
+        456,
+        458,
+        459,
+        460,
+        462
+      ],
+      "title": "Source-reference201 is classified as complete identity without the fixed returned URL required by the approved plan",
+      "requirement": "Approved plan bounded_host_transport_response_contract.endpoint_outcome_policy.source_ref_create.created_response explicitly requires201 complete exact derived ref, commit type/SHA and fixed URL. Mandatory semantics require complete exact endpoint/repository identity; missing or mismatching identity remains uncertain. created_response is transport identity only, and later exact GET readback remains separately mandatory.",
+      "source_evidence": "The source201 success predicate checks only ref, object.type and object.sha. A well-formed body with those three values but absent top-level url, or a url naming another repository/ref, reaches created_response/complete_reference_identity. tests/repository/capture_store.py PinHTTP positive response itself omits returned URLs, so existing positives cannot detect the omission. The fixed request endpoint and eventual GET do not implement this explicitly frozen returned-identity predicate. Public create_source_pin remains Pending, so this finding does not claim an unsafe live publication occurred.",
+      "required_correction": "Validate the exact documented returned source-reference URL against the fixed repository and derived reserved tag before created_response. Validate the returned commit-object URL as well if included in the approved exact endpoint identity contract; do not invent caller-selected URLs or widen permissions. Missing, malformed, foreign-repository, wrong-tag or mismatching identity must keep actual201/body and state uncertain, followed only by separate exact ref readback/reconciliation. Update synthetic positive response fixtures to include the genuine complete wire shape.",
+      "meaningful_regressions": "Actual HTTP/Journal complete201 source-ref positives use the exact fixed returned URL. Missing/foreign repository/wrong derived tag/non-string URL negatives retain201 and exact originals but produce uncertain, never created_response; source409/422 and exact readback/no-secondPOST tests remain intact."
+    }
+  ],
+  "v6_accounting_assessment": {
+    "static_reservation_reasoning": "Request retained-copy accounting precedes allowance selection; budget.remaining excludes fixed65536 emergency reserve. response_limit subtracts131072, divides8 and subtracts1. reserve_response charges8*n+131080 before opener.open. For n admitted body bytes, n+1 observed detector and65536 header, actual response charge cannot exceed8*n+131073. Failed settlement is deliberately nonpositive and original reservation remains accounted. No candidate code was run to derive this arithmetic.",
+    "meaningful_tests": "Actual HTTP+Journal132-byte source-ref body boundary tests exercise genuine earlier BytesIO read charges rather than assigning used/credit, old counterexample remaining655368→captured65519, exact655500→65536, one below655499→65535 and positive credit via actual earlier emptyGET. Exact private prefix/hash/503 or401, pre-effect refusal, secret interruption/close, failed settlement unavailable and no-repost restart assertions are retained.",
+    "no_operational_fit_claim": true
+  },
+  "whole_feature_assessment": {
+    "strict_wire": "Fixed canonical4096-byte duplicate/nonfinite/UTF8/depth/node/strict scalar wire, disjoint production/rehearsal types and noncircular core hash remain. Two endpoint identity predicate defects prevent current whole source approval.",
+    "real_pending_boundaries": "Public production publish/dispatch/source-pin/rehearsal host wrappers remain actual Pending for unavailable real host Gate/source-operation/current-row CAS. Missing genuine durable bridge history prevents POST; absent exact receiver-original retrieval prevents positive run reconciliation. Bootstrap liveness route is separate and not approved here.",
+    "source_and_workflow": "Event-SHA checkout/Python-I trusted paths, fixed tag/SHA/attempt guard before candidate/sentinel and full fixed source-set inventory preserved. No candidate code receives trusted token/write credentials. Production invokes unchanged isolated45 helper; rehearsal fixed3.11 immutable image guard precedes sentinel create.",
+    "lifecycle_and_privacy": "Private execution siblings isolate all live rehearsal writers from upload. Stopped parts require descriptor/hash verification. Abnormal HTTP observation retention and taint-safe pending references remain; storage/accounting unavailability grants no acceptance/replay. No opaque credential-bearing exception text delivered.",
+    "legacy_and_scope": "Existing scalar visual/integration/rerun/controller behavior is distinct; only exact new profile-workflow policy path/classification added. No SQL/harness/renderer/scene/package/dependency/version change or parent visual waiver. Source-ref namespace is append-only and private primitive requires separate actual operation authority.",
+    "composition": "Effective final main controller must genuinely compose root46 helper literal and this profile workflow literal in ONE actual reviewed merged blob. Currentf66 source proves neither final composition, whole-controller admission nor positive consumer compatibility."
+  },
+  "validation_status": {
+    "reviewer_executed_checks": false,
+    "author_focused": "Exact log hash df4395 independently verified and complete1445-byte log inspected:1151 passed in81.98s, no warning summary. Reviewer did not run tests.",
+    "mandatory_v6_precommit": "Not run pending this fresh verdict; no final full pass granted. Prior V5 static/coverage success and interrupted artifact/matrix history preserved as historical source-specific facts.",
+    "required": "Correct coherent source/findings, bind fresh complete inventory/task review, then complete exact-tree four-stage managed precommit before signed publication; exact-head CI and protected decisions still separate."
+  },
+  "inventory_historical_metadata_note": "Inventory retains copied V5 status/complete_source_snapshot/old focused1140 fields alongside explicit authoritative V6 snapshot/records/focused1151 fields. Reviewed actual schema/v6 snapshot and exact39 records; copied historical fields do not establish V6 checks/source approval or conceal source deltas.",
+  "remaining_gates": [
+    "Fix both endpoint identity-classification findings and obtain fresh complete bound source review; prior8/abnormal/reservation fixes alone are not whole-source approval.",
+    "Missing real host Gate/source-operation/history/current-rowCAS, authenticated run-original proof, supported whole-controller admission and actual compatible positive consumer remain mandatory Pending source dependencies.",
+    "Signed publication/task/final source and fastCI, genuine exact-head protected decision, dev merge, actual composed main/source origins, source tag deployment, actual positive/negative receiver evidence and independent acceptance remain separate.",
+    "Preserve current875/b59, completed/frozen rollout evidence, operational/security/provenance/authentication/veto/cancel holds and all complete parent history. Continue all qualifying PRs and successor repairs through successful actual dev merges; this leaf is not parent completion."
+  ],
+  "source_edits_or_candidate_execution": [],
+  "ssh_pi_network_runtime_approval_actions": [],
+  "unread_current_inventory_members": []
+}

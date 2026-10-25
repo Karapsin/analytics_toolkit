@@ -356,6 +356,7 @@ def _handoff_preparation(root: Path, work: Path, state: dict[str, Any]) -> dict[
     pr = _published_preparation(root, state, session)
     if pr is None:
         # Only confirmed absence permits the existing signed publication workflow.
+        _review_preparation(work)
         sessions.push(work)
         session = sessions.load(work)
         pr = _published_preparation(root, state, session)
@@ -364,6 +365,26 @@ def _handoff_preparation(root: Path, work: Path, state: dict[str, Any]) -> dict[
             raise RuntimeError(message)
     _recover_preparation_handoff(work, state, session, pr)
     return pr
+
+
+def _review_preparation(work: Path) -> None:
+    """Validate and review an unpublished preparation; published heads stay Pi-owned."""
+    mcp = mcp_runtime()
+    if not mcp._verify_precommit_success(work)["ok"]:
+        environment, _ = mcp._prepare_environment(work, ensure_project_env=True)
+        if any(not result["ok"] for _, result in environment):
+            message = "Release preparation environment setup failed; workspace retained: " + str(
+                work
+            )
+            raise RuntimeError(message)
+        checks = mcp.run_checks(level="precommit", root=str(work))
+        if not checks["ok"]:
+            message = (
+                "Release preparation pre-commit validation failed; workspace retained: " + str(work)
+            )
+            raise RuntimeError(message)
+    review = importlib.import_module("agent_tools.local_review")
+    review.review(work)
 
 
 def _publish_preparation(root: Path, state: dict[str, Any]) -> None:
@@ -397,7 +418,10 @@ def _publish_preparation(root: Path, state: dict[str, Any]) -> None:
                 *sessions.commit_options(work),
                 "commit",
                 "-m",
-                "Prepare PyPI release " + state["version"] + task_context.commit_trailers(work),
+                "Prepare PyPI release "
+                + state["version"]
+                + task_context.commit_trailers(work)
+                + "\nAgent-Review-Policy: local-v1",
             )
             head = sessions.run(work, "git", "rev-parse", "HEAD")
         state["candidate_sha"] = head
