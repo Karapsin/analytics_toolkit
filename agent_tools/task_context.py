@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
+import struct
 import subprocess
 import uuid
+import zlib
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
+
+MAX_IMAGE_BYTES = 512 * 1024
+MAX_IMAGE_DIMENSION = 4096
+PNG_HEADER_SIZE = 13
+PNG_FILTER_MAX = 4
+PNG_PALETTE_TYPE = 3
 
 
 def protocol() -> Any:
@@ -79,6 +88,11 @@ def record(root: Path, prompt: str, *, append: bool = False) -> dict[str, Any]:
             "starting_prompt": prompt,
             "corrections": [],
         }
+    return save(root, value)
+
+
+def save(root: Path, value: dict[str, Any]) -> dict[str, Any]:
+    path = directory(root) / "active.json"
     proto = protocol()
     proto.render(value)  # Check safe publication before saving or committing.
     temporary = path.with_suffix(".tmp")
@@ -93,8 +107,249 @@ def record(root: Path, prompt: str, *, append: bool = False) -> dict[str, Any]:
     }
 
 
+def evidence(root: Path, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Record exact evidence; caller must supply actual user messages, never invented approval."""
+    value = read(root)
+    if value["version"] == 1:
+        value.update(version=2, plans=[], images=[], replacements=[], decisions=[], questions=[])
+    value.setdefault("questions", [])
+    proto = protocol()
+    extras: dict[str, str] = {}
+    if "message_source" in payload and (
+        action != "approve-plan" or payload["message_source"] != "starting_prompt"
+    ):
+        fail("Only plan approvals may bind message_source='starting_prompt'.")
+    if action == "plan":
+        extras["plan_id"] = record_plan(value, payload, proto)
+    elif action == "question":
+        extras["question_id"] = record_question(value, payload, proto)
+    elif action == "approve-plan" and payload.get("message_source") == "starting_prompt":
+        bind_starting_prompt(value, payload)
+    elif action in {"approve-plan", "answer-question", "image", "replace-missing"}:
+        index = approval_index(value, payload, proto)
+        if action in {"approve-plan", "answer-question"}:
+            bind_answer(value, payload, index, action)
+        elif action == "replace-missing":
+            value["replacements"].append(
+                {"reference": payload.get("reference"), "user_index": index}
+            )
+        else:
+            extras["evidence_path"] = image_evidence(root, value, payload, index, proto)
+    else:
+        fail("Unknown task evidence action.")
+    result = save(root, value)
+    result.update(extras)
+    return result
+
+
+def fail(message: str) -> NoReturn:
+    raise ValueError(message)
+
+
+def record_plan(value: dict[str, Any], payload: dict[str, Any], proto: Any) -> str:
+    if set(payload) != {"text"} or not isinstance(payload["text"], str):
+        fail("Supply the exact plan text.")
+    identity: str = proto.plan_id(payload["text"])
+    if not any(plan["id"] == identity for plan in value["plans"]):
+        value["plans"].append({"id": identity, "text": payload["text"], "approval_index": None})
+    return identity
+
+
+def record_question(value: dict[str, Any], payload: dict[str, Any], proto: Any) -> str:
+    if set(payload) != {"text"} or not isinstance(payload["text"], str):
+        fail("Supply the exact question text, including every offered option.")
+    questions = value["questions"]
+    if (
+        questions
+        and questions[-1]["text"] == payload["text"]
+        and questions[-1]["answer_index"] is None
+    ):
+        return str(questions[-1]["id"])
+    identity: str = proto.question_id(payload["text"], len(questions))
+    questions.append({"id": identity, "text": payload["text"], "answer_index": None})
+    return identity
+
+
+def bind_answer(value: dict[str, Any], payload: dict[str, Any], index: int, action: str) -> None:
+    bindings = {
+        "approve-plan": ("plans", "plan_id", "approval_index"),
+        "answer-question": ("questions", "question_id", "answer_index"),
+    }
+    field, key, target = bindings[action]
+    records = [item for item in value[field] if item["id"] == payload.get(key)]
+    if len(records) != 1:
+        fail("Answer or approval requires an existing exact evidence ID.")
+    if records[0][target] is not None and records[0][target] != index:
+        if action == "approve-plan":
+            indices = records[0].setdefault("approval_indices", [])
+            if index not in indices:
+                indices.append(index)
+            return
+        fail("Existing evidence answers are immutable; record a new question or plan.")
+    records[0][target] = index
+
+
+def bind_starting_prompt(value: dict[str, Any], payload: dict[str, Any]) -> None:
+    if "correction_index" in payload:
+        fail("Starting-prompt approval cannot include correction_index.")
+    if set(payload) != {"plan_id", "user_prompt", "message_source"}:
+        fail("Supply the exact plan ID and starting-prompt approval message.")
+    if payload["user_prompt"] != value["starting_prompt"]:
+        fail("Evidence approval does not match the immutable starting prompt.")
+    records = [plan for plan in value["plans"] if plan["id"] == payload["plan_id"]]
+    if len(records) != 1:
+        fail("Approval requires an existing exact evidence ID.")
+    records[0]["starting_prompt_approval"] = True
+    if "approval_starting_prompt" in records[0]:
+        records[0]["approval_starting_prompt"] = True
+
+
+def approval_index(value: dict[str, Any], payload: dict[str, Any], proto: Any) -> int:
+    message = payload.get("user_prompt")
+    if not isinstance(message, str) or not message.strip():
+        fail("Supply the exact user approval or replacement message.")
+    index = payload.get("correction_index")
+    if index is not None:
+        proto.user_index(value, index)
+        if value["corrections"][index] != message:
+            fail("Evidence approval does not match the recorded user message.")
+    else:
+        if not value["corrections"] or value["corrections"][-1] != message:
+            value["corrections"].append(message)
+        index = len(value["corrections"]) - 1
+    return index
+
+
+def image_evidence(
+    root: Path, value: dict[str, Any], payload: dict[str, Any], index: int, proto: Any
+) -> str:
+    path = Path(payload.get("path", ""))
+    if not path.is_absolute():
+        path = root / path
+    if path.is_symlink() or path.stat().st_size > MAX_IMAGE_BYTES:
+        fail("Image must be a regular PNG of at most 512 KiB.")
+    data = path.read_bytes()
+    check_png(data)
+    digest = hashlib.sha256(data).hexdigest()
+    relative = "agent_tools/task_evidence/" + value["task_id"] + "/" + digest + ".png"
+    value["images"].append(
+        {
+            "reference": payload.get("reference"),
+            "description": payload.get("description"),
+            "path": relative,
+            "sha256": digest,
+            "approval_index": index,
+        }
+    )
+    proto.render(value)  # Validate everything before adding a publishable file.
+    destination = root / relative
+    if any(parent.is_symlink() for parent in [destination, *destination.parents]):
+        fail("Image destination cannot contain symlinks.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(data)
+    return relative
+
+
+def check_png(data: bytes) -> None:
+    """Inspect only: require an already sanitized image; never modify its pixels."""
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        fail("Evidence must be a sanitized PNG.")
+    position = 8
+    chunks = []
+    payloads: dict[bytes, list[bytes]] = {}
+    while position + 12 <= len(data):
+        size = int.from_bytes(data[position : position + 4], "big")
+        end = position + 12 + size
+        kind = data[position + 4 : position + 8]
+        if (
+            end > len(data)
+            or kind not in {b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tRNS", b"sRGB", b"gAMA", b"cHRM"}
+            or zlib.crc32(data[position + 4 : end - 4])
+            != int.from_bytes(data[end - 4 : end], "big")
+        ):
+            fail("Invalid PNG or metadata present; provide an owner-reviewed sanitized PNG.")
+        chunks.append(kind)
+        payloads.setdefault(kind, []).append(data[position + 8 : end - 4])
+        if kind == b"IHDR":
+            if size != PNG_HEADER_SIZE:
+                fail("Invalid PNG header.")
+            width, height = struct.unpack(">II", data[position + 8 : position + 16])
+            if not 0 < width <= MAX_IMAGE_DIMENSION or not 0 < height <= MAX_IMAGE_DIMENSION:
+                fail("Image dimensions exceed the review limit.")
+        position = end
+    if (
+        position != len(data)
+        or not chunks
+        or chunks[0] != b"IHDR"
+        or chunks[-1] != b"IEND"
+        or b"IDAT" not in chunks
+    ):
+        fail("Incomplete PNG evidence.")
+    check_raster(payloads)
+
+
+def check_raster(payloads: dict[bytes, list[bytes]]) -> None:
+    """Validate bounded, non-interlaced PNG scanlines without a new dependency."""
+    if len(payloads[b"IHDR"]) != 1 or payloads[b"IEND"] != [b""]:
+        fail("Invalid PNG header or end marker.")
+    width, height, depth, color, compression, filtering, interlace = struct.unpack(
+        ">IIBBBBB", payloads[b"IHDR"][0]
+    )
+    depths = {0: {1, 2, 4, 8, 16}, 2: {8, 16}, 3: {1, 2, 4, 8}, 4: {8, 16}, 6: {8, 16}}
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+    if depth not in depths.get(color, set()) or compression or filtering or interlace:
+        fail("Provide a valid non-interlaced PNG.")
+    if color == PNG_PALETTE_TYPE and b"PLTE" not in payloads:
+        fail("Indexed PNG evidence requires a palette.")
+    stride = 1 + (width * channels[color] * depth + 7) // 8
+    expected = height * stride
+    try:
+        decoder = zlib.decompressobj()
+        raster = decoder.decompress(b"".join(payloads[b"IDAT"]), expected + 1)
+    except zlib.error:
+        fail("Invalid PNG image stream.")
+    if len(raster) != expected or not decoder.eof or decoder.unused_data:
+        fail("Invalid or oversized PNG image stream.")
+    if any(raster[offset] > PNG_FILTER_MAX for offset in range(0, expected, stride)):
+        fail("Invalid PNG scanline filter.")
+
+
+def preflight(root: Path) -> None:
+    value = read(root)
+    protocol().require_resolved(value)
+    for image in value.get("images", []):
+        path = root / image["path"]
+        if any(parent.is_symlink() for parent in [path, *path.parents]):
+            fail("Image evidence cannot contain symlinks.")
+        data = path.read_bytes()
+        check_png(data)
+        if hashlib.sha256(data).hexdigest() != image["sha256"]:
+            fail("Image evidence differs from the owner-reviewed record.")
+        result = subprocess.run(
+            ["git", "show", "HEAD:" + image["path"]], cwd=root, capture_output=True, check=False
+        )
+        if result.returncode or result.stdout != data:
+            fail("Image evidence must be committed unchanged in the signed head.")
+
+
 def attachment(root: Path) -> str:
     return protocol().render(read(root))
+
+
+def review_record(root: Path) -> dict[str, Any]:
+    """Publish redacted evidence in the signed source tree during reader-first rollout."""
+    value = read(root)
+    proto = protocol()
+    proto.require_resolved(value)
+    relative = "agent_tools/task_evidence/" + value["task_id"] + "/context.json"
+    destination = root / relative
+    if any(parent.is_symlink() for parent in [destination, *destination.parents]):
+        fail("Task evidence destination cannot contain symlinks.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(proto.public_context(value), ensure_ascii=False, indent=2) + "\n"
+    )
+    return {"evidence_path": relative, "digest": proto.digest(proto.public_context(value))}
 
 
 def repository_identity(root: Path) -> str:

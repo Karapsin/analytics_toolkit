@@ -192,6 +192,10 @@ Screen {
 #command-completion {
     overlay: screen;
 }
+#completion-menu {
+    overlay: screen;
+    dock: top;
+}
 .results-header {
     dock: top;
     align-horizontal: right;
@@ -340,7 +344,8 @@ ModalScreen Button, FindReplaceBar Button {
 
 INTERACTION_CSS = """
 /* Use one visible neutral hover color; keyboard selection stays amber. */
-Button:hover, Input:hover, TextArea:hover,
+Button:hover, ModalScreen Button:hover, FindReplaceBar Button:hover,
+Input:hover, TextArea:hover,
 OptionList > .option-list--option-hover,
 Tree > .tree--highlight-line,
 DataTable > .datatable--hover,
@@ -348,6 +353,8 @@ DataTable > .datatable--header-hover {
     background: $panel-lighten-2;
 }
 Button:focus, Button:focus:hover,
+ModalScreen Button:focus, ModalScreen Button:focus:hover,
+FindReplaceBar Button:focus, FindReplaceBar Button:focus:hover,
 .interrupt:focus, .interrupt:focus:hover,
 OptionList > .option-list--option-highlighted,
 OptionList > .option-list--option-hover-highlighted,
@@ -365,7 +372,9 @@ DataTable > .datatable--header-cursor {
 ModalScreen Button:focus, FindReplaceBar Button:focus, .interrupt:focus {
     border: solid $accent;
 }
-Button:disabled, Button:disabled:hover {
+Button:disabled, Button:disabled:hover,
+ModalScreen Button:disabled, ModalScreen Button:disabled:hover,
+FindReplaceBar Button:disabled, FindReplaceBar Button:disabled:hover {
     background: $surface;
     color: $text-disabled;
     text-style: none;
@@ -388,5 +397,74 @@ EditableInput > .input--selection {
 """
 
 APP_CSS += INTERACTION_CSS
+
+# Application CSS wins over widget DEFAULT_CSS, including generic modal rules.
+APP_CSS += """
+CreateTableScreen .remove-column,
+CreateTableScreen .remove-column:hover,
+CreateTableScreen .remove-column:focus,
+CreateTableScreen .remove-column:focus:hover {
+    width: 3;
+    min-width: 3;
+    height: 1;
+    min-height: 1;
+    border: none;
+    padding: 0;
+    margin-top: 1;
+    content-align: center middle;
+    color: $text;
+    background: $surface;
+    text-style: bold;
+    tint: transparent;
+}
+CreateTableScreen .remove-column:hover {
+    background: $panel-lighten-2;
+}
+CreateTableScreen .remove-column:focus,
+CreateTableScreen .remove-column:focus:hover {
+    color: $background;
+    background: $accent;
+}
+CreateTableScreen .remove-column:disabled,
+CreateTableScreen .remove-column:disabled:hover,
+CreateTableScreen .remove-column:disabled:focus,
+CreateTableScreen .remove-column:disabled:focus:hover {
+    color: $text-disabled;
+    background: $surface;
+    text-style: none;
+}
+CreateTableScreen Input,
+CreateTableScreen #create-from-sql {
+    color: $text;
+    border: solid $panel-lighten-3;
+}
+CreateTableScreen Input:focus,
+CreateTableScreen #create-from-sql:focus {
+    border: solid $accent;
+}
+/* SelectCurrent owns the frame; an outer border clips its three-row child. */
+CreateTableScreen Select {
+    height: 3;
+    border: none;
+    padding: 0;
+    color: $text;
+}
+CreateTableScreen Select > SelectCurrent {
+    height: 3;
+    border: solid $panel-lighten-3;
+}
+CreateTableScreen Select:focus > SelectCurrent {
+    border: solid $accent;
+}
+CreateTableScreen BooleanCheckbox {
+    color: $text;
+    background: $panel;
+    opacity: 100%;
+}
+CreateTableScreen BooleanCheckbox:disabled {
+    color: $text-muted;
+    opacity: 100%;
+}
+"""
 
 __all__ = ["APP_CSS", "INTERACTION_CSS", "explorer_css_variables", "explorer_design"]

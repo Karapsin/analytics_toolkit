@@ -1,0 +1,826 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:atk:capture-receiver-envelope:2",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/productionEnvelope"
+    },
+    {
+      "$ref": "#/$defs/rehearsalEnvelope"
+    }
+  ],
+  "$defs": {
+    "sha40": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "uuid32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "source_set_sha256",
+        "expected_trusted_head",
+        "source_tag",
+        "source_deployment_receipt_sha256"
+      ],
+      "properties": {
+        "profile_id": {
+          "const": "capture_isolation_active_v1"
+        },
+        "source_set_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "expected_trusted_head": {
+          "$ref": "#/$defs/sha40"
+        },
+        "source_tag": {
+          "type": "string",
+          "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+        },
+        "source_deployment_receipt_sha256": {
+          "$ref": "#/$defs/sha64"
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nonce",
+        "created_at",
+        "expires_at"
+      ],
+      "properties": {
+        "nonce": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "created_at": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/positiveInteger"
+        }
+      }
+    },
+    "productionAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "pr_number",
+        "request_id",
+        "revision",
+        "generation",
+        "task_digest",
+        "plan_receipt_sha256",
+        "patch_sha256",
+        "candidate",
+        "candidate_base",
+        "gate_proof_sha256",
+        "admission_receipt_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "const": "production-capture-admission-v1"
+        },
+        "pr_number": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "request_id": {
+          "$ref": "#/$defs/requestId"
+        },
+        "revision": {
+          "$ref": "#/$defs/revision"
+        },
+        "generation": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "task_digest": {
+          "$ref": "#/$defs/sha64"
+        },
+        "plan_receipt_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "patch_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "candidate": {
+          "$ref": "#/$defs/sha40"
+        },
+        "candidate_base": {
+          "$ref": "#/$defs/sha40"
+        },
+        "gate_proof_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "admission_receipt_sha256": {
+          "$ref": "#/$defs/sha64"
+        }
+      }
+    },
+    "caseId": {
+      "enum": [
+        "positive-fixed-source",
+        "wrong-fixture-binding",
+        "wrong-source-set",
+        "wrong-expected-head",
+        "expired-envelope",
+        "wrong-purpose",
+        "missing-authorization",
+        "old-receiver-ref",
+        "replay-attempt",
+        "main-before-dispatch",
+        "main-after-queue",
+        "production-rejects-rehearsal"
+      ]
+    },
+    "rehearsalAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "operation_id",
+        "operation_revision",
+        "operation_generation",
+        "operation_task_digest",
+        "operation_plan_sha256",
+        "independent_operation_review_sha256",
+        "operation_receipt_sha256",
+        "admission_receipt_sha256",
+        "fixture_id",
+        "fixture_source_commit",
+        "fixture_manifest_sha256",
+        "fixture_program_sha256",
+        "case_id",
+        "recipe_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "const": "receiver-rehearsal-admission-v1"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "operation_revision": {
+          "$ref": "#/$defs/revision"
+        },
+        "operation_generation": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "operation_task_digest": {
+          "$ref": "#/$defs/sha64"
+        },
+        "operation_plan_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "independent_operation_review_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "operation_receipt_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "admission_receipt_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "fixture_id": {
+          "const": "capture-receiver-sentinel-v1"
+        },
+        "fixture_source_commit": {
+          "$ref": "#/$defs/sha40"
+        },
+        "fixture_manifest_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "fixture_program_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "case_id": {
+          "$ref": "#/$defs/caseId"
+        },
+        "recipe_sha256": {
+          "$ref": "#/$defs/sha64"
+        }
+      }
+    },
+    "productionEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "purpose",
+        "operation",
+        "repository",
+        "source",
+        "attempt",
+        "authorization"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "purpose": {
+          "const": "production"
+        },
+        "operation": {
+          "const": "visual-profile-v2"
+        },
+        "repository": {
+          "const": "Karapsin/analytics_toolkit"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt"
+        },
+        "authorization": {
+          "$ref": "#/$defs/productionAuthorization"
+        }
+      }
+    },
+    "rehearsalEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "purpose",
+        "operation",
+        "repository",
+        "source",
+        "attempt",
+        "authorization"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "purpose": {
+          "const": "receiver-rehearsal"
+        },
+        "operation": {
+          "const": "visual-profile-rehearsal-v1"
+        },
+        "repository": {
+          "const": "Karapsin/analytics_toolkit"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt"
+        },
+        "authorization": {
+          "$ref": "#/$defs/rehearsalAuthorization"
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_commit",
+        "manifest_path",
+        "manifest_sha256",
+        "program_path",
+        "program_git_blob",
+        "program_sha256"
+      ],
+      "properties": {
+        "id": {
+          "const": "capture-receiver-sentinel-v1"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/sha40"
+        },
+        "manifest_path": {
+          "const": ".github/agent/fixtures/capture_receiver_sentinel_v1/manifest.json"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "program_path": {
+          "const": ".github/agent/fixtures/capture_receiver_sentinel_v1/sentinel.py"
+        },
+        "program_git_blob": {
+          "$ref": "#/$defs/sha40"
+        },
+        "program_sha256": {
+          "$ref": "#/$defs/sha64"
+        }
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "mode",
+        "recipe_sha256",
+        "expected_outcome"
+      ],
+      "properties": {
+        "case_id": {
+          "$ref": "#/$defs/caseId"
+        },
+        "mode": {
+          "enum": [
+            "github-live-fixed-sentinel",
+            "deterministic-source-test"
+          ]
+        },
+        "recipe_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "expected_outcome": {
+          "enum": [
+            "fixed-sentinel-pass",
+            "guard-reject-before-sentinel",
+            "production-reject-before-side-effect"
+          ]
+        }
+      }
+    },
+    "operationAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_digest",
+        "task_archive_sha256",
+        "plan_sha256",
+        "independent_plan_review_sha256",
+        "source_review_sha256",
+        "source_origin_proofs_sha256",
+        "exact_head_CI_proof_sha256",
+        "protected_policy_proof_sha256",
+        "compatibility_proof_sha256",
+        "operational_review_sha256",
+        "helper_sha256",
+        "payload_sha256",
+        "fault_rehearsal_sha256",
+        "authority_snapshot_sha256"
+      ],
+      "properties": {
+        "task_digest": {
+          "$ref": "#/$defs/sha64"
+        },
+        "task_archive_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "plan_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "independent_plan_review_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "source_review_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "source_origin_proofs_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "exact_head_CI_proof_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "protected_policy_proof_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "compatibility_proof_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "operational_review_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "helper_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "payload_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "fault_rehearsal_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "authority_snapshot_sha256": {
+          "$ref": "#/$defs/sha64"
+        }
+      }
+    },
+    "rehearsalOperationReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "purpose",
+        "repository",
+        "operation_id",
+        "revision",
+        "generation",
+        "source",
+        "fixture",
+        "cases",
+        "authority"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "receiver-rehearsal-operation-v1"
+        },
+        "purpose": {
+          "const": "receiver-rehearsal"
+        },
+        "repository": {
+          "const": "Karapsin/analytics_toolkit"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "revision": {
+          "$ref": "#/$defs/revision"
+        },
+        "generation": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "fixture": {
+          "$ref": "#/$defs/fixture"
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/recipe"
+          }
+        },
+        "authority": {
+          "$ref": "#/$defs/operationAuthority"
+        }
+      }
+    },
+    "rehearsalAdmissionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "purpose",
+        "operation_receipt_sha256",
+        "operation_id",
+        "operation_revision",
+        "operation_generation",
+        "envelope_binding_sha256",
+        "case_id",
+        "recipe_sha256",
+        "fixture_manifest_sha256",
+        "authority_snapshot_sha256",
+        "issued_at",
+        "expires_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "receiver-rehearsal-admission-v1"
+        },
+        "purpose": {
+          "const": "receiver-rehearsal"
+        },
+        "operation_receipt_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "operation_revision": {
+          "$ref": "#/$defs/revision"
+        },
+        "operation_generation": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "envelope_binding_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "case_id": {
+          "$ref": "#/$defs/caseId"
+        },
+        "recipe_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "fixture_manifest_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "authority_snapshot_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "issued_at": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/positiveInteger"
+        }
+      }
+    },
+    "productionAdmissionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "purpose",
+        "request_id",
+        "revision",
+        "generation",
+        "gate_proof_sha256",
+        "envelope_binding_sha256",
+        "authority_snapshot_sha256",
+        "issued_at",
+        "expires_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "production-capture-admission-v1"
+        },
+        "purpose": {
+          "const": "production"
+        },
+        "request_id": {
+          "$ref": "#/$defs/requestId"
+        },
+        "revision": {
+          "$ref": "#/$defs/revision"
+        },
+        "generation": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "gate_proof_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "envelope_binding_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "authority_snapshot_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "issued_at": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/positiveInteger"
+        }
+      }
+    },
+    "receiverCapabilityAcceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "scope",
+        "source",
+        "operation_receipt_sha256",
+        "positive_result_sha256",
+        "negative_observation_sha256",
+        "deterministic_controls_sha256",
+        "independent_acceptance_review_sha256",
+        "raw_evidence_index_sha256",
+        "visual_approval",
+        "prerequisite_satisfied"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "receiver-capability-acceptance-v1"
+        },
+        "scope": {
+          "const": "receiver-platform-only"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "operation_receipt_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "positive_result_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "negative_observation_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "deterministic_controls_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "independent_acceptance_review_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "raw_evidence_index_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "visual_approval": {
+          "const": false
+        },
+        "prerequisite_satisfied": {
+          "const": false
+        }
+      }
+    },
+    "rehearsalRejectionObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "purpose",
+        "operation_id",
+        "case_id",
+        "nonce",
+        "envelope_sha256",
+        "stage",
+        "workflow_run_id",
+        "sentinel_executed",
+        "visual_approval",
+        "prerequisite_satisfied",
+        "raw_index_sha256"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "receiver-rehearsal-rejection-observation-v1"
+        },
+        "purpose": {
+          "const": "receiver-rehearsal"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "case_id": {
+          "$ref": "#/$defs/caseId"
+        },
+        "nonce": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "envelope_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "stage": {
+          "enum": [
+            "bridge-reject",
+            "github-api-reject",
+            "workflow-early-guard-reject",
+            "receiver-preflight-reject",
+            "production-consumer-reject"
+          ]
+        },
+        "workflow_run_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/positiveInteger"
+            }
+          ]
+        },
+        "sentinel_executed": {
+          "const": false
+        },
+        "visual_approval": {
+          "const": false
+        },
+        "prerequisite_satisfied": {
+          "const": false
+        },
+        "raw_index_sha256": {
+          "$ref": "#/$defs/sha64"
+        }
+      }
+    },
+    "rehearsalResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "purpose",
+        "repository",
+        "operation_id",
+        "case_id",
+        "nonce",
+        "envelope_sha256",
+        "admission_receipt_sha256",
+        "source_set_sha256",
+        "trusted_head",
+        "fixture_manifest_sha256",
+        "workflow_id",
+        "run_id",
+        "run_attempt",
+        "guard_result",
+        "sentinel_executed",
+        "visual_approval",
+        "prerequisite_satisfied",
+        "raw_index_sha256"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "receiver-rehearsal-result-v1"
+        },
+        "purpose": {
+          "const": "receiver-rehearsal"
+        },
+        "repository": {
+          "const": "Karapsin/analytics_toolkit"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "case_id": {
+          "$ref": "#/$defs/caseId"
+        },
+        "nonce": {
+          "$ref": "#/$defs/uuid32"
+        },
+        "envelope_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "admission_receipt_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "source_set_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "trusted_head": {
+          "$ref": "#/$defs/sha40"
+        },
+        "fixture_manifest_sha256": {
+          "$ref": "#/$defs/sha64"
+        },
+        "workflow_id": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "run_id": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "run_attempt": {
+          "const": 1
+        },
+        "guard_result": {
+          "enum": [
+            "pass",
+            "reject"
+          ]
+        },
+        "sentinel_executed": {
+          "type": "boolean"
+        },
+        "visual_approval": {
+          "const": false
+        },
+        "prerequisite_satisfied": {
+          "const": false
+        },
+        "raw_index_sha256": {
+          "$ref": "#/$defs/sha64"
+        }
+      }
+    }
+  }
+}

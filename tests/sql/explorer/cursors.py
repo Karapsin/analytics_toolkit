@@ -131,7 +131,7 @@ def test_word_navigation_moves_and_selects_at_every_cursor() -> None:
     asyncio.run(exercise())
 
 
-def test_word_navigation_preserves_cross_line_cursor_deduplication() -> None:
+def test_word_navigation_preserves_distinct_positions_on_the_same_row() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
@@ -141,11 +141,12 @@ def test_word_navigation_preserves_cross_line_cursor_deduplication() -> None:
 
             await pilot.press("ctrl+left")
 
-            assert editor.cursor_count == 1
-            assert editor.selection == Selection.cursor((0, len("alpha")))
+            assert editor.cursor_count == 2
+            assert editor.cursor_selections == (Selection.cursor((0, 0)), Selection.cursor((0, 5)))
 
             await pilot.press("ctrl+right")
             assert editor.selection == Selection.cursor((1, 0))
+            assert editor.cursor_selections == (Selection.cursor((0, 5)), Selection.cursor((1, 0)))
 
     asyncio.run(exercise())
 

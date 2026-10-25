@@ -126,11 +126,40 @@ def status_transition(
         raise ValueError("Invalid status transition")
     deadline = time.monotonic() + 30
 
+    def budget() -> None:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("PR status display did not converge")
+
+    def label_names(value: Any, maximum: int) -> set[str]:
+        if type(value) is not list or len(value) > maximum:
+            raise ValueError("Invalid PR status labels")
+        names: set[str] = set()
+        for item in value:
+            name = item.get("name") if type(item) is dict else None
+            if type(name) is not str or not name or len(name) > 100 or name in names:
+                raise ValueError("Invalid or repeated PR status label")
+            names.add(name)
+        return names
+
+    def labels() -> set[str]:
+        names: set[str] = set()
+        for page in range(1, 12):
+            budget()
+            batch = gh.api(f"issues/{number}/labels?per_page=100&page={page}")
+            current = label_names(batch, 100)
+            if names & current or len(names) + len(current) > 1000:
+                raise ValueError("PR status label pagination repeated or exceeded capacity")
+            names.update(current)
+            if len(batch) < 100:
+                return names
+        raise ValueError("PR status label pagination incomplete")
+
     def snapshot() -> tuple[dict[str, Any], set[str], bool, str | None] | None:
+        budget()
         fresh = gh.pull(number)
         if fresh["state"] != expected_state or fresh["head"]["sha"] != head:
             return None
-        names = {item["name"] for item in gh.api(f"issues/{number}/labels")}
+        names = labels()
         fresh = dict(fresh, labels=[{"name": name} for name in sorted(names)])
         if expected_state == "closed":
             required = PAUSED in names  # Closed cleanup changes phases only.
@@ -140,6 +169,7 @@ def status_transition(
         target = "" if required else choose(fresh)
         if target is not None and target != "" and target not in PHASES:
             raise ValueError("Unknown PR status phase")
+        budget()
         latest = gh.pull(number)
         if latest["state"] != expected_state or latest["head"]["sha"] != head:
             return None
@@ -148,35 +178,51 @@ def status_transition(
             required, target = True, ""
         return dict(latest, labels=fresh["labels"]), names, required, target
 
+    def desired(state: tuple[dict[str, Any], set[str], bool, str | None]) -> set[str]:
+        _fresh, names, required, target = state
+        result = names - (PHASES & remove)
+        if target is not None:
+            result -= PHASES
+            if target:
+                result.add(target)
+        if required:
+            result.add(PAUSED)
+        elif attention is not None and expected_state == "open":
+            result.discard(PAUSED)
+        return result
+
     with _status_lock(gh.repository, number):
         for _ in range(24):
             state = snapshot()
             if state is None:
                 return None  # Never transfer the old head's attention decision.
-            fresh, names, required, target = state
-            conflicts = names & PHASES & remove
-            if target is not None:
-                conflicts |= (names & PHASES) - {target}
-            if not required and attention is not None and expected_state == "open":
-                conflicts |= names & {PAUSED}
-            missing = PAUSED if required and PAUSED not in names else target if target and target not in names else ""
-            if not conflicts and not missing:
-                return fresh
-            if time.monotonic() >= deadline:
-                break
-            if conflicts:
-                name = sorted(conflicts)[0]
-                try:
-                    gh.api(f"issues/{number}/labels/{name}", "DELETE")
-                except Exception:
-                    # Only a successful authenticated label read proving absence
-                    # can turn a concurrent deletion into success. Head changes
-                    # and failed reads cannot conceal a persistent/auth error.
-                    observed = {item["name"] for item in gh.api(f"issues/{number}/labels")}
-                    if name in observed:
-                        raise
-            else:
-                gh.api(f"issues/{number}/labels", "POST", {"labels": [missing]})
+            if desired(state) == state[1]:
+                return state[0]
+            # Reproject current activity/private attention and complete labels
+            # immediately before replacement. The callback owns its data source;
+            # this display helper does not invent a fresh request/authority API.
+            state = snapshot()
+            if state is None:
+                return None
+            wanted = desired(state)
+            if wanted == state[1]:
+                return state[0]
+            if len(wanted) > 1000:
+                raise ValueError("Projected PR status labels exceeded capacity")
+            budget()
+            try:
+                response = gh.api(f"issues/{number}/labels", "PUT", {"labels": sorted(wanted)})
+                label_names(response, 1000)
+            except Exception:
+                # A lost response can follow an accepted replacement. Only fresh
+                # authenticated reads may establish convergence; otherwise keep
+                # the diagnostic and let ordinary reconciliation retry later.
+                observed = snapshot()
+                if observed is None:
+                    return None
+                if desired(observed) == observed[1]:
+                    return observed[0]
+                raise
         raise TimeoutError("PR status display did not converge")
 
 

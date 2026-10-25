@@ -28,7 +28,7 @@ class NewFileScreen(ModalScreen[Optional[str]]):
     ]
 
     CSS = """
-    NewFileScreen {
+    NewFileScreen, NewSqlFileScreen {
         align: center middle;
     }
     #new-file-dialog {

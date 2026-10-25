@@ -70,8 +70,11 @@ def case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
             return {"permission": "admin"}
         if path.startswith("compare/"):
             return {"behind_by": 0}
-        if path == "issues/1/labels":
-            assert method == "GET"
+        if path.split("?", 1)[0] == "issues/1/labels":
+            if method == "PUT":
+                pr["labels"] = [{"name": name} for name in data["labels"]]
+            else:
+                assert method == "GET"
             return pr["labels"]
         assert path == "check-runs"
         assert method == "POST"

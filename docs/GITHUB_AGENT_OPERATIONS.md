@@ -61,6 +61,72 @@ redacted, paged model view. Publication, runtime activation and actual request
 assignment require their own verified gates; merging this exporter alone does
 not establish that a blocked agent has received the evidence.
 
+## Source-pinned capture receiver
+
+The additive `agent-visual-profile` workflow uses protocol
+`capture-receiver-v2` and an immutable create-only
+`agent-visual-source-v1-<trusted-head>` tag. Its early source guard and trusted
+preflight run before either candidate checkout or the fixed synthetic sentinel.
+Production and `receiver-rehearsal` envelopes have disjoint authorization kinds;
+rehearsal can never grant product visual approval or satisfy the full prerequisite.
+The normative closed receiver schema remains version 2.
+Before creating the fixed sentinel container, the receiver compares the resolved
+image to the exact accepted 3.11 native profile. A changed official tag resolution
+remains pending and triggers owned cleanup; the image is never silently replaced.
+
+This source feature does not implement the positive worker Gate or the genuine
+source-deployment operation. Host publication entrypoints remain explicitly
+pending until those separately reviewed live authority/CAS boundaries exist.
+Schema-valid private files, protocol metadata and synthetic component tests do
+not enable them. Exact source review, CI, protected policy, dev merge, whole
+controller admission, main projection, source-tag deployment and actual GitHub
+positive/negative receiver acceptance remain distinct requirements.
+
+The new bounded transport retains actual HTTP status, response completeness and
+immutable request/response originals. Complete documented API refusals are
+different from uncertain potentially applied mutations: timeouts, 408/5xx and
+malformed or incomplete successful responses retain uncertainty. Reconciliation
+appends supported comment/ref identities without rewriting the original outcome.
+Nested comment/App/ref fields are checked before identity access; malformed201
+identities still retain an immutable uncertain receipt with exact status and body.
+A created source ref must return the fixed repository/tag URL; an included commit
+URL must also match. Returned URLs are compared only. Malformed discovery metadata
+remains incomplete, and a later separate exact readback can append a match without
+rewriting the original uncertainty or issuing another POST.
+Run-title and named-step navigation cannot authenticate exact receiver originals
+or the persisted POST interval, so positive run reconciliation remains incomplete.
+The genuine host cross-run intent-history boundary is also absent in this unit;
+the bridge retains bounded navigation and refuses before POST. A new ephemeral
+root, comment or nonce never clears an earlier uncertain action. These are explicit
+remaining source-operation prerequisites, not implemented authority.
+Every unresolved attempt is discovery-only; no automatic second POST, mutable
+main fallback, invented run ID or owner-upload loop is permitted. All metadata,
+pagination, time and retention limits apply jointly. Tokens remain outside
+containers and artifacts. Credential-tainted body/header observations retain exact
+private originals and hashes outside the upload root, with safe delivery-pending
+metadata. Read interruptions, unexpected backend failures and response-close
+failures pass through the same retention path before safe pending propagation;
+known status and exact bounded prefixes are preserved without exception text.
+Failed private persistence is explicitly unavailable and cannot claim a retained
+original or accepted action. Private runner-local retention does not claim off-run delivery. One joint
+16MiB accounting object covers HTTP, source/fixture reads, immutable records and
+indexes. It conservatively prepays retained copies, carries usage between workflow
+steps and reserves bounded capacity-pending metadata. Before HTTP can take effect,
+the actual canonical request is charged and the full bounded response-header,
+body and finalization allowance is held. Settlement releases only unused capacity;
+unexpected settlement failure records safe observed identity as unavailable and
+pending, without acceptance or replay. Limits can make collection
+incomplete and never grant acceptance. Every rehearsal execution/stream/resource
+writer starts outside the upload root; only descriptor/hash-verified stopped
+streams are copied into it. Even a failed quarantine cannot expose a live writer
+to upload. The monitor must be the complete unique open nonPR `agent:state` issue.
+Ordinary legacy scalar operations retain their API.
+
+The retained PR45 App comment fixture supplies authentic server-owned identity
+fields but is a PR comment, so it is a negative for the non-PR monitor guard.
+Positive monitor, Git and Docker fixtures are explicitly synthetic; they prove
+component behavior and do not claim native/GitHub runtime or visual acceptance.
+
 ## Native source validation before production activation
 
 The separate `tests.yml` source-validation mode captures an already published
@@ -205,6 +271,25 @@ all owned containers are absent, no resource mutation is uncertain and upload
 writers are safe. Missing or unsafe evidence remains a failed/incomplete result.
 Owned firewall counters are sampled before cleanup even after a phase failure;
 counter failures are recorded separately from the original error.
+
+## Protected conflict preparation
+
+After attempting the pinned dev merge, conflict preparation inspects unresolved
+index paths as raw NUL-delimited Git output before collecting CI context or
+constructing a generic worker prompt. Conflicts under `.github/agent/` or in
+`.github/workflows/github-agent.yml` require the existing planned-correction
+route; the generic worker cannot edit those files. Sensitive paths and unavailable
+or malformed inspection stop preparation without claiming that planning is queued.
+
+Before persisting a correction, the controller rechecks current publication
+authority and uses the correction row observed before inspection as its expected
+snapshot. Same-scope findings and concurrent replacement requests are preserved.
+Only confirmed persistence reports a queued correction. Restarted discovery
+retains the original head, pinned base and complete task context and selects
+fresh correction planning with separate plan review. Ordinary conflicts and
+clean protected inheritance keep their existing paths. Collector rejection,
+publication checks, genuine holds and exact-head protected approval still apply;
+source publication or dev merge does not activate this repair.
 
 ## Scheduling and status
 
@@ -403,6 +488,35 @@ deliverable even for local requests, without requiring a separate waiting notice
 Authentication requests, approvals and Telegram feature updates remain deliverable.
 Each pass scans at most 200 ready rows and returns at most 20 delivery events.
 
+## Companion recommendation-policy activation
+
+The companion `self_host` coordinator owns recommendation-policy review and
+deployment. Use the current source and runtime associations under
+[Updating trusted automation](#updating-trusted-automation); historical receipts
+do not establish acceptance of a later candidate. SQL Explorer correction workers
+preserve companion work without deploying it or duplicating its patch.
+
+For each further activation, independently review the exact candidate and verify compatible
+trusted task readers and any required authenticated owner approvals. Rehearse that
+same reviewed version on an isolated off-Pi runner with disposable state,
+synthetic credentials, and fake external boundaries. Passing GitHub regressions
+alone does not satisfy this deployment gate.
+
+The rehearsal must cover durable recommended choices and question provenance;
+native planning, coding, and correction transitions; mixed questions that retain
+genuine-input holds; restart recovery; stale request revisions; protected
+exact-head approvals; and preservation of checkpoints, private state,
+authentication, and unrelated files. Exercise rollback to the previous service
+source while retaining later answers and private state. Retain the candidate
+identity, environment, scenario results, and rollback evidence.
+
+Activate only after those gates pass and active work is safely drained. Then
+perform live acceptance for durable recommended decisions, genuine-input and
+protected-approval holds, restart recovery, and preserved authentication and
+checkpoints. Failed acceptance requires rollback. The root coordinator retains
+its complete tracked-PR inventory and monitoring obligations through successful
+dev merges, required post-merge validation, and companion live acceptance.
+
 ## Merge and repair behavior
 
 Merges require current `fast-checks` and the App's `agent-review`, against the
@@ -439,6 +553,16 @@ through existing reconciliation. Expected-head leases reject deletion races. Dev
 main, protected/open-PR/active branches and unknown or unmerged work are preserved.
 Local startup prunes remote references and removes only unused, safely merged local
 branches; dirty worktrees, backups and private task/audit records are retained.
+
+The trusted controller exposes `merge_selected(gh, app_id, work, *, pr_numbers,
+active_branches)`. The worker selects ready unowned PRs while unrelated jobs run,
+excluding every worker-owned PR. An empty selection merges nothing. Selection
+only filters the merge loop: provenance, exact-head protected approval, vetoes,
+task verification, current-dev review, fast checks, fragment folding, base rechecks,
+advisory dispatch and expected-head merge requests still apply. Cleanup receives
+queued/running unpublished correction and Telegram-feature branches and retains
+its complete open-PR inventory. The original three-argument `merge` remains
+compatible; workers with an older controller use the idle-only merge fallback.
 
 ## Updating trusted automation
 
@@ -545,13 +669,17 @@ approval. Later corrections retain precedence. The worker adds evidence only to
 the new publication context, preserving the original signed record and user
 answers; it never invents another approval.
 
-Reference validation excludes only the recovered plan's exact sentence beginning
+Reference validation excludes the recovered plan's exact sentence beginning
 “Before handoff, flag unresolved references such as” and ending “of the missing
 requirement.” from its correction-message scan. That sentence documents quoted
 plan/image marker examples. Stored chronology, signed bytes and rendered evidence
 remain unchanged. Other references, including quoted or backticked image markers,
 still require actual evidence or an authenticated replacement; actual plan
-approval requests still require their chronological approval binding. This reader
+approval requests still require their chronological approval binding. A later
+recovery message reproducing the complete exact approved plan may quote its
+already-bound earlier approval without creating another approval request.
+Only that exact quoted message is resolved against the earlier plan; other
+quoted requirements and new instructions still block when unresolved. This reader
 repair requires independent review, GitHub checks and owner exact-head protected
 approval before controller activation; it does not release existing holds itself.
 
@@ -795,7 +923,25 @@ When a quality job fails, the coordinator captures its complete redacted log and
 an index bound to the PR head, run and job IDs. Correct the reported task-related
 findings without increasing lint or format debt baselines, then require successful
 `fast-checks` on the final published head. Preserve regression assertions and retry
-behavior when simplifying test fixtures.
+behavior when simplifying test fixtures. The scoped-merge regressions separately
+cover authorization and signed task context, current-base review and fast CI,
+fragment folding and publication races. Reconciliation retains dev's structured
+`patch`/`blocked`/`no_change` repair outcomes and retry fingerprints; empty repair
+output is not a publishable patch. Preserve dev's repair regressions and changelog
+history alongside the task's previously folded feature entry.
+
+The protected visual capture workflow loads its artifact exporter from the exact
+trusted workflow commit, separately from the candidate checkout. A failed capture
+uploads a separate diagnostics artifact identified by candidate, run and attempt;
+the job remains failed. It retains every regular file in the run-owned evidence
+directory, including a failed scene whose session entry is still pending. Visual
+child stdout, stderr and timeout/exit metadata are retained separately. Explicit
+file, count and total limits reject oversized evidence without claiming that a
+truncated collection is complete. Setup or provider failure can leave evidence
+unavailable; a later capture is a new run, not a reconstruction of missing bytes.
+These diagnostics are untrusted data and never substitute for complete geometry
+checks, individual full PNG review, independent review or exact-head approval.
+The worker consumer requires separate reviewed compatibility and activation.
 
 After reviewed activation, correlate every inventoried item with its current PR
 head and request revision. Observe each eligible review/correction advance or
@@ -804,7 +950,8 @@ Verify stale claims recover and PR writer ownership stays exclusive. Fifteen
 minutes of inactivity is diagnostic; retain the thirty-minute model deadline.
 Record acceptance for the entire inventory. Missing metadata, queued checks,
 failed gates or unexplained non-progress block operational completion. Integration
-success remains advisory; MinIO stack repair is a separate follow-up.
+success remains advisory. MinIO repair PR #17 is already merged into dev; retain
+its pinned-source build configuration, licenses and service-free regressions.
 
 Only the controller, prompts, schemas, fixed dispatch bridge, capture workflow,
 and workflow classification manifest are copied to `main` for automation.
@@ -827,7 +974,9 @@ pointer.
 
 Controlled lifecycle-label producers share the display-only `status_transition`
 boundary: attention creation/recovery, phase reconciliation and writer
-acquisition/release remove conflicting statuses before appending the current one.
+acquisition/release replace the complete label set with one GitHub PUT. Complete
+label pagination preserves unrelated labels, including semantic `agent:` labels;
+only the seven managed lifecycle statuses are projected.
 Per-PR host locks serialize controlled writers without a global worker lock.
 Each mutation rechecks the open/closed state, exact head, authoritative issue
 labels and private attention. A changed head aborts the old decision; a push by
@@ -843,8 +992,10 @@ comment recovery remains an explicit separate workflow. Display updates do not
 grant approval, clear a veto, answer questions or release a Future. Persistent
 API errors and bounded lock/convergence failures retry through normal
 reconciliation. GitHub does not provide an atomic compare-and-swap across label
-requests, so the periodic reconciler remains recovery for interrupted operations
-and external writers. Paired companion source/tests and exact-commit checks must
+requests. The single replacement removes the controlled delete/add gap, while
+fresh reads resolve an accepted write whose response was lost. Independent
+writers can still race a complete-set update; bounded normal reconciliation
+remains recovery for visible drift and failed operations. Paired companion source/tests and exact-commit checks must
 cover the final controller bytes before activation.
 
 An authenticated amendment may require a new plan while its factual prerequisite
@@ -1164,3 +1315,229 @@ and the all-relevant-PR successful-dev-merge objective remain in force. No progr
 or tests were executed by this private worker.
 
 [Documentation overview](README.md)
+
+## Task evidence and Telegram preferences
+
+Version-2 task attachments retain exact assistant questions and offered options
+paired with actual chronological answers, the exact assistant plan, approval
+messages, image descriptions and content-addressed PNG hashes. Reviewer tools
+inspect the images from the immutable candidate checkout. An explicit owner
+replacement can settle a missing requirement; it never claims the original
+image was inspected. Version-1 signatures remain compatible. GitHub owner replies to Telegram
+questions use the exact request ID, revision and current PR head printed in the
+question notice; stale replies and other authors are rejected. Local handoff
+checks reject unresolved image references and “Implement the plan” in both
+the starting prompt and every correction. A starting-prompt reference requires
+an explicit exact-plan binding (`approve-plan` with
+`message_source: "starting_prompt"`) or a later actual owner replacement.
+Unapproved plans and unrelated correction approvals cannot settle that hold.
+The binding is visible in the signed v2 evidence; historic signed records remain
+readable without rewriting. See [agent task evidence](../agent_tools/README.md).
+
+Telegram sends owner approval/authentication requests, implementation status for
+features requested through Telegram, PR merges into dev, dev promotions into main
+and successful production releases. Routine local-PR correction, rejection and
+fast-CI chatter remains in GitHub and private worker records. Explicit `/help` and
+`/status` responses remain available. Suppressed notifications are retained with
+a private suppressed state; older unsent alerts are retired without replay.
+
+Recommended options resolve routine planning, implementation and correction
+choices automatically, including existing question holds. Legacy routine questions
+without labeled recommendations return to fresh planning with their exact questions
+and checkpoints retained; obsolete plan/review receipts are invalidated. Choices are recorded
+as automated decisions, never fabricated owner answers. Genuine credential/access
+requirements, cancellations, vetoes, independent review and protected exact-head
+approvals retain their existing enforcement.
+
+[Documentation overview](README.md)
+
+## Recovered evidence and staged rollout
+
+The RPI task `33ad72f4abee49ca97e6d058e9f81a52` retains its earlier attachment at
+`agent_tools/task_evidence/33ad72f4abee49ca97e6d058e9f81a52/history/context-before-native-recovery.json`.
+Its historical digest verifies that record; it does not authorize a corrected head.
+The amended context binds the exact native plan, including its final newline,
+only to authenticated correction 0. Correction 11 cites that historical approval;
+it neither approves another plan nor replaces an unavailable image. The
+unsupported second binding and image replacement are absent from the amendment.
+The published v1 record remains at `history/published-v1.json` with digest
+`82394e7a1b09b41255565aac080c2c00b34592c085d3c07b05a5ac869ea3a933`.
+The saved v2 projection remains at `history/context-before-provenance-amendment.json`.
+`provenance-amendment.json` identifies both sources and the authenticated native
+proof. The supplied standing-delegation clarification remains automated evidence
+in `decisions`, never a human answer, structured replacement or protected approval. A separately unapproved assistant
+provenance record identifies the recovered thread, plan turn/item, owner approval
+turn/message and immutable source hash. The earlier assistant text remains in the
+historical attachment. Subsequent owner replies are recorded verbatim and paired
+with the full questions and offered options. Answers longer than 1,024 characters
+link to their visible chronological correction rather than repeating it; the
+signed payload and parser retain the complete text.
+
+The coordinator owns companion implementation, rehearsal and deployment in its
+separate self_host checkout. The PR #15 evidenced dependency candidate was
+`ab7f83cddb6981ee380d3ae76fbc51ba1a41c87a`; inspect
+`operator/worker-reference-replacements-ab7f83cddb69-active.json`, its complete
+source/hash mapping and activation receipts. The receipt records active runtime,
+unchanged checkpoints and cadence, and compatible trusted controller
+`c666ca597a4ead1276fba1a2ab7b220b2e457b06`. Historical staged receipts cannot
+establish the current candidate's status. PR #15 remains subject to its own fresh
+implementation review, exact-head CI and protected approval.
+
+Native planning and intake share `question_policy.question_kind`. Routine
+implementation choices go through the separate request-alignment resolver.
+Known source/policy access failures and missing coordinator CI logs are tooling
+retries after credential, approval and original-evidence guards. Native RPC
+questions are persisted and interrupted without fabricated replies; intake
+recovers existing tooling waits while retaining checkpoints and actual answers.
+Mixed genuine-input batches, missing original images, credentials, provenance,
+owner veto/cancellation and protected decisions remain held. Legacy unlabeled
+routine questions return to fresh planning without invented owner answers.
+
+The active worker retains ten slots, exact saved-source reconciliation across dev
+moves, authenticated GitHub answers, claim cleanup, durable model-capacity
+cooldown, mutually exclusive lifecycle labels including genuine owner holds,
+closed-PR cleanup, scoped merges and complete visual work outside the global
+reconciliation lock. Backend `willRetry` retains its live turn; capacity retries
+do not cancel jobs by age, switch models or invent owner decisions. The complete
+source/activation receipt and separately owned regression suite establish the
+actual dependency; older reviews do not approve changed bytes.
+
+The trusted controller calls `task_context.require_resolved` after the review-only
+return and before any code-publication mutation. This gate also covers existing
+feature-branch recovery: unresolved starting prompts or corrections cannot
+apply patches, sign commits, push branches or publish PR attachments. Historical
+v1 attachments remain readable and signature-verifiable; publication of an
+unresolved reference requires its exact approval binding, image evidence or
+explicit owner replacement. Before signing or pushing, the controller validates
+all image descriptors and the resulting immutable Git tree: exactly one regular
+blob, 1–524288 bytes, matching byte count, PNG signature and SHA256. Recovered
+heads require a trusted signature and the expected producer, and receive the same
+image checks before reuse or attachment publication; signed-head
+metadata uses Git blobs rather than the symlink-resolving Contents API. Invalid
+images prevent publication writes. Blocker reporting and writer release remain intact.
+
+The collector retains its staged `git diff --cached --check` gate before patch
+serialization. A checkpoint rejected for changelog conflict markers must be
+corrected while retaining both legitimate entries, historical sections and the
+owned fragment for trusted folding. Resubmit the corrected checkpoint through
+the unchanged collector and fresh exact-head GitHub validation; the earlier
+rejected checkpoint establishes neither publication nor successful checks.
+
+The companion checks references before coding, publication and recovery writes,
+retaining genuine missing-evidence holds and saved publication artifacts.
+Authenticated Telegram approvals bind the displayed plan text, dev base,
+correlated event and chronological answer. Revision/head-bound GitHub replies
+use the same correlation rules. An unrelated reply or approval of an older
+plan/base cannot approve a later plan. `test_publication_references.py` covers
+these companion boundaries and correlated approval records; toolkit
+`tests/repository/task_evidence_publication.py` exercises the real resolver with mocked
+Git/GitHub publication operations.
+
+The historical `operator/companion-0c1f1abea3f7-ci-review-and-source.json`
+receipt retains its exact source/test map,
+independent review, prepush fingerprint and successful Repository Checks run
+`38627217757`, job `116069307512`. The PR #15 active receipt instead bound run
+`38931069859` to `ab7f83cddb6981ee380d3ae76fbc51ba1a41c87a`, its independent
+reviews and isolated rehearsal. It describes source-only rollback preserving later
+answers, checkpoints, private decisions and unrelated source. These receipts
+are deployment evidence for their named source only; they grant no current-head
+toolkit approval or blanket permission for another activation.
+
+Before activation, require fresh independent review of both final candidates,
+required GitHub checks and protected owner approval for the corrected toolkit
+head. Follow self_host `AGENTS.md:25–26`: the coordinator must also perform an
+isolated off-Pi rehearsal with the exact candidate, copied or synthetic legacy
+state, isolated configuration and mocked external writes. Exercise reader-first
+rollout, routine and protected holds, interruption during active work and partial
+notification delivery, restart/checkpoint restoration, claim recovery and
+ten-worker scheduling. Rehearse source-only rollback by restoring previous selected
+source and compatible configuration and restarting while preserving databases,
+queues, approvals, evidence, checkpoints and ignored runtime state.
+
+Rehearsal passes only when identities/revisions remain consistent, pending work
+survives restart and rollback, notification delivery resumes without duplicate
+completed events, and stale approval cannot authorize a changed head. Record the
+candidate SHA, procedure, selected source/configuration hashes, workflow/run/job
+identity where applicable, discovered rehearsal tests, assertions and
+restart/rollback results. Verify the receipt against the exact final pin and
+every selected source hash; changed candidates require renewed evidence for
+affected steps. Missing, failed or unverifiable rehearsal evidence blocks activation.
+Deploy compatible readers before enabling new writers; preserve poller ownership
+and unrelated Airflow state.
+Merge the checked, independently reviewed toolkit head with its exact-head owner
+approval, then mirror only the authorized controller allowlist to main before
+activating the companion. Record live acceptance of the deployed revision, scoped
+capability and recovered workers; authenticated Telegram and GitHub replies;
+stale-revision, wrong-head and wrong-author rejection; visible question/answer
+pairs; permitted approval, Telegram-feature, dev-merge, main-promotion and release
+notifications; and suppression of routine/backlog alerts. Failed acceptance
+restores prior selected source and compatible configuration, restarts the worker
+and retains databases, queues, approvals, checkpoints, evidence, unrelated
+modifications and newly received answers.
+
+The authorized completion set is analytics_toolkit PRs #7, #9, #10, #11, #12, #13,
+#14 and #15 plus repairs needed to finish them, all targeting `dev`. The
+coordinator inventories current heads, bases, agent phases, holds, review, exact-head
+CI and mergeability, recovers routine waits and continues monitoring until each
+target and repair has a verified GitHub merge receipt into `dev` and required
+post-merge repairs are complete. Serialize merges and revalidate every corrected
+head and changed dev base. Missing evidence/credentials, vetoes, provenance failures
+and protected approval remain genuine holds. self_host keeps its authorized
+direct-dev workflow; this task grants no authority over unrelated repositories,
+package releases or main promotions.
+
+### Complete geometry failure evidence
+
+The scene regression retains every assertion and its existing polling limits.
+On failure it reports a bounded scene/count summary followed by complete serialized
+JSON and writes the same report to `.rag_index/visual-failures/<scene>.json`.
+The matrix and quality jobs upload these files even when validation fails, using
+`visual-geometry-failures-<environment>` artifacts with hidden files included.
+The coordinator must export failed reports through the existing immutable evidence
+interface as numbered JSON lines, with SHA256 hashes and the exact head/run/job
+identity in the evidence index; logs alone cannot replace missing geometry.
+
+Quality run `38495991023`, job `115631751342`, on toolkit head
+`5d5aa0242ddcb7f80a05fcffcf8e1556d6434f1d` failed lint/format in the MinIO
+regression and the completion geometry check. Its complete logs are indexed at
+`operator/pr-15-ci-5d5aa0242ddc-115631751342-index.json`; the original failed
+geometry was not retained and cannot be reconstructed from pytest's truncated
+dictionary. The later trusted capture run `38499353959`, job `115642356404`,
+on that same candidate passed all 46 automated geometries. Its immutable index is
+`operator/pr15-5d5aa024-38499353959-capture-index.json`. The coordinator reviewed
+the full completion PNG individually; this does not establish the earlier failure's
+cause or individual review of the other 45 PNGs. Final content still requires fresh
+GitHub checks and the complete visual review. A repeated failure requires retained
+full geometry and a cause-specific fresh plan and independent review before any
+visual behavior change; assertions, cases and polling limits must remain intact.
+
+The immutable `operator/pr-15-authored-fragment-fold.json` receipt records the
+original author fragment followed by its trusted metadata fold. Retain the folded
+CHANGELOG entry. A new correction fragment describes only this correction;
+recreating the consumed feature fragment would duplicate its entry.
+
+[Documentation overview](README.md)
+
+## Visual routing and complete quality diagnostics
+
+Changes to the five agent visual/geometry helpers, production SQL Explorer,
+the scene manifest, capture harness and SQL Explorer tests require the full visual
+gate. Publication inspects both rename endpoints. Obtain a fresh exact-candidate
+capture, inspect every manifest PNG individually (currently 46), and retain task,
+patch and capture identity checks. Full failed geometry JSON is always uploaded
+alongside a bounded summary. A later passing capture does not identify the cause
+of an earlier failure; any UI behavior repair needs cause-specific planning and
+independent review. Preserve all geometry assertions.
+
+The canonical quality wrapper retains complete Ruff lint/format and mypy stdout
+and stderr under `.rag_index/quality-diagnostics/<id>/` before parsing or debt
+comparison, including malformed output and nonzero exits. Each `index.json`
+binds the command, exit code, checkout revision, PR source head, workflow/run/attempt,
+toolchain versions, stream byte counts and SHA-256 hashes. Toolchain metadata
+retains the Python version and every Ruff, mypy, Textual and Rich field; an
+uninstalled distribution is recorded as `null`. Other metadata errors propagate
+instead of being reported as missing installations. The quality workflow
+always uploads `quality-diagnostics-<run>-<attempt>`; summaries print the index
+path. The coordinator exports the complete artifact and index to correction
+workers alongside exact-head check logs, without treating their content as owner
+instructions. Keep debt enforcement, baseline counts and return codes unchanged.

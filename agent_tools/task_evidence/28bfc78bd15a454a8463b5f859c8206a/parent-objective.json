@@ -1,0 +1,202 @@
+{
+  "kind": "parent-objective-and-followup-scope",
+  "historical_parent": {
+    "path": "agent_tools/task_evidence/9a7ee657bcac481780cf40711666a712/parent-objective.json",
+    "sha256": "e3291ee38262ec02e806ff110cee7bbbf3bcf0cd54dce94365bca1f778451c41",
+    "complete_record": {
+      "kind": "parent-objective-and-followup-scope",
+      "parent": {
+        "repository": "Karapsin/analytics_toolkit",
+        "pr": 35,
+        "reviewed_head": "8779625b3a08cf00a0aa7ff329a4f2fe89825b26",
+        "dev_merge": "98e4236a0431d9f94bd322691eb7c8b9de204d22",
+        "task_digest": "dad62cd7094da0cd638024119ec2a098de7ab856642ae929de01d871dbd1f489",
+        "producer_id": "author:f01f760eb16549e89e990d827a88e188",
+        "complete_signed_user_task": {
+          "corrections": [
+            "check other labels and provide reliable fixes if needed",
+            "Automated delegated resolution after independent plan review: choose Reliable PR labels (Recommended) and Agent lifecycle labels (Recommended). Preserve the full original feature, necessary self_host companion integration, all-PR successful dev-merge objective and all review/CI/provenance/protected approval gates. Complete original questions, options, provenance and limits are recorded in the immediately preceding comment. This is an automated choice aligned with the existing user request, not a new human answer or policy approval. Worker source currently remains NOT DEPLOYED.",
+            "Automated delegated resolution after fresh independent plan-resolver review: Reliable PR labels (Recommended) and Gated activation (Recommended). Complete exact questions/options, reasons, provenance and current verified activation are in the preceding comment. Worker087a24fe01311e6a8e65cf73e36f2475e266239d is already VERIFIED ACTIVE; remaining protected controller/API activation and live label verification stay pending. Preserve the complete feature, all authority gates and all-relevant-PR successful dev-merge obligation. This grants no new human fact or protected-policy approval.",
+            "The coordinator has completed the requested companion fixture refresh and paired source validation. The complete original question, factual response, exact commit/CI/source bindings and authority limits are recorded in the preceding coordinator comment. Use operator/paired-fixtures-bde64ba6c702/index.json, SHA256 f47dc39b22d51ba317886814ebbe319fd943d74ef0ca8bfd3b5f2a479c132d10, as immutable complete source/review/CI evidence; self_host commit bde64ba6c7026e37991397e59dda3da67eb550c5 passed full prepush and exact Repository Checks39002462254. No writable companion checkout is fabricated or required from the owner: the coordinator performed those edits separately. Continue the complete existing feature through fresh planning and independent review. These retained code8/code6 source fixtures are not final published/controller deployment approval; changed controller bytes need refreshed paired evidence. All actual authority and all-relevant-PR merge obligations remain."
+          ],
+          "decisions": [],
+          "images": [],
+          "plans": [
+            {
+              "approval_index": null,
+              "id": "8eec3b8dd04368cfbdea4999960e05a30db2ea9faf2555d04f54a1696849300c",
+              "text": "# Complete reliable PR labels and protected activation\n\n## Summary\n\nComplete truthful attention and lifecycle labels, preserve every authority gate, and continue all relevant PRs and resulting repairs through successful dev merge.\n\nThe companion fixture refresh is complete: `self_host` commit `bde64ba6c7026e37991397e59dda3da67eb550c5` passed prepush and [Repository Checks 39002462254](https://github.com/Karapsin/self_host/actions/runs/39002462254). Its immutable index has the supplied SHA256 `f47dc39b…132d10`. It validates retained checkpoint candidates, without approving final controller publication or deployment.\n\nCurrent evidence identifies active worker `a6e713dd…`; protected attention APIs and live acceptance remain pending. No further owner clarification or companion checkout access is needed for this plan.\n\n## Implementation and compatibility\n\n- Preserve the existing attention feature in `.github/agent/review_control.py` and its controller integration. Retain pinned dev’s atomic policy-comment recovery, which is already present in the current source.\n- Keep `attention_snapshot()`, `attention_hint()`, and `owner_attention()` as additive host interfaces. The hint table records display classification bound to the PR head and exact observed pause; it never clears holds, changes approvals, or authorizes work.\n- Preserve genuine questions, vetoes, protected approval requests, and unknown/security holds as `needs-user`. Suppress a derived correction hold only when all associated current requests are positively classified as internal. Replacement pauses and stale or uncertain classifications must prevent suppression.\n- Reuse the companion production classifier and reconciliation path: durable request classification → attention hint → attention-label reconciliation → exclusive work phase. Retain older-controller conservative fallback.\n- Resolve conflict markers in `docs/CHANGELOG.md` and `docs/GITHUB_AGENT_OPERATIONS.md`, retaining both attention-label documentation and dev’s approval-recovery documentation. Preserve restored policy-recovery tests and recover any remaining deleted provenance note.\n- Replace the vague companion follow-up reference in task evidence with exact production-source, fixture, review, CI, and activation bindings. Preserve historical records and distinguish automated decisions from authenticated owner answers.\n- Audit `needs-user`, `planning`, `reviewing`, `writing`, `queued`, `testing`, and `ready` across active work, waiting requests, CI, closure, and reopening. Fix demonstrated defects only; preserve unrelated labels, worker ownership, pagination, and head/state checks.\n\nPackage APIs and versions remain unchanged. Existing authority tables retain their meaning.\n\n## Focused regression coverage\n\n- Retain `tests/repository/owner_attention.py`, `policy_recovery.py`, and label-reconciliation coverage. Verify replacement pauses, newer vetoes, cancellations, and evidence holds survive comment lookup, reconciliation, restart, and merge attempts.\n- Reuse the completed companion `test_owner_attention.py` and `test_coordinator_holds.py` coverage through actual SQLite request classification, label reconciliation, recovery, and merge refusal.\n- Verify internal-only and mixed questions, multiple requests, stale/running state, renewed planning, questions without pauses, operational retries, concurrent questions, and live writers. Assert no approval creation or unintended authority/request changes.\n- Cover phase transitions, CI outcomes, API failure/retry, closed/reopened PRs, and old-controller compatibility with fakes and temporary databases.\n- Compare final controller source hashes against the paired fixture bindings. The current `review_control.py` hash matches validated PR #35 code6 (`e2c6bd3e…420000`). If either bound controller component changes, the coordinator refreshes immutable fixtures and paired checks before final acceptance. Documentation-only cleanup does not invalidate unchanged component bindings.\n\n## GitHub validation and gated activation\n\n- Publish the completed correction through the established signed workflow. Obtain fresh independent review bound to the final head, dev base, and complete task digest.\n- Require final-head focused regressions, quality gates, compatibility matrix, and aggregate fast checks. Existing PR #35 checks are successful, but cover its published predecessor rather than unpublished corrections.\n- Supply paired source evidence before activation; do not make fixture validation depend on activating the same proposed APIs.\n- Obtain required owner exact-head protected approval, then activate the reviewed compatible controller through the established controlled rollout and isolated rehearsal. Preserve the active worker unless a separately validated runtime change is necessary.\n- Verify live internal waits display their phase while remaining blocked from merge; genuine questions and approval requests display `needs-user`; phases remain exclusive. Retain exact source hashes and activation receipts.\n- Continue coordinator-owned monitoring and aligned repairs until every relevant PR and resulting repair merges successfully into dev. Separate dependency-proof requirements remain intact; fixture evidence alone cannot satisfy broader activation or workspace-verification gates.\n\n## Limits\n\nRecorded scope choices guide this plan but grant no protected approval, credentials, veto override, or fabricated owner fact. Companion fixture work is already completed separately. This read-only session makes no edits and runs no programs, tests, or activation.\n"
+            }
+          ],
+          "producer_id": "local:8483c088caa64fa9b9799f3bdcb980b4",
+          "questions": [
+            {
+              "answer_index": 1,
+              "id": "9000656d723251c065afbdd41f5a34f3eb79c5448e62a184ba918b388bf9f8c3",
+              "text": "What does “implement it” refer to? The supplied conversation does not identify the original feature; the patch suggests truthful PR attention and work-phase labels.\nReliable PR labels (Recommended): Preserve the current feature and complete truthful attention/phase labels, including the necessary self_host companion integration.\nDifferent original objective: Provide the missing objective in free text so the plan does not derive scope from partial code or reviewer claims.\n\nFor “check other labels and provide reliable fixes if needed,” which label set should the plan cover?\nAgent lifecycle labels (Recommended): Inspect needs-user, planning, reviewing, writing, queued, testing and ready across open/closed PR transitions; fix demonstrated defects while preserving authority gates.\nAll repository labels: Also inspect labels outside the agent lifecycle; specify any additional intended behavior or known failures in free text."
+            },
+            {
+              "answer_index": 2,
+              "id": "ac75f217cdab11b9cd6cc56e2c2cf7633a7df12b36364f8872ef0fc606d5659c",
+              "text": "1. Should the plan define “implement it” as reliable PR attention and lifecycle labels (needs-user, planning, reviewing, writing, queued, testing, ready), including necessary self_host integration, while retaining the all-PR dev-merge objective and every authority gate?\nReliable PR labels (Recommended): Complete this feature and fix demonstrated lifecycle defects; preserve existing changes and pinned-dev safeguards.\nDifferent original feature: Provide the missing original objective in free text so partial code does not define or narrow the feature.\n\n2. Beyond successful dev merges for all relevant PRs and resulting repairs, what production activation should the plan include for the currently NOT DEPLOYED worker source?\nGated activation (Recommended): Plan exact-commit rollout and live label verification after review, CI, provenance and required protected approvals; these answers grant no policy approval.\nMerge completion only: Complete the source changes and all relevant dev merges, documenting deployment as a separate follow-up."
+            },
+            {
+              "answer_index": 3,
+              "id": "85d247c84f4edc4857aac5935b932023d3ffbc9a3314eabded73cadb90b95687",
+              "text": "Can the coordinator provide source_files edit access to the self_host companion checkout? The reviewed plan requires rebinding owner_attention_controller.json and its regression tests to the corrected controller, but this workspace exposes only analytics_toolkit source and read-only companion evidence."
+            }
+          ],
+          "replacements": [],
+          "source": "user",
+          "starting_prompt": "implement it on your own if orchestator is not doing that",
+          "task_id": "8483c088caa64fa9b9799f3bdcb980b4",
+          "version": 2
+        }
+      },
+      "followup": {
+        "task_id": "9a7ee657bcac481780cf40711666a712",
+        "starting_user_prompt": "implement it on your own if orchestator is not doing that",
+        "scope": "Complete reliable lifecycle labels at every direct controller/worker producer; preserve all private authority and complete paired validation, protected activation, live verification and successful dev merges for all relevant PRs and resulting repairs. PR9 capture/tool-access recovery and PR10 actual PR9 merge ancestry remain separate dependency gates. Relevant self_host PRs affect GitHub agents only. No programs/tests/scenes on Pi. Preserve full question/answer history and notification filtering.",
+        "scope_review_sha256": "a7e36cd08fe96b78e3a9517888ee73a55de0fc7ab5b84dc6311ab6280fb376ad",
+        "plan_review_sha256": "5dcc1df7857bb2eee4b0c982f0bbf169546aacfa69e4f8d63b9eeddac8927e9a",
+        "known_preexisting_findings": [
+          "append-only direct attention/writer label producers",
+          "stale-head branch invents needs-user",
+          "ordinary renewed planning briefly displays needs-user"
+        ]
+      },
+      "authority": "This record restores parent scope and independent review provenance. It grants no owner fact, policy approval, veto override, visual pass, missing dependency proof or completion claim."
+    }
+  },
+  "followup": {
+    "task_id": "28bfc78bd15a454a8463b5f859c8206a",
+    "starting_user_prompt": "implement it on your own if orchestator is not doing that",
+    "scope": "Preserve complete failed GitHub visual capture diagnostics and deliver immutable task/candidate/base/checkpoint/run-bound evidence to fresh RPi planning. Preserve the full existing lifecycle-label, authority, notification, original PR feature and all-relevant-PR successful dev-merge objectives. No Pi tests, programs, installs, builds, integration or scenes. Failed diagnostics never grant a visual pass or protected approval. PR10 still requires actual PR9 dev merge and ancestry.",
+    "independent_plan_review": {
+      "reviewer": "/root/review_failed_visual_delivery_plan",
+      "mode": "independent read-only plan review",
+      "decision": "approve_plan_with_required_boundaries",
+      "scope": "Retain failed SQL Explorer capture diagnostics on GitHub and assign them immutably to subsequent RPi planning; do not change visual acceptance or approval authority.",
+      "root_suggested_plan": {
+        "description": "A small cross-repository workflow/helper and worker change to retain complete failed-capture artifacts and deliver task/candidate/base/patch-bound evidence to fresh planning.",
+        "assessment": "Correct direction and necessary: the current workflow asserts capture success before copying anything and uploads only on success. The worker retains a bounded failed-step log, which contains the generic failure and a runner-local diagnostics path, but cannot recover the geometry, session, child output or diagnostic data at that path. The current maintenance proposal concerns publication authority and does not address this gap. This review does not approve any source implementation or deployment."
+      },
+      "observations": [
+        {
+          "path": ".github/workflows/agent-visual.yml",
+          "finding": "The capture script asserts result.ok before loading session/copying evidence, and actions/upload-artifact has no always condition. Run 39040499995 therefore lost the command-completion failure evidence on candidate c15835aa940badef5843a369354d572dab6f7151."
+        },
+        {
+          "path": "agent_tools/sql_explorer_visual.py:capture_review",
+          "finding": "Raw per-scene geometry is written under the run-owned evidence root before a failed scene is marked pass. A failed scene's session entry may still have empty geometry/screenshot fields. Exporting only the successful scene entries would silently omit the most useful failure. Session status and error are persisted in finally, and the temporary checkout is removed."
+        },
+        {
+          "path": "agent_tools/sql_explorer_visual.py:_run",
+          "finding": "The child process captures stdout/stderr, but an error selects stderr OR stdout, and timeout loses partial output from the raised timeout exception. Preserve both streams for visual capture rather than assuming the failed-step log is complete child evidence."
+        },
+        {
+          "path": "self_host/services/github_agent/daemon.py:capture_failure",
+          "finding": "The existing path accepts only completed failure with a failed Capture every scene headlessly step, redacts all metadata/logs, and fails closed above 64 KiB. Its complete-inline findings path should remain a legacy fallback, not be expanded into a large prompt. Setup/cancel/timeouts currently remain operational retries."
+        },
+        {
+          "path": "self_host/services/github_agent/visual_evidence.py and file_tools.py",
+          "finding": "Existing visual evidence requires a complete passing capture, including rejected image reviews. Files.visual_call accepts only current-head-visual-review, at most 258 files, a 512 KiB manifest and 8 MiB per visual file; export/assignment has a 64 MiB total bound. Companion export instead has 512 KiB per file and reserved Git source-index semantics. Failed capture evidence needs an explicit diagnostic schema/assignment path, not a forged passing capture or an invalid companion sources entry."
+        },
+        {
+          "path": "self_host/services/github_agent/intake.py:finish_artifact and run",
+          "finding": "An unpublished correction VisualRejection resets only plan authority and queues fresh planning while preserving checkpoint and answers. Its next request workspace is not necessarily the published-review job located by assign_request_visual. A durable explicit request/revision-bound failure reference is needed for both unpublished correction failure and published review failure."
+        }
+      ],
+      "required_implementation_plan": [
+        {
+          "step": 1,
+          "files": [
+            "agent_tools/sql_explorer_visual.py",
+            "new narrowly scoped visual artifact export helper",
+            ".github/workflows/agent-visual.yml",
+            "tests/agent_tools/visual.py",
+            "focused artifact-helper/workflow tests"
+          ],
+          "change": "Create the diagnostic destination before capture; persist the run/review identity as soon as known; finalize a diagnostic manifest in a finally or separate always-run export step. Copy the exact run-owned session plus actual geometry/screenshots/diagnostics in the owned evidence root, including files from the failed scene even when its session entry is pending. Preserve all actual diagnostic sidecars as inert bytes: candidate c158 may already emit sidecars absent from pinned dev, so discover/retain run-owned files without adopting candidate source or assuming only the current dev layout. Preserve a complete expected scene inventory and explicit attempted/pass/failed/pending state. Preserve both visual child stdout/stderr, return code or timeout and partial timeout output in bounded raw files; use a narrowly scoped capture-specific facility rather than exposing generic command stderr. Do not change geometry checks or mark a failed scene pass. Upload the artifact with always(), if-no-files-found:error and candidate plus run-attempt identity. The overall job must still fail when capture fails; a successful upload must not turn the run green. Export a minimal setup/export-failure envelope when possible rather than an empty apparently complete artifact."
+        },
+        {
+          "step": 2,
+          "files": [
+            "self_host/services/github_agent/daemon.py",
+            "self_host/services/github_agent/visual_evidence.py or new isolated capture_failure_evidence.py",
+            "self_host/services/github_agent/intake.py",
+            "self_host/services/github_agent/file_tools.py",
+            "request-model evidence wiring only as needed"
+          ],
+          "change": "Download the exact failed run/attempt artifact as inert data. Validate trusted API run/workflow/event/repository/job/attempt identity, expected artifact name and candidate, and bind a host-created diagnostic receipt to full task identity, original head, assigned base, producer, context digest, exact checkpoint patch SHA256, candidate and artifact/file digests. For unpublished candidates retain the trusted candidate-creation association, distinguishing original head from temporary composed candidate. Use a new failed/incomplete-capture diagnostic kind; teach the existing visual Files surface an explicit narrow allowlist for this kind without weakening current passing-review validation. Store a durable immutable private snapshot before updating request state. Record a small hash-bound reference in the request/history; assign and reverify the snapshot in every subsequent plan/plan-review/code phase that needs it, including restart and rebase. Present old candidate/base/patch explicitly when checkpoint or base has changed. Keep historical evidence rather than relabeling it current."
+        },
+        {
+          "step": 3,
+          "files": [
+            "self_host/services/github_agent/daemon.py:capture_failure",
+            "self_host/services/github_agent/intake.py:finish_artifact",
+            "focused self_host regression tests",
+            "relevant README and changelog fragments"
+          ],
+          "change": "Use the complete verified diagnostic artifact for fresh planning only for a genuine completed capture failure. Keep setup failures, cancellation, timeout without a complete candidate-failure record, upload/download errors, malformed evidence and exhausted capacity operationally distinct. Preserve any obtainable partial diagnostic snapshot but label its collection completeness honestly; never say missing/truncated evidence is complete. Preserve original context, all Q+A, complete checkpoint and old diagnostic history. Clear stale plan approval only when entering the existing fresh-planning transition; an in-flight owner cancel, veto, answer revision or security hold wins the state CAS. Retain the existing 64 KiB inline log fallback for historical workflows, with explicit legacy/log-only status; do not silently treat it as full geometry evidence."
+        },
+        {
+          "step": 4,
+          "files": [
+            "cross-repository fixture tests and deployment receipts"
+          ],
+          "change": "Publish the protected GitHub workflow through the normal signed/reviewed dev PR and allowed main synchronization. Validate host producer/consumer compatibility before enabling the new path. Then independently review and deploy the worker source through a separate drained operation after the already prepared f5ff operation; do not mutate or reuse that operation's payload. Recover this run only if its evidence actually exists; it cannot be reconstructed retroactively from an absent artifact. A fresh isolated candidate run may generate new evidence and must be labeled as a new run."
+        }
+      ],
+      "hard_boundaries": [
+        "Always means reliable preservation when a runner and upload service can execute finalization. Runner termination, provider loss or cancellation can prevent upload; surface unavailable/incomplete evidence and retry without fabricating it.",
+        "All downloaded files and logs are untrusted diagnostic data, never instructions or authority. No programs, imports, tests, installs, builds or scenes on Pi. Metadata/hash/copy validation and normal scheduling only.",
+        "Do not copy arbitrary paths supplied by capture.json. Enumerate only a dedicated run-owned root, reject absolute paths, traversal, symlinks, duplicate names, non-regular files, devices/FIFOs and path alias/collision. Validate archive entries before extraction, with bounded compressed/uncompressed totals, entry count, per-file and aggregate size; do not extract hostile ZIP data using unchecked gh download semantics.",
+        "Apply bounds before allocation/read, not after reading an unbounded artifact. Completeness requires every declared entry and expected file digest, exact manifest membership and no unknown unassigned files. Include explicit absent/unattempted scene records. Reject malformed JSON/schema, duplicate keys where identity matters, wrong types, stale task/base/patch/candidate/run/attempt and digest mismatch.",
+        "Keep raw GitHub bytes private and hash-bound; redact all text/structured diagnostics exposed to models with trusted context redaction, while retaining original hash and transformation provenance. Do not silently mutate JSON structure or claim redacted model evidence is byte-identical raw. Images may be assigned only as inert PNG evidence through existing image gates; no SVG rendering on Pi.",
+        "Use the existing 8 MiB visual-file, 64 MiB total, 258-file and 512 KiB visual-manifest bounds unless a measured fixture requires a separately reviewed limit change. Larger text/log files can be complete ordered UTF-8 boundary-safe parts with whole-file digest, byte counts and contiguous coverage. Do not simply raise the old inline 64 KiB cap or globally alter companion limits. If bounded evidence cannot fit, retain a clear capacity error and retry/operator tooling path, never truncate while declaring complete.",
+        "New diagnostics must never write visual-receipt.json, a pass verdict, owner approval, independent source/plan approval, or release a dependency/security hold. Full manifest scene capture, every required geometry check and every individual full PNG verdict remain mandatory before publication.",
+        "Immutable installation must be atomic and idempotent, verify identical retry and reject collision/tampering; preserve directory durability as appropriate. Do not overwrite old attempt evidence or rebuild request authority from mutable GitHub comments. A reference is deliverable only after Files actually lists and reads every continuation and any required full image in a fixture.",
+        "Keep new diagnostic catalogue data outside the reserved manifest.sources Git-commit schema; prefer request-local visual assignment and its own schema. Any global evidence publication must test the actual unchanged export_evidence/export_integration consumer contract."
+      ],
+      "test_strategy": {
+        "ATK_fast": [
+          "Fixture real command-completion-style failure with session pending failed scene, populated raw geometry including embedded diagnostics, both stdout and stderr, previous passing scene and remaining pending scenes; assert all existing bytes retained and job stays failed.",
+          "Exercise start/import/setup failure, child nonzero, timeout partial output, export exception, zero-scene/empty diagnostics, successful capture compatibility and malformed/unsafe paths. Verify upload always condition and fixed output directory without invoking real GitHub or rendering scenes.",
+          "Assert failing-scene raw geometry survives even though session entry has no geometry path, and that temporary checkout cleanup cannot remove the persistent evidence root."
+        ],
+        "self_host_fast": [
+          "Use the exact new producer fixture through actual downloader validator, durable snapshot exporter, actual Files list/read continuation APIs and normal Intake replan/restart assignment for both published review and unpublished checkpoint capture failure.",
+          "Include long Unicode logs beyond 64 KiB, geometry with embedded SVG/comparison data, all ordered parts and full PNG read where one exists; verify byte coverage, raw/redacted provenance, task/candidate/base/checkpoint binding and no authority gains.",
+          "Reject archive traversal, symlinks, devices, duplicate paths/keys, zip bomb size/count, extra/missing files, wrong run/attempt/repository/candidate/head/base/patch/context, tampering, collision, fetch failure, capacity exactly at/over bounds and empty/incomplete artifacts.",
+          "Fault inject interrupted publication/retry, restart, source-directory replacement, simultaneous owner cancel/answer/revision/veto, rebase and changed checkpoint. Assert full Q+A/checkpoint/history preserved and no duplicate publication, green receipt, resumed hold or TG spam.",
+          "Retain old workflow log-only behavior tests and complete passing/rejected visual handoff regressions; test the new failure schema cannot enter export_review or verify_visual as passing evidence."
+        ],
+        "validation_location": "Focused and mandatory local checks on Mac; full capture/scene validation on GitHub. No Pi test execution. Source-only implementation must pass fresh independent review and exact-head CI before runtime activation."
+      },
+      "scope_and_authority": {
+        "authorized": "The user's request to implement missing orchestrator/tooling repairs covers this diagnosed source-delivery defect in both repositories. It does not authorize accepting a visually failed candidate or discarding original task scope.",
+        "protected_boundary": "agent-visual.yml is a protected capture workflow. A normal exact-head owner/delegated approval must follow fresh independent review and passing CI for its published change. This plan review is not that approval.",
+        "current_rollout": "The parent reports f5ff has now applied after natural zero-job drain and is awaiting healthy paused post-start reconciliation. Do not modify that immutable source/payload, pause lease or operational review. New daemon/helper runtime changes require their own later reviewed operation and natural drain.",
+        "complete_parent_scope": "Read the complete 12961-byte agent_tools/task_evidence/9a7ee657bcac481780cf40711666a712/parent-objective.json, retaining PR35 signed task, full questions/options/answers/plans and the unchanged all-relevant-PR dev-merge obligation. New task 28bfc78bd15a454a8463b5f859c8206a on owned branch codex/19ac2eeff8284a2f-749f96f6 must carry this full historical parent record and fresh current source/runtime provenance as separate additive evidence outside frozen signed task fields. Do not infer or narrow the original feature from the diagnostics patch. Keep PR9 visual recovery and PR10 actual PR9 dev-merge ancestry requirements distinct. Existing lifecycle-label work, notification filtering, authority gates, paired validation and live verification remain in scope.",
+        "retrospective_limit": "Run 39040499995 log proves its failure, not the missing raw diagnostics. Do not claim those original bytes were recovered without an actual retained artifact. A later recapture supplies new-run evidence only."
+      },
+      "review_limitations": "Read-only review of the supplied failed-step log and focused ATK/self_host source. No repository writes, imports, tests, network or Pi operations were performed. Only this review report was written."
+    },
+    "independent_plan_review_sha256": "81afc4d2f7e88c2de11a5532ea18edb2190b68942febd9d7740fa64f23c4e3bc",
+    "observed_gap": {
+      "run_id": 39040499995,
+      "candidate": "c15835aa940badef5843a369354d572dab6f7151",
+      "workflow_head": "e149dd83b9f699d442ebe47c900e55e523ab02b7",
+      "failure": "command-completion failed; diagnostics artifact upload skipped",
+      "original_raw_diagnostics_recovered": false
+    },
+    "runtime_at_start": {
+      "worker": "f5ff889c9f6852f816d5b317f673dd7d4117c2ee",
+      "controller": "e149dd83b9f699d442ebe47c900e55e523ab02b7",
+      "actual_readback_sha256": "3ee0171ec174a36e9dfadeaded6988430ef679dd18997f8c4adf1122bc403885",
+      "status": "Verified active; a later companion consumer change requires a separate reviewed deployment."
+    }
+  },
+  "authority": "Additive historical task and planning provenance only; no owner fact, approval, hold release, visual pass or completion claim."
+}
