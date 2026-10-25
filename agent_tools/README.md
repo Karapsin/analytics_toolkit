@@ -42,9 +42,9 @@ configuration; MCP servers are loaded when a session starts. Running
 commands above retain the manual JSON CLI.
 
 The project registration is optional (`required = false`) so a missing local
-environment does not prevent Codex from opening. The launcher never installs
-dependencies automatically; bootstrap failures report the command needed to
-repair the environment.
+environment does not prevent Codex from opening. The MCP stdio entrypoint does not install dependencies automatically; bootstrap
+failures report the command needed to repair the environment. The interactive
+`codex` launcher prepares its isolated session before opening the CLI.
 
 MCP tools return compact receipts by default. Successful summary responses omit
 internal command records; failures return a structured blocker with one bounded
@@ -59,13 +59,39 @@ tokens are unavailable to repository tools.
 
 Startup records an environment fingerprint and reuses a healthy `.venv` while
 requirements, project metadata, tox configuration, and the Python runtime are
-unchanged. Dependency installation is quiet when the fingerprint changes.
+unchanged. Interactive sessions share a private dependency wheelhouse under
+`~/.local/share/analytics-toolkit-agent/wheels/`, keyed by repository, Python/ABI,
+platform, requirements, project metadata, tox configuration, and preparation profile.
+Each clone owns its `.venv`; the toolkit is installed editable from that clone.
+A warm cache installs without PyPI, including editable build dependencies. Versions
+remain fixed until inputs change or an explicit cache refresh is requested.
+
+Cache population is serialized and published only after offline installation,
+`pip check`, and import verification. Incomplete or corrupted caches are rebuilt;
+a failed refresh preserves the previous healthy generation. Downloads default to
+a 120-second socket timeout and five connection retries, respecting `PIP_*`
+overrides. Streaming network errors retry the whole download at most three times
+with 2/5-second backoff, within a shared 15-minute deadline. Dependency conflicts
+and certificate/authentication failures stop immediately. Progress goes to stderr;
+full output and preparation receipts remain private below `.rag_index/bootstrap/`.
+`ATK_BOOTSTRAP_CACHE_DIR` can override the wheelhouse location.
 
 Bare `codex` from the canonical repository creates a private clone on `dev`,
 pulls before launch, prepares the repository MCP, and selects native Plan mode
 before accepting task input. Install this launcher with
 `python -m agent_tools.install_sessions` from the prepared project environment.
+After updating the launcher, rerun the installer and source
+`~/.local/share/analytics-toolkit-agent/codex.zsh` in existing terminals.
 Other directories and Codex commands continue to use the existing CLI.
+
+From the canonical checkout, `codex --resume-bootstrap <session-id>` continues a
+failed preparation in its original clone. It accepts only a clean `dev` clone in
+`launching` phase with no unfinished Git operation. It refreshes dev before loading
+the clone's preparation tools, and concurrent attempts are rejected. A failed
+preparation prints its session ID, receipt location, and resume command; it never
+enters Plan mode or deletes the clone. `codex --refresh-bootstrap-cache` creates a
+new isolated session and refreshes dependency versions even when inputs match.
+The first preparation requires PyPI; Git synchronization still requires its remote.
 
 Automatic handling accepts only the repository owner's PRs whose heads are SSH
 signed by an enrolled machine, plus this App's signed repair commits. The launcher
@@ -686,8 +712,9 @@ do not recreate the consumed fragment. Before validation, verify that coordinato
 metadata children also preserve these invariants instead of applying an entry-count bump.
 Corrections retain current-dev repair discovery, bounded evidence handling, and
 unchanged no-patch retry suppression with their fast mocked regressions.
-GitHub then validates the exact corrected head through the focused regressions,
-Python matrix, SDK conformance, lint, type, coverage, and artifact gates. Successful
+GitHub then validates the exact corrected head through focused regressions,
+lint, type, Python 3.14 coverage, and artifact gates. Compatibility and SDK checks
+run after merge and during release validation. Successful
 `fast-checks`, fresh independent review, and authenticated exact-head owner policy
 approval for protected paths are required before merge; earlier-head results and
 approvals cannot substitute. This release feature changes protected publishing
@@ -711,10 +738,11 @@ x86_64 hosts, runs the marked integration tests, captures failure logs, and
 always removes its containers and volumes. It must not be redirected to
 external database endpoints.
 
-Managed pre-commit checks run as separate static, coverage, artifact, and Python
-matrix commands, stopping before downstream work when a stage fails. Coverage
-is the canonical Python 3.11 test run; the remaining Python 3.9 through 3.14
-matrix omits that duplicate and defaults to three parallel tox workers. Set
+Managed pre-commit checks run as separate static, coverage and artifact commands,
+stopping before downstream work when a stage fails. Coverage and artifacts use
+Python 3.14; static tooling retains its pinned Python 3.11 environment. The full
+Python 3.9 through 3.14 matrix runs after merges and during releases, and defaults
+to three parallel tox workers. Set
 `PRECOMMIT_PARALLELISM` to a positive integer to tune it. The minimum-dependency profile runs on Python 3.9
 and retains `pip check`; Python 3.8 is excluded from runtime checks. Artifact installs use
 fresh virtual environments with a shared `.tox/pip-cache` download cache.
@@ -796,16 +824,24 @@ stdlib-only and must stay outside public package CLI commands and package
 extras. It does not use vector stores, hosted LLM SDKs, Ollama, or embedding
 models.
 
-The private Telegram worker also accepts `/prompt_agent <description>`, authenticates
-the owner (with an owner-only confirmation button for anonymous channel posts),
-validates the request in a separate session, and opens a native Codex Plan-mode
-exchange through App Server with read-only source tools.
-Reply to a current question or use `/reply_agent <request-id> <answer>`; use
-`/cancel_agent <request-id>` to cancel. A separate agent must approve the completed
-plan against the initial prompt and all user responses before another agent codes.
-Questions during coding pause work and return through the same exchange. The Pi
-runs no repository checks, builds or renders; GitHub performs validation and a fresh
-independent agent reviews the final PR.
+Telegram feature intake and feature development are disabled. Develop features
+locally; publication starts a fresh read-only Codex reviewer with immutable Git
+reads and no shell. It must inspect every diff page and approve the complete task.
+Rejections remain local for correction and another fresh review. The signed
+receipt binds head, tree, dev base, task digest and separate reviewer identity.
+The orchestrator verifies it against host-owned enrollment before accepting it.
+`git-workflow review` reviews a committed candidate; `push` retries publication.
+
+Publication is a one-way handoff. The orchestrator coordinates checks and merges;
+the GitHub coding role resolves conflicts only. A dedicated Pi repair role handles
+pre-merge CI and post-merge compatibility/integration failures, with fresh
+independent review after mutation or dev-base advancement. No work returns to the
+developing machine. Incident accounting deduplicates failed heads and preserves
+rejected patches and private work across retries, partial repairs and restarts.
+No new retry limit applies; established repair controls and holds remain in force.
+Telegram keeps authenticated controls, policy decisions, notifications and repair
+questions. The Pi runs no repository checks, builds or renders. Activation of the
+currently paused service is a separate deployment decision.
 
 The agent-only validation environment retains the reviewed
 `virtualenv>=21.1,<21.5` toolchain. Project setup resolves this constraint together
