@@ -1,0 +1,21 @@
+{
+  "command": [
+    "python",
+    "-I",
+    "/work/sentinel.py",
+    "<canonical fixed nonce/trusted_head/purpose JSON>"
+  ],
+  "id": "capture-receiver-sentinel-v1",
+  "marker": "receiver-rehearsal-v1",
+  "network": "none",
+  "outputs": [
+    "sentinel-result.json"
+  ],
+  "prerequisite_satisfied": false,
+  "program_git_blob": "7c159ae9bdd5dcc06f9fdc4331c17686e9298424",
+  "program_path": ".github/agent/fixtures/capture_receiver_sentinel_v1/sentinel.py",
+  "program_sha256": "2faca1b4528b6d7da1be6906a3273544e3b417c88dd87191e30c5b450f29cab2",
+  "schema_version": 1,
+  "source_origin": "exact trusted source tag/commit bound by envelope and composed inventory; no self-referential commit field",
+  "visual_approval": false
+}

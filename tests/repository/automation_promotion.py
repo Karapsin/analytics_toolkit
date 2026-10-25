@@ -85,6 +85,84 @@ def test_newer_main_automation_is_preserved_instead_of_overwritten(tmp_path: Pat
     assert git(tmp_path, "show", "HEAD:.github/agent/controller.py") == "newer main change"
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "agent_tools/other.py",
+        "agent_tools/sql_explorer_visual_render.py.bak",
+        "agent_tools/sql_explorer_visual_render.py/child.py",
+        "agent_tools/nested/sql_explorer_visual_render.py",
+        "other/agent_tools/sql_explorer_visual_render.py",
+        "analytics_toolkit/sql_explorer/visual_render.py",
+    ],
+)
+def test_renderer_policy_does_not_promote_adjacent_tools_or_package_paths(
+    tmp_path: Path, path: str
+) -> None:
+    assert not controller.policy_path(path)
+    adapter = SimpleNamespace(policy_path=controller.policy_path, command=Mock())
+    with pytest.raises(ValueError, match="Package paths"):
+        promotion.project(adapter, tmp_path, "candidate", "previous", [path])
+    adapter.command.assert_not_called()
+
+
+def renderer_source(work: Path) -> tuple[str, str]:
+    source(work)
+    files = {
+        "agent_tools/sql_explorer_visual_render.py": "released renderer\n",
+        "agent_tools/other.py": "released tool\n",
+        "analytics_toolkit/sql_explorer/display.py": "released UI\n",
+    }
+    for name, text in files.items():
+        path = work / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    git(work, "add", "--all")
+    git(work, "commit", "-m", "Released rendering infrastructure")
+    base = git(work, "rev-parse", "HEAD")
+    for name in files:
+        (work / name).write_text("candidate " + name + "\n")
+    (work / "analytics_toolkit/version.py").write_text("unreleased package\n")
+    git(work, "add", "--all")
+    git(work, "commit", "-m", "Reviewed renderer and unrelated candidate changes")
+    head = git(work, "rev-parse", "HEAD")
+    git(work, "checkout", "--detach", base)
+    return base, head
+
+
+@pytest.mark.parametrize("independent_main_edit", [False, True])
+def test_renderer_projection_is_exact_and_preserves_independent_main(
+    tmp_path: Path, independent_main_edit: bool
+) -> None:
+    base, head = renderer_source(tmp_path)
+    helper = "agent_tools/sql_explorer_visual_render.py"
+    adapter = SimpleNamespace(policy_path=controller.policy_path)
+    adapter.command = lambda *args, cwd, **kwargs: git(cwd, *args[1:], **kwargs)
+    assert controller.policy_path(helper)
+    if independent_main_edit:
+        (tmp_path / helper).write_text("independent main renderer\n")
+        git(tmp_path, "add", "--", helper)
+        git(tmp_path, "commit", "-m", "Independent main renderer")
+        before = git(tmp_path, "write-tree")
+        with pytest.raises(ValueError, match="Main automation changed"):
+            promotion.project(adapter, tmp_path, head, base, [helper])
+        assert git(tmp_path, "write-tree") == before
+        return
+    assert promotion.project(adapter, tmp_path, head, base, [helper])
+    tree = git(tmp_path, "write-tree")
+    assert git(tmp_path, "ls-tree", tree, "--", helper) == git(
+        tmp_path, "ls-tree", head, "--", helper
+    )
+    assert git(tmp_path, "diff-tree", "--no-commit-id", "--name-only", "-r", base, tree) == helper
+    for name in (
+        "agent_tools/other.py",
+        "analytics_toolkit/sql_explorer/display.py",
+        "analytics_toolkit/version.py",
+        ".github/agent/controller.py",
+    ):
+        assert git(tmp_path, "show", tree + ":" + name) == git(tmp_path, "show", base + ":" + name)
+
+
 @pytest.mark.parametrize("denied", [True, False])
 def test_activation_requires_actual_owner_approval_and_exact_base_review(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, denied: bool

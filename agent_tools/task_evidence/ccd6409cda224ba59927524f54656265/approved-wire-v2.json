@@ -1,0 +1,2149 @@
+{
+  "schema": "capture-receiver-first-unit-wire-bundle/v2",
+  "status": "Proposed complete plan companion only; no implementation/operational authority.",
+  "receiver_schema_origin": {
+    "global_plan_sha256": "5ad935c7fd8e34283db0a5803467a5ddafbdaca7878ed0d3724024c26a11ad4c",
+    "global_field": "purpose_separated_receiver_wire_v3.schema",
+    "unchanged_v1_file_sha256": "7931d1a5044d2ae3149ab9ba5bf75e18ac6ca08fbc1d24a9aba70b279339b7cf"
+  },
+  "receiver_envelope_and_authority_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:atk:capture-receiver-envelope:2",
+    "oneOf": [
+      {
+        "$ref": "#/$defs/productionEnvelope"
+      },
+      {
+        "$ref": "#/$defs/rehearsalEnvelope"
+      }
+    ],
+    "$defs": {
+      "sha40": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{40}$"
+      },
+      "sha64": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "uuid32": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{32}$"
+      },
+      "positiveInteger": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "revision": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "requestId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{1,128}$"
+      },
+      "source": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "profile_id",
+          "source_set_sha256",
+          "expected_trusted_head",
+          "source_tag",
+          "source_deployment_receipt_sha256"
+        ],
+        "properties": {
+          "profile_id": {
+            "const": "capture_isolation_active_v1"
+          },
+          "source_set_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "expected_trusted_head": {
+            "$ref": "#/$defs/sha40"
+          },
+          "source_tag": {
+            "type": "string",
+            "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+          },
+          "source_deployment_receipt_sha256": {
+            "$ref": "#/$defs/sha64"
+          }
+        }
+      },
+      "attempt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nonce",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "nonce": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "created_at": {
+            "$ref": "#/$defs/positiveInteger"
+          },
+          "expires_at": {
+            "$ref": "#/$defs/positiveInteger"
+          }
+        }
+      },
+      "productionAuthorization": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "pr_number",
+          "request_id",
+          "revision",
+          "generation",
+          "task_digest",
+          "plan_receipt_sha256",
+          "patch_sha256",
+          "candidate",
+          "candidate_base",
+          "gate_proof_sha256",
+          "admission_receipt_sha256"
+        ],
+        "properties": {
+          "kind": {
+            "const": "production-capture-admission-v1"
+          },
+          "pr_number": {
+            "$ref": "#/$defs/positiveInteger"
+          },
+          "request_id": {
+            "$ref": "#/$defs/requestId"
+          },
+          "revision": {
+            "$ref": "#/$defs/revision"
+          },
+          "generation": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "task_digest": {
+            "$ref": "#/$defs/sha64"
+          },
+          "plan_receipt_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "patch_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "candidate": {
+            "$ref": "#/$defs/sha40"
+          },
+          "candidate_base": {
+            "$ref": "#/$defs/sha40"
+          },
+          "gate_proof_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "admission_receipt_sha256": {
+            "$ref": "#/$defs/sha64"
+          }
+        }
+      },
+      "caseId": {
+        "enum": [
+          "positive-fixed-source",
+          "wrong-fixture-binding",
+          "wrong-source-set",
+          "wrong-expected-head",
+          "expired-envelope",
+          "wrong-purpose",
+          "missing-authorization",
+          "old-receiver-ref",
+          "replay-attempt",
+          "main-before-dispatch",
+          "main-after-queue",
+          "production-rejects-rehearsal"
+        ]
+      },
+      "rehearsalAuthorization": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "operation_id",
+          "operation_revision",
+          "operation_generation",
+          "operation_task_digest",
+          "operation_plan_sha256",
+          "independent_operation_review_sha256",
+          "operation_receipt_sha256",
+          "admission_receipt_sha256",
+          "fixture_id",
+          "fixture_source_commit",
+          "fixture_manifest_sha256",
+          "fixture_program_sha256",
+          "case_id",
+          "recipe_sha256"
+        ],
+        "properties": {
+          "kind": {
+            "const": "receiver-rehearsal-admission-v1"
+          },
+          "operation_id": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "operation_revision": {
+            "$ref": "#/$defs/revision"
+          },
+          "operation_generation": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "operation_task_digest": {
+            "$ref": "#/$defs/sha64"
+          },
+          "operation_plan_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "independent_operation_review_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "operation_receipt_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "admission_receipt_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "fixture_id": {
+            "const": "capture-receiver-sentinel-v1"
+          },
+          "fixture_source_commit": {
+            "$ref": "#/$defs/sha40"
+          },
+          "fixture_manifest_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "fixture_program_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "case_id": {
+            "$ref": "#/$defs/caseId"
+          },
+          "recipe_sha256": {
+            "$ref": "#/$defs/sha64"
+          }
+        }
+      },
+      "productionEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "purpose",
+          "operation",
+          "repository",
+          "source",
+          "attempt",
+          "authorization"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 2
+          },
+          "purpose": {
+            "const": "production"
+          },
+          "operation": {
+            "const": "visual-profile-v2"
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "source": {
+            "$ref": "#/$defs/source"
+          },
+          "attempt": {
+            "$ref": "#/$defs/attempt"
+          },
+          "authorization": {
+            "$ref": "#/$defs/productionAuthorization"
+          }
+        }
+      },
+      "rehearsalEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "purpose",
+          "operation",
+          "repository",
+          "source",
+          "attempt",
+          "authorization"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 2
+          },
+          "purpose": {
+            "const": "receiver-rehearsal"
+          },
+          "operation": {
+            "const": "visual-profile-rehearsal-v1"
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "source": {
+            "$ref": "#/$defs/source"
+          },
+          "attempt": {
+            "$ref": "#/$defs/attempt"
+          },
+          "authorization": {
+            "$ref": "#/$defs/rehearsalAuthorization"
+          }
+        }
+      },
+      "fixture": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "source_commit",
+          "manifest_path",
+          "manifest_sha256",
+          "program_path",
+          "program_git_blob",
+          "program_sha256"
+        ],
+        "properties": {
+          "id": {
+            "const": "capture-receiver-sentinel-v1"
+          },
+          "source_commit": {
+            "$ref": "#/$defs/sha40"
+          },
+          "manifest_path": {
+            "const": ".github/agent/fixtures/capture_receiver_sentinel_v1/manifest.json"
+          },
+          "manifest_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "program_path": {
+            "const": ".github/agent/fixtures/capture_receiver_sentinel_v1/sentinel.py"
+          },
+          "program_git_blob": {
+            "$ref": "#/$defs/sha40"
+          },
+          "program_sha256": {
+            "$ref": "#/$defs/sha64"
+          }
+        }
+      },
+      "recipe": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "mode",
+          "recipe_sha256",
+          "expected_outcome"
+        ],
+        "properties": {
+          "case_id": {
+            "$ref": "#/$defs/caseId"
+          },
+          "mode": {
+            "enum": [
+              "github-live-fixed-sentinel",
+              "deterministic-source-test"
+            ]
+          },
+          "recipe_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "expected_outcome": {
+            "enum": [
+              "fixed-sentinel-pass",
+              "guard-reject-before-sentinel",
+              "production-reject-before-side-effect"
+            ]
+          }
+        }
+      },
+      "operationAuthority": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_digest",
+          "task_archive_sha256",
+          "plan_sha256",
+          "independent_plan_review_sha256",
+          "source_review_sha256",
+          "source_origin_proofs_sha256",
+          "exact_head_CI_proof_sha256",
+          "protected_policy_proof_sha256",
+          "compatibility_proof_sha256",
+          "operational_review_sha256",
+          "helper_sha256",
+          "payload_sha256",
+          "fault_rehearsal_sha256",
+          "authority_snapshot_sha256"
+        ],
+        "properties": {
+          "task_digest": {
+            "$ref": "#/$defs/sha64"
+          },
+          "task_archive_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "plan_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "independent_plan_review_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "source_review_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "source_origin_proofs_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "exact_head_CI_proof_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "protected_policy_proof_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "compatibility_proof_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "operational_review_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "helper_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "payload_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "fault_rehearsal_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "authority_snapshot_sha256": {
+            "$ref": "#/$defs/sha64"
+          }
+        }
+      },
+      "rehearsalOperationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "kind",
+          "purpose",
+          "repository",
+          "operation_id",
+          "revision",
+          "generation",
+          "source",
+          "fixture",
+          "cases",
+          "authority"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "kind": {
+            "const": "receiver-rehearsal-operation-v1"
+          },
+          "purpose": {
+            "const": "receiver-rehearsal"
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "operation_id": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "revision": {
+            "$ref": "#/$defs/revision"
+          },
+          "generation": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "source": {
+            "$ref": "#/$defs/source"
+          },
+          "fixture": {
+            "$ref": "#/$defs/fixture"
+          },
+          "cases": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/recipe"
+            }
+          },
+          "authority": {
+            "$ref": "#/$defs/operationAuthority"
+          }
+        }
+      },
+      "rehearsalAdmissionReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "kind",
+          "purpose",
+          "operation_receipt_sha256",
+          "operation_id",
+          "operation_revision",
+          "operation_generation",
+          "envelope_binding_sha256",
+          "case_id",
+          "recipe_sha256",
+          "fixture_manifest_sha256",
+          "authority_snapshot_sha256",
+          "issued_at",
+          "expires_at"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "kind": {
+            "const": "receiver-rehearsal-admission-v1"
+          },
+          "purpose": {
+            "const": "receiver-rehearsal"
+          },
+          "operation_receipt_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "operation_id": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "operation_revision": {
+            "$ref": "#/$defs/revision"
+          },
+          "operation_generation": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "envelope_binding_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "case_id": {
+            "$ref": "#/$defs/caseId"
+          },
+          "recipe_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "fixture_manifest_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "authority_snapshot_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "issued_at": {
+            "$ref": "#/$defs/positiveInteger"
+          },
+          "expires_at": {
+            "$ref": "#/$defs/positiveInteger"
+          }
+        }
+      },
+      "productionAdmissionReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "kind",
+          "purpose",
+          "request_id",
+          "revision",
+          "generation",
+          "gate_proof_sha256",
+          "envelope_binding_sha256",
+          "authority_snapshot_sha256",
+          "issued_at",
+          "expires_at"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "kind": {
+            "const": "production-capture-admission-v1"
+          },
+          "purpose": {
+            "const": "production"
+          },
+          "request_id": {
+            "$ref": "#/$defs/requestId"
+          },
+          "revision": {
+            "$ref": "#/$defs/revision"
+          },
+          "generation": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "gate_proof_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "envelope_binding_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "authority_snapshot_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "issued_at": {
+            "$ref": "#/$defs/positiveInteger"
+          },
+          "expires_at": {
+            "$ref": "#/$defs/positiveInteger"
+          }
+        }
+      },
+      "receiverCapabilityAcceptance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "kind",
+          "scope",
+          "source",
+          "operation_receipt_sha256",
+          "positive_result_sha256",
+          "negative_observation_sha256",
+          "deterministic_controls_sha256",
+          "independent_acceptance_review_sha256",
+          "raw_evidence_index_sha256",
+          "visual_approval",
+          "prerequisite_satisfied"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "kind": {
+            "const": "receiver-capability-acceptance-v1"
+          },
+          "scope": {
+            "const": "receiver-platform-only"
+          },
+          "source": {
+            "$ref": "#/$defs/source"
+          },
+          "operation_receipt_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "positive_result_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "negative_observation_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "deterministic_controls_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "independent_acceptance_review_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "raw_evidence_index_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "visual_approval": {
+            "const": false
+          },
+          "prerequisite_satisfied": {
+            "const": false
+          }
+        }
+      },
+      "rehearsalRejectionObservation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "kind",
+          "purpose",
+          "operation_id",
+          "case_id",
+          "nonce",
+          "envelope_sha256",
+          "stage",
+          "workflow_run_id",
+          "sentinel_executed",
+          "visual_approval",
+          "prerequisite_satisfied",
+          "raw_index_sha256"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "kind": {
+            "const": "receiver-rehearsal-rejection-observation-v1"
+          },
+          "purpose": {
+            "const": "receiver-rehearsal"
+          },
+          "operation_id": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "case_id": {
+            "$ref": "#/$defs/caseId"
+          },
+          "nonce": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "envelope_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "stage": {
+            "enum": [
+              "bridge-reject",
+              "github-api-reject",
+              "workflow-early-guard-reject",
+              "receiver-preflight-reject",
+              "production-consumer-reject"
+            ]
+          },
+          "workflow_run_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/positiveInteger"
+              }
+            ]
+          },
+          "sentinel_executed": {
+            "const": false
+          },
+          "visual_approval": {
+            "const": false
+          },
+          "prerequisite_satisfied": {
+            "const": false
+          },
+          "raw_index_sha256": {
+            "$ref": "#/$defs/sha64"
+          }
+        }
+      },
+      "rehearsalResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "kind",
+          "purpose",
+          "repository",
+          "operation_id",
+          "case_id",
+          "nonce",
+          "envelope_sha256",
+          "admission_receipt_sha256",
+          "source_set_sha256",
+          "trusted_head",
+          "fixture_manifest_sha256",
+          "workflow_id",
+          "run_id",
+          "run_attempt",
+          "guard_result",
+          "sentinel_executed",
+          "visual_approval",
+          "prerequisite_satisfied",
+          "raw_index_sha256"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "kind": {
+            "const": "receiver-rehearsal-result-v1"
+          },
+          "purpose": {
+            "const": "receiver-rehearsal"
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "operation_id": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "case_id": {
+            "$ref": "#/$defs/caseId"
+          },
+          "nonce": {
+            "$ref": "#/$defs/uuid32"
+          },
+          "envelope_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "admission_receipt_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "source_set_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "trusted_head": {
+            "$ref": "#/$defs/sha40"
+          },
+          "fixture_manifest_sha256": {
+            "$ref": "#/$defs/sha64"
+          },
+          "workflow_id": {
+            "$ref": "#/$defs/positiveInteger"
+          },
+          "run_id": {
+            "$ref": "#/$defs/positiveInteger"
+          },
+          "run_attempt": {
+            "const": 1
+          },
+          "guard_result": {
+            "enum": [
+              "pass",
+              "reject"
+            ]
+          },
+          "sentinel_executed": {
+            "type": "boolean"
+          },
+          "visual_approval": {
+            "const": false
+          },
+          "prerequisite_satisfied": {
+            "const": false
+          },
+          "raw_index_sha256": {
+            "$ref": "#/$defs/sha64"
+          }
+        }
+      }
+    }
+  },
+  "transport_records_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Proposed capture profile transport records v1 (first unit planV2)",
+    "$defs": {
+      "response_facts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "headers_complete",
+          "body_complete",
+          "captured_body_bytes",
+          "observed_body_bytes",
+          "declared_body_bytes",
+          "body_ref",
+          "body_sha256",
+          "transport_error",
+          "safe_headers"
+        ],
+        "properties": {
+          "headers_complete": {
+            "type": "boolean"
+          },
+          "body_complete": {
+            "type": "boolean"
+          },
+          "captured_body_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65536
+          },
+          "observed_body_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65537
+          },
+          "declared_body_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body_ref": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent_id",
+              "attempt_id",
+              "sha256",
+              "bytes"
+            ],
+            "properties": {
+              "intent_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              "attempt_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65536
+              }
+            }
+          },
+          "body_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "transport_error": {
+            "enum": [
+              "none",
+              "not_sent",
+              "connect_or_tls",
+              "timeout_before_status",
+              "timeout_after_status",
+              "body_incomplete",
+              "body_limit",
+              "invalid_http",
+              "redirect_refused",
+              "io_error"
+            ]
+          },
+          "safe_headers": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "request_id",
+              "retry_after_seconds",
+              "rate_limit_remaining",
+              "rate_limit_reset_epoch",
+              "content_type"
+            ],
+            "properties": {
+              "request_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256,
+                    "pattern": "^[A-Za-z0-9:-]*$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retry_after_seconds": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rate_limit_remaining": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rate_limit_reset_epoch": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9/;= ._+-]*$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "monitor_post": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "repository",
+          "intent_id",
+          "attempt_id",
+          "api_version",
+          "http_status",
+          "response_facts",
+          "purpose",
+          "operation",
+          "nonce",
+          "envelope_sha256",
+          "kind",
+          "admission_receipt_sha256",
+          "monitor_issue",
+          "monitor_comment_id",
+          "comment_body_sha256",
+          "state",
+          "decision_basis"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "intent_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "attempt_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "api_version": {
+            "const": "2022-11-28"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "response_facts": {
+            "$ref": "#/$defs/response_facts"
+          },
+          "purpose": {
+            "enum": [
+              "production",
+              "receiver-rehearsal"
+            ]
+          },
+          "operation": {
+            "enum": [
+              "visual-profile-v2",
+              "visual-profile-rehearsal-v1"
+            ]
+          },
+          "nonce": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "envelope_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "const": "capture-profile-monitor-post-v1"
+          },
+          "admission_receipt_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "monitor_issue": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "monitor_comment_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comment_body_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "state": {
+            "enum": [
+              "posted",
+              "rejected",
+              "uncertain"
+            ]
+          },
+          "decision_basis": {
+            "enum": [
+              "complete_comment_identity",
+              "documented_api_rejection",
+              "possibly_applied"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "purpose": {
+                  "const": "production"
+                }
+              },
+              "required": [
+                "purpose"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "const": "visual-profile-v2"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "purpose": {
+                  "const": "receiver-rehearsal"
+                }
+              },
+              "required": [
+                "purpose"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "const": "visual-profile-rehearsal-v1"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "posted"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "const": 201
+                    },
+                    "monitor_comment_id": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "decision_basis": {
+                      "const": "complete_comment_identity"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "rejected"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "enum": [
+                        400,
+                        401,
+                        403,
+                        404,
+                        410,
+                        422,
+                        429
+                      ]
+                    },
+                    "monitor_comment_id": {
+                      "const": null
+                    },
+                    "decision_basis": {
+                      "const": "documented_api_rejection"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "uncertain"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "monitor_comment_id": {
+                  "const": null
+                },
+                "decision_basis": {
+                  "const": "possibly_applied"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Actions_dispatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "repository",
+          "intent_id",
+          "attempt_id",
+          "api_version",
+          "http_status",
+          "response_facts",
+          "purpose",
+          "operation",
+          "nonce",
+          "envelope_sha256",
+          "kind",
+          "monitor_comment_id",
+          "workflow_id",
+          "workflow_path",
+          "source_tag",
+          "expected_trusted_head",
+          "bridge_run_id",
+          "bridge_run_attempt",
+          "return_run_details",
+          "state",
+          "workflow_run_id",
+          "decision_basis"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "intent_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "attempt_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "api_version": {
+            "const": "2022-11-28"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "response_facts": {
+            "$ref": "#/$defs/response_facts"
+          },
+          "purpose": {
+            "enum": [
+              "production",
+              "receiver-rehearsal"
+            ]
+          },
+          "operation": {
+            "enum": [
+              "visual-profile-v2",
+              "visual-profile-rehearsal-v1"
+            ]
+          },
+          "nonce": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "envelope_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "const": "capture-profile-Actions-dispatch-v1"
+          },
+          "monitor_comment_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "workflow_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "workflow_path": {
+            "const": ".github/workflows/agent-visual-profile.yml"
+          },
+          "source_tag": {
+            "type": "string",
+            "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+          },
+          "expected_trusted_head": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "bridge_run_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "bridge_run_attempt": {
+            "const": 1
+          },
+          "return_run_details": {
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "accepted",
+              "rejected",
+              "uncertain"
+            ]
+          },
+          "workflow_run_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision_basis": {
+            "enum": [
+              "complete_dispatch_identity",
+              "complete_empty_dispatch_acceptance",
+              "documented_api_rejection",
+              "possibly_applied"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "purpose": {
+                  "const": "production"
+                }
+              },
+              "required": [
+                "purpose"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "const": "visual-profile-v2"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "purpose": {
+                  "const": "receiver-rehearsal"
+                }
+              },
+              "required": [
+                "purpose"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "const": "visual-profile-rehearsal-v1"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "accepted"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "http_status": {
+                          "const": 200
+                        },
+                        "return_run_details": {
+                          "const": true
+                        },
+                        "workflow_run_id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "decision_basis": {
+                          "const": "complete_dispatch_identity"
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "http_status": {
+                          "const": 204
+                        },
+                        "return_run_details": {
+                          "const": false
+                        },
+                        "workflow_run_id": {
+                          "const": null
+                        },
+                        "decision_basis": {
+                          "const": "complete_empty_dispatch_acceptance"
+                        },
+                        "response_facts": {
+                          "properties": {
+                            "captured_body_bytes": {
+                              "const": 0
+                            },
+                            "observed_body_bytes": {
+                              "const": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "rejected"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "enum": [
+                        400,
+                        401,
+                        403,
+                        404,
+                        410,
+                        422,
+                        429
+                      ]
+                    },
+                    "workflow_run_id": {
+                      "const": null
+                    },
+                    "decision_basis": {
+                      "const": "documented_api_rejection"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "uncertain"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "workflow_run_id": {
+                  "const": null
+                },
+                "decision_basis": {
+                  "const": "possibly_applied"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "source_ref_create": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "repository",
+          "intent_id",
+          "attempt_id",
+          "api_version",
+          "http_status",
+          "response_facts",
+          "kind",
+          "purpose",
+          "operation_id",
+          "deployment_intent_sha256",
+          "source_tag",
+          "expected_trusted_head",
+          "state",
+          "decision_basis"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "intent_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "attempt_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "api_version": {
+            "const": "2022-11-28"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "response_facts": {
+            "$ref": "#/$defs/response_facts"
+          },
+          "kind": {
+            "const": "capture-profile-source-ref-create-v1"
+          },
+          "purpose": {
+            "const": "source-deployment"
+          },
+          "operation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "deployment_intent_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "source_tag": {
+            "type": "string",
+            "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+          },
+          "expected_trusted_head": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "state": {
+            "enum": [
+              "created_response",
+              "rejected",
+              "uncertain"
+            ]
+          },
+          "decision_basis": {
+            "enum": [
+              "complete_reference_identity",
+              "documented_api_rejection",
+              "possibly_applied_or_existing"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "created_response"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "const": 201
+                    },
+                    "decision_basis": {
+                      "const": "complete_reference_identity"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "rejected"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "enum": [
+                        400,
+                        401,
+                        403,
+                        404,
+                        410,
+                        429
+                      ]
+                    },
+                    "decision_basis": {
+                      "const": "documented_api_rejection"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "uncertain"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "decision_basis": {
+                  "const": "possibly_applied_or_existing"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "reconciliation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "kind",
+          "repository",
+          "intent_id",
+          "attempt_id",
+          "original_receipt_sha256",
+          "endpoint",
+          "discovery_index_sha256",
+          "disposition",
+          "verified_identity"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "kind": {
+            "const": "capture-profile-transport-reconciliation-v1"
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "intent_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "attempt_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "original_receipt_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "endpoint": {
+            "enum": [
+              "monitor-comment",
+              "workflow-dispatch",
+              "source-ref-create"
+            ]
+          },
+          "discovery_index_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "disposition": {
+            "enum": [
+              "matched",
+              "conflict",
+              "not_found_in_complete_window",
+              "incomplete"
+            ]
+          },
+          "verified_identity": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "endpoint",
+                      "monitor_comment_id",
+                      "comment_body_sha256",
+                      "identity_proof_sha256"
+                    ],
+                    "properties": {
+                      "endpoint": {
+                        "const": "monitor-comment"
+                      },
+                      "monitor_comment_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "comment_body_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "identity_proof_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "endpoint",
+                      "workflow_run_id",
+                      "run_attempt",
+                      "workflow_id",
+                      "expected_trusted_head",
+                      "identity_proof_sha256"
+                    ],
+                    "properties": {
+                      "endpoint": {
+                        "const": "workflow-dispatch"
+                      },
+                      "workflow_run_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "run_attempt": {
+                        "const": 1
+                      },
+                      "workflow_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "expected_trusted_head": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "identity_proof_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "endpoint",
+                      "source_tag",
+                      "commit",
+                      "identity_proof_sha256"
+                    ],
+                    "properties": {
+                      "endpoint": {
+                        "const": "source-ref-create"
+                      },
+                      "source_tag": {
+                        "type": "string",
+                        "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+                      },
+                      "commit": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "identity_proof_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "disposition": {
+                  "const": "matched"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "verified_identity": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "endpoint",
+                        "monitor_comment_id",
+                        "comment_body_sha256",
+                        "identity_proof_sha256"
+                      ],
+                      "properties": {
+                        "endpoint": {
+                          "const": "monitor-comment"
+                        },
+                        "monitor_comment_id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "comment_body_sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "identity_proof_sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "endpoint",
+                        "workflow_run_id",
+                        "run_attempt",
+                        "workflow_id",
+                        "expected_trusted_head",
+                        "identity_proof_sha256"
+                      ],
+                      "properties": {
+                        "endpoint": {
+                          "const": "workflow-dispatch"
+                        },
+                        "workflow_run_id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "run_attempt": {
+                          "const": 1
+                        },
+                        "workflow_id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "expected_trusted_head": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{40}$"
+                        },
+                        "identity_proof_sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "endpoint",
+                        "source_tag",
+                        "commit",
+                        "identity_proof_sha256"
+                      ],
+                      "properties": {
+                        "endpoint": {
+                          "const": "source-ref-create"
+                        },
+                        "source_tag": {
+                          "type": "string",
+                          "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+                        },
+                        "commit": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{40}$"
+                        },
+                        "identity_proof_sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "verified_identity": {
+                  "const": null
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "oneOf": [
+      {
+        "$ref": "#/$defs/monitor_post"
+      },
+      {
+        "$ref": "#/$defs/Actions_dispatch"
+      },
+      {
+        "$ref": "#/$defs/source_ref_create"
+      },
+      {
+        "$ref": "#/$defs/reconciliation"
+      }
+    ],
+    "x-mandatory-semantic-constraints": [
+      "All objects have exact fields; JSON parser rejects duplicate keys, invalid UTF8, nonfinite numbers, bool-as-int and values outside strict integer limits. Formal JSON Schema integer alone is not sufficient: stdlib implementation must explicitly reject Python bool and float including1.0 for every integer. Global V3 finite/depth/node/string/canonical and aggregate bounds remain mandatory.",
+      "The top-level http_status is the actual last observed final response status; null only when no final status was received. Interim1xx are retained as bounded protocol facts in the private raw journal but never synthesized as a final status. If a nonfinal or malformed status is the only observed line, no valid final status exists and transport_error=invalid_http; retain the actual line privately. A valid unexpected final status remains the actual integer100..599 and uncertain. Never replace known401/5xx bynull/0/200.",
+      "response_facts is a truthful observation, not an arbitrary caller claim. body_ref resolves only a fixed private intent/attempt content-addressed member via anchored descriptors, no input path. Its ids equal the receipt; its bytes/SHA equal captured_body_bytes/body_sha256 and exact retained captured bytes. SHA of empty captured bytes is the real SHA256 of empty bytes, notnull or a fake original. No status may coexist with headers_complete=true unless an actual final status and complete headers were received.",
+      "captured_body_bytes<=observed_body_bytes<=65537. A bounded one-byte over-limit detector may observe65537 while retaining a clearly labelled65536-byte prefix; body_complete=false/body_limit then. Otherwise every observed body byte is retained, and complete requires observed=captured, valid EOF/HTTP framing, no encoding/length error, no read/timeout and correct Content-Length when present. A limit hit, partial read, missing EOF, malformed framing or incomplete headers is never complete. Body refs never label an observed prefix as a complete server original.",
+      "No-status and failed-before-send observations remain uncertain/no positive identity. body_complete=false, headers_complete=false and no supplied resource ID. Mutation not attempted because of missing genuine authority/preflight is a distinct existing typed pending result before this transport receipt, not a fabricated HTTP rejection.",
+      "Complete success additionally parses exact endpoint identity from raw JSON under the documented API wire, checks canonical request/source/repository binding and actual server-owned App/monitor or URL identity. A successful status with bad/mismatching/missing/duplicate identity or invalid/truncated/overbound body is uncertain with all actual bytes/status retained; do not salvage a guessed ID. Any parsed candidate ID not yet verified stays in the raw journal only, not the positive receipt.",
+      "Known rejected requires a complete bounded finite GitHub JSON error from the fixed authenticated HTTPS API endpoint AND the explicit endpoint classifier in the plan. A status in the schema enum alone does not prove that classifier. HTML/proxy/ambiguous/malformed/missing bodies or unrecognized errors stay uncertain with their actual status. Rejected means this POST was refused, not proof that an earlier attempt/resource does not exist.",
+      "A source-ref created_response requires exact returned ref, object.type=commit and SHA=M; it is still not a verified published source pin. Always obtain a separate exact GET readback plus fresh source/authority checks before pin success. Source409/422 are always uncertain-or-existing until exact ref readback, never absent/force-repair. Found exact old ref is recorded in reconciliation without rewriting the original POST receipt.",
+      "Actions200 is accepted only when the immutable pre-POST intent requested return_run_details=true and complete JSON provides strict workflow_run_id plus exact fixed-repository run_url/html_url identity. Actions204 is accepted only for the frozen return_run_details=false request and complete empty response; workflow_run_id remainsnull. An unexpected200/204 or body/mode mismatch is uncertain. This source unit fixes normal bridge modefalse for compatibility; the additive low-level typed helper supports trusted fixed true-mode tests but models/envelopes cannot choose it. Future switch of the bridge constant needs reviewed source, not an automatic retry/capability probe.",
+      "accepted/posted/created_response signify transport identity or acceptance only, never receiver execution, rehearsal result, capture proof, production Gate, main/source admission, protected approval or merge.",
+      "Reconciliation is a NEW immutable record referencing the original immutable attempt receipt and complete ordered metadata index. Never change original status/state/body to match later discovery. Matched identity endpoint must equal record endpoint and bind the exact original repository/purpose/nonce/envelope/comment/source/ref/time/attempt through resolved identity_proof_sha256. A display title or loosely timed run alone is insufficient. A conflict proof retains every conflicting identity privately; missing/overbound/discovery errors are incomplete.",
+      "A bounded complete list window with no match is only not_found_in_complete_window, never a remote non-application proof. Uncertain and accepted-with-null-ID attempts cannot be automatically replayed based on absence/expiry/time. Keep discovery-only/pending until exact verified identity and terminal disposition or separate genuinely reviewed safe reconciliation; no undocumented operator override.",
+      "Before ANY second POST, resolve/reconcile every earlier intent/attempt and retain bounded discovery even for a prior known rejection. No helper autonomously retries POST, follows authenticated redirects, switches purpose/legacy workflow/ref or reuses a nonce. A retry after a definite refusal additionally requires current same-purpose genuine authority, satisfied backoff and a new explicit intent/nonce; a previously matched action is followed, never duplicated. New worker/operation callers still need their real live control/source/full-row CAS at the boundary.",
+      "Credential source is the existing trusted GH_TOKEN environment and fixed repository binding, never gh.token, a model argument or a request body. No credentials/request headers/redirect URL/opaque exception text enter artifacts. Safe header fields are parsed bounded allowlist values, not unrestricted copies. Exact secret-taint detection blocks raw artifact exposure; preserve private quarantine/hash and an explicit incomplete/private-only delivery fact rather than pretending safely delivered complete original. Public/model views are redacted copies; raw nonsecret response originals remain immutable under the joint retention budget."
+    ]
+  },
+  "implementation_file_contract": "The protected capture_receiver.schema.json remains the exact unchanged globalV3 receiver schema bytes, not this bundle wrapper. New transport shapes/semantics are fixed stdlib validators in capture_receiver.py/controller paths with tests; no second arbitrary runtime schema loader, jsonschema dependency or mutation to global purpose/admission schemas."
+}

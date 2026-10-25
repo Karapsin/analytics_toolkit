@@ -1,0 +1,1659 @@
+{
+  "schema": "capture-receiver-first-protected-unit-concrete-plan/v2",
+  "status": "Complete revised concrete source-unit plan for fresh independent review; V1 and its full request-changes review preserved unchanged. No source implementation, tests, Actions, Pi, approvals or operations performed. GlobalV3 remains approved design only; unitV2 not yet approved.",
+  "author": "/root/review_failed_visual_delivery_plan",
+  "starting_user_prompt": "implement it on your own if orchestator is not doing that",
+  "global_contract": {
+    "plan": "/private/tmp/capture-prerequisite-positive-verifier-concrete-plan-v3.json",
+    "sha256": "5ad935c7fd8e34283db0a5803467a5ddafbdaca7878ed0d3724024c26a11ad4c",
+    "independent_full_review": "/private/tmp/capture-prerequisite-positive-verifier-independent-plan-review-v3.json",
+    "review_sha256": "193722b53c64e3aa217b14cab91eb0861bc04714501c99435a4bfe80f2847bd1",
+    "review_decision": "approve_plan; no findings; design scope only",
+    "read_and_reconciled": "The complete global V3 review was read. All constraints on distinct genuine rehearsal authority, source-pinned pre-execution guards, exact origins, actual receiver evidence, cooperative source refs and genuine whole-controller admission are mandatory here. This source unit does not imply any later Gate/worker/operation capability exists.",
+    "normative_schema": "/private/tmp/capture-receiver-first-unit-wire-schema-v1.json",
+    "normative_schema_sha256": "7931d1a5044d2ae3149ab9ba5bf75e18ac6ca08fbc1d24a9aba70b279339b7cf",
+    "schema_derivation": "Exact parsed object purpose_separated_receiver_wire_v3.schema from frozen global V3, emitted as JSON data. Full envelopes and all purpose-specific receipt/result/observation/capability definitions are normative; no field is narrowed, defaulted or silently reclassified. This is a proposed contract, not current authority.",
+    "transport_wire_companion": "/private/tmp/capture-receiver-first-unit-wire-schema-v2.json",
+    "transport_wire_companion_sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba",
+    "schema_unchanged": "The V1 normative receiver schema and globalV3 purpose/admission/rehearsal schemas are unchanged. The V2 companion nests that identical parsed receiver schema and separately adds the closed transport records above; the actual protected receiver schema file remains the exact20058 bytes bound in V1."
+  },
+  "scope": {
+    "implements": "One protected ATK source feature providing the fixed schema/validators, isolated purpose-aware receiver, new nonlegacy dispatch routes, immutable source-ref primitive and additive producer transport receipts. It preserves all old ordinary controller APIs and capture helper/program bytes. First real source-deployment/rehearsal operation remains a separately reviewed later operation using these interfaces.",
+    "does_not_implement": [
+      "self_host positive prerequisite evaluator or worker admission caller wiring",
+      "production Gate proof or ordinary PR review/merge approval",
+      "checked-authority renewal API (separate root feature)",
+      "whole-controller admission reader/protocol producer/registry enrollment (separate mandatory feature)",
+      "automatic owner-question recovery, pause retirement or owner answers",
+      "main projection, source tag creation, actual rehearsal, worker installation or registry publication as part of source implementation",
+      "SQL Explorer/harness/renderer/scene/package changes",
+      "new App scopes/admin credentials/rulesets/services/model callbacks"
+    ],
+    "current_support_boundary": "No existing code caller gains production admission automatically. Current preparatory capture profile stays pending. Missing new producer/receiver transport, private admission, whole-controller admission, source deployment or runtime compatibility is a typed pending/refusal, never a legacy visual fallback. The new source protocol may be implemented and source-reviewed before later activation; source availability is not operational readiness."
+  },
+  "complete_task_provenance": {
+    "parent": "/private/tmp/capture-positive-verifier-design-sources-v1/pr45-full-task.json",
+    "parent_sha256": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+    "bytes": 55949,
+    "instruction": "A fresh normal managed task/branch must retain this complete authenticated signed parent archive and chronological full Q/options/A/plans/decisions/checkpoints/diagnostics, append the exact receiver-unit correction and global plan/review references using task-context workflows, and retain fresh runtime/source provenance outside frozen parent fields. No generic prompt or shortened leaf replaces the full all-PR objective. Root has existing repair authorization; source/policy/operation gates still apply independently."
+  },
+  "source_baseline": {
+    "root_checkout": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/248c02afdc73/19ac2eeff8284a2f",
+    "observed": {
+      ".github/agent/controller.py": "4ad12163c313fa3d8a05682081954ebc03ddb01052a65765cc908558572f5e4e",
+      ".github/agent/dispatch.py": "ef8b73f36ac501fe862ce9f4dd958728ee3e81d3462af9cb2befbd59fa00e765",
+      ".github/workflows/agent-dispatch.yml": "d0c5f816aaec23abe2b5e8cb4c98e8d5d81b2d2548c1f8d78dc03f04260f9050",
+      ".github/agent/task_archive.py": "d0e68f687b45185d0e236a23cd981fd36346e98a96d455fd7b7783d28389f420",
+      ".github/agent/branch_cleanup.py": "7432a5c391b12fc2df20592ed9ce7fa817bbce2f172dbe03aa55080a299134b1",
+      ".github/agent/automation_promotion.py": "eda982dc05d5e27d76a0b66eb7c364de4e726f7fc8d33633b72c42caedf54f27",
+      "tests/repository/github_agent.py": "6807bc437312256686fd8cef5afefe03cc2a9b9ebfd29cf608fdcd877babc5d3",
+      "tests/repository/automation_promotion.py": "7f40b1eb5f6ff71833e15527c3e43a0f8eb1b6f98ecc71089fa697e802be6527"
+    },
+    "fresh_start": "Root must use a fresh task and mandatory prepare_start/instruction routing/change_impact/workflow_status/git_workflow start after the checked-authority source handoff. These read-only observations are not an excuse to bypass startup, own another agent's branch or overwrite incoming changes. Revalidate this unit against actual dev; material interface/schema/admission changes require a plan revision before edits.",
+    "legacy_APIs": [
+      "controller.GitHub.api performs gh api and returns parsed JSON or None for an empty response; its command timeout is180s, not the new20s transport budget.",
+      "GitHub.comment(number,body)->None discards the API-created comment identity and truncates at60000 characters. New profile transport uses an additive bounded receipt-returning POST path; do not change old callers' behavior.",
+      "controller.dispatch(gh,operation,value)->None calls monitor and comments the existing operation/value envelope; leave that legacy scalar API's behavior intact.",
+      "controller.candidate(gh,task,artifact,work)->sha applies the patch, creates/signs a local temporary commit, pushes refs/heads/agent-visual/<sha>, then dispatches visual. Composite code must never accidentally call this combined legacy side effect. New prepare/publish paths are explicit and separate.",
+      "dispatch.validated(event,slug) currently accepts scalar visual40hex plus existing integration/rerun under the2000-byte legacy envelope; dispatch.main sends visual to agent-visual.yml/ref main. Add new purpose routes without interpreting them as legacy.",
+      "agent-dispatch currently checks out mutable main and runs python dispatch.py. Pin its trusted script checkout to event github.sha and Python-I from runner.temp; preserve ordinary validated operation semantics and existing actions:write bridge.",
+      "automation_promotion.project uses controller.policy_path and existing previous-dev/main endpoint checks. Add only one new fixed workflow path; the existing protected agent prefix already covers receiver/schema/fixtures. Existing agent-visual.yml and PR45 helpers are not edited."
+    ]
+  },
+  "actual_authentication_wire": {
+    "permission_record": "/private/tmp/capture-positive-verifier-design-sources-v1/actual-app-permissions-check-117766860180.json",
+    "permission_record_sha256": "371d628b9beebba642dde4ef95ce2523429d2ac8bb380a4a1ac709d9774eed43",
+    "auth_comment_record": "/private/tmp/capture-positive-verifier-design-sources-v1/pr45-comments-auth-source-wire.json",
+    "auth_comment_record_sha256": "d65035cfa80c13ff13fb210e6bd6a9de005ea0c2dcea3bb8ca87775eac8333a9",
+    "actual_comment": 6254117735,
+    "fixed_profile": {
+      "repository": "Karapsin/analytics_toolkit",
+      "app_id": 5250620,
+      "slug": "analytics-toolkit-agent-717959",
+      "bot_user_id": 340139075,
+      "bot_login": "analytics-toolkit-agent-717959[bot]",
+      "monitor_title": "GitHub agent integration monitor"
+    },
+    "facts": "Actual API comment has user.type Bot/id340139075/login exact and performed_via_github_app.id5250620/slug exact. Authenticate both API-owned identity records, not just a string in its body. Initial issue-comment bridge checks actual event sender/comment/issue; receiver workflow_dispatch actor may be github-actions, so authenticate the fetched original App monitor comment rather than incorrectly requiring the remote dispatch actor itself to be the App. Require exact repository issue URL/id/title/open non-PR monitor and raw canonical body/envelope/comment identity/freshness. Missing/changed/forged public records refuse.",
+    "permissions": "Actual App declares contents:write/actions:read/checks:write/issues:write/metadata:read/pull_requests:write/workflows:write, no administration. Host source-ref/comment publication uses existing effective App permissions only; Actions bridge uses existing job actions:write to POST workflow dispatch. Actual permission failure remains pending. Candidate/rehearsal containers never receive either token. No new App/admin scope or hidden bypass-list assumption.",
+    "sample_scope_and_tests": "Authentic6254117735 is an App comment on PR45, not the integration monitor. Use it to bind actual server-owned user/performed_via_app field shape only and as an explicit NON-PR-MONITOR NEGATIVE. Any positive monitor fixture is clearly labelled synthetic with changed issue context; it is not real monitor capability. Actual authenticated nonPR monitor/receiver platform evidence remains a later mandatory operation gate.",
+    "credential_source": "New bounded host/bridge transport takes GH_TOKEN only from the existing trusted environment with fixed repository binding. It never uses invented gh.token, model credentials, request-body secrets or legacy gh.api rawstatus semantics. Step-local tokens never reach source fixture/candidate containers/artifacts/logs."
+  },
+  "exact_file_strategy": {
+    "runtime_source_changes": [
+      ".github/agent/controller.py",
+      ".github/agent/dispatch.py",
+      ".github/workflows/agent-dispatch.yml"
+    ],
+    "new_protected_files": [
+      ".github/agent/capture_receiver.py",
+      ".github/agent/capture_receiver.schema.json",
+      ".github/agent/fixtures/capture_receiver_sentinel_v1/manifest.json",
+      ".github/agent/fixtures/capture_receiver_sentinel_v1/sentinel.py",
+      ".github/workflows/agent-visual-profile.yml"
+    ],
+    "tests": [
+      "tests/repository/capture_receiver.py (new meaningful receiver/schema/source-pin/transport tests)",
+      "tests/repository/github_agent.py (actual dispatch compatibility/new-route tests)",
+      "tests/repository/automation_promotion.py (real temporary-Git fixed-path projection tests)",
+      "tests/repository/task_archive.py or archive_publication.py (only needed namespace-preservation cases)",
+      "tests/repository/_support/fixtures/capture_receiver_v2/ (exact native/helper/auth/schema/case data only as required)"
+    ],
+    "docs_and_context": [
+      "docs/GITHUB_AGENT_OPERATIONS.md",
+      "one uniquely owned feature fragment via version_bump",
+      "managed exact full parent task attachment/evidence required by the repository workflow"
+    ],
+    "schema_file": "The new fixed schema file is the exact20,058-byte normative extracted V3 schema above, under existing protected .github/agent. Use stdlib fixed tagged validators and explicit semantic checks; no runtime jsonschema dependency/packaging change or generic callback engine. A schema() accessor exposes the data contract for trusted tools/tests but is never an authority assertion. Include this actual transitive file and both fixtures in source-set hashes and whole-controller inventories.",
+    "policy_delta": "Add ONLY literal .github/workflows/agent-visual-profile.yml to the current fixed policy_path set. Root's independent helper allowlist rule must be preserved from actual merged source, not duplicated/removed or assumed deployed. Deny siblings/suffixes/nested/similar workflow names and arbitrary agent_tools/package/UI paths.",
+    "conditional_admission_record": "If the separately selected/admitted RouteB is implemented, this final whole .github/agent tree needs its own authentic .codex/controller-admissions/<tree>.json and complete compatibility evidence in the same signed source task/head/projection as required by that actual reader. Its exact closed record/source semantics remain the separate admission feature's responsibility and require revalidation before adding such files. No invented record is generated by this plan; a source PR without a supported real admission path must not activate. A full genuine protocol1 route is also allowed only if actually implemented/reviewed.",
+    "transport_schema_placement": "No new arbitrary transport schema file is required. The V2 companion is private review data only; fixed transport-shape validators and actual outcome/retention/reconciliation code live narrowly in the already planned capture_receiver.py/controller/dispatch paths. The protected capture_receiver.schema.json still equals exact globalV3, and no purpose/authority field changes. Whole-source/schema/fixture admission inventory includes every actual implementation dependency."
+  },
+  "new_source_interfaces": [
+    {
+      "API": "capture_receiver.protocol() / schema()",
+      "contract": "Pure fixed metadata: protocol capture-receiver-v2, schema_version2, supported exact purposes/operations, fixed workflow/profile/App identities and normative schema/source contract. Actual source files/hash inventories are derived from the fixed reviewed closure, never caller paths. This advertises implemented syntax only, not policy/source deployment/runtime/capability readiness. Missing schema/helper/native source returns typed unavailable; no self-reported ready boolean satisfies a Gate."
+    },
+    {
+      "API": "capture_receiver.validate_envelope(raw_bytes, *, expected_purpose, now)",
+      "contract": "Pure4096-byte canonical finite duplicate-free UTF8 tagged-union validator, strict int notbool, bounds/depth/nodes/string limits and exact field sets from V3. Require operation/purpose/kind/protocol coherence, derived tag, receipt-core hashes,<=300s freshness and source bindings. No authority minted by successful parsing; no optional production fields, arbitrary source/ref/command/callback or v1 migration. Negative fixed recipe delivery is separately authorized operation metadata and never overrides receiver validation."
+    },
+    {
+      "API": "capture_receiver.read_host_admission(state_root, admission_ref, envelope)",
+      "contract": "A closed content-addressed reference to an existing genuine purpose-specific admission under the fixed private production or source-operation ledger, not a boolean/bare arbitrary dict/path. Descriptor-anchored nofollow/singlelink/size/hash checks and complete stored original bindings. Production admission must have been issued by the later real worker Gate; rehearsal admission by the separately approved source-operation helper. This unit provides parsing/binding/transport consumption, not either production evaluator or a schema-only receipt issuer. Missing real issuer/record/current caller authority is typed pending and produces no push/comment. The later worker/operation caller remains responsible for live full-row/control/source/global CAS immediately at its boundary; a metadata hash is not a durable permission token."
+    },
+    {
+      "API": "controller.prepare_profile_visual_candidate(gh,task,artifact,work)",
+      "contract": "Build only the local signed Git candidate using existing patch/tree/parent/message semantics, with hooks/config safeguards and exact patch/task/head/base bindings; return a closed prepared record containing candidate/base/tree/patch/task identities. No ref push, monitor POST or legacy dispatch. Extract a small shared inert builder from legacy candidate only if it preserves all legacy API/order/identity semantics; otherwise keep the additive path narrow. No PR program is executed."
+    },
+    {
+      "API": "controller.publish_profile_visual_candidate(..., prepared, admission_ref)",
+      "contract": "Accept production-purpose genuine private admission only, matching exact prepared candidate/task/patch/source. Require the later caller's fresh live Gate/CAS at this immediate push boundary; absent producer/caller capability returns pending, never legacy candidate(). Push only refs/heads/agent-visual/<candidate> with exact create/readback; no force/overwrite. Persist exact intent before transport, recheck current source/ref/authority before posting. This source unit adds no automatic worker caller or Gate-proof issuer. Rehearsal input rejects before temporary branch push."
+    },
+    {
+      "API": "controller.dispatch_profile_request(gh,envelope,admission_ref)",
+      "contract": "Production-only bounded monitor POST helper. Authenticate existing open non-PR monitor freshly; refuse missing/ambiguous monitor instead of silently creating unrelated issues. Read genuine private admission reference, enforce V3 purpose/hash/current source and caller boundary, retain intent first, POST exact operation/value canonical body through the new bounded API primitive and return the typed transport receipt below. It never calls GitHub.comment's truncating/discarding path or scalar visual fallback. A later worker owns production current-row Gate and completion CAS."
+    },
+    {
+      "API": "capture_receiver.dispatch_rehearsal_request(gh,operation_ref,case_id,admission_ref)",
+      "contract": "Separate trusted metadata source-operation entrypoint. No PR/candidate/patch/ref/program arguments. Resolve only exact existing independently approved operation ledger/fixed fixture/case recipe and genuine rehearsal receipt. Verify current operation generation/status/cancel/source/global state under its actual operation lease. Post only visual-profile-rehearsal-v1. Deterministic recipes never dispatch. Fixed negative recipe authority permits delivery of its frozen safe test bytes, not executing an invalid fixture or bypassing source guards. This unit defines the interface; a concrete later operator helper/payload/review must supply the real ledger/authority before first use."
+    },
+    {
+      "API": "capture_receiver.create_source_pin(gh,expected_main,composed_profile,deployment_intent)",
+      "contract": "Separately authorized metadata operation only: derive the sole tag agent-visual-source-v1-<M>; verify actual signed main/composed source/CI/policy/compatibility/authority receipts, acquire the bounded source-publication lease and create-only POST git/refs at existing signed M. Exact existing commit ref is a verified no-op; mismatch/noncommit or uncertain unconfirmed state is pending/provenance hold. Never arbitrary ref/PATCH/delete/force. Preserve all intents/readbacks/tags. Read-only positive verifier does not call it."
+    },
+    {
+      "API": "dispatch.validated / new dispatch branch",
+      "contract": "Preserve all legacy operation schemas/2000-byte bound. New schema2 production and rehearsal operation/value branches use4096-byte envelope/body limits and exact actual App event identity/monitor body. Route only to fixed workflow ID/path agent-visual-profile.yml and deterministic source TAG NAME with exactly the five required inputs. Read current main/ref/source metadata before POST. Old/missing operation/path/capability/permission/API error means refusal or typed pending; no mutable-main/legacy fallback. GHA event script remains trusted source from event github.sha."
+    },
+    {
+      "API": "capture_receiver.preflight / run_fixed_rehearsal",
+      "contract": "Trusted runner-only source-pinned Python-I entrypoints, exact source/schema/App/monitor/receipt/purpose/nonce/time/attempt/ref/main/fixture/candidate semantic checks before selecting one branch. Emit complete typed positive or rejection metadata and explicit ok only when all guards pass. Production branch has candidate only; rehearsal branch has exact fixed source fixture only. These entrypoints are not source-agent MCP tools and are never invoked onPi for candidate validation."
+    }
+  ],
+  "bounded_host_transport_response_contract": {
+    "legacy_constraint": "Do not promise GitHub.comment or dispatch returns a workflow ID. They currently returnNone. Add separate strict metadata helpers; leave legacy return semantics intact.",
+    "low_level_HTTP": "Add new fixed HTTPS API metadata transport, not legacy gh.api/command. Pin api.github.com/fixed repository/method/path and X-GitHub-Api-Version2022-11-28; use the existing trusted GH_TOKEN only in authorization headers, never invent gh.token or pass credentials through payload/model/CLI output. No automatic POST retries or authenticated redirects. GET response2MiB, mutation captured body64KiB, at most one bounded extra byte to identify overlimit, aggregate16MiB, read1/socket5s/action20s/outer90s including discovery; bound headers and approved JSON parsing too. HTTPError is an observed HTTP response, not an opaque exception: retain actual status/body facts. Known status survives partial/malformed/overbound body. Null is only no final status observed. Preserve an immutable pre-POST intent, each complete or explicitly incomplete observation and its exact private hash/index before deriving a closed outcome. Record zero captured bytes honestly, not a missing-response success. Legacy180s command and old comment/dispatch return values stay untouched.",
+    "monitor_post_receipt": {
+      "closed_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "repository",
+          "intent_id",
+          "attempt_id",
+          "api_version",
+          "http_status",
+          "response_facts",
+          "purpose",
+          "operation",
+          "nonce",
+          "envelope_sha256",
+          "kind",
+          "admission_receipt_sha256",
+          "monitor_issue",
+          "monitor_comment_id",
+          "comment_body_sha256",
+          "state",
+          "decision_basis"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "intent_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "attempt_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "api_version": {
+            "const": "2022-11-28"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "response_facts": {
+            "$ref": "#/$defs/response_facts"
+          },
+          "purpose": {
+            "enum": [
+              "production",
+              "receiver-rehearsal"
+            ]
+          },
+          "operation": {
+            "enum": [
+              "visual-profile-v2",
+              "visual-profile-rehearsal-v1"
+            ]
+          },
+          "nonce": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "envelope_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "const": "capture-profile-monitor-post-v1"
+          },
+          "admission_receipt_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "monitor_issue": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "monitor_comment_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comment_body_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "state": {
+            "enum": [
+              "posted",
+              "rejected",
+              "uncertain"
+            ]
+          },
+          "decision_basis": {
+            "enum": [
+              "complete_comment_identity",
+              "documented_api_rejection",
+              "possibly_applied"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "purpose": {
+                  "const": "production"
+                }
+              },
+              "required": [
+                "purpose"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "const": "visual-profile-v2"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "purpose": {
+                  "const": "receiver-rehearsal"
+                }
+              },
+              "required": [
+                "purpose"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "const": "visual-profile-rehearsal-v1"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "posted"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "const": 201
+                    },
+                    "monitor_comment_id": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "decision_basis": {
+                      "const": "complete_comment_identity"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "rejected"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "enum": [
+                        400,
+                        401,
+                        403,
+                        404,
+                        410,
+                        422,
+                        429
+                      ]
+                    },
+                    "monitor_comment_id": {
+                      "const": null
+                    },
+                    "decision_basis": {
+                      "const": "documented_api_rejection"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "uncertain"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "monitor_comment_id": {
+                  "const": null
+                },
+                "decision_basis": {
+                  "const": "possibly_applied"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": "Explicit posted|rejected|uncertain states; all three retain actual http_status and response_facts. Known rejection has valid nonce/envelope identity from the authenticated request and is distinct from an unparsed invalid request. Only posted201 may carry a verified comment ID; uncertain/rejected mustnot guess one. Later discovery creates a separate immutable reconciliation record."
+    },
+    "Actions_dispatch_receipt": {
+      "closed_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "repository",
+          "intent_id",
+          "attempt_id",
+          "api_version",
+          "http_status",
+          "response_facts",
+          "purpose",
+          "operation",
+          "nonce",
+          "envelope_sha256",
+          "kind",
+          "monitor_comment_id",
+          "workflow_id",
+          "workflow_path",
+          "source_tag",
+          "expected_trusted_head",
+          "bridge_run_id",
+          "bridge_run_attempt",
+          "return_run_details",
+          "state",
+          "workflow_run_id",
+          "decision_basis"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "intent_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "attempt_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "api_version": {
+            "const": "2022-11-28"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "response_facts": {
+            "$ref": "#/$defs/response_facts"
+          },
+          "purpose": {
+            "enum": [
+              "production",
+              "receiver-rehearsal"
+            ]
+          },
+          "operation": {
+            "enum": [
+              "visual-profile-v2",
+              "visual-profile-rehearsal-v1"
+            ]
+          },
+          "nonce": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "envelope_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "const": "capture-profile-Actions-dispatch-v1"
+          },
+          "monitor_comment_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "workflow_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "workflow_path": {
+            "const": ".github/workflows/agent-visual-profile.yml"
+          },
+          "source_tag": {
+            "type": "string",
+            "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+          },
+          "expected_trusted_head": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "bridge_run_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "bridge_run_attempt": {
+            "const": 1
+          },
+          "return_run_details": {
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "accepted",
+              "rejected",
+              "uncertain"
+            ]
+          },
+          "workflow_run_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision_basis": {
+            "enum": [
+              "complete_dispatch_identity",
+              "complete_empty_dispatch_acceptance",
+              "documented_api_rejection",
+              "possibly_applied"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "purpose": {
+                  "const": "production"
+                }
+              },
+              "required": [
+                "purpose"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "const": "visual-profile-v2"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "purpose": {
+                  "const": "receiver-rehearsal"
+                }
+              },
+              "required": [
+                "purpose"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "const": "visual-profile-rehearsal-v1"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "accepted"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "http_status": {
+                          "const": 200
+                        },
+                        "return_run_details": {
+                          "const": true
+                        },
+                        "workflow_run_id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "decision_basis": {
+                          "const": "complete_dispatch_identity"
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "http_status": {
+                          "const": 204
+                        },
+                        "return_run_details": {
+                          "const": false
+                        },
+                        "workflow_run_id": {
+                          "const": null
+                        },
+                        "decision_basis": {
+                          "const": "complete_empty_dispatch_acceptance"
+                        },
+                        "response_facts": {
+                          "properties": {
+                            "captured_body_bytes": {
+                              "const": 0
+                            },
+                            "observed_body_bytes": {
+                              "const": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "rejected"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "enum": [
+                        400,
+                        401,
+                        403,
+                        404,
+                        410,
+                        422,
+                        429
+                      ]
+                    },
+                    "workflow_run_id": {
+                      "const": null
+                    },
+                    "decision_basis": {
+                      "const": "documented_api_rejection"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "uncertain"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "workflow_run_id": {
+                  "const": null
+                },
+                "decision_basis": {
+                  "const": "possibly_applied"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": "Explicit accepted|rejected|uncertain with real observed status in each. Documented200+true+valididentity or204+false+empty acceptance only; retain known errors rather than mapping tonull/0. Actual dispatch acceptance still grants no execution/product/Gate proof. Later discovery never changes initial http_status/state/body."
+    },
+    "receipt_delivery": "Preserve V1 exact artifact prefix capture-profile-dispatch-<comment-id>-<nonce>-<bridge-run>-<attempt>, but deliver the closed corrected receipt, complete safe raw response or explicitly incomplete captured-prefix observation, and each later immutable reconciliation as separate records in its fixed trusted runner.temp root. Upload safe rejection/uncertainty evidence on always() only when actual authenticated IDs/paths exist. No credentials/request headers/redirect URL/opaque exception text enters output; secret-tainted raw cannot be uploaded or called safely complete. Preserve private quarantine/hash and honest delivery-pending facts instead. No overwrite of issue monitor state, task/Q+A, earlier attempts or ordinary candidate artifacts. Future host still verifies actual bridge source/workflow/run/attempt/App event/comment/body and authenticated artifact identity; missing/unsafe/incomplete delivery is pending, never authority.",
+    "unparsed_negative_record": "A malformed new request with no valid purpose/nonce cannot be forced into a positive receipt schema. Retain a distinct capture-profile-unparsed-rejection-v1 object with exact schema_version1/kind/comment_id/bridge_run_id/bridge_run_attempt/raw_input_sha256/reason and explicit purpose=null/nonce=null/state=rejected. Use a safe fixed rejection artifact name based only on actual comment/bridge IDs. It is never accepted as dispatch or receiver evidence. If no authenticated comment ID/safe output exists, report only the actual job failure; do not invent identity or echo tokens/unknown text into command files.",
+    "uncertainty_recovery": {
+      "intent_before_mutation": "Immutable intent includes exact endpoint/repository/method/canonical request body digest, nonce/purpose/envelope/admission or source-op bindings, source/head/ref, actual current authority generation, API mode, begin time and one attempt_id before POST. No operation starts without real same-purpose authority/current source/live caller CAS; source publication lease scope stays narrow.",
+      "no_second_POST_rule": "All helpers issue at most one POST per intent. Before ANY second POST at this boundary, inspect durable earlier intents/outcomes and perform bounded exact discovery/reconciliation; missing/partial/conflicting earlier records remain pending. No automatically retrying library, same-nonce repost, alternate endpoint/source/purpose/legacy workflow or newnonce workaround. Rejected errors do not erase prior unresolved attempts.",
+      "monitor_discovery": "Bounded complete comments list/read on exact existing authenticated nonPR issue. Match actual App identities, exact canonical body/envelope SHA/nonce/purpose/repository/source and time. Re-fetch found exact comment. No complete-window absence/one404/expiry proof of no POST, no display-text-only match, no auto-created replacement monitor.",
+      "run_discovery": "Bounded fixed-workflow list/attempt GET/artifact metadata and authenticated bridge/receiver originals. Correlate exact actualworkflow/sourceSHA/tag/ref/event/attempt1/purpose/nonce/monitorcomment/envelope and post-intent interval; display_title alone insufficient. A200validid still needs full execution evidence later;204oruncertainstatus uses discovery only, no blind re-dispatch.",
+      "ref_discovery": "Always exact derived refGET and actual commit/type/source readback, not prefix/list/trusting409/422 text. Matching exact source yields append-only matched evidence; conflicting identity hold. For uncertaincreate no match doesnotauthorize replay; source tags never updated/deleted/force-repaired.",
+      "resolution": "Append capture-profile-transport-reconciliation-v1 referencing original immutable receipt and complete metadata index. matched follows the already existing action; conflict holds; not_found_in_complete_window is only bounded observation; incomplete holds. Original observed status/body/state remain intact. Unknown potentially applied action stays pending until exact real identity/terminal disposition or a separately planned/reviewed safe reconciliation supplies actual proof. This unit invents no override.",
+      "future_retry": "A definite documented POST refusal may be followed only after bounded discovery reconciles prior histories, real fresh same-purpose authority/current source/control CAS and required rate-limit backoff; issue a new explicit intent/nonce. Matched successful or still uncertain requests are never repeated as retries. New proof after cancellation/expiry/revision cannot resurrect an old request; original negative/uncertain history retained.",
+      "bounds": "All GET/list/download/read/parsing/discovery shares the existing global joint16MiB/5pages×100/500complete metadata/20saction/90souter budgets; no hidden unbounded loop or sleeping while holding the source lease. Cap/deadline/rate-limit/incomplete metadata remains pending for later bounded scheduling, not a user-upload/question loop. No universal GitHub exactly-once or linearizable absence claim."
+    },
+    "endpoint_documentation": {
+      "checked_read_only": "2026-10-18; official primary documentation only, no private mutation or live endpoint probe",
+      "sources": [
+        {
+          "url": "https://docs.github.com/en/rest/issues/comments?apiVersion=2022-11-28#create-an-issue-comment",
+          "observed": "Official create-comment endpoint:201 success;403/404/410/422 listed errors. A comment response is not execution proof."
+        },
+        {
+          "url": "https://docs.github.com/en/rest/actions/workflows?apiVersion=2022-11-28#create-a-workflow-dispatch-event",
+          "observed": "Official dispatch endpoint accepts branch/tag ref; current documentation has return_run_details=true yielding200+workflow_run_id/run_url/html_url andfalse yielding204empty. No run ID is invented for204."
+        },
+        {
+          "url": "https://docs.github.com/en/rest/git/refs?apiVersion=2022-11-28#create-a-reference",
+          "observed": "Official create-ref endpoint lists201/409/422; exact commit readback is still mandatory, including conflicts."
+        },
+        {
+          "url": "https://docs.github.com/en/rest/authentication/authenticating-to-the-rest-api#failed-login-limit",
+          "observed": "Official authentication errors document invalid credentials401 and insufficient-access403/404."
+        },
+        {
+          "url": "https://docs.github.com/en/rest/using-the-rest-api/troubleshooting-the-rest-api",
+          "observed": "Official generic REST contract documents parsing400, validation422, inaccessible404 and quota403/429. These describe refusals, not a transaction/idempotency guarantee or proof of no prior mutation."
+        },
+        {
+          "url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-rate-limit",
+          "observed": "Official rate-limit handling requires respecting retry-after/reset and pausing requests. This source has no sleep/retry loop under the held lease; future scheduling remains bounded/pending."
+        },
+        {
+          "url": "https://docs.github.com/en/rest/about-the-rest-api/api-versions",
+          "observed": "Explicit API version is fixed2022-11-28 for this additive path. Unsupported version410 is a known refusal only with its complete recognized API error. Current public docs are not evidence of real repository receiver availability."
+        }
+      ],
+      "inference_boundary": "The conservative distinction between a complete documented API refusal and uncertain potentially applied mutation is this plan's fail-closed safety policy, not a claim GitHub provides transaction rollback, exactly-once or linearizable list visibility. Any unrecognized/incomplete case is uncertain."
+    },
+    "closed_wire": {
+      "companion": "/private/tmp/capture-receiver-first-unit-wire-schema-v2.json",
+      "sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba",
+      "field": "transport_records_schema",
+      "semantic_constraints_are_mandatory": true,
+      "compatibility": "These are new additive transport records, not a change to the global receiver schema or old ordinary APIs. Strict validators enforce both formal shape and listed actual-observation/authority semantics; JSON schema alone is not evidence."
+    },
+    "response_observation": {
+      "fields_and_types": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "headers_complete",
+          "body_complete",
+          "captured_body_bytes",
+          "observed_body_bytes",
+          "declared_body_bytes",
+          "body_ref",
+          "body_sha256",
+          "transport_error",
+          "safe_headers"
+        ],
+        "properties": {
+          "headers_complete": {
+            "type": "boolean"
+          },
+          "body_complete": {
+            "type": "boolean"
+          },
+          "captured_body_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65536
+          },
+          "observed_body_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65537
+          },
+          "declared_body_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body_ref": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "intent_id",
+              "attempt_id",
+              "sha256",
+              "bytes"
+            ],
+            "properties": {
+              "intent_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              "attempt_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65536
+              }
+            }
+          },
+          "body_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "transport_error": {
+            "enum": [
+              "none",
+              "not_sent",
+              "connect_or_tls",
+              "timeout_before_status",
+              "timeout_after_status",
+              "body_incomplete",
+              "body_limit",
+              "invalid_http",
+              "redirect_refused",
+              "io_error"
+            ]
+          },
+          "safe_headers": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "request_id",
+              "retry_after_seconds",
+              "rate_limit_remaining",
+              "rate_limit_reset_epoch",
+              "content_type"
+            ],
+            "properties": {
+              "request_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256,
+                    "pattern": "^[A-Za-z0-9:-]*$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retry_after_seconds": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rate_limit_remaining": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rate_limit_reset_epoch": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "content_type": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9/;= ._+-]*$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "status_location": "Each receipt has required http_status: strict int100..599 ornull only no final response. response_facts has exact completeness/byte/hash/ref/error/header facts; it never invents a resource identity.",
+      "original_retention": "Complete bodies remain complete originals. Truncated/overbound/lost bodies remain labelled captured prefixes with byte facts and all actual observed status; retain the private journal/hash and redacted delivery view. No full-original claim for uncaptured bytes. Response/index records resolve only fixed descriptor-safe content-addressed own intent/attempt members, never arbitrary supplied paths."
+    },
+    "endpoint_outcome_policy": {
+      "common_precondition_for_known_rejection": "Fixed authenticated GitHub HTTPS endpoint; actual final status; complete bounded headers/body/framing; finite duplicate-free GitHub JSON error; recognized documented error family and no contradictory success/identity fields. Match response against fixed endpoint classifier, not any caller-provided reason. A schema status enum alone or status text alone is insufficient. HTML/proxy/unrecognized/incomplete errors are uncertain.",
+      "shared_definite_refusals": {
+        "400": "Recognized generic JSON parsing/body-object/missing-supported-version input rejection only; otherwise uncertain.",
+        "401": "Recognized invalid/missing GitHub credential API error; retain actual401 and pause for real authentication handling, never substitute an owner plan question.",
+        "403": "Recognized endpoint forbidden/insufficient-integration-permission/authentication-block or documented rate-limit error. Permission failures pause; rate-limit variants retain bounded parsed retry/reset facts and do not retry under this action.",
+        "404": "Recognized API Not Found for this exact endpoint/request is a refusal of this POST. It does NOT prove the monitor/ref/workflow/repository is absent or an earlier action did not occur; private access can mask existing resources.",
+        "410": "Recognized unsupported API-version refusal for all three endpoints; monitor create additionally accepts its endpoint-documented Gone error. Other endpoint410 messages remain uncertain.",
+        "429": "Recognized GitHub primary/secondary quota rejection corroborated by the documented error and/or parsed quota headers; retain actual429, no immediate retry. Unknown429/proxy text remains uncertain."
+      },
+      "monitor_comment": {
+        "endpoint": "POST /repos/Karapsin/analytics_toolkit/issues/<fresh-authenticated-open-nonPR-monitor>/comments",
+        "posted": "201 only, complete valid comment; exact positive ID, App identities, issue/repository URL and canonical body digest verified. Re-fetch actual identity before use if needed; this proves created comment identity only.",
+        "rejected": "Shared complete recognized400/401/403/404/410/429 errors plus endpoint-documented422 validation/spam refusal. Keep actual code and nonsecret raw body. A raw401/403/404/422 with incomplete/unrecognized data is uncertain, not incorrectly forced into a rejected fixture.",
+        "uncertain": "Everything not satisfying posted or documented rejection: all408/5xx, redirects, nonmatching/unexpected2xx/3xx/other4xx, malformed/mismatching successful identity, missing status, network/read timeout, lost/truncated/overbound response. Keep original actualstatus when observed; commentid remainsnull in the initial uncertain receipt."
+      },
+      "Actions_dispatch": {
+        "endpoint": "POST /repos/Karapsin/analytics_toolkit/actions/workflows/<fixed-profile-workflow-id>/dispatches",
+        "request_mode": "Fixed ordinary bridge mode return_run_details=false in canonical intent; normal204accepted hasnullrun. The additive trusted low-level helper represents documentedtrue/200 for tests or a later reviewed fixed-source mode. Mode is not a model/envelope switch. Do not issue another POST to probe support.",
+        "accepted": "204complete empty only for requestedfalse;200complete validworkflow_run_id and exact run_url/html_url only for requestedtrue. Anything else uncertain. API acceptance never execution/success.",
+        "rejected": "Shared complete recognized400/401/403/404/410/429 API refusals plus generic documented422 missing/invalid parameter/Validation Failed rejection. Endpoint docs list only successes;422 classification relies explicitly on the generic REST validation contract and a complete recognized validation error, not invented endpoint-specific status documentation.",
+        "uncertain": "All408/5xx and otherwise unrecognized/incomplete responses, including observed200/204 with wrong mode/body/identity, keep actualstatus. workflow_run_id initiallynull; discover real exact run/attempt/envelope later rather than salvaging guessed IDs or legacy dispatch."
+      },
+      "source_ref_create": {
+        "endpoint": "POST /repos/Karapsin/analytics_toolkit/git/refs",
+        "created_response": "201complete exact derived refs/tags/agent-visual-source-v1-M, object.typecommit/SHA=M and fixed URL; still requires independent exact GET ref readback/fresh authority before source-pin verification.",
+        "rejected": "Shared complete recognized400/401/403/404/410/429 only. Even definite rejection does not prove a tag is absent.",
+        "conflict_and_422": "Actual409 or422 always retained uncertain-or-existing for this endpoint, including validation or already_exists text. Read exact ref identity, never infer absence from status or mutate/delete/force it. Exact matching existing ref may yield a separate matched reconciliation; conflicting/noncommit identity is a provenance hold.",
+        "uncertain": "Any408/5xx/partial/unrecognized/2xx malformed or timeout keeps actualstatus. Exact ref readback is mandatory for all outcomes; absent404 is not a transaction non-application proof for an uncertain create."
+      }
+    },
+    "source_ref_create_receipt": {
+      "closed_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "repository",
+          "intent_id",
+          "attempt_id",
+          "api_version",
+          "http_status",
+          "response_facts",
+          "kind",
+          "purpose",
+          "operation_id",
+          "deployment_intent_sha256",
+          "source_tag",
+          "expected_trusted_head",
+          "state",
+          "decision_basis"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "intent_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "attempt_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "api_version": {
+            "const": "2022-11-28"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "response_facts": {
+            "$ref": "#/$defs/response_facts"
+          },
+          "kind": {
+            "const": "capture-profile-source-ref-create-v1"
+          },
+          "purpose": {
+            "const": "source-deployment"
+          },
+          "operation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "deployment_intent_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "source_tag": {
+            "type": "string",
+            "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+          },
+          "expected_trusted_head": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "state": {
+            "enum": [
+              "created_response",
+              "rejected",
+              "uncertain"
+            ]
+          },
+          "decision_basis": {
+            "enum": [
+              "complete_reference_identity",
+              "documented_api_rejection",
+              "possibly_applied_or_existing"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "created_response"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "const": 201
+                    },
+                    "decision_basis": {
+                      "const": "complete_reference_identity"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "rejected"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "response_facts": {
+                      "properties": {
+                        "headers_complete": {
+                          "const": true
+                        },
+                        "body_complete": {
+                          "const": true
+                        },
+                        "transport_error": {
+                          "const": "none"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "http_status": {
+                      "enum": [
+                        400,
+                        401,
+                        403,
+                        404,
+                        410,
+                        429
+                      ]
+                    },
+                    "decision_basis": {
+                      "const": "documented_api_rejection"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "uncertain"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "decision_basis": {
+                  "const": "possibly_applied_or_existing"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": "Administrative source-deployment purpose is separate from either receiver envelope purpose. No production/rehearsal authority borrowed; true source-op intent/source/admission/lease remains mandatory.201response is not pin verification. Preserve conflicts and all original refs."
+    },
+    "reconciliation_receipt": {
+      "closed_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "kind",
+          "repository",
+          "intent_id",
+          "attempt_id",
+          "original_receipt_sha256",
+          "endpoint",
+          "discovery_index_sha256",
+          "disposition",
+          "verified_identity"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "kind": {
+            "const": "capture-profile-transport-reconciliation-v1"
+          },
+          "repository": {
+            "const": "Karapsin/analytics_toolkit"
+          },
+          "intent_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "attempt_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "original_receipt_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "endpoint": {
+            "enum": [
+              "monitor-comment",
+              "workflow-dispatch",
+              "source-ref-create"
+            ]
+          },
+          "discovery_index_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "disposition": {
+            "enum": [
+              "matched",
+              "conflict",
+              "not_found_in_complete_window",
+              "incomplete"
+            ]
+          },
+          "verified_identity": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "endpoint",
+                      "monitor_comment_id",
+                      "comment_body_sha256",
+                      "identity_proof_sha256"
+                    ],
+                    "properties": {
+                      "endpoint": {
+                        "const": "monitor-comment"
+                      },
+                      "monitor_comment_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "comment_body_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "identity_proof_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "endpoint",
+                      "workflow_run_id",
+                      "run_attempt",
+                      "workflow_id",
+                      "expected_trusted_head",
+                      "identity_proof_sha256"
+                    ],
+                    "properties": {
+                      "endpoint": {
+                        "const": "workflow-dispatch"
+                      },
+                      "workflow_run_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "run_attempt": {
+                        "const": 1
+                      },
+                      "workflow_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "expected_trusted_head": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "identity_proof_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "endpoint",
+                      "source_tag",
+                      "commit",
+                      "identity_proof_sha256"
+                    ],
+                    "properties": {
+                      "endpoint": {
+                        "const": "source-ref-create"
+                      },
+                      "source_tag": {
+                        "type": "string",
+                        "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+                      },
+                      "commit": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "identity_proof_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "disposition": {
+                  "const": "matched"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "verified_identity": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "endpoint",
+                        "monitor_comment_id",
+                        "comment_body_sha256",
+                        "identity_proof_sha256"
+                      ],
+                      "properties": {
+                        "endpoint": {
+                          "const": "monitor-comment"
+                        },
+                        "monitor_comment_id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "comment_body_sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "identity_proof_sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "endpoint",
+                        "workflow_run_id",
+                        "run_attempt",
+                        "workflow_id",
+                        "expected_trusted_head",
+                        "identity_proof_sha256"
+                      ],
+                      "properties": {
+                        "endpoint": {
+                          "const": "workflow-dispatch"
+                        },
+                        "workflow_run_id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "run_attempt": {
+                          "const": 1
+                        },
+                        "workflow_id": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "expected_trusted_head": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{40}$"
+                        },
+                        "identity_proof_sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "endpoint",
+                        "source_tag",
+                        "commit",
+                        "identity_proof_sha256"
+                      ],
+                      "properties": {
+                        "endpoint": {
+                          "const": "source-ref-create"
+                        },
+                        "source_tag": {
+                          "type": "string",
+                          "pattern": "^agent-visual-source-v1-[0-9a-f]{40}$"
+                        },
+                        "commit": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{40}$"
+                        },
+                        "identity_proof_sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "verified_identity": {
+                  "const": null
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": "Append only; reference original receipt and complete actual GET/list/artifact metadata index. Retain original500/timeout/204 facts and separate found identity. Never emit a manufactured successful POST or fabricate a run because the display title matches."
+    },
+    "mandatory_semantics": [
+      "All objects have exact fields; JSON parser rejects duplicate keys, invalid UTF8, nonfinite numbers, bool-as-int and values outside strict integer limits. Formal JSON Schema integer alone is not sufficient: stdlib implementation must explicitly reject Python bool and float including1.0 for every integer. Global V3 finite/depth/node/string/canonical and aggregate bounds remain mandatory.",
+      "The top-level http_status is the actual last observed final response status; null only when no final status was received. Interim1xx are retained as bounded protocol facts in the private raw journal but never synthesized as a final status. If a nonfinal or malformed status is the only observed line, no valid final status exists and transport_error=invalid_http; retain the actual line privately. A valid unexpected final status remains the actual integer100..599 and uncertain. Never replace known401/5xx bynull/0/200.",
+      "response_facts is a truthful observation, not an arbitrary caller claim. body_ref resolves only a fixed private intent/attempt content-addressed member via anchored descriptors, no input path. Its ids equal the receipt; its bytes/SHA equal captured_body_bytes/body_sha256 and exact retained captured bytes. SHA of empty captured bytes is the real SHA256 of empty bytes, notnull or a fake original. No status may coexist with headers_complete=true unless an actual final status and complete headers were received.",
+      "captured_body_bytes<=observed_body_bytes<=65537. A bounded one-byte over-limit detector may observe65537 while retaining a clearly labelled65536-byte prefix; body_complete=false/body_limit then. Otherwise every observed body byte is retained, and complete requires observed=captured, valid EOF/HTTP framing, no encoding/length error, no read/timeout and correct Content-Length when present. A limit hit, partial read, missing EOF, malformed framing or incomplete headers is never complete. Body refs never label an observed prefix as a complete server original.",
+      "No-status and failed-before-send observations remain uncertain/no positive identity. body_complete=false, headers_complete=false and no supplied resource ID. Mutation not attempted because of missing genuine authority/preflight is a distinct existing typed pending result before this transport receipt, not a fabricated HTTP rejection.",
+      "Complete success additionally parses exact endpoint identity from raw JSON under the documented API wire, checks canonical request/source/repository binding and actual server-owned App/monitor or URL identity. A successful status with bad/mismatching/missing/duplicate identity or invalid/truncated/overbound body is uncertain with all actual bytes/status retained; do not salvage a guessed ID. Any parsed candidate ID not yet verified stays in the raw journal only, not the positive receipt.",
+      "Known rejected requires a complete bounded finite GitHub JSON error from the fixed authenticated HTTPS API endpoint AND the explicit endpoint classifier in the plan. A status in the schema enum alone does not prove that classifier. HTML/proxy/ambiguous/malformed/missing bodies or unrecognized errors stay uncertain with their actual status. Rejected means this POST was refused, not proof that an earlier attempt/resource does not exist.",
+      "A source-ref created_response requires exact returned ref, object.type=commit and SHA=M; it is still not a verified published source pin. Always obtain a separate exact GET readback plus fresh source/authority checks before pin success. Source409/422 are always uncertain-or-existing until exact ref readback, never absent/force-repair. Found exact old ref is recorded in reconciliation without rewriting the original POST receipt.",
+      "Actions200 is accepted only when the immutable pre-POST intent requested return_run_details=true and complete JSON provides strict workflow_run_id plus exact fixed-repository run_url/html_url identity. Actions204 is accepted only for the frozen return_run_details=false request and complete empty response; workflow_run_id remainsnull. An unexpected200/204 or body/mode mismatch is uncertain. This source unit fixes normal bridge modefalse for compatibility; the additive low-level typed helper supports trusted fixed true-mode tests but models/envelopes cannot choose it. Future switch of the bridge constant needs reviewed source, not an automatic retry/capability probe.",
+      "accepted/posted/created_response signify transport identity or acceptance only, never receiver execution, rehearsal result, capture proof, production Gate, main/source admission, protected approval or merge.",
+      "Reconciliation is a NEW immutable record referencing the original immutable attempt receipt and complete ordered metadata index. Never change original status/state/body to match later discovery. Matched identity endpoint must equal record endpoint and bind the exact original repository/purpose/nonce/envelope/comment/source/ref/time/attempt through resolved identity_proof_sha256. A display title or loosely timed run alone is insufficient. A conflict proof retains every conflicting identity privately; missing/overbound/discovery errors are incomplete.",
+      "A bounded complete list window with no match is only not_found_in_complete_window, never a remote non-application proof. Uncertain and accepted-with-null-ID attempts cannot be automatically replayed based on absence/expiry/time. Keep discovery-only/pending until exact verified identity and terminal disposition or separate genuinely reviewed safe reconciliation; no undocumented operator override.",
+      "Before ANY second POST, resolve/reconcile every earlier intent/attempt and retain bounded discovery even for a prior known rejection. No helper autonomously retries POST, follows authenticated redirects, switches purpose/legacy workflow/ref or reuses a nonce. A retry after a definite refusal additionally requires current same-purpose genuine authority, satisfied backoff and a new explicit intent/nonce; a previously matched action is followed, never duplicated. New worker/operation callers still need their real live control/source/full-row CAS at the boundary.",
+      "Credential source is the existing trusted GH_TOKEN environment and fixed repository binding, never gh.token, a model argument or a request body. No credentials/request headers/redirect URL/opaque exception text enter artifacts. Safe header fields are parsed bounded allowlist values, not unrestricted copies. Exact secret-taint detection blocks raw artifact exposure; preserve private quarantine/hash and an explicit incomplete/private-only delivery fact rather than pretending safely delivered complete original. Public/model views are redacted copies; raw nonsecret response originals remain immutable under the joint retention budget."
+    ]
+  },
+  "closed_private_transport_references": {
+    "production_admission_ref": {
+      "schema_version": 1,
+      "purpose": "production",
+      "fields_exact": [
+        "schema_version",
+        "purpose",
+        "request_id",
+        "nonce",
+        "receipt_sha256"
+      ],
+      "types": "request_id is V3 bounded ASCII id, nonce32hex and receipt_sha25664hex; no path/callback/approve flag"
+    },
+    "rehearsal_admission_ref": {
+      "schema_version": 1,
+      "purpose": "receiver-rehearsal",
+      "fields_exact": [
+        "schema_version",
+        "purpose",
+        "operation_id",
+        "case_id",
+        "nonce",
+        "receipt_sha256"
+      ],
+      "types": "operation_id/nonce32hex, case_id exact V3 enum, receipt_sha25664hex; no PR/candidate/path/callback/approve flag"
+    },
+    "fixed_locations": "Reserve production requests/<request_id>/capture-admissions/<nonce>/admission.json for the later genuine worker issuer, and source-deployments/<operation_id>/admissions/<case_id>/<nonce>.json for the source-operation issuer, both under exact AGENT_STATE_DIR with anchored owned parents. Current source does not already produce these records. Read only exact purpose-specific receipt schema and hash; resolve referenced Gate/operation originals through their private immutable indexes, not supplied filesystem paths. A missing issuer/index/record is pending. All data refs remain hashes and typed ids, not capability assertions.",
+    "current_authority": "Receipt parsing is not current-row authority. The future production worker must hold/recheck its actual full request/control/source/global CAS immediately before new source ref/candidate/comment side effects, and the separate operation helper must check its own live operation status/revision/generation/cancel/source controls. This unit has no worker-positive consumer and does not invent one. A caller lacking that supported current boundary cannot issue production transport. Do not register a raw receipt parser/post helper as a source-agent model tool.",
+    "source_deployment_intent": "The separate independently reviewed operation freezes a closed intent with schema_version1/kind capture-source-deployment-intent-v1/repository/operation_id/expected_main/source_set_sha256/composed_origin_proof_sha256/native_core_proof_sha256/whole_controller_admission_proof_sha256/operator_compatibility_proof_sha256/authority_snapshot_sha256/independent_operation_review_sha256/helper_sha256/payload_sha256. All identifiers/hashes are strict V3 forms and all refs must resolve to real retained originals. This is not production Gate proof and does not require already-acquired receiver capability. Unknown route/record/report/data is pending, never a bare approved=true. Creation/authority for that intent remains the separately reviewed actual operation, not this unit's schema validator.",
+    "no_unwritten_authority": "Source implementation may provide only deterministic receipt/index readers and transport consumers. It must not introduce a public generic authorize, load arbitrary report, trust any SHA from an input, issue a production permit, or treat an undocumented operator CLI as an existing authority source. Actual issuer/publisher helpers and final source-deployment operation require their explicit independent plans/reviews and real code before use."
+  },
+  "unique_workflow_order": [
+    "workflow_dispatch declares required protocol,purpose,expected_trusted_head,monitor_comment_id,envelope with no defaults. Unique workflow/path/name distinguishes legacy. Run-name includes fixed protocol,purpose,nonce for discovery, but a display name is never authority.",
+    "Earliest job expression checks workflow_dispatch/fixed repository/capture-receiver-v2/supported purpose/exact reserved tag ref/github.sha=expected head/attempt1. Wrong or missing values reach no candidate or sentinel. Inputs are passed as env/data, never shell source interpolation.",
+    "Checkout ONLY trusted github.sha with persist-credentials=false into its own control path. Setup host Python3.11. Run Python-I fixed capture_receiver.py preflight from runner.temp with step-local read token. Authenticate actual App monitor comment id/body/issue and exact purpose envelope; strict source-set/schema/hash/ref/main/provenance and candidate-or-fixture semantics. Emit preflight report/ok/purpose and fresh host-owned output path only.",
+    "For production AND successful matching preflight only, checkout the exact candidate separately and invoke pinned trusted PR45 capture_isolation.py from runner.temp, preserving step name/artifact identities and original complete capture/failed/isolation outputs. No legacy fallback, no preflight failure always-step execution.",
+    "For receiver-rehearsal AND successful matching preflight only, stage only exact fixed fixture from trusted M and invoke run_fixed_rehearsal. No PR candidate checkout or capture_artifact path on this branch. Use unchanged capture_sandbox.Sandbox(..., python_version='3.11'), setup(), verify(), create('capture', fixed argv, identity), validate_container(), capture_isolation.contained_output(...), remove() and cleanup(). Actual Sandbox.create accepts only install/capture/probe; never invent a rehearsal phase. Capture phase enforces network none. Fixed argv uses official-image stdlib python-I /work/sentinel.py plus one canonical bounded nonsecret settings argument; no venv/pip required and no unapproved environment extension.",
+    "The fixed program writes a tiny declared marker/nonce/source/purpose artifact and stdout, imports stdlib only and performs no SQL/UI/network/install/test/render/arbitrary command. Require actual immutable image matching supported real native profile, nonroot/container options, complete output/readers/no timeout/lifecycle errors and exact confirmed cleanup. Stage no live candidate bytes. Host never imports/runs this sentinel; tests execute it only under approved local test/GitHub contexts, neverPi.",
+    "Every production and fixture step explicitly requires its own purpose and successful ok; diagnostic-only uploads may always execute with safe path. Preserve complete raw metadata/streams/journals even when guard/setup/cleanup fails, and never claim a false result/run. Distinct receiver-rehearsal result/rejection kinds and artifact prefix contain false visual_approval/prerequisite_satisfied. Neither emits a product capture.json or visual receipt."
+  ],
+  "source_pin_and_publication_lease": {
+    "contract": "Same cooperative trusted-writer boundary accepted in global V3 and existing task_archive protocol. No models/candidates get App write credentials. All reviewed writers treat source tags append-only. Noncooperating owner/admin/compromised trusted writer retarget is excluded; detected drift is a provenance hold, never force repair. No GitHub-enforced tag rule/admin permission is claimed.",
+    "new_lease": "Define a NEW narrow owned POSIX lease at AGENT_STATE_DIR/source-deployments/publication-<sha256(repository)>.lock, owner0700parents/0600singlelink file/nofollow anchored descriptors. Bounded nonblocking acquisition2s yields typed pending if busy; no nested unknown lock reuse. It serializes only cooperating source-pin intent/create/readback/private ledger publication on that host. Server POST git/refs provides atomic create semantics across concurrent hosts; identical creators read back, mismatches refuse. It is not the existing display lock, daemon lock or a claimed remote-owner fence, and never held through a model, CI/capture or long evidence collection.",
+    "allowed_write": "Only deterministic source tag create and immutable own source-deployment metadata; no update/delete endpoint exposed. Existing source refs are always re-read as exact commit M; require actual signed reviewed main/protected endpoints/native/compatibility and independently reviewed operation before the helper is invoked. Read main/profile immediately before/after; movement invalidates admission and preserves original new tag without deleting/retargeting it.",
+    "all_writer_audit": "Revalidate actual task_archive fixed tag namespace, controller feature/temp heads-only pushes, automation heads/main, branch_cleanup heads/codex-only deletes, daemon heads/agent-visual-only deletes, companion/session/release branch publication and generic ref adapters. Tests pass reserved source-tag input through actual generic interfaces and prove refusal/heads-only targeting. Do not alter task archive format, branch cleanup semantics or runtime writer code solely to add unused broad locks; add an exact rejection only where audit reveals a real path that can target this namespace. A discovered unbounded arbitrary writer is a plan/source blocker, not a silently excluded route."
+  },
+  "genuine_rehearsal_bootstrap": {
+    "normative": "Implement exactly global purpose_separated_receiver_wire_v3, including full formal receipt/operation/result types, core hash excluding only admission_receipt_sha256, separate source-deployments ledger and fixed protected fixture. Production objects never accept rehearsal or capability-only purpose. This source unit does not claim to have issued any of these receipts.",
+    "noncircular_operation": "After real protected source/CI/policy/dev/main/compatible source pin and default workflow registration exist, a separate independently approved concrete source-operation helper/payload may mint receiver-rehearsal-admission-v1 from its real operation receipt, not production Gate. It freezes actual M/source-set, fixture bytes/manifest/blob/hash, case recipes, live control/cancel/source state and complete independent reviews. The positive worker and its receiver proof may still be absent. No arbitrary PR39/candidate/patch argument or fake Gate proof is permitted.",
+    "required_actual_cases": "At least one genuine pinned-M positive fixed sentinel AND one genuine pinned-M wrong-fixture receiver preflight rejection with sentinel skipped. A bridge/API-only rejection is insufficient. Other main movement/production-consumer races are deterministic fixture tests, not mutations to real main/source refs. Exact negative recipes authorize safe delivery only; failed predicates remain failed. Independent actual evidence review produces receiver-capability-acceptance-v1/receiver-platform-only, never full production satisfaction.",
+    "production_remains_pending": "Until actual independent receiver evidence, whole-controller admission, actual compatible positive worker and every native/policy/dev/main/runtime/control fact exist, no production Gate admission/renewal/coder/push/dispatch is granted. Source-only protocol()/schema or rehearsal success cannot authorize it."
+  },
+  "main_origin_and_runtime_dependencies": {
+    "per_endpoint": "New controller/dispatch/agent-dispatch/profile workflow/receiver/schema/fixture endpoints have this new feature's own exact signed task/head/base/dev merge/full source review/fastCI/genuine policy decision/main promotion. Unchanged45 isolation/sandbox/artifact/render/native origins remain45's actual accepted source, never borrow its policy decision for this feature. Root's helper literal must be in the effective controller; new fixed profile workflow rule is separate. Source-set includes all actual transitive schema/fixture/admission producer members, with modes/blob/SHA256/bytes and current whole-controller proof.",
+    "no_dependency_copy": "Do not copy or edit handed-off45 helpers/harness into this feature to make imports pass. Receiver loads fixed helper files lazily only after source validation; missing/unsupported source is pending before candidate steps. Tests may use sealed exact reviewed45 source fixtures with Docker/process APIs mocked to exercise real call contracts; no candidate/Pi execution. Actual activation requires the real current main composition with those sources, not test doubles.",
+    "whole_controller_admission": {
+      "assessment": "/private/tmp/future-controller-M-old875-readonly-assessment-v1/protocol1-contract-assessment-v2.json",
+      "sha256": "8296c615cff346d50f60067102eacd692b15663e614c5379cf2da66792b0b80b",
+      "pending_route_B_plan": "/private/tmp/future-controller-M-old875-readonly-assessment-v1/durable-controller-admission-concrete-plan-v2.json",
+      "pending_route_B_plan_sha256": "d39771737215e56fc8159cc5427adc511cbb200f81f323324b121ab421cfca44",
+      "rule": "Genuine admission route is mandatory regardless of route choice.875/426 cannot be taught a changed whole .github/agent tree by compatibility metadata, marker/schema, invented pin or cached b59. RouteB reader/real protected record or full genuine protocol1 implementation needs separate approval/source/CI/compatibility/activation; neither exists by this plan. No M main activation of this unit before actual supported whole closure/source+record contract is available."
+    },
+    "activation": "Source publication/handoff is distinct from exact protected decision/main projection/source-ref creation/receiver rehearsal/controller refresh/worker activation. The later operation must reconstruct authorized exact per-endpoint main content and every unrelated path unchanged, genuinely admit whole M, preserve current875/b59 and frozen875→426/completed rollout receipts, and use fresh exact compatibility/helper/rehearsal/final-byte review before natural drain/activation. Current App scopes and signed source alone are insufficient."
+  },
+  "meaningful_tests": [
+    "Exercise actual new schema/validator/receiver entrypoints with full V3 canonical production and rehearsal records and retained actual App user/performed_via_app wire. Reject missing/mixed/unknown purpose/operation/version/fields, invalid UTF8/duplicateJSON/1e9999/bool-as-int/overflow/depth/node/string bounds, wrong core/receipt/source/fixture/nonce/time and false authority from schema-only objects. Fixed schema data must equal the exact V3 contract and every semantic boundary has a concrete negative.",
+    "Production transport/publisher rejects every rehearsal operation/admission/result/capability-only object before source tag/temp branch/comment/dispatch; rehearsal helper cannot accept a PR39/patch/candidate/ref/command. Source preflight exact purpose branch means rejected input executes neither fixture nor candidate. Preserve existing scalar visual/integration/rerun acceptance/rejection and API behavior.",
+    "Candidate-execution/sentinel spies on actual workflow/receiver dispatch call paths: main moves after host admission/before bridge and after queue/before selection -> sentinel/candidate untouched; after final preflight only pinned reviewed M may execute. Old/missing unique workflow/operation/source/ref/source schema or failed guard never selects legacy. Wrong fixture binding reaches the real receiver rejection path, not an expectation override. No production metadata is fabricated for the first authorized synthetic positive.",
+    "Use exact45 Sandbox/contained_output sources as an immutable test fixture when not yet in dev; monkeypatch administrative subprocess only and assert actual capture phase/network none/official immutable image/args/nonroot/read-only root/no secret env/mounts and complete output/remove/cleanup. Setup failure, unknown phase, timeout, interrupted/live reader, unsafe staging/output/symlink/hardlink/mutation, uncertain resource intent and cleanup failure preserve diagnostics and cannot publish a successful sentinel. No modifications to those helpers are allowed to satisfy the test.",
+    "Actual new HTTP transport/receipt validators: complete201 exact App comment identity;200+true complete documented workflow_run_id/run_url/html_url;204+false completeempty accepted-with-nullrun. Explicit valid rejected401/403/404/422 retain actual code/body/hash and have no remote-effect spy. Verify endpoint-specific400/410/429 classifiers and source409/422 readback. Missing/unrecognized/truncated error body cannot be forced into rejected. No owner/candidate effect or fallback.",
+    "AFTER-REMOTE-EFFECT fault regressions on the actual transport+intent+reconciliation path, not a mirrored classifier: remote fake server records exactly one comment/run/ref, then responds408/500/502/503/504; original receipt retains that code and uncertain, discovery finds the first identity, no second POST. Repeat with200/201headers then malformed/missing/mismatching/oversized/truncated body, timeout afterheaders/partialbody, explicit read1 trickle and90souter budget. Contrast timeoutbeforeanyfinalstatus(null) with timeoutafterobservedstatus(retained). Record capturedprefix/counts/EOF/framing/hash accurately; acceptedbodymode+identity invariants reject false positive combinations.",
+    "Actual durable retry boundary tests: accepted204/noid and any uncertain status cannot POST again after no match, complete-but-empty window,404,expiry, restart or newnonce; bounded discovery only and same original immutable receipt untouched. Duplicate/conflicting identities hold. After a known complete refusal, secondPOST requires prior-history discovery, fresh genuine samepurpose authority/newintent/nonce and backoff; cancellation/source/controlCAS race blocks it. Reconciliation has real proofrefs and actual endpoint identity; it never rewrites500tonull/201 or constructs a false run ID. Invalid accepted401/rejectednull/uncertain-with-resource-ID/200false/204true/shortbodycomplete/boolinteger/status0 schemas are rejected.",
+    "Actual wire/privacy regressions: authenticPR45 App sample passes identity-field check but FAILS nonPR monitor guard; honestlysynthetic positive fixture flagged as such. Missing GH_TOKEN/repository binding has no transport effect; no gh.token assumption. Known token sent onlyheaders, neverpayload/container/artifact/log; rejectredirect without forwardingcredentials; responseheaders allowlist/opaqueexception exclusion and explicit rawtaint/incompletebody protection. Emptybody hasactual emptySHA, not inventedfulloriginal. All new records/GET discovery charge jointbounds and capacity failure remainspending.",
+    "Actual source-pin helper and new lease: missing/identical/conflicting/noncommit/ref source, concurrent same-M creators, uncertain create/readback, authority/main/source drift, nofollow/singlelink/busy lease/parent mutation/private ledger fault, same exact retry and no PATCH/delete/force/overwrite. Actual existing cleanup/publisher APIs cannot target the reserved tag namespace. All original task refs/source refs/history remain unchanged.",
+    "Temporary real Git projection fixture proves only the one exact new profile workflow is protected/promoted; sibling/nested/suffix/near-name/package/UI paths remain denied. Preserve current root helper rule. Main independently edited endpoint/renamed endpoints/unrelated path change fails. Rehearsal fixtures/schema/receiver are all in exact protected whole tree/source-set inventory and compatible admission data, not omitted as nonPython.",
+    "Rehearsal private operation schema/current revision/cancel/nonce/core-hash/expiry and actual body/ref/manifest binding are exercised without production Gate. With no actual production capability proof, a genuine limited synthetic admission can run fixture while all real production callers stay pending. No-job/API/early-guard rejections use truthful observations/null run; positive and negative raw index/result self-hash cycles are impossible by construction. Independent receiver acceptance remains a later real review, not a test boolean.",
+    "Run mandated normal MCP focused and complete precommit stages for the coherent source tree, including coverage/artifacts/Python3.8–3.14 matrix and no warning summary. No integration/service/real database checks or product renders are required by this unit because SQL/harness/renderer bytes are unchanged. If implementation materially touches those bytes, stop and obtain an amended plan/full46 geometry and individual PNG review before publication. All candidate synthetic execution onPi is forbidden.",
+    "After this source feature's exact protected source/CI/dev/main/whole-controller/source deployment gates, the separately reviewed operation must run actual pinned-tag positive/negative GitHub sentinel cases and retain complete API/artifact/step/source/receipt evidence for fresh independent acceptance. Unit fixtures and official docs are not proof of real platform behavior. No Actions/source operation is executed by implementing or approving this source plan alone."
+  ],
+  "bounds_and_retention": "All global V3 limits remain: metadata2MiB response/16MiB aggregate,5pages×100/500complete, depth64/node100000/string512KiB, one download/poll,90s outer/20s action/5s socket cooperative budgets with honest DNS/opaque limitations. New mutation raw body64KiB. All original metadata/envelopes/receipts/streams/journals/fixture/source and negative records are private immutable descriptor-safe before redaction, complete ordered paged model delivery, no tails/truncation/eviction. Rehearsal≤12cases/4MiBZIP/32members/1MiBmember/8MiBuncompressed per case,512KiBJSON/2MiBproof; shared16bundle/256proof/1GiB total counts apply jointly. Capacity or missing data is internal pending, never owner upload/repeated TG question. HTTP V2 completeness refinement: a hard cap retains an honestly labelled prefix and actual observed bytes/status, not a complete-original claim; SHA of zero bytes is honest. One overlimit detector byte is accounted explicitly. Every new receipt/reconciliation index/body counts in the same aggregate; no silent eviction or unlimited retries. Safe header allowlist only; raw secret taint blocks exposure and leaves truthful private-only delivery-pending.",
+  "implementation_and_handoff_sequence": [
+    "Preserve V1 and full independent request-changes report01a5 unchanged; obtain fresh complete independent unitV2 review of this full plan and companion before source edits. V2 responds only to the HTTP outcome gap plus explicit constraints; globalV3 approval doesnotgrant unit/source/operation authority. Reconcile any incoming global/authority/admission amendments before freezing finalsource scope.",
+    "After root's prior source handoff, use fresh mandatory MCP startup/task append/RAG routing/change_impact/workflow_status/new managed branch. Revalidate incoming source/interfaces/record schema. Preserve complete parent context and exact independently approved plan; material changes require revision before edits.",
+    "Implement only the explicit producer files, new fixed schema/fixture/workflow policy, additive source/transport helpers and meaningful tests/docs/fragment. Keep both purpose paths and all old operations coherent, with unavailable real host admissions producing pending. No self_host source edit, real Gate proof, tag/comment/Actions/main write or Pi candidate action occurs during source work.",
+    "Run focused then all mandatory managed precommit stages. Obtain fresh full exact source/feature/whole-contract compatibility review and publish signed source/task attachment through managed commit/push/handoff. Do not rewrite handed-off45/46 or another active writer; local source owner finishes with new PR link and parent continues all-PR monitoring under the user's explicit scope.",
+    "Retain protected owner/delegated exact-head decision only after actual required gates; source merge/approval does not bypass genuine whole-controller admission. No main projection until that independently implemented route/source+record/compatibility is real. Later source-ref/operator rehearsal and worker/controller activations require their separate concrete reviewed operations and final bytes."
+  ],
+  "retained_parent_obligations": "All full canonical task/Q/options/A/plans/checkpoints/source/negative evidence retained. PR9 full feature/text fidelity/underline; PR10 actual9 dev-merge ancestry; PR39 full diagnostics/cause-specific plan/quality/coverage/fast CI and all46 full1280×800 PNGs at208×47 with individual geometry/visual verdicts; PR37/15 actual39 dependencies and process-output guarantees. Continue every qualifying ATK/GitHub-agent self_host PR/successor through actual successful dev merge. Concurrency10, truthful exclusive labels including agent:writing, independent recommendation resolver, one30-minute qualifying-open-PR orchestrator/idle exit, authenticated GH/TG answers and sparse permitted notices. Preserve genuine credentials/auth/subscription/security/provenance/owner-veto/cancel/protected exact-head and operational drain/freeze holds. No heavyPi checks, false replies, deleted history or replayed completed rollouts.",
+  "not_claimed": [
+    "unitV2 plan approval; V1 requested changes and is preserved",
+    "implementation/source validation",
+    "actual production or rehearsal admission",
+    "checked-authority/whole-controller capability",
+    "new source tag/workflow registration/GitHub rehearsal",
+    "policy decision/main projection/worker activation",
+    "PR39 unblocked or product visual pass",
+    "any PR merge or all-PR completion"
+  ],
+  "revision_basis": {
+    "prior_plan": "/private/tmp/capture-receiver-first-protected-unit-concrete-plan-v1.json",
+    "prior_sha256": "7e6779f0a9d6d22ad86753bb40593ed287937df899d4655a40ca9a3b56e281dc",
+    "complete_independent_review": "/private/tmp/capture-receiver-first-protected-unit-independent-plan-review-v1.json",
+    "review_sha256": "01a5e69373b5ee945876eabacee874cb27b3d8a201ba0160a67b803d6d3f8ef6",
+    "finding": "RECEIVER-UNIT-V1-HTTP-OUTCOME-STATE-CONTRADICTION (P2)",
+    "review_read_in_full": true,
+    "bounded_correction": "Represent actual observed HTTP status and endpoint-specific posted/accepted/rejected/uncertain outcomes; keep possibly applied mutations discovery-only before another POST; append immutable reconciliation rather than rewriting outcomes. Preserve globalV3, genuine authority, scope, source closure, old operations and all parent obligations. Incorporate the reviewer's actual PR45 App-sample/nonmonitor and trusted credential/privacy constraints explicitly.",
+    "preservation": "All unlisted V1 fields are copied verbatim as parsed data. No earlier artifact is overwritten. This V2 is a source plan only, not a source operation or an authority decision."
+  }
+}

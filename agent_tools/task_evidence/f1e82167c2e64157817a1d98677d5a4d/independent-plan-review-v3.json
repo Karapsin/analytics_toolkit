@@ -1,0 +1,91 @@
+{
+  "schema": "independent-native-source-validation-and-python38-check-exclusion-complete-plan-review/v3",
+  "reviewer": "/root/review_native_source_validation_stage1_plan",
+  "created_at_utc": "2026-10-19T08:12:52.251119+00:00",
+  "decision": "approve_complete_amended_implementation_plan",
+  "completeness": "complete",
+  "findings": [],
+  "binding": {
+    "complete_amended_plan": {
+      "path": "/private/tmp/native-source-validation-with-python38-check-exclusion-concrete-plan-v3.json",
+      "bytes": 4062,
+      "sha256": "cbe91b297d0bad2d894e93150bb3b528426bec460634b4dacabf4b4dfcd848d2"
+    },
+    "pre_edit_source_context": {
+      "path": "/private/tmp/native-source-validation-python38-exclusion-plan-v3-review-context-1792397510361915000/manifest.json",
+      "bytes": 3672,
+      "sha256": "bac0dcd00db57148488c2eaa1a394cf14cf43ff0cf50e9e3c52ae6d9765a43cf"
+    },
+    "branch": "codex/19ac2eeff8284a2f-9e48bab3",
+    "base": "71422731e51af15a104b65915873d576bf0024c0",
+    "retained_native_plan_sha256": "438edf720d6e4c93b7cea99b7f8775838c11b926f981de0c64e9342feedaf66e",
+    "retained_exact_native_source_review_sha256": "2f1e26ea7e01266ae9eb0d429522fdc196b03b43ca898388275d2a9fa2fd4c19",
+    "actual_current_native_driver_sha256": "41484d03067f3cea2a2c80128730f688a0fc65c72ed4c44d70ef96918f7ed04e",
+    "task_id": "f1e82167c2e64157817a1d98677d5a4d",
+    "parent_reported_current_task_digest": "c976ffe34436818b892bc594739ab45af03795e3efdace203417e24fabb907f7",
+    "exact_new_user_correction": "I allow to exclude python 3.8 from all checks",
+    "authorization_provenance": "Exact current owner steering and successful MCP task_context append correction3 were supplied by parent; this review does not fabricate an owner response or independently claim a signed final task attachment."
+  },
+  "read_coverage": {
+    "complete_amended_plan": true,
+    "existing_native_feature": "Reused prior complete parent objective, v2 plan and exact full-source/security review; current native driver is unchanged at approved41484d source hash. New plan preserves this complete feature instead of replacing it with a checks-only repair.",
+    "actual_configs_and_entrypoints": "Read complete tox.ini, full pre_commit_checks.sh, exact19-pin minimum constraints, full minimum-constraint validator, complete development instruction file, release instruction routing sections and relevant release/MCP entrypoint code. Read actual current GitHub tests workflow during prior full-source review and current3.8 matrix/minimum consumers through source census. Reviewed existing relevant release/minimum tests and MCP stage/seed tests plus README matrix/toolchain sections.",
+    "complete_tracked_source_census": "Searched all tracked repository files, including hidden workflow/config paths, with explicit exclusion of .connections and historical task-evidence/changelog records. Runtime py38/PYTHON38/3.8 interpreter/profile references resolve only to tox.ini, pre_commit_checks.sh and tests.yml, with named constraints/checker/tests/docs consumers included in plan. Also inspected release/MCP routes and all workflow python-version matches; no additional3.8 runtime executor found.",
+    "reproducibility": "Frozen20 relevant current files and the full plan under private review context; manifest retains exact byte lengths/SHA256. Bounded source reading is stated honestly; unrelated entire MCP server/README/test files are not claimed newly read line by line."
+  },
+  "alignment": {
+    "verdict": "aligned_with_explicit_authorized_correction_and_complete_parent_task",
+    "reason": "The owner explicitly permits excludingPython3.8 checks. Removing its execution from every supported configured validation route resolves the observed unwanted3.8 requirement without relabelling the existing failure as success. Retaining minimum-dependency validation onPython3.9 preserves substantive floor/pip consistency coverage; preserving package>=3.8 and static syntax compatibility avoids an unrequested public breaking change. This implementation remains part of the existing reliable-tooling-fix/all-PR monitoring objective.",
+    "no_further_owner_permission_required_for_this_plan": true,
+    "scope_precision": "Python3.8 runtime validation is excluded. Ruff/mypy running on3.11 may retain3.8 language/API targets as declared package compatibility policy; that does not provision or executePython3.8. Explicit arbitrary ad-hoc user commands are not claimed impossible; the promise concerns supported configured validation entrypoints/recommendations."
+  },
+  "entrypoint_coverage_assessment": [
+    {
+      "route": "Direct tox configuration",
+      "current_fact": "env_list contains py38-latest/py38-min; generic base_python contains explicit py38 interpreter mapping; min deps/commands reference py38-min constraints.",
+      "plan_resolution": "Remove configured py38 runtime profiles/mapping; add py39-min and update both min constraints consumers, preserve remaining tox profiles and commands."
+    },
+    {
+      "route": "Managed local precommit and release precommit",
+      "current_fact": "configure_python_matrix exports and locatesPYTHON38; matrix command includespy38-latest/py38-min. MCP static/coverage/artifact/matrix commands all route to this shell; production release guard verifies genuine precommit receipt.",
+      "plan_resolution": "Remove3.8 interpreter setup/request and py38-latest, rename min runtime to3.9, retain ordered4stage execution and all other profile requests. Managed matrix remains8profiles:py39-latest,py39-min,py310-latest,py310-sdk31,py310-sdk32,py312-latest,py313-latest,py314-latest; canonicalcoverage3.11 remains separate."
+    },
+    {
+      "route": "GitHub ordinary CI",
+      "current_fact": "tests.yml explicitly selects3.8 latest/min jobs and conditional minimum installs/static constraints/pipcheck; SDK and quality/source jobs useotherPythonversions.",
+      "plan_resolution": "Use3.9-3.14 latest pluspy39-min, rename every minimum conditional/path/description, retain optional-extras behavior, compile/test/static minimum/pipcheck steps, SDK/quality/aggregate failure semantics and source-mode isolation."
+    },
+    {
+      "route": "Minimum metadata checker and tests",
+      "current_fact": "DefaultCONSTRAINTS_PATH and repository regression pointto constraints/py38-min.txt; validator compares every direct runtime lower bound to exact pins and is independently run in staticgate.",
+      "plan_resolution": "Faithful rename to constraints/py39-min.txt with unchanged19pins; update defaults/tests/consumers and keep both current-host metadata validation and real3.9 minimum runtime+pipcheck."
+    },
+    {
+      "route": "Docs and agent-only toolchain",
+      "current_fact": "Development/README and virtualenv/pip rationale still state3.8 matrix.",
+      "plan_resolution": "Update runtime-check policy and obsolete rationale; retain actualvirtualenv21.1<21.5/pip25.0.1 versions without unrelated toolchain upgrade. Public dependency/API/syntax metadata unchanged."
+    }
+  ],
+  "implementation_acceptance": [
+    "Retain complete approved native source validation behavior, four-file fixed467 trust boundary, safe failure metadata/hidden diagnostic retention, independent visual verdict requirement and first frozen-ref operation preconditions. Workflow matrix edits must not accidentally restore ordinary jobs during source mode.",
+    "Move minimum profile rather than deleting it: exact original19-pin file content preserved under py39-min, all consumers renamed, declared-floor static validator retained and real3.9 minimum environment still performs pip check and complete tests.",
+    "Do not treat source compatibility as newly demonstrated merely because3.8 execution is removed. Keep public metadata and3.8 syntax targets as planned; docs should accurately say checked runtime matrix now begins3.9.",
+    "Behavioral fakepyenv regression rejects any3.8 lookup and faketox records exact remaining matrix includingSDK/min profiles and no duplicate3.11 runtime in managed matrix. Configuration contract ties GitHub/tox/local profiles to new policy, preserving all current remaining gate assertions.",
+    "If a remaining3.9/min or other native dependency still requires environment setup, fix/report its genuine blocker; explicit3.8 exclusion is not authority to skip remaining profiles, change minimum pins casually or mint a passed receipt.",
+    "Run focused MCP checks and complete all four required final-tree precommit stages. Prior static/coverage/artifact successes retain their old identity; source/config/task changes may invalidate stage reuse and only MCP exact-tree/toolchain receipt logic can decide legitimate reuse. The failed/interrupted old3.8 matrix remains historical failure, never a new pass.",
+    "Preserve explicit correction through MCP task_context, unique fragment and complete chronological independent plan/source history; obtain fresh full final-source review and signed task-bound publication through mandatory MCP workflow.",
+    "Keep noPi candidate execution, no local advisory integration without explicit scope, all security/provenance/genuine hold and ordinary CI gates. Session automation dev-merge approval waivers do not authorize main/runtime activation or first source-validation dispatch.",
+    "Continue original all-qualifying-PR actual dev-merge monitoring and repairs; this amendment does not complete the parent goal or any native product/visual acceptance."
+  ],
+  "authority_limits": {
+    "complete_amended_plan_approved_for_implementation": true,
+    "future_source_changes_approved_before_review": false,
+    "tests_checks_native_visual_or_product_pass": false,
+    "new_source_dispatch_or_main_runtime_action_authorized": false,
+    "genuine_hold_or_remaining_check_waiver": false,
+    "repository_edits": 0,
+    "programs_tests_candidate_execution": 0,
+    "Pi_calls": 0,
+    "private_context_report_writes_only": true
+  }
+}

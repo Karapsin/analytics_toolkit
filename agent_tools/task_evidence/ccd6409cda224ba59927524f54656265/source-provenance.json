@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "kind": "receiver-source-task-provenance-v1",
+  "source_parent": {
+    "repository": "Karapsin/analytics_toolkit",
+    "pr": 45,
+    "task_sha256": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+    "preserved_file": "parent-objective.json"
+  },
+  "task_id": "ccd6409cda224ba59927524f54656265",
+  "base": "f66a80ebe4b3c28dbca17fbc58c2d6ffe464bb01",
+  "plan_sha256": "05b6ce5bd5d4adbf84c33efaea781e052d360033a23e1af879a48aa33ef2a0df",
+  "plan_review_sha256": "b51128799c83e3c16e794f87d9ac925ee63bac0d0295ee5187eafc6838f4797b",
+  "authority": "source implementation only; real whole-controller/Gate/source-op/policy/main/runtime/visual obligations pending; no earlier approval transferred"
+}

@@ -13,11 +13,12 @@ jobs:
   capture:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.candidate }}
+          path: candidate
           persist-credentials: false
           fetch-depth: 0
       - name: Load trusted artifact exporter
@@ -29,23 +30,32 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      - run: python -m pip install -e '.[tui]' -r agent_tools/requirements-mcp.txt
       - name: Capture every scene headlessly
         id: capture
+        working-directory: ${{ runner.temp }}
         env:
           CANDIDATE: ${{ inputs.candidate }}
-          PYTHONPATH: ${{ github.workspace }}
-        run: python .agent-visual-controller/.github/agent/capture_artifact.py
+          CANDIDATE_ROOT: ${{ github.workspace }}/candidate
+        run: python -I "$GITHUB_WORKSPACE/.agent-visual-controller/.github/agent/capture_isolation.py"
       - uses: actions/upload-artifact@v4
         with:
           name: agent-visual-${{ inputs.candidate }}
-          path: visual-artifact/
+          path: ${{ steps.capture.outputs.artifact_root }}/visual-artifact/
+          if-no-files-found: error
           retention-days: 7
       - name: Upload failed capture diagnostics
         if: always() && steps.capture.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: agent-visual-diagnostics-${{ inputs.candidate }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: visual-diagnostics/
+          path: ${{ steps.capture.outputs.artifact_root }}/visual-diagnostics/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload container and collection diagnostics
+        if: always() && steps.capture.outputs.artifact_root != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-visual-isolation-${{ inputs.candidate }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.capture.outputs.artifact_root }}/isolation-diagnostics/
           if-no-files-found: error
           retention-days: 7

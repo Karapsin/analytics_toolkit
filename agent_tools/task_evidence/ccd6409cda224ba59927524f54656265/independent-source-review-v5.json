@@ -1,0 +1,438 @@
+{
+  "schema": "capture-receiver-first-unit-complete-independent-source-review/v5",
+  "reviewer": "/root/review_replay_replan_operational_rollout",
+  "created_at": "2026-10-18T22:07:38.367554+00:00",
+  "decision": "request_changes",
+  "approve_source": false,
+  "completeness": "complete whole-feature source, full task and contract assessment",
+  "source_inventory": {
+    "path": "/private/tmp/capture-receiver-first-unit-full-source-inventory-v5.json",
+    "bytes": 10727,
+    "sha256": "b8a24cdee001baf840e70851df3b09974acd05f2dbcc3f5feb8545a3e549532d"
+  },
+  "snapshot": "/private/tmp/capture-receiver-first-unit-full-source-v5-snapshot",
+  "root": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/12e8faacb520/c6ae69d3fbfb4367",
+  "branch": "codex/c6ae69d3fbfb4367-9835247a",
+  "base": "f66a80ebe4b3c28dbca17fbc58c2d6ffe464bb01",
+  "task_id": "ccd6409cda224ba59927524f54656265",
+  "task_context_digest": "71d358efd0d54eb9ac473ab7bfe6c922f126d2078c294efd58df4359dd311b7b",
+  "complete_membership_count": 35,
+  "records": [
+    {
+      "path": ".github/agent/capture_data.py",
+      "bytes": 15581,
+      "sha256": "57d7c4084b9372068a3a4a74dec6d23a1e5bc85b0edb2c333021a369ab673543",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/agent/capture_receiver.py",
+      "bytes": 50141,
+      "sha256": "b2036da2028078112a7bc0d2f7b170e1be44764d9559b2770b063b42fa8ae2f6",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/agent/capture_receiver.schema.json",
+      "bytes": 20058,
+      "sha256": "7931d1a5044d2ae3149ab9ba5bf75e18ac6ca08fbc1d24a9aba70b279339b7cf",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/agent/capture_transport.py",
+      "bytes": 48408,
+      "sha256": "d76dfbe743be404e5ac16a32e6481c38b9317ddb49b09faf60e80b9ce66dfea7",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/agent/controller.py",
+      "bytes": 60964,
+      "sha256": "f2e5fd2826911dc5e24e18966697d23c04bd4d0332913547574a1c5397a96124",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/agent/dispatch.py",
+      "bytes": 4234,
+      "sha256": "d557a9af8760c26d9b63ac5c7e737c2720f40e1a051eb88e11573010efed6ea2",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/agent/fixtures/capture_receiver_sentinel_v1/manifest.json",
+      "bytes": 727,
+      "sha256": "eb60d90cc22d40e30dccaa22051ae007b40e74b57d2d8b6d52bac77df8d831dd",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/agent/fixtures/capture_receiver_sentinel_v1/sentinel.py",
+      "bytes": 806,
+      "sha256": "2faca1b4528b6d7da1be6906a3273544e3b417c88dd87191e30c5b450f29cab2",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/required-workflows.json",
+      "bytes": 3314,
+      "sha256": "38e29115ae37803af517fa6ab0b387659ae130857cb589e5c008cd566d1c4058",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/workflows/agent-dispatch.yml",
+      "bytes": 1129,
+      "sha256": "c762504288aa691d59a30eb4dfbfa261c6a7c1424944ed88774d8eae2396ad23",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": ".github/workflows/agent-visual-profile.yml",
+      "bytes": 3571,
+      "sha256": "f5f05c3a354703fda660b56f95f668b5766d0da29a6a72088cf8e532c088a9cd",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/changelog/eac78c0aa4454931a33194abaad234f9.md",
+      "bytes": 118,
+      "sha256": "3fbd2beaadb4dcde55fdebd9dcb6cd5d7648a9d5cfaefa9e98c8dbecfe390748",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/approved-receiver-plan-v2.json",
+      "bytes": 107552,
+      "sha256": "05b6ce5bd5d4adbf84c33efaea781e052d360033a23e1af879a48aa33ef2a0df",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/approved-wire-v2.json",
+      "bytes": 66171,
+      "sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/candidate-base-clarification-v1.json",
+      "bytes": 1873,
+      "sha256": "5e5d31f2cf31933cb30231e7482d56ac73b5f98fe5e9c051c1f11a33dfc7542f",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/candidate-base-independent-review-v1.json",
+      "bytes": 4762,
+      "sha256": "16aa92c768bcedc40c911fff2366f39fe18a841c833a8a2ea470f16a7b31b779",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-plan-review-v2.json",
+      "bytes": 27510,
+      "sha256": "b51128799c83e3c16e794f87d9ac925ee63bac0d0295ee5187eafc6838f4797b",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-source-review-v2.json",
+      "bytes": 26326,
+      "sha256": "49a93fe49c47fb1f1d97dc0c608988fd9e6541d33cc0edb258ed33f67a9b7e7d",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-source-review-v4.json",
+      "bytes": 17594,
+      "sha256": "947942778be4871a488f1e12699119fab9fa57c22059d233062609e20aeb2540",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/native-image-independent-assessment-v1.json",
+      "bytes": 7487,
+      "sha256": "a45fb9c29ed23d2401e29a280b6ea2738adf64f7d695168667bd01cfd4506a9a",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/parent-objective.json",
+      "bytes": 55949,
+      "sha256": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/source-corrections-v3.json",
+      "bytes": 5417,
+      "sha256": "42502feba4348d4009db5fee2780104a3f6453a3914779c85ab42921c0b29207",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/source-corrections-v5.json",
+      "bytes": 2518,
+      "sha256": "96881ea4813c8abd6f4355b82ac8a768ec633b33d6146ae1a6f48615d95ee82a",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/source-provenance.json",
+      "bytes": 738,
+      "sha256": "565c635c522892a7b1b0aa3828fd9eb32dab54b4582a70050443b06f47a582c3",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/validation-history-v3.json",
+      "bytes": 2490,
+      "sha256": "48e77f08d2cec164d8e50703f0683e86d7f120a5a695610b7b59184c35f63d9f",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "docs/GITHUB_AGENT_OPERATIONS.md",
+      "bytes": 65379,
+      "sha256": "9b96a3a5a63f82bdf5265f0c57a10dff25a002d584bcb059fc0e2d87f4d45fa2",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "tests/repository/_support/capture_native.py",
+      "bytes": 12300,
+      "sha256": "b37abaad50773b7ae0c10ff28b1eae7e00636d8147654714bc19fc2cd9521fbf",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "tests/repository/_support/capture_profile.py",
+      "bytes": 6378,
+      "sha256": "08ade7d8329d72ba2d458250538f3b3dad2d70e3b8f96ad234d18e06a5ef6c7c",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "tests/repository/_support/fixtures/capture_receiver_v2/approved45.json",
+      "bytes": 58918,
+      "sha256": "4ba5a68dc7bed2a92f230a25421c5f77021c94b205d6c15576eb2219f30ee73c",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "tests/repository/capture_corrections.py",
+      "bytes": 15969,
+      "sha256": "57829849d24bc5ab4681595c6c5339a8c0c3849b83efd0561c704801dff98bf0",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "tests/repository/capture_projection.py",
+      "bytes": 1896,
+      "sha256": "21fb3d764a86ce455e29a26d4c6e0200c5a17911fd20b779d1de30a02f92caf4",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "tests/repository/capture_receiver.py",
+      "bytes": 9980,
+      "sha256": "760cb11b219c38a2a61327b09a6358c18b1759aa2ea995a9483f4f2874118a5e",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "tests/repository/capture_rehearsal.py",
+      "bytes": 3744,
+      "sha256": "5801141df6a6a3d1cda83772bb8bce7280907765cae5cc49d27ffbe000d4639d",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "tests/repository/capture_store.py",
+      "bytes": 5756,
+      "sha256": "c95bbde176c7d7a75e508a509b2fbfa7f45490dea85c81a6f007b48ee982cc2b",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    },
+    {
+      "path": "tests/repository/capture_transport.py",
+      "bytes": 11763,
+      "sha256": "f552e31fe9d09d5dea43827f712289625efd0b99fbfdeaecc41cc83bf75f4ef1",
+      "executable": false,
+      "exact_size_and_hash_verified": true
+    }
+  ],
+  "bindings": {
+    "full_managed_task": {
+      "path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/12e8faacb520/c6ae69d3fbfb4367/.git/atk-tasks/active.json",
+      "bytes": 61311,
+      "sha256": "13f03d6aa653aa99c4e6d8cda86cc18efd21b9aecf86ac19b9c4b66248f4b914"
+    },
+    "complete_parent": {
+      "path": "/private/tmp/capture-receiver-first-unit-full-source-v5-snapshot/agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/parent-objective.json",
+      "bytes": 55949,
+      "sha256": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14"
+    },
+    "approved_plan": {
+      "path": "/private/tmp/capture-receiver-first-unit-full-source-v5-snapshot/agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/approved-receiver-plan-v2.json",
+      "bytes": 107552,
+      "sha256": "05b6ce5bd5d4adbf84c33efaea781e052d360033a23e1af879a48aa33ef2a0df"
+    },
+    "approved_wire": {
+      "path": "/private/tmp/capture-receiver-first-unit-full-source-v5-snapshot/agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/approved-wire-v2.json",
+      "bytes": 66171,
+      "sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba"
+    },
+    "independent_plan_review": {
+      "path": "/private/tmp/capture-receiver-first-unit-full-source-v5-snapshot/agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-plan-review-v2.json",
+      "bytes": 27510,
+      "sha256": "b51128799c83e3c16e794f87d9ac925ee63bac0d0295ee5187eafc6838f4797b"
+    },
+    "complete_v2_source_rejection": {
+      "path": "/private/tmp/capture-receiver-first-unit-full-source-v5-snapshot/agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-source-review-v2.json",
+      "bytes": 26326,
+      "sha256": "49a93fe49c47fb1f1d97dc0c608988fd9e6541d33cc0edb258ed33f67a9b7e7d"
+    },
+    "complete_v4_source_rejection": {
+      "path": "/private/tmp/capture-receiver-first-unit-full-source-v5-snapshot/agent_tools/task_evidence/ccd6409cda224ba59927524f54656265/independent-source-review-v4.json",
+      "bytes": 17594,
+      "sha256": "947942778be4871a488f1e12699119fab9fa57c22059d233062609e20aeb2540"
+    },
+    "exact_v4_to_v5_patch": {
+      "path": "/private/tmp/capture-receiver-first-unit-v4-to-v5.patch",
+      "bytes": 31786,
+      "sha256": "c1a88b0dc443126ac6f4dd46bd077744dfa056b46d0e672c6a3dcdc358e86001"
+    },
+    "whole_base_to_v5_patch": {
+      "path": "/private/tmp/capture-receiver-first-unit-base-to-v5.patch",
+      "bytes": 624731,
+      "sha256": "d9b6c2987680d70e9768ad8488ec5fb9ffc87ebd6b11d0965f33bb91b801bdf7"
+    }
+  },
+  "review_method": [
+    "Read complete current capture_data.py, capture_transport.py, capture_receiver.py, controller.py and dispatch.py, both whole workflows, required-workflow classification, normative receiver schema, sentinel manifest/program and changelog. Read every current support/test file and all975 operations-documentation lines. Whole-feature assessment is independent of the narrow V4 finding/diff.",
+    "Read the complete source-unit plan semantically and its complete receiver/transport formal wire by deduplication: actual20058-byte receiver parsed object equals the companion receiver object, all five plan transport definitions exactly equal companion definitions, and mandatory-semantic arrays match. Formal nested duplicates were assessed once, with actual JSON structural equality; no schema/default/purpose boundary is omitted.",
+    "Read the complete V2 eight-finding and V4 single-finding assessments/correction mappings, factual candidate-parent/image assessments and every current provenance/validation record. Read all four complete sealed PR45 component source strings and authentic full App comment in approved45.json, independently hash each source string, and distinguish synthetic administrative fixtures from genuine native/GitHub evidence.",
+    "Independently hash all35 exact snapshot members, and rehash at completion. Independently compare every V4 and V5 snapshot member and reconstruct the entire unified delta; it is exactly31786 bytes/c1a88b0dc443126ac6f4dd46bd077744dfa056b46d0e672c6a3dcdc358e86001. Only capture_transport, correction regression file, documentation and two added historical/provenance JSON records differ.",
+    "Read the actual managed task and all four appended implementation-provenance corrections. Its first archival correction strictly parses to the entire unchanged55949-byte signed9e parent. That complete parent, all20 corrections/9 decisions/4 full plans/full question/options/answer, was fully read in the immediately preceding PR47/PR45 assessments and exactly rebound here; it is not replaced by the short starting prompt. New local version1 task canonical digest equals71d358… and explicitly identifies archival agent provenance rather than invented human instructions.",
+    "Used only local read-only source/text/JSON/AST inspection and trusted stdlib hashing, structural comparison and arithmetic. No candidate import/function/AST execution, compilation, test, build, scene, network/API, SSH/Pi, SQLite/lock/service operation, repository/source/authority mutation, protected approval, publication or merge. Only this new immutable private review is written. Parent startup/routing is inherited and the explicitly read-only review performs no startup pull; conclusions bind frozen bytes, not a future synchronized checkout."
+  ],
+  "findings": [
+    {
+      "id": "RECEIVER-V5-POST-PAYLOAD-BUDGET-RESERVATION-LOSES-OBSERVATION",
+      "severity": "P2",
+      "paths": [
+        ".github/agent/capture_transport.py:129",
+        ".github/agent/capture_transport.py:136",
+        ".github/agent/capture_transport.py:259",
+        ".github/agent/capture_transport.py:288",
+        ".github/agent/capture_transport.py:512",
+        ".github/agent/capture_data.py:65",
+        ".github/agent/capture_data.py:71"
+      ],
+      "title": "POST payload is charged after selecting the response allowance, allowing accounting failure after the observed response and before retention",
+      "requirement": "Approved low_level_HTTP, receipt_delivery, response_observation.original_retention and bounds_and_retention require every genuinely observed final status and bounded captured prefix/hash to survive uncertain potentially applied mutation, within the shared16MiB bound. Capacity must refuse before an action that cannot retain its bounded observation, or preserve truthful safe pending/unavailable facts; it cannot erase an already observed response.",
+      "source_deduction": "HTTP.request selects limit using Budget.response_limit at129, then charges canonical POST bytes at136. response_limit reserves131072 for65536 maximum response-header charge and65536 fixed response-record charge, but not the later non-credit-covered request charge. After read/close, line259 calls Budget.response before building facts/private observation or entering the private-persistence try. BudgetPending therefore escapes before either exact originals or safe observed reference exists. Journal catches only PrivateObservationPending at513, so its started marker remains but no status/prefix/hash/delivery-pending record is produced. Generic capacity-pending only contains used/limit and cannot reconstruct those discarded facts.",
+      "bounded_counterexample_without_candidate_execution": {
+        "qualification": "Valid shared Budget state at HTTP request entry with zero retained-copy credit; typed used=16056312 under default16777216 limit. This is an allowed low-level shared-accounting state, not a claim that an actual production call occurred or that the currently Pending public bridge performed POST.",
+        "remaining_before_request_charge": 655368,
+        "selected_body_limit": 65536,
+        "valid_source_ref_create_payload": {
+          "ref": "refs/tags/agent-visual-source-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "canonical_request_bytes": 132,
+        "permitted_header_bytes": 65536,
+        "observed_and_captured_body_bytes": 65536,
+        "response_charge": 589824,
+        "total_new_accounting": 655492,
+        "excess_over_remaining": 124,
+        "calculation": "L=min(65536,(655368-131072)//8-1)=65536. Full observed/captured65536 charges65536+7*65536+65536=589824. With permitted65536 headers and valid132-byte canonical source-ref POST,132+65536+589824=655492>655368. All individual caps pass; only missing pre-POST joint reservation fails. A finite known503 with a full bounded body is enough; no accepted identity is needed to expose the loss. Data/arithmetic only, no candidate execution."
+      },
+      "impact_and_limits": "The durable started marker still prevents same-intent repost, and the public live-authority/cross-run bridge remain Pending. This is a source-level evidence-retention/capacity defect, not a demonstrated remote double action, credential leak or production incident. It also remains reachable if that observed response closes abnormally; the otherwise corrected BaseException path still reaches the failing accounting statement first.",
+      "required_correction": "Reserve/charge the canonical request and complete bounded response/finalization capacity before opening a possibly applied POST, accounting for retained credits truthfully; derive the response cap from the resulting actual remaining allowance or refuse before request. Keep the exact16MiB/shared bounds and emergency reserve, no cap increase, split budget, silent eviction or uncharged originals. Unexpected finalization/accounting failure must retain safe actual status/prefix/count/hash/private-unavailable facts without acceptance or retry, rather than bypassing the common retention decision. Do not change successful API semantics or use a hand-edited receipt as recovery.",
+      "meaningful_regression": "Exercise the actual HTTP+Journal with a valid nonempty source-ref or dispatch payload and a genuine allowed near-boundary shared Budget/zero-credit state after actual earlier charged work, a fake after-effect response with bounded near-maximum headers/body, and one recorded effect. Require either truthful Pending before opener/effect or exact observed status/prefix/hash plus retained/private-unavailable pending evidence after it. Include the close/read-interruption variant, both exact-fit and one-byte-over joint boundary, no accepted outcome or secondPOST across a fresh Store/HTTP retry, unchanged originals and no synthetic token in public artifacts. Existing default-budget lifecycle tests and generated-member overflow test do not cover this request-versus-response reservation ordering.",
+      "successor": "Preserve V5 frozen source/task/review/check history. A separately versioned narrow correction and meaningful exact-bound regression, fresh complete source verdict and full mandatory managed validation are required before publication."
+    }
+  ],
+  "prior_findings_disposition": [
+    {
+      "id": "RECEIVER-V4-ABNORMAL-HTTP-EXIT-LOSES-OBSERVATION",
+      "status": "closed_for_read_open_close_interruption_paths; new accounting edge remains separately blocked",
+      "assessment": "Unexpected exceptions/KeyboardInterrupt/SystemExit now set abnormal_exit and converge; response.close is independently caught, known status/prefix remain, before_close_error and close_failed survive. Private observation/body are attempted before a safe Pending, and failed private persistence sets private_retainedfalse/pending-unavailable. Tests exercise actual HTTP+Journal across full/partial close failures, four unexpected/interruption families with and without token-bearing body, pre-status interruption and storage failure, including restart/no-repost and no public credential. This is a source assessment of regressions, not reviewer execution. The new finding occurs outside that corrected try/finalization boundary."
+    },
+    {
+      "id": "RECEIVER-V2-PRIVATE-RESPONSE-RETENTION",
+      "status": "taint_and_abnormal_lifecycle_corrected; joint-capacity edge remains",
+      "assessment": "Body and every delivered safe string header are exact-token checked; private originals/status live outside upload roots. Safe references carry only bounded enums/counts/hashes/status and fixed tainted-field names. No opaque exception text is exposed; source does not claim runner-local quarantine was uploaded."
+    },
+    {
+      "id": "RECEIVER-V2-CROSS-RUN-DURABILITY",
+      "status": "closed_as_explicit_missing_capability",
+      "assessment": "require_cross_run_bridge_history retains authenticated bounded navigation and unconditionally raises Pending before the bridge POST. Fresh run/Store/comment/nonce cannot fabricate durable host/current-row history. Missing real host history is an actual source boundary, not operational capability."
+    },
+    {
+      "id": "RECEIVER-V2-STRICT-WIRE-PARITY",
+      "status": "closed_in_source",
+      "assessment": "Nested body_ref exact fields and exactint bytes precede equality; per-header retry/remaining maximum2147483647 enforced. Purpose/state/status/resource/mode/count/framing coherence, duplicate/nonfinite/depth/node/UTF8 constraints remain explicit; receiver formal schema is unchanged."
+    },
+    {
+      "id": "RECEIVER-V2-RUN-IDENTITY-PROOF",
+      "status": "closed_as_explicit_missing_positive_retrieval",
+      "assessment": "Immutable pre-POST begin epoch/monotonic facts retained. Matching run metadata/title/named step cannot establish envelope originals or post-intent interval; verified_run raises Pending and discover records incomplete. Actual authenticated receiver-original/artifact retrieval remains unimplemented and mandatory before positive matching."
+    },
+    {
+      "id": "RECEIVER-V2-MONITOR-IDENTITY",
+      "status": "closed_in_source",
+      "assessment": "Both paths require exact actual App/Bot/nonPR/open/labelled monitor and complete bounded unique eligible set. No replacement issue is created; actual PR45 comment is a negative identity-shape sample, while positive monitor data is explicitly synthetic."
+    },
+    {
+      "id": "RECEIVER-V2-JOINT-BUDGET",
+      "status": "one_shared_budget_preserved_but_pre-POST_reservation_incomplete",
+      "assessment": "One Budget joins HTTP, Store, source/fixture, generated records/indexes and step checkpoint; conservative copies and64KiB emergency reserve remain. Cumulative file/source overflow is tested. However the new finding shows the required invariant is not complete for request payload plus maximum permitted response, so prior closure cannot be transferred to this edge."
+    },
+    {
+      "id": "RECEIVER-V2-LIVE-WRITER-UPLOAD",
+      "status": "closed_in_source",
+      "assessment": "Every execution/work/log/resource writer starts in a sibling private execution root outside upload. Only stopped/logs-safe/nonquarantined descriptor/hash-verified finalized stream parts copy into upload. Actual sealed helper uncertain-reader/failed-quarantine fixture retains its unsafe flag without an uploadable execution path; no helper safety is modified."
+    },
+    {
+      "id": "RECEIVER-V2-PREPARED-PARENT-BINDING",
+      "status": "closed_in_source",
+      "assessment": "Required task SHA/digest validate before inert Git; actual checkout head must match. Closed prepared record binds prepared.head to envelope candidate_base before actual live Pending. The feature parent is distinct from reviewed dev base, which remains in actual task/plan/future Gate."
+    }
+  ],
+  "whole_feature_assessment": {
+    "scope_and_legacy": "Five complete production modules retain additive fixed APIs. Existing ordinary api/comment/dispatch/candidate/review/merge behavior stays distinct; new routes do not fall back to old combined candidate dispatch. Only the exact new profile workflow policy literal/classification is added. All SQL Explorer/harness/scene/renderer/package/dependency bytes remain outside this source unit.",
+    "source_and_schema": "Fixed anchored sibling loading and exact normative schema hash; closed production/rehearsal tagged union, canonical4096 envelope, source-tag derivation, nonce/<=300s/attempt1 and actual comment/run/source/fixture/candidate-parent guards precede execution. Source inventory covers all14 actual transitive runtime/schema/workflow/fixture/helper members by Gitmode/blob/full SHA/size. No schema parsing result mints live authority.",
+    "live_boundary": "Public production publish/dispatch, source-pin and rehearsal source-operation wrappers are actual Pending before writes because live issuer/current-row CAS is absent. Bridge also refuses before POST for missing cross-run history. Run positive original retrieval is actually incomplete. These safe missing features must be separately implemented/reviewed; do not advertise a working production or rehearsal dispatch capability.",
+    "immutable_transport": "One durable intent/started and one POST per attempt, append-only distinct discovery/reconciliation, exact created-comment/source-ref checks and documented mode-specific200/204 Actions acceptance. Known refusal requires complete recognized bounded JSON;503/408/unknown/partial responses stay uncertain. Source201 requires independent ref readback;409/422 never permit force/delete. No bounded absence/expiry/rerun/newnonce replay is allowed. Capacity-retention finding blocks this source verdict.",
+    "execution_and_native": "Trusted source-pinned workflow checks exact repository/event/ref/head/attempt/purpose before candidate/sentinel. Rehearsal uses unchanged sealed Sandbox/contained_output APIs under fixed3.11 image equality before create, exact nonsecret argv/networknone, owned cleanup and private safe finalization. No synthetic fixture/model/native/PNG pass is real platform/product acceptance. Source-tag cooperative trusted-writer threat model and normal interruptible/cooperative HTTP time limits are retained; no new universal I/O, namespace or exactly-once guarantee.",
+    "composition": "Actual future final controller must contain both this exact profile-workflow policy literal and independently owned root46 helper-promotion literal in one genuine reconciled byte closure. Currentf66 snapshot does not provide that composition, whole-controller admission, native positive/negative receiver capability, source tag or deployed compatible worker.",
+    "full_task": "Complete original9e parent is losslessly archival in the actual managed task, exact55949 immutable parent file and full plan/reviews. Original chronology/questions/options/answers remain unchanged. Four additive corrections are transparently agent implementation provenance, not manufactured owner approval; no shortened prompt replaces the all-PR objective. Leaf source work grants no parent completion."
+  },
+  "validation_status": {
+    "reviewer_executed_checks": false,
+    "focused_log": {
+      "path": "/Users/karapsin_de/.local/share/analytics-toolkit-agent/sessions/12e8faacb520/c6ae69d3fbfb4367/.rag_index/tool_logs/1792360770665478000-63615765c3.log",
+      "bytes": 1446,
+      "sha256": "77f73d6a8b61a5600fcd7536fc6f5fbec135ad6cf77bbc946116347231c772b7"
+    },
+    "retained_actual_log_assessment": "Exact77f73d6… log reports actual managed pytest tests/agent_tools tests/repository returncode0,1140 passed148.21s, empty stderr and no warning summary. This reviewer only inspected the receipt/log, not tests.",
+    "mandatory_precommit": "Parent reports new four-stage mandatory precommit withparallelism6 starting; no final success is inferred. Earlier V2/V4 interrupted/failed runs remain historical and cannot be reused as final validation. New finding requires a corrected exact tree and fresh required checks before publication."
+  },
+  "remaining_gates": [
+    "No V5 source approval, publication, code execution or authority waiver is granted. Correct the single remaining budget-retention finding and obtain new complete independent exact source review.",
+    "Fresh full mandatory managed static/coverage/artifact/Python matrix without warnings, exact signed publication/task binding, current required fast CI and genuine independent Pi review remain required.",
+    "Applicable genuine protected exact-head decision, actual coherent whole-controller source admission/source+record/native/compatibility and dev/main origin/composition must precede activation. Source or policy metadata/heartbeat alone cannot replace those facts.",
+    "Genuine current-row Gate/source-operation issuer and durable history, real authenticated receiver-original retrieval/time proof, registered pinned receiver positive/negative GitHub runs, independent platform acceptance and compatible positive worker remain separate unfinished capabilities.",
+    "Any actual source/tag/rehearsal/runtime operation needs separate exact helper/payload/authority/ledger/fault-rehearsal/final-byte/rollback review. Preserve current875/b59/completed and cancelled operations, no retarget/replay or manual hold/adoption/source rebaseline.",
+    "Preserve full parent all-qualifying-successful-dev-merge monitoring, PR9/10/39/37/15 dependencies and native/visual46-scene obligations, concurrency10/exclusive lifecycle, resolver/orchestrator/authenticated fullQ+A and notification limits. Real credentials/security/provenance/owner veto/cancel/protected/freeze/drain holds remain binding."
+  ],
+  "unread_current_member_content": [],
+  "source_edits_candidate_or_test_execution": [],
+  "network_SSH_Pi_database_services_approval_merge_deployment_actions": [],
+  "allowed_write": "Only this new immutable private assessment; all frozen files/old reviews unchanged."
+}

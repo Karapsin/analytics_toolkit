@@ -1,0 +1,33 @@
+{
+  "schema": "capture-receiver-total-identity-correction/v7",
+  "complete_v6_review_sha256": "5fc9a454e4f45656508003ff79f04beb7ae779964419cc1d3100f850928bde7a",
+  "prior_v6_inventory_sha256": "915cbbd3334c75f20dbe00c91c143dc4f5fd88546782bc8d1593fbf9ea3805bc",
+  "findings": [
+    "RECEIVER-V6-MALFORMED-NESTED-IDENTITY-ESCAPES-UNCERTAIN",
+    "RECEIVER-V6-SOURCE-REFERENCE-SUCCESS-OMITS-URL-BINDING"
+  ],
+  "scope": "Narrow in-contract total endpoint identity and exact returned URL correction; no authority/API, bounds, global receiver schema or closed transport receipt wire change. Preserve all V2/V4/V5/V6 independent rejections and original full parent task/Q+A/plans.",
+  "implementation": [
+    "Total typed comment/source predicates validate mappings before nested access; strict exact integer IDs reject bool/float equality. Malformed complete201 bodies produce immutable actual-status uncertain receipts with exact body/hash.",
+    "Source created_response requires fixed https://api.github.com/repos/Karapsin/analytics_toolkit/git/refs/tags/<derived-tag> URL plus exact ref/commit type/SHA. If object.url is included, it must match fixed /git/commits/<M>; the approved top-level fixed-URL contract does not add an extra mandatory object.url field. Returned URLs are compared only, never followed.",
+    "Same source predicate protects outcome/reconciliation/source readback primitive. Malformed source/comment navigation is retained incomplete; separate exact later GET can append a match without rewriting uncertainty or reposting.",
+    "Run navigation handles malformed page/repository mappings and strict workflow IDs without uncaught nested dereference. Ordinary user comments with null App remain valid nonmatching navigation.",
+    "PinHTTP synthetic positives now contain exact documented ref and commit URLs. Full normal taint/lifecycle/reservation tests and legacy behavior retained."
+  ],
+  "actual_path_regressions": [
+    "Actual HTTP+Journal outer and nested null/list/string/int/bool source/comment201 bodies; exact original201/body/hash, null guessed commentID, immutable uncertain receipt; new Store/HTTP cached restart sends no POST.",
+    "Malformed readback remains incomplete; later separate complete exact source/comment readback appends matched evidence while original receipt stays unchanged and exactly one POST occurred.",
+    "Wrong scalar comment/App/user IDs and URL types cannot become posted. Missing/foreign/wrong-tag/non-string source ref URL, included commit URL and wrong SHA types cannot become created_response.",
+    "Complete source/comment positive transport identities still succeed; malformed run/page/repository metadata remains incomplete."
+  ],
+  "focused_validation": {
+    "status": "passed",
+    "log": ".rag_index/tool_logs/1792362850415125000-63615765c3.log",
+    "sha256": "118406d7650a300045cf8089c04a0319a37318b9bfc335f5c7e431a67bbfd533",
+    "passed": 1213,
+    "elapsed_seconds": 86.22,
+    "warning_summary": false
+  },
+  "mandatory_validation": "V7 full precommit NOT RUN pending fresh complete exact-tree independent source verdict. V6 full precommit also deliberately not run. Earlier failed/interrupted and genuine historical successful stages remain unchanged in existing history; no final full-pass claim.",
+  "remaining_gates": "No publication/CI/policy approval/source tag/main/host authority/runtime operation or parent completion. Genuine live issuer/current-row CAS/history and exact receiver-original retrieval remain Pending, as do root46 final controller composition, whole-controller admission, actual positive/negative native/source operations and full parent visual/dev-merge requirements."
+}

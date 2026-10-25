@@ -6,6 +6,34 @@ The GitHub App reviews feature PRs targeting `dev`. The subscription-backed
 Codex worker runs on the private Raspberry Pi; GitHub runs all repository tests
 and SQL Explorer scene captures. No OpenAI API key is used.
 
+## Local review and one-way publication
+
+Feature requests and development through Telegram are disabled. Initial independent
+review and correction happen on the developing machine before publication. A signed
+receipt binds the exact source, task and dev base to the separate reviewer session.
+The local reviewer uses an immutable dev provider/schema, outside candidate project
+configuration. First installation requires a separately reviewed private bootstrap
+bundle; candidate code cannot select its own executable file provider.
+
+The orchestrator remains responsible for admission, checks, coordination and merges.
+The GitHub coding agent resolves conflicts only. Dedicated Pi repair agents own
+pre-merge CI and post-merge compatibility/integration failures; changed heads and
+changed bases receive independent Pi review. Published work never returns to the
+developing machine. Dev checks retain lint/type/coverage/artifact requirements while
+application runtime checks use Python 3.14. Full compatibility and SDK checks run
+after merge and during release validation.
+
+Repair accounting records completed candidates, including rejected/no-patch coding
+turns, and deduplicates failed heads without introducing a retry limit. Reconciliation
+identifies a post-merge episode by its oldest unresolved workflow run; verified green
+retires that run. Retained evidence and incident/task bindings survive restarts,
+changed heads and partial repairs. Established controls and genuine holds remain;
+publication never clears persisted pauses or resets private state.
+Authenticated PR controls resume PR incidents. `/resume_repair <incident-id>` allows
+the pinned Telegram owner to resume a genuinely held post-merge incident; anonymous
+messages cannot. The currently stopped Pi service stays paused until a separate
+activation decision. PR #9 remains outstanding and deferred outside PR #53.
+
 ## Failed visual capture artifacts
 
 The trusted `agent-visual` workflow exports a separate failed-capture artifact
@@ -32,6 +60,236 @@ artifact identity and archive hashes before retaining private raw bytes and a
 redacted, paged model view. Publication, runtime activation and actual request
 assignment require their own verified gates; merging this exporter alone does
 not establish that a blocked agent has received the evidence.
+
+## Source-pinned capture receiver
+
+The additive `agent-visual-profile` workflow uses protocol
+`capture-receiver-v2` and an immutable create-only
+`agent-visual-source-v1-<trusted-head>` tag. Its early source guard and trusted
+preflight run before either candidate checkout or the fixed synthetic sentinel.
+Production and `receiver-rehearsal` envelopes have disjoint authorization kinds;
+rehearsal can never grant product visual approval or satisfy the full prerequisite.
+The normative closed receiver schema remains version 2.
+Before creating the fixed sentinel container, the receiver compares the resolved
+image to the exact accepted 3.11 native profile. A changed official tag resolution
+remains pending and triggers owned cleanup; the image is never silently replaced.
+
+This source feature does not implement the positive worker Gate or the genuine
+source-deployment operation. Host publication entrypoints remain explicitly
+pending until those separately reviewed live authority/CAS boundaries exist.
+Schema-valid private files, protocol metadata and synthetic component tests do
+not enable them. Exact source review, CI, protected policy, dev merge, whole
+controller admission, main projection, source-tag deployment and actual GitHub
+positive/negative receiver acceptance remain distinct requirements.
+
+The new bounded transport retains actual HTTP status, response completeness and
+immutable request/response originals. Complete documented API refusals are
+different from uncertain potentially applied mutations: timeouts, 408/5xx and
+malformed or incomplete successful responses retain uncertainty. Reconciliation
+appends supported comment/ref identities without rewriting the original outcome.
+Nested comment/App/ref fields are checked before identity access; malformed201
+identities still retain an immutable uncertain receipt with exact status and body.
+A created source ref must return the fixed repository/tag URL; an included commit
+URL must also match. Returned URLs are compared only. Malformed discovery metadata
+remains incomplete, and a later separate exact readback can append a match without
+rewriting the original uncertainty or issuing another POST.
+Run-title and named-step navigation cannot authenticate exact receiver originals
+or the persisted POST interval, so positive run reconciliation remains incomplete.
+The genuine host cross-run intent-history boundary is also absent in this unit;
+the bridge retains bounded navigation and refuses before POST. A new ephemeral
+root, comment or nonce never clears an earlier uncertain action. These are explicit
+remaining source-operation prerequisites, not implemented authority.
+Every unresolved attempt is discovery-only; no automatic second POST, mutable
+main fallback, invented run ID or owner-upload loop is permitted. All metadata,
+pagination, time and retention limits apply jointly. Tokens remain outside
+containers and artifacts. Credential-tainted body/header observations retain exact
+private originals and hashes outside the upload root, with safe delivery-pending
+metadata. Read interruptions, unexpected backend failures and response-close
+failures pass through the same retention path before safe pending propagation;
+known status and exact bounded prefixes are preserved without exception text.
+Failed private persistence is explicitly unavailable and cannot claim a retained
+original or accepted action. Private runner-local retention does not claim off-run delivery. One joint
+16MiB accounting object covers HTTP, source/fixture reads, immutable records and
+indexes. It conservatively prepays retained copies, carries usage between workflow
+steps and reserves bounded capacity-pending metadata. Before HTTP can take effect,
+the actual canonical request is charged and the full bounded response-header,
+body and finalization allowance is held. Settlement releases only unused capacity;
+unexpected settlement failure records safe observed identity as unavailable and
+pending, without acceptance or replay. Limits can make collection
+incomplete and never grant acceptance. Every rehearsal execution/stream/resource
+writer starts outside the upload root; only descriptor/hash-verified stopped
+streams are copied into it. Even a failed quarantine cannot expose a live writer
+to upload. The monitor must be the complete unique open nonPR `agent:state` issue.
+Ordinary legacy scalar operations retain their API.
+
+The retained PR45 App comment fixture supplies authentic server-owned identity
+fields but is a PR comment, so it is a negative for the non-PR monitor guard.
+Positive monitor, Git and Docker fixtures are explicitly synthetic; they prove
+component behavior and do not claim native/GitHub runtime or visual acceptance.
+
+## Native source validation before production activation
+
+The separate `tests.yml` source-validation mode captures an already published
+exact subject through the fixed reviewed native container transport. It does not
+execute subject installs, imports, tests or rendering on the runner host. Ordinary
+CI remains required; the synthetic infrastructure probe retains its separate
+purpose. No capture programs or checks run on the Pi.
+
+The workflow control must be reviewed and frozen at
+`refs/tags/agent-source-validation/v1/<workflow-sha>`. First establish effective
+no-update/no-delete protection, create-only publication, complete workflow-trigger
+review and actual owner dispatch authority through a separately reviewed concrete
+operation. Merely publishing this feature or approving a dev merge supplies none
+of those operational facts. The job checks both the original and rerun actor,
+the exact workflow identity, separate checkout roots and the fixed transport's
+source hashes. All checkouts disable persisted credentials; candidate containers
+receive no repository write, App or private controller credentials.
+
+After those real preconditions are satisfied, dispatch the registered `tests.yml`
+workflow from that frozen ref with `source_validation=true` and
+`source_validation_subject=<exact-published-sha>`. Malformed or conflicting mode
+inputs fail; source-mode skipped jobs cannot supply normal `fast-checks` success.
+[GitHub dispatch refs are branch or tag names](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
+Bare-SHA dispatch is not assumed.
+
+The metadata and capture artifacts have distinct `source-validation-*` names.
+The transport's private output is admitted before exposing a run-owned artifact
+root. Unavailable or unsafe roots retain only safe wrapper metadata. Successful
+transport evidence includes every manifest scene's geometry and full 1280x800
+PNG, with independent individual image verdicts still pending. Failure evidence
+remains partial or unavailable as observed. The pre-upload manifest records the
+actual transport and step result; final GitHub job/run conclusions and artifact
+IDs/digests must be obtained after completion and retained separately without
+rewriting the uploaded original. These artifacts grant no visual approval,
+production admission, main projection, runtime activation or acceptance for a
+different source head.
+
+This first mode can diagnose the already published subject. Validating an
+unpublished future UI checkpoint still needs a narrowly reviewed managed
+temporary-source publisher without automatic legacy capture, plus any minimal
+honest external receipt support required by its consumer. Those capabilities
+and the production capture activation remain separate pending work.
+
+The pre-check emits owned metadata even when an invalid actor, mode or frozen ref
+stops execution before subject checkout. A successful pre-check records only its
+guard result; capture acceptance remains false until capture actually completes.
+The upload retains this guard metadata when capture never starts, and includes
+hidden members of safely admitted diagnostics to preserve complete originals.
+
+## Fixed PR39 lifecycle baseline diagnostic
+
+The separate `tests.yml` boolean `lifecycle_diagnostic` selects only two contained
+diagnostic jobs: Python 3.11 with Textual 0.73 and Python 3.13 with Textual 0.89.
+The source is fixed to the published PR39 baseline
+`76eb8481734ec4ffb77d71ce300787caff21b860`; there is no arbitrary command,
+selector, subject, profile or checkpoint input. Its complete public parent task,
+public planning questions/options/replies and source provenance are retained in
+`agent_tools/task_evidence/357a59078b4f423491e915d12ca37061/`.
+
+Publish and independently review the diagnostic source, pass its ordinary CI,
+and actually merge that source to dev first. A subsequent operation requires
+its own concrete review, effective immutable-tag protection and the exact frozen
+workflow identity under `refs/tags/agent-source-validation/v1/<source-sha>`.
+Both original and rerun actors must be the owner. This source change itself
+does not authorize a dispatch, synchronization to main, runtime activation or
+release of PR39's prerequisites.
+
+Candidate installation runs in the existing guarded nonroot container. Test
+execution runs with networking disabled. The host imports no candidate Python
+and never mounts its pristine checkout. Each profile runs the same five fixed
+cases once in a baseline process with reporting only, and once in a separate
+observed process. Observation preserves original calls, results and exceptions,
+but can affect timing; the baseline outcome remains separate. Both fixed Ruff
+commands run after the tests, retaining original failures and full phase streams.
+No assertion, expectation, quality baseline or visual acceptance gate is relaxed.
+
+Artifacts named `pr39-lifecycle-<source>-<run>-<attempt>-py<line>` retain reports,
+bounded lifecycle events, framework/version provenance, original process outcomes,
+stream byte counts/hashes, exact source bindings and cleanup/collection state.
+The joint ceiling is 100 MiB and 256 files: 64 MiB logs, 32 MiB candidate data
+and 4 MiB host metadata. Capacity loss is explicit incompleteness. Upload roots
+are created only after all relevant writers stop and owned containers/resources
+are confirmed absent. Otherwise only the earlier closed guard metadata is
+uploadable. Original job/artifact IDs and final upload conclusions are unknown
+inside the running job and remain null until genuine GitHub API collection.
+
+A failed baseline remains a failed diagnostic even if the observed run passes.
+Complete collection is distinct from test success. These artifacts grant no
+visual approval, prerequisite satisfaction, production activation or ordinary
+`fast-checks`/`agent-review` success. Cause-specific fixes still need a complete
+reviewed plan, normal source review, real CI and all required visual reviews.
+
+## Isolated capture execution
+
+The capture transport keeps the Actions checkout pristine and copies the exact
+candidate into a private run-owned directory. Candidate installation and rendering
+execute in two disposable nonroot containers using the same resolved image ID
+and `/work/.venv`. Only installation has public network access. Owned firewall
+rules reject private, metadata and host destinations; rendering uses no network.
+Both containers have a read-only root, temporary storage, dropped capabilities,
+no new privileges and fixed resource limits. Host credentials, Actions command
+files, Git configuration and the Docker socket are not mounted or forwarded.
+
+Trusted host code runs with isolated Python outside the writable candidate. It
+does not import candidate modules or run candidate Git after execution starts.
+Both containers must be removed before descriptor-based collection copies regular
+files into fresh host-owned artifact directories. Symlinks, hardlinks, changing
+trees and oversized collections fail collection. Setup, timeout and cleanup
+failures remain failures even when their diagnostics upload succeeds.
+
+Install and capture stdout/stderr are retained separately with byte counts and
+hashes, within a combined 100 MiB limit. Overflow or an unfinished reader is
+explicitly incomplete. Unfinished writers are quarantined outside the uploaded
+directories. A durable resource journal records mutation intent before Docker or
+firewall requests. An uncertain response prevents collection and guard release;
+it cannot become a successful cleanup claim. The disposable GitHub runner owns
+any resources that cannot be safely confirmed and removed.
+
+Before activating this protected workflow, run the separately reviewed optional
+`visual_isolation_probe` in the `tests` workflow on the exact reviewed source.
+This mode runs only the probe matrix; ordinary CI retains its usual triggers.
+Its Python 3.11 and 3.13 jobs check real container identities, Git/venv permissions,
+public package installation, host/private/metadata rejection, network-free
+rendering, fonts and PNG generation. Retain its exact source, image, run/attempt,
+firewall counters and cleanup evidence. Unit fakes do not prove these native
+properties. The probe uses synthetic data and grants no SQL Explorer visual
+approval. Protected exact-head review/approval and authorized main activation
+remain separate requirements; scene geometry and every full-PNG verdict remain
+mandatory for SQL Explorer repairs.
+
+Native probe failure artifacts retain per-phase observations even when an import,
+install, network check or rendering assertion fails. Capture records its actual
+renderer versions and invocation, full font inventory and inspection results,
+exact SVG, produced PNG and geometry/color observations before asserting glyph
+presence. The phase record preserves the original exception and traceback;
+unexecuted stages remain incomplete. Default renderer options and the nonempty
+glyph assertion stay unchanged, so diagnostic retention does not imply native
+acceptance or establish a font-selection cause.
+
+Available probe files are collected after failed runs only when cleanup succeeded,
+all owned containers are absent, no resource mutation is uncertain and upload
+writers are safe. Missing or unsafe evidence remains a failed/incomplete result.
+Owned firewall counters are sampled before cleanup even after a phase failure;
+counter failures are recorded separately from the original error.
+
+## Protected conflict preparation
+
+After attempting the pinned dev merge, conflict preparation inspects unresolved
+index paths as raw NUL-delimited Git output before collecting CI context or
+constructing a generic worker prompt. Conflicts under `.github/agent/` or in
+`.github/workflows/github-agent.yml` require the existing planned-correction
+route; the generic worker cannot edit those files. Sensitive paths and unavailable
+or malformed inspection stop preparation without claiming that planning is queued.
+
+Before persisting a correction, the controller rechecks current publication
+authority and uses the correction row observed before inspection as its expected
+snapshot. Same-scope findings and concurrent replacement requests are preserved.
+Only confirmed persistence reports a queued correction. Restarted discovery
+retains the original head, pinned base and complete task context and selects
+fresh correction planning with separate plan review. Ordinary conflicts and
+clean protected inheritance keep their existing paths. Collector rejection,
+publication checks, genuine holds and exact-head protected approval still apply;
+source publication or dev merge does not activate this repair.
 
 ## Scheduling and status
 
@@ -100,6 +358,14 @@ machine signature, plus this App's signed repair commits. The private host owns
 `~/.config/github-agent/allowed_signers`. Keys are explicitly enrolled; neither
 GitHub account keys nor files in a PR modify that registry. Private signing keys
 remain on their originating machines.
+
+Signed local review receipts use the separate `atk-local-review-v1` SSH signature
+namespace. A machine whose local reviews the host verifies needs its registry entry
+to permit that namespace in addition to commit signing, for example
+`mac namespaces="git,atk-local-review-v1" ssh-ed25519 ...`. Entries limited to
+`namespaces="git"` keep signing commits, but their local review receipts are
+rejected, so the published PR fails admission. Only the owner decides which
+machines are enrolled and which namespaces each entry permits.
 
 Every feature PR attaches the starting user prompt and subsequent corrections,
 with credentials redacted. The digest is bound to its signed head. Every review
@@ -221,6 +487,35 @@ correction requests after task-context rendering fails (`:context-blocked`) rema
 deliverable even for local requests, without requiring a separate waiting notice.
 Authentication requests, approvals and Telegram feature updates remain deliverable.
 Each pass scans at most 200 ready rows and returns at most 20 delivery events.
+
+## Companion recommendation-policy activation
+
+The companion `self_host` coordinator owns recommendation-policy review and
+deployment. Use the current source and runtime associations under
+[Updating trusted automation](#updating-trusted-automation); historical receipts
+do not establish acceptance of a later candidate. SQL Explorer correction workers
+preserve companion work without deploying it or duplicating its patch.
+
+For each further activation, independently review the exact candidate and verify compatible
+trusted task readers and any required authenticated owner approvals. Rehearse that
+same reviewed version on an isolated off-Pi runner with disposable state,
+synthetic credentials, and fake external boundaries. Passing GitHub regressions
+alone does not satisfy this deployment gate.
+
+The rehearsal must cover durable recommended choices and question provenance;
+native planning, coding, and correction transitions; mixed questions that retain
+genuine-input holds; restart recovery; stale request revisions; protected
+exact-head approvals; and preservation of checkpoints, private state,
+authentication, and unrelated files. Exercise rollback to the previous service
+source while retaining later answers and private state. Retain the candidate
+identity, environment, scenario results, and rollback evidence.
+
+Activate only after those gates pass and active work is safely drained. Then
+perform live acceptance for durable recommended decisions, genuine-input and
+protected-approval holds, restart recovery, and preserved authentication and
+checkpoints. Failed acceptance requires rollback. The root coordinator retains
+its complete tracked-PR inventory and monitoring obligations through successful
+dev merges, required post-merge validation, and companion live acceptance.
 
 ## Merge and repair behavior
 
@@ -427,6 +722,15 @@ newly merged automation paths to main. It reconstructs the merge tree from the a
 dev, validates the recorded squash/merge tree and current-dev ancestry, and rechecks owner authorization
 and signed task binding immediately before a non-force main push, and retains
 failed activation for retry. Independently changed main files block projection.
+The exact infrastructure path `agent_tools/sql_explorer_visual_render.py` also
+belongs to this protected allowlist so the native capture probe can use the same
+reviewed rendering policy on main. Its edits and either endpoint of a rename
+require the same exact-head owner decision. Other `agent_tools` paths and SQL
+Explorer application files gain no promotion permission. Activate the path policy
+before processing a capture PR that needs the helper: the activation ledger does
+not replay completed PR identities. If an older activation omitted the helper,
+retain its ledger and require a separately reviewed, authenticated projection
+with the existing merge, source, authority and main comparison checks.
 Package code stays on dev until an explicit release; historical merges are not
 replayed. The private activation ledger is included in orchestrator evidence.
 
@@ -673,6 +977,57 @@ Retries cannot reinstall a retired hold. The host must preserve authenticated
 questions and answers and independently reassess the full amended scope; a new
 plan alone never proves a prerequisite PR merged.
 
+`prepare_coordinator_readonly` prepares only redacted review context for that
+exact retained scope. Ordinary `prepare` still rejects a held PR. Preparation
+checks signed task identity, current dev and private authority before and after
+collecting evidence; the historical hold base is preserved. The paired worker
+uses its bounded `Gate.observe` path and checks the full request and authority
+again before launching the model. A controller without this capability produces
+an internal tooling retry, with no owner question or unrestricted fallback.
+Source publication alone does not deploy this capability.
+
+Discovery revalidates an inventory PR after refresh and before publishing an
+authorization or context rejection. A closed or changed target is discarded;
+context rejection also rechecks before installing a pause. Real current open
+authorization failures remain visible. GitHub state reads and check creation
+are separate requests, so this closes the observed stale-inventory window
+without claiming an atomic operation or rewriting historical check results.
+
+The additive `prerequisite_authority_snapshot` and `renew_coordinator_checked`
+APIs support callers that need a complete, receipt-selected control observation.
+The full version-2 prerequisite review receipt commits every selected peer and
+branch; its digest must match the persisted own hold. The snapshot retains all
+selected rows, including historical rows and explicit absence, from holds,
+renewals, pauses, vetoes, approvals, amendments, corrections and both feature
+enrollment tables. Raw SQLite types and JSON text are preserved. Unsupported
+schema, triggers, excess data, busy writers and expired metadata budgets stay
+operationally pending. These APIs never create or migrate the database; normal
+trusted `connect` performs only the additive checked-receipt table migration.
+
+Checked renewal compares the entire observation in one `BEGIN IMMEDIATE`
+transaction, preserves the own correction that must return to planning, rejects
+active peer barriers, and changes only the exact own hold and renewal. It appends
+an immutable checked receipt and verifies both receipt and authority after the
+last write. A lost response can replay only identical inputs against the exact
+unchanged post-state. A replacement or reinstalled hold is preserved and makes
+replay stale. Existing ordinary renewal behavior remains separate.
+
+The trusted consumer must keep its actual `SupervisorLock.assert_current_owner()`
+ownership around the local call, bind full request and external proof identities,
+and recheck them before advancing fresh planning. This is control-SQLite
+atomicity; GitHub, request/jobs databases, source files and settings require their
+own current observations and CAS. A checked receipt grants no coding, dispatch,
+publication, protected approval or merge permission. Missing checked capability
+has no legacy fallback for a composite capture prerequisite.
+
+Source publication alone does not activate this API or its private schema.
+Installed legacy workers admit exact whole controller trees: a new controller
+closure needs a genuinely supported, independently reviewed source-admission
+path before main projection. A protocol marker, compatibility JSON, healthy
+heartbeat or earlier approval cannot supply it. The positive capture verifier,
+guarded receiver, actual native/visual evidence, controller projection and worker
+deployment remain separate requirements.
+
 Verified publication recovery and correction-question recovery share one atomic
 pause-retirement operation. It matches the observed repository, PR, head, reason
 and creation time. A replacement hold or a current-head owner veto prevents the
@@ -681,33 +1036,39 @@ correction pause is read. Evidence and cancellation holds survive restart recove
 Recovery leaves displayed labels to normal reconciliation and never records
 protected approval. Local signed-PR corrections do not need App feature enrollment.
 
-In GitHub Alerts, send `/prompt_agent <feature request>`. Anonymous channel
-commands and answers require the pinned owner's **Confirm request/answer** button;
-that authenticates the exact message and does not approve a feature or bypass review.
-Identified owner messages are authenticated directly. No other user can allocate a worker.
+### Developing-machine features and Telegram controls
 
-A fresh read-only agent validates the request. A separate native Codex Plan-mode
-session, driven through the private App Server, inspects context and asks questions
-in Telegram. No prompt-only planning fallback is accepted. Answer by
-replying to the latest question message or with `/reply_agent <request-id> <answers>`.
-Multiple requests have independent IDs. `/cancel_agent <request-id>` invalidates
-queued and running results. Replies to stale question messages are rejected.
+Create features on the developing machine using the
+[local publication procedure](../agent_docs/development.md#fresh-agent-sequence).
+Initial planning, independent review and correction happen there. A rejected
+candidate stays local until a fresh independent reviewer approves its exact source,
+task and dev base. Publish the signed PR and review receipt for a permanent handoff
+to the Pi; published tasks never return to the developing machine.
 
-After questions are answered, a fresh read-only agent reviews the plan against
-the original prompt and chronological responses. Only an exact approval tied to
-the task, plan and dev SHA allows a separate coding session to start. Changed dev
-or user scope requires planning and review again. Coding questions pause work,
-preserve its private patch, and return through Telegram and plan review before
-implementation resumes. An invalid request asks for user correction; a rejected
-implementation plan returns to a fresh planning round with the findings.
+Telegram feature submission and Pi feature planning/coding are disabled. GitHub
+Alerts retains notifications, authenticated operational controls, policy decisions
+and answers to genuine questions from published repair/review work.
+Answer an existing request by replying to its latest question message or with
+`/reply_agent <request-id> <answers>`. Anonymous channel answers require the pinned
+owner's **Confirm request/answer** button; identified owner messages are authenticated
+directly. Confirmation authenticates the exact answer and grants no policy approval.
+Multiple requests have independent IDs; stale question replies are rejected.
+`/cancel_agent <request-id>` invalidates queued and running results.
 
-The Pi only performs source inspection/edits and lightweight trusted Git/controller
+Separate Pi repair agents handle published CI, compatibility and integration
+failures. They preserve the original task, chronological answers and private patch.
+Genuine unanswered questions pause affected work for authenticated answers, followed
+by renewed planning/review where scope changes. Independent Pi reviewers assess
+changed heads or dev bases. The orchestrator coordinates this cycle and merging;
+the GitHub coding role resolves conflicts only.
+
+The Pi performs source inspection/edits and lightweight trusted Git/controller
 operations. It never executes repository programs, tests, builds, installs or scenes.
-All heavy checks run on GitHub; the final PR receives another fresh independent
-reviewer. Original prompts and answers are attached automatically with credential
-redaction, bound to signed commit trailers. Request state and notifications survive
-worker restarts. The subscription worker retains its VPN wrapper, model configuration,
-Airflow schedules and ten-worker limit.
+GitHub runs all checks. Original prompts and answers are attached automatically with
+credential redaction and signed commit bindings. Request state and notifications
+survive worker restarts. Existing VPN, model configuration, Airflow schedules and
+the ten-worker limit remain configured; automations stay stopped pending separate
+activation.
 
 Reviewers can inspect a host-owned immutable evidence snapshot for companion worker
 and bot changes. Its manifest binds source/test files to hashes, repository commit

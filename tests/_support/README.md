@@ -61,6 +61,10 @@ or UI modules.
   and spacing expectations in the test.
 - Explorer's reusable sessions live in `tests.sql._support.explorer`; import
   them directly rather than importing a collected test module.
+- Detached Explorer editor lifecycle tests still need a running event loop and
+  active Textual app. Use `asyncio.run()` and `SqlExplorerApp(FakeSession()).run_test()`
+  before constructing editors; leave them outside the widget tree and assert
+  `not editor.is_mounted` after construction and lifecycle operations.
 - Explorer metadata providers/coordinator stubs and bounded predicate polling
   live in `tests.sql._support.completion`.
 - Explorer's area fixture supplies empty offline metadata for unattended UI

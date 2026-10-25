@@ -1,0 +1,61 @@
+{
+  "schema": "capture-receiver-validation-history/v3",
+  "source_inventory": "/private/tmp/capture-receiver-first-unit-full-source-inventory-v2.json",
+  "source_inventory_sha256": "fe5f9468e46cd895edf5ed00625b3e566fb591bff533aa91d8842ce64b268be8",
+  "focused": {
+    "status": "passed",
+    "tests": 1107,
+    "seconds": 79.25,
+    "log": ".rag_index/tool_logs/1792358297988848000-63615765c3.log",
+    "sha256": "f949607d52c233eeb15d71ca98ce9143f214d19d655bdd23b65c38c27aa84749",
+    "warning_summary": false
+  },
+  "precommit_history": [
+    {
+      "status": "failed",
+      "stage": "static",
+      "log": ".rag_index/tool_logs/1792358041383260000-537fe20771.log",
+      "downstream_stages": "not_run",
+      "reason": "17 new test-only Ruff findings; corrected after failed process completed"
+    },
+    {
+      "status": "interrupted",
+      "parallelism": 6,
+      "session": 89454,
+      "static": "passed",
+      "coverage": "interrupted_not_passed",
+      "artifact": "not_run",
+      "python_matrix": "not_run",
+      "session_exit_code": 143,
+      "cancelled_owned_process_group": 96229,
+      "reason": "Fresh independent review established production blockers; only owned check group explicitly terminated before any source change. V2 still frozen pending complete report."
+    }
+  ],
+  "source_review": "fresh independent whole-source review pending; no source/publication/operation/activation approval implied",
+  "post_review_checks": [
+    {
+      "status": "failed",
+      "passed": 1111,
+      "failed": 14,
+      "log": ".rag_index/tool_logs/1792359279842298000-63615765c3.log",
+      "reason": "First corrective implementation/fixture defects; not passed.",
+      "log_sha256": "e885e3660a1bf72cbdac94f24396604798a60cc6f97eda2601a6bcc0a44e1118"
+    },
+    {
+      "status": "passed",
+      "passed": 1125,
+      "log": ".rag_index/tool_logs/1792359498025984000-63615765c3.log",
+      "warning_summary": false,
+      "log_sha256": "b8fa8d94abadd74b1029bd65a2428848e8ab63effa76044fa0d39952f63723b3"
+    },
+    {
+      "status": "passed",
+      "log": ".rag_index/tool_logs/1792359819477693000-63615765c3.log",
+      "warning_summary": false,
+      "log_sha256": "b69126f818eb9af9f7bda8ca8a34d60a5f82a7392863c5447973075280a8d2f2",
+      "passed": 1126
+    }
+  ],
+  "final_precommit": "pending: new final source must pass all four managed stages, no receipt reuse from V2 interrupted run claimed",
+  "as_of": "V3 source freeze before independent review/full precommit"
+}
