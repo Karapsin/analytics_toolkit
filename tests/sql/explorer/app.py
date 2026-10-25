@@ -586,6 +586,6 @@ def test_clipboard_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
         assert application.paste_from_explorer_clipboard() == "fallback"
 
         monkeypatch.setattr(app_module.pyperclip, "paste", lambda: "")
-        assert application.paste_from_explorer_clipboard() == "fallback"
+        assert application.paste_from_explorer_clipboard() == ""
 
     asyncio.run(exercise())

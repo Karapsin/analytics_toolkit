@@ -94,6 +94,35 @@ Generated from package version bumps and recent commit history.
 - Corrected local-review prompt wrapping and regression-test formatting while preserving the workflow redesign and existing validation gates.
 - Bound PR #53 companion evidence to the accepted pause-preserving successor, retaining historical provenance and all administrative holds.
 
+- Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
+- Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
+- SQL Explorer supports continuous vertical selection, VS Code-style multicursor clipboard distribution, and thin vertical carets.
+- Preserve SQL Explorer multicursor selection, clipboard spreading and readable thin carets; stabilize armed-directory scene setup and semantic readiness, correct quality and scrollbar typing failures, retain CODE6 fixes and changelog history, and add focused service-free regressions.
+- Improve SQL Explorer multicursors, clipboard spreading and readable carets; add bounded four-way picker rasterization evidence.
+- Correct SQL Explorer disabled-color regression CSS resolution and SVG evidence lint without changing diagnostic output or multicursor behavior.
+- Preserve SQL Explorer multicursors, clipboard spreading and readable carets; reconcile dev changelog history, retain bounded checkbox and picker diagnostics, correct diagnostic lint/formatting, and extend service-free regressions.
+- Correct SQL Explorer diagnostic fixture context, preserve bounded region collection during lint cleanup, and normalize diagnostic regression formatting.
+- Preserve SQL Explorer multicursor changes while retaining bounded type-menu observations, serialization/scaling comparison controls, and canonical GitHub coverage JSON for evidence-led repairs.
+- Preserve SQL Explorer multicursor editing while supersampling visual captures, stabilizing the type-menu viewport regression, and covering editor lifecycle and clipped highlights.
+- Declare Pillow in GitHub and tox test environments and format supersampling regressions without changing their assertions.
+- Bound SQL Explorer cursor snapshots to live undo/redo history across editing, indentation, history eviction, and document resets, with focused lifecycle regressions.
+- Fix SQL Explorer document resets to clear obsolete multicursors, preferred columns and history; cover reset rendering and editing and complete history/idle test fixtures.
+- Fix detached SQL Explorer reset regressions to use an active Textual app while asserting editors remain unmounted and retaining cursor/history cleanup checks.
+- Preserve SQL spaces and expanded tabs beneath primary and secondary thin carets, including completion separators, wrapping, and scrolling.
+- Preserve SQL Explorer cell colors beneath focused thin carets after CSS resolution, strengthen real-renderer regressions, and reconcile dev documentation and changelog history.
+- Normalize SQL Explorer caret regression signatures and assertions without changing rendering coverage.
+- Reconcile SQL Explorer with current dev capture safeguards, preserving exporter regressions, operations guidance and complete feature changelog history.
+- Preserve SQL Explorer ruler presentation and add bounded multicursor state, caret-layer and lossless export diagnostics with focused regressions for independent visual reassessment.
+- Preserve SQL Explorer caret diagnostic text and styles with focused Unicode regressions, retain bounded dialog/ruler evidence, and distinguish journal read failures from empty results.
+- Preserve SQL Explorer multicursors and dev safeguards; add bounded callback-order and original-strip evidence for ruler diagnosis with focused regressions and diagnostic lint/format corrections.
+- Order SQL Explorer tab/database scene focus initialization and compare native styled rows with compositor output while preserving raw diagnostics and production behavior.
+- Fix SQL Explorer diagnostic regression import ordering and formatting while preserving multicursor, clipboard, caret, and capture coverage.
+- Fix SQL Explorer diagnostic regression import ordering and formatting while preserving all assertions.
+- Preserve mount-ordered SQL Explorer scenes and strict regressions, correct diagnostic test formatting/imports, and retain bounded caret raster stages, explicit malformed-stage failures, and native dialog/results border evidence for GitHub diagnosis.
+- Center SQL filename dialogs with mounted resize regressions, preserve current-dev validation safeguards and Python profiles, and correct diagnostic lint/format findings without weakening assertions.
+- Preserve SQL Explorer caret underlines in PNG exports with span-derived strokes, causal raster coverage, lossless captured-SVG fixtures and current-dev safeguards.
+- Preserve SQL Explorer editing while retaining bounded causal raster evidence, a disposable Python 3.9 renderer probe, current-versus-historical provenance regressions and behavior-preserving quality corrections for GitHub validation.
+
 ## 1.3.12.5 - 2026-10-14
 
 - Hand off signed PRs to native-planning Pi correction agents and safely clean merged feature branches

@@ -60,10 +60,12 @@ class SqlExplorerCursorCommandsMixin:
             app.show_error(SqlExplorerConfigurationError("Usage: cp"))
             return
         editor = app.active_workspace.editor
-        app.copy_to_explorer_clipboard(editor.command_copy_text())
+        editor.copy_to_clipboard()
         app._set_notice(
             "Copied editor selection."
             if any(not item.is_empty for item in editor.cursor_selections)
+            else "Clipboard cleared."
+            if editor.cursor_count > 1
             else "Copied editor."
         )
 

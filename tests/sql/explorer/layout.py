@@ -143,3 +143,62 @@ def test_find_replace_panel_uses_target_order_and_floats_at_upper_right(
             assert panel.region.y > query_pane.content_region.y
 
     asyncio.run(exercise())
+
+
+def test_completion_popup_excludes_active_sql_row_after_scroll_and_resize() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(120, 40)) as pilot:
+            workspace = app.active_workspace
+            editor, menu = workspace.editor, workspace.completion_menu
+            editor.text = "SELECT cus FROM analytics.orders\n" + "\n".join(
+                "SELECT " + "x" * 250 for _ in range(60)
+            )
+            editor.cursor_location = (0, 10)
+            await pilot.pause()
+            app._open_completion(
+                app._completion_at_cursor(workspace),
+                ("customer_id", "customer_name", "customer_region"),
+                accept_single=False,
+            )
+            await pilot.pause()
+
+            def assert_placement() -> None:
+                _, cursor_y = editor.wrapped_document.location_to_offset(editor.cursor_location)
+                row = editor.scrollable_content_region.y + cursor_y - int(editor.scroll_y)
+                bounds = app.screen.content_region
+                assert menu.is_open
+                assert menu.region.y > row or menu.region.bottom <= row
+                assert bounds.x <= menu.region.x < menu.region.right <= bounds.right
+                assert editor.scrollable_content_region.y <= menu.region.y
+                assert menu.region.bottom <= editor.scrollable_content_region.bottom
+
+            assert_placement()
+            assert menu.region.y == editor.scrollable_content_region.y + 1
+            editor.cursor_location = (35, 220)
+            await pilot.pause()
+            editor.scroll_to(
+                y=35 - editor.scrollable_content_region.height + 1,
+                x=150,
+                animate=False,
+                force=True,
+            )
+            await pilot.pause()
+            # Movement normally closes completion; reopen it at the bottom edge.
+            menu.open(("column_one", "column_two", "column_three"))
+            app._position_completion(workspace)
+            await pilot.pause()
+            assert_placement()
+            _, cursor_y = editor.wrapped_document.location_to_offset(editor.cursor_location)
+            row = editor.scrollable_content_region.y + cursor_y - int(editor.scroll_y)
+            assert menu.region.bottom <= row
+            await pilot.resize_terminal(70, 35)
+            await pilot.pause()
+            editor.scroll_cursor_visible()
+            await pilot.pause()
+            menu.open(("column_one", "column_two", "column_three"))
+            app._position_completion(workspace)
+            await pilot.pause()
+            assert_placement()
+
+    asyncio.run(exercise())
