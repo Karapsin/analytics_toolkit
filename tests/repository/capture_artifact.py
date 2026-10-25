@@ -10,7 +10,9 @@ from typing import Any
 import pytest
 
 from agent_tools import sql_explorer_visual as visual
+from agent_tools import sql_explorer_visual_process as visual_process
 from tests._support.paths import REPO_ROOT
+from tests.repository._support.capture_transport import fake_transport
 
 spec = importlib.util.spec_from_file_location(
     "capture_artifact", REPO_ROOT / ".github/agent/capture_artifact.py"
@@ -360,3 +362,69 @@ def test_pinned_legacy_capture_retains_available_geometry_with_unknown_stream_co
     assert session["scenes"]["command-completion"]["capture"] == "pending"
     assert not (evidence / "process").exists()
     assert not (tmp_path / "visual-artifact").exists()
+
+
+@pytest.mark.parametrize("timed_out", [False, True])
+def test_capture_child_retains_both_streams_and_timeout_partial_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    timed_out: bool,
+) -> None:
+    observed = fake_transport(monkeypatch, timed_out=timed_out)
+    diagnostic = tmp_path / "process/editor"
+    with pytest.raises(visual.VisualReviewError, match="complete diagnostics"):
+        visual._run(["python", "-m", "capture"], cwd=tmp_path, timeout=1, diagnostics=diagnostic)
+    assert (diagnostic / "stdout.bin").read_bytes() == b"partial output\n"
+    assert (diagnostic / "stderr.bin").read_bytes() == b"different error\n"
+    record = json.loads((diagnostic / "execution.json").read_bytes())
+    assert record["timed_out"] is timed_out
+    assert record["returncode"] == (-9 if timed_out else 7)
+    assert record["outputs_complete"] is not timed_out
+    assert observed["protocol"].closed is True
+    assert observed["transport"].closed is True
+
+
+
+def test_child_output_capacity_is_bounded_and_marked_incomplete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = fake_transport(monkeypatch, stdout=b"x" * 17)
+    monkeypatch.setattr(visual_process, "MAX_STREAM_BYTES", 8)
+    with pytest.raises(visual_process.CaptureProcessError, match="outcome diagnostics"):
+        visual_process.run_capture(
+            ["capture"], cwd=tmp_path, timeout=1, destination=tmp_path / "out"
+        )
+    assert (tmp_path / "out/stdout.bin").read_bytes() == b"x" * 8
+    record = json.loads((tmp_path / "out/execution.json").read_bytes())
+    assert record["outputs_complete"] is False
+    assert record["streams"]["stdout"]["capacity_exceeded"] is True
+    assert observed["group_kills"]
+
+
+@pytest.mark.parametrize("failure", ["descendant", "spawn"])
+def test_process_cleanup_freezes_all_output_before_artifact_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    observed = fake_transport(
+        monkeypatch, descendant=failure == "descendant", spawn_error=failure == "spawn"
+    )
+    with pytest.raises(visual_process.CaptureProcessError, match="outcome diagnostics"):
+        visual_process.run_capture(
+            ["capture"], cwd=tmp_path, timeout=1, destination=tmp_path / "out"
+        )
+    protocol = observed["protocol"]
+    assert protocol.closed is True
+    assert observed["transport"].closed is True
+    assert observed["group_kills"]
+    before = (tmp_path / "out/stdout.bin").read_bytes()
+    metadata = (tmp_path / "out/execution.json").read_bytes()
+    protocol.pipe_data_received(1, b"late descendant output")
+    assert (tmp_path / "out/stdout.bin").read_bytes() == before
+    assert (tmp_path / "out/execution.json").read_bytes() == metadata
+    record = json.loads(metadata)
+    assert record["outputs_complete"] is False
+    if failure == "descendant":
+        assert record["drain_timeout"] is True

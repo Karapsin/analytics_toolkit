@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 import platform
@@ -18,6 +19,12 @@ import time
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+_process = importlib.import_module(
+    f"{__package__}.sql_explorer_visual_process" if __package__ else "sql_explorer_visual_process"
+)
+CaptureProcessError = _process.CaptureProcessError
+run_capture = _process.run_capture
 
 MANIFEST = Path("visual-tests/sql_explorer/scenes.json")
 STATE_ROOT = Path(".rag_index/sql-explorer-visual")
@@ -70,7 +77,15 @@ def _run(
     cwd: Path,
     timeout: int = 120,
     check: bool = True,
+    diagnostics: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    if diagnostics is not None:
+        try:
+            return run_capture(
+                command, cwd=cwd, timeout=timeout, destination=diagnostics, check=check
+            )
+        except CaptureProcessError as exc:
+            raise VisualReviewError(f"capture failed; complete diagnostics: {diagnostics}") from exc
     try:
         completed = subprocess.run(
             command,
@@ -460,6 +475,7 @@ def capture_review(root: Path, review_id: str) -> dict[str, Any]:
                     ],
                     cwd=checkout,
                     timeout=60,
+                    diagnostics=evidence_root / "process" / scene_id,
                 )
                 payload = _wait_geometry(geometry, timeout=1)
                 if payload.get("scene_id") != scene_id or payload.get("ok") is not True:

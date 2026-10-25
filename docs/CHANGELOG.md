@@ -132,6 +132,7 @@ Generated from package version bumps and recent commit history.
 - Replace managed PR status labels atomically while preserving unrelated labels and recovering uncertain responses
 - Reconcile signed task plans, questions, images and provenance with archived transport; retain RPI coordination, full visual routing and complete quality diagnostics without weakening approval or validation gates.
 - Fix diagnostic tool-version lookup lint and visual/publication regression regex formatting, preserving missing-tool metadata, error propagation and all validation gates.
+- Retain complete failed GitHub visual capture diagnostics and both child output streams without granting visual approval
 
 ## 1.3.12.5 - 2026-10-14
 
