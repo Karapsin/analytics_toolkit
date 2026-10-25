@@ -202,6 +202,10 @@ jobs:
     if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only tests' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only tests' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only tests' || 'py314-latest' }}
     runs-on: ubuntu-latest
+    env:
+      RASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      RASTER_BASE: 4a17e91b20b2683aca365f486e6217a141ef8c5b
+      RASTER_PROFILE: coverage
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -210,6 +214,11 @@ jobs:
         with:
           python-version: "3.14"
           cache: pip
+      - name: Install raster regression fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y fontconfig fonts-dejavu-core
+          fc-match --format='%{family}\t%{file}\n' 'DejaVu Sans Mono'
       - name: Install tox
         run: python -m pip install "tox>=4,<5"
       - name: Run canonical tests and unchanged coverage floors
@@ -221,6 +230,13 @@ jobs:
           name: canonical-coverage-${{ github.sha }}
           path: coverage.json
           if-no-files-found: ignore
+      - name: Retain canonical raster failure observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raster-coverage-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: raster-diagnostics/coverage/
+          if-no-files-found: warn
 
   quality:
     if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"

@@ -488,6 +488,35 @@ deliverable even for local requests, without requiring a separate waiting notice
 Authentication requests, approvals and Telegram feature updates remain deliverable.
 Each pass scans at most 200 ready rows and returns at most 20 delivery events.
 
+## Companion recommendation-policy activation
+
+The companion `self_host` coordinator owns recommendation-policy review and
+deployment. Use the current source and runtime associations under
+[Updating trusted automation](#updating-trusted-automation); historical receipts
+do not establish acceptance of a later candidate. SQL Explorer correction workers
+preserve companion work without deploying it or duplicating its patch.
+
+For each further activation, independently review the exact candidate and verify compatible
+trusted task readers and any required authenticated owner approvals. Rehearse that
+same reviewed version on an isolated off-Pi runner with disposable state,
+synthetic credentials, and fake external boundaries. Passing GitHub regressions
+alone does not satisfy this deployment gate.
+
+The rehearsal must cover durable recommended choices and question provenance;
+native planning, coding, and correction transitions; mixed questions that retain
+genuine-input holds; restart recovery; stale request revisions; protected
+exact-head approvals; and preservation of checkpoints, private state,
+authentication, and unrelated files. Exercise rollback to the previous service
+source while retaining later answers and private state. Retain the candidate
+identity, environment, scenario results, and rollback evidence.
+
+Activate only after those gates pass and active work is safely drained. Then
+perform live acceptance for durable recommended decisions, genuine-input and
+protected-approval holds, restart recovery, and preserved authentication and
+checkpoints. Failed acceptance requires rollback. The root coordinator retains
+its complete tracked-PR inventory and monitoring obligations through successful
+dev merges, required post-merge validation, and companion live acceptance.
+
 ## Merge and repair behavior
 
 Merges require current `fast-checks` and the App's `agent-review`, against the
