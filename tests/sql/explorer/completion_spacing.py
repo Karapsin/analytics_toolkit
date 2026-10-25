@@ -181,3 +181,48 @@ def test_select_star_shortcut_uses_trino_catalog_and_preserves_indentation(
             assert editor.text == prefix + "  SELECT" + trailing
 
     asyncio.run(exercise())
+
+
+def test_column_completion_preserves_the_rendered_separator_and_suffix_through_history() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(208, 47)) as pilot:
+            stub = _install_stub(app)
+            stub.table_cache = ("customer_id", "customer_name", "created_at")
+            workspace = app.active_workspace
+            editor = workspace.editor
+            suffix = " FROM analytics.customers c JOIN analytics.orders o ON c.id = o.customer_id"
+            original = "SELECT c.c" + suffix
+            completed = "SELECT c.customer_id" + suffix
+            editor.text = original
+            editor.cursor_location = (0, 10)
+            editor.focus()
+            await pilot.press("ctrl+space")
+            assert workspace.completion_menu.is_open
+            assert workspace.completion_menu.suggestions[0] == "customer_id"
+            viewport = editor.scrollable_content_region
+            composed = app.screen._compositor.render_strips()[viewport.y]
+            left = editor.gutter_width
+            for strip in (
+                editor.render_line(0),
+                composed.crop(viewport.x, viewport.right),
+            ):
+                assert strip.crop(left, left + len(original)).text == original
+                separator = strip.crop(left + 10, left + 11)
+                assert separator.text == " "
+                assert all(segment.style.underline is True for segment in separator)
+            assert editor.text == original
+            await pilot.press("enter")
+            assert editor.text == completed
+            assert editor.cursor_location == (0, len("SELECT c.customer_id"))
+            assert editor.text[len("SELECT c.customer_id") :] == suffix
+            assert "customer_id FROM" in editor.render_line(0).text
+            editor.action_undo()
+            assert editor.text == original
+            assert editor.cursor_location == (0, 10)
+            editor.action_redo()
+            assert editor.text == completed
+            assert editor.cursor_location == (0, len("SELECT c.customer_id"))
+            assert app.session.executed == []
+
+    asyncio.run(exercise())

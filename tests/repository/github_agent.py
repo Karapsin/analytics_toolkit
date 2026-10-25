@@ -215,7 +215,18 @@ def test_only_owner_and_own_repair_bot_are_trusted() -> None:
     assert controller.trusted(pr, "owner/repo")
 
 
-def test_policy_approval_is_owner_only_exact_head_and_covers_renames(monkeypatch: Any) -> None:
+@pytest.mark.parametrize(
+    ("filename", "previous"),
+    [
+        ("notes.md", ".github/agent/controller.py"),
+        ("notes.md", "agent_tools/sql_explorer_visual_render.py"),
+        ("agent_tools/sql_explorer_visual_render.py", "notes.md"),
+        ("agent_tools/sql_explorer_visual_render.py", ""),
+    ],
+)
+def test_policy_approval_is_owner_only_exact_head_and_covers_renames(
+    monkeypatch: Any, filename: str, previous: str
+) -> None:
     class GitHub:
         repository = "owner/repo"
 
@@ -224,9 +235,7 @@ def test_policy_approval_is_owner_only_exact_head_and_covers_renames(monkeypatch
 
         def pages(self, path: str) -> list[dict[str, Any]]:
             if "/files?" in path:
-                return [
-                    {"filename": "notes.md", "previous_filename": ".github/agent/controller.py"}
-                ]
+                return [{"filename": filename, "previous_filename": previous}]
             return self.comments
 
     gh = GitHub()
@@ -457,6 +466,12 @@ class _RefreshDiscoveryGitHub:
         self.calls.append(path)
         if path in self.errors:
             raise self.errors[path]
+        route = path.split("?", 1)[0]
+        if route.startswith("issues/") and route.endswith("/labels"):
+            pr = self.pull(int(route.split("/")[1]))
+            if method == "PUT":
+                pr["labels"] = [{"name": name} for name in data["labels"]]
+            return pr.get("labels", [])
         return self._response(path, method)
 
     def _response(self, path: str, method: str) -> Any:

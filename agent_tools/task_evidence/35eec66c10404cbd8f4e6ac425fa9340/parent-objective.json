@@ -1,0 +1,43 @@
+{
+  "format_version": 1,
+  "parent_objective": "once orchestrator is started monitor only its actions. If it works fine - do nothing, otherwise make corrections. Stop when all merged",
+  "parent_signed_task": {
+    "repository": "Karapsin/analytics_toolkit",
+    "pr": 30,
+    "head": "c7cd561946018f0753d4c825aef9aeb2ad8b700d",
+    "task_id": "dc4c6898f7964b4e91290009f61d8f11",
+    "digest": "5a30047738e6bc13cd6cd9edc9ac919b3982392564bc0eec3721ea3d0f1789c0",
+    "producer": "author:2a5a18c23f744a8b82ebbadac9b4abfe",
+    "url": "https://github.com/Karapsin/analytics_toolkit/pull/30",
+    "signature_and_task_review_check": 116906892584
+  },
+  "follow_up_scope": "Repair verified publication and correction-question recovery races with shared atomic retirement of the exact observed derived pause; preserve replacement authority holds, current-head vetoes, independent review, exact-head CI and protected approval. Broader rejected orchestrator changes remain separate.",
+  "new_policy_approval": false,
+  "new_owner_answer": false,
+  "observation": {
+    "orchestrator_id": "b305c78a5a0346edaa936a6faa70b33c",
+    "analytics_toolkit_base": "43edcf11550c28f42645c15a92e41b8f4340d0c1",
+    "self_host_base": "71a9e44e62a55750301dccff66ee795aded9363b",
+    "independent_verdict_sha256": "e36d473fcd7f2d432c5ce034482fa8c82c33ac02a25e48ed16ff65297a45f174",
+    "decision": "reject",
+    "completeness": "incomplete",
+    "source_findings": [
+      "P1 \u2014 self_host/services/github_agent/intake.py:2565\u20132571 calls recover_feature_publication after verifying recovered publication metadata. In analytics_toolkit/.github/agent/review_control.py:529\u2013533, that helper reads only a pause reason and then calls resume_feature; resume_feature at lines 469\u2013474 deletes the pause solely by repository/PR number. A replacement authority hold installed between that read and deletion is therefore erased, regardless of its head, reason or timestamp. The later feature_held check cannot recover the deleted hold. This violates the patch's explicit replacement-hold preservation contract. Carry the exact verified pause into an atomic conditional deletion and add a fast regression injecting an original-evidence/cancellation replacement during this recovery interval."
+    ],
+    "deployment_status": "Rejected proposal was not deployed; same legacy reason-read then broad resume exists in current dev."
+  },
+  "additional_observations": [
+    {
+      "orchestrator_id": "818df3d0f6ff470f8668829db860ebc7",
+      "analytics_toolkit_base": "43edcf11550c28f42645c15a92e41b8f4340d0c1",
+      "self_host_base": "71a9e44e62a55750301dccff66ee795aded9363b",
+      "independent_verdict_sha256": "58a48475b90cb117aa2b5d12d47df7ab5964ef0925939b102b86b2960aefa238",
+      "decision": "reject",
+      "completeness": "incomplete",
+      "source_findings": [
+        "[Authority] self_host/self_host/services/github_agent/intake.py:1228 introduces automatic workspace recovery through controls.resume_correction(). The actual companion implementation, analytics_toolkit/.github/agent/review_control.py:287\u2013293, SELECTs only the reason and then DELETEs solely by repository/number, without BEGIN IMMEDIATE or a conditional deletion matching the inspected pause. A second connection can replace the inspected correction-question pause with a cancellation or original-evidence hold before DELETE; recovery then erases that replacement. The following controls.paused() check sees no row and cannot restore the lost authority, allowing recovery to queue planning. Use atomic retirement of the exact inspected row and add a deterministic fast replacement-hold regression."
+      ],
+      "deployment_status": "Rejected proposal was not deployed; same legacy SELECT/repository+PR deletion also exists in current dev resume_correction."
+    }
+  ]
+}

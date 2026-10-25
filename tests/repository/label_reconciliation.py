@@ -1,76 +1,17 @@
 from __future__ import annotations
 
-import copy
 import json
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from tests.repository.github_agent import checks, controller, owned_pr
+from tests.repository._support.label_api import GitHub as GitHub  # noqa: PLC0414
+from tests.repository.github_agent import checks, controller
 from tests.repository.review_control import control as control  # noqa: PLC0414 - pytest fixture
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-class GitHub:
-    repository = "owner/repo"
-
-    def __init__(self) -> None:
-        self.pr = owned_pr()
-        self.pr.update(mergeable=True, labels=[{"name": "agent:needs-user"}, {"name": "feature"}])
-        self.comments: list[dict[str, Any]] = []
-        self.mutations: list[tuple[str, str]] = []
-        self.on_delete: Any = None
-        self.fail_delete = False
-        self.fast = checks()
-
-    def pull(self, number: int) -> dict[str, Any]:
-        return copy.deepcopy(self.pr)
-
-    def pulls(self) -> list[dict[str, Any]]:
-        return [self.pull(1)]
-
-    def base(self) -> str:
-        return "base"
-
-    def checks(self, head: str) -> list[dict[str, Any]]:
-        return self.fast
-
-    def pages(self, path: str) -> list[dict[str, Any]]:
-        if "/files?" in path:
-            return [{"filename": ".github/agent/controller.py"}]
-        return self.comments
-
-    def comment(self, number: int, body: str) -> None:
-        self.comments.append({"body": body, "user": {"type": "Bot", "login": "app"}})
-
-    def api(self, path: str, method: str = "GET", data: Any = None) -> Any:
-        if method != "GET":
-            self.mutations.append((path, method))
-        if path.endswith("/labels") and method == "POST":
-            names = {item["name"] for item in self.pr["labels"]}
-            self.pr["labels"].extend({"name": name} for name in data["labels"] if name not in names)
-        elif "/labels/" in path and method == "DELETE":
-            if self.fail_delete:
-                message = "Transient label API failure"
-                raise RuntimeError(message)
-            self.pr["labels"] = [
-                item for item in self.pr["labels"] if item["name"] != "agent:needs-user"
-            ]
-            if self.on_delete:
-                self.on_delete()
-        elif path.endswith("/merge") and method == "PUT":
-            assert data["sha"] == self.pr["head"]["sha"]
-            self.pr["state"] = "closed"
-            return {"merged": True}
-        return copy.deepcopy(self.pr["labels"])
-
-    def owner_approval(self, head: str = "a" * 40, actor: str = "owner") -> None:
-        self.comments.append(
-            {"body": "/agent approve-policy " + head, "user": {"type": "User", "login": actor}}
-        )
 
 
 @pytest.fixture
@@ -120,6 +61,49 @@ def telegram_approval(control: Any, gh: GitHub) -> dict[str, Any]:
     }
 
 
+@pytest.mark.parametrize("branch", ["codex/orchestrator-task", "codex/telegram-feature-task"])
+def test_context_mismatch_notice_keeps_hold(control: Any, branch: str) -> None:
+    gh = GitHub()
+    gh.pr["head"]["ref"] = branch
+    reason = "Feature context does not match the host-owned request."
+    control.pause(gh, gh.pr, reason, "Publication enrollment mismatch")
+    control.pause(gh, gh.pr, reason, "Publication enrollment mismatch")
+    assert len(gh.comments) == 1
+    body = gh.comments[0]["body"]
+    assert reason in body
+    assert "Coordinator must restore and verify" in body
+    assert "requires user input" not in body
+    assert "/agent resume" not in body
+    events = control.pending()
+    assert len(events) == 1
+    event = events[0]
+    payload = json.loads(event["payload"])
+    assert payload["reason"] == reason
+    assert payload["coordinator_blocked"] is True
+    assert "Coordinator must restore and verify" in payload["command"]
+    assert "/reply_agent" not in payload["command"]
+    assert "/agent resume" not in payload["command"]
+    assert event["token"] is None
+    assert control.paused(gh, gh.pull(1))
+    assert not control.approved(gh.repository, 1, gh.pr["head"]["sha"])
+    with control.connect() as db:
+        held = dict(db.execute("SELECT * FROM pauses").fetchone())
+    assert held["reason"] == reason
+    assert held["head"] == gh.pr["head"]["sha"]
+    assert "feature" in {item["name"] for item in gh.pr["labels"]}
+
+
+def test_missing_input_notice_still_requests_owner_answer(control: Any) -> None:
+    gh = GitHub()
+    control.pause(gh, gh.pr, "Supply the original image.", "Correction requires input")
+    assert "@owner This PR requires user input." in gh.comments[0]["body"]
+    assert "/agent resume " + gh.pr["head"]["sha"] in gh.comments[0]["body"]
+    payload = json.loads(control.pending()[0]["payload"])
+    assert payload["command"] == "/agent resume " + gh.pr["head"]["sha"]
+    assert payload["coordinator_blocked"] is False
+    assert control.paused(gh, gh.pull(1))
+
+
 def test_normal_telegram_approval_clears_only_stale_label(control: Any) -> None:
     gh = GitHub()
     query = telegram_approval(control, gh)
@@ -141,7 +125,7 @@ def test_github_approval_repairs_label_before_actual_merge(
     controller.merge(gh, 17, tmp_path)
     assert gh.pr["state"] == "closed"
     assert gh.mutations == [
-        ("issues/1/labels/agent:needs-user", "DELETE"),
+        ("issues/1/labels", "PUT"),
         ("pulls/1/merge", "PUT"),
     ]
     assert gh.pr["labels"] == [{"name": "feature"}]
@@ -176,12 +160,20 @@ def test_other_heads_or_actors_cannot_clear_the_label(
     assert gh.pr["state"] == "open"
 
 
-def test_approved_policy_does_not_clear_a_genuine_question_hold(
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Correction agent requires owner input.",
+        "Feature context does not match the host-owned request.",
+    ],
+)
+def test_approved_policy_does_not_clear_a_question_or_provenance_hold(
     merge_environment: Any,
     tmp_path: Path,
+    reason: str,
 ) -> None:
     gh = GitHub()
-    insert_hold(merge_environment)
+    insert_hold(merge_environment, reason)
     merge_environment.callback(gh, telegram_approval(merge_environment, gh), 22, -1001)
     controller.merge(gh, 17, tmp_path)
     assert merge_environment.paused(gh, gh.pull(1))
@@ -208,7 +200,8 @@ def test_concurrent_new_head_or_hold_restores_label_and_blocks_merge(
 
     gh.on_delete = changed
     controller.merge(gh, 17, tmp_path)
-    assert {item["name"] for item in gh.pr["labels"]} == {"agent:needs-user", "feature"}
+    expected = {"feature"} if race == "head" else {"agent:needs-user", "feature"}
+    assert {item["name"] for item in gh.pr["labels"]} == expected
     assert not any(path.endswith("/merge") for path, method in gh.mutations)
     assert gh.pr["state"] == "open"
 
@@ -300,7 +293,9 @@ def test_scoped_merge_ignores_continuous_unrelated_work_and_protects_cleanup(
     assert cleanup_calls == [{"active_branches": active, "force": True}]
     assert active == {"codex/correction-unpublished", "codex/live-writer"}
     assert dispatches == [(gh, "integration", {"candidate": "a" * 40, "number": 1})]
-    assert [path for path, method in gh.mutations if method == "PUT"] == ["pulls/1/merge"]
+    assert [
+        path for path, method in gh.mutations if method == "PUT" and path.endswith("/merge")
+    ] == ["pulls/1/merge"]
 
 
 def test_empty_scoped_selection_never_means_merge_all(
@@ -410,8 +405,9 @@ def test_rejected_bot_repair_is_paused_until_owner_resumes(
             return []
 
         def api(self, path: str, method: str = "GET", data: Any = None) -> Any:
+            path = path.split("?", 1)[0]
             if path.endswith("/labels"):
-                if method == "POST":
+                if method in {"POST", "PUT"}:
                     pr["labels"] = [{"name": name} for name in data["labels"]]
                 return pr["labels"]
             return {"behind_by": 0}
@@ -504,17 +500,12 @@ def test_filter_preserves_questions_and_existing_delivery_retry_contract(
 
 
 def test_scan_and_delivery_batches_stay_bounded(control: Any) -> None:
-    # Seed the legacy backlog; new suppressed events never enter the scan.
-    with control.connect() as db:
-        for revision in range(205):
-            db.execute(
-                "INSERT INTO notifications(key,kind,payload) VALUES (?,?,?)",
-                (
-                    f"request:local:{revision}:plan:deferred",
-                    "request",
-                    json.dumps({"telegram_feature": False}),
-                ),
-            )
+    for revision in range(205):
+        control.enqueue(
+            f"request:local:{revision}:plan:deferred",
+            "request",
+            {"telegram_feature": False},
+        )
     for number in range(25):
         control.enqueue(f"approval:{number}", "approval", {})
     assert control.pending() == []
@@ -646,6 +637,7 @@ def test_orchestrator_publication_recovers_only_enrolled_exact_head(
     with control.connect() as db:
         held = db.execute("SELECT reason FROM pauses").fetchone()
     assert (held is None) == (case == "valid")
-    # Reconciliation separately owns displayed labels and protected approval.
-    assert gh.pr["labels"] == [{"name": control.PAUSED}]
+    # Renewed planning remains held without manufacturing an owner question.
+    expected = [] if case in {"owner-hold", "valid"} else [{"name": control.PAUSED}]
+    assert gh.pr["labels"] == expected
     assert not control.approved(gh.repository, gh.pr["number"], gh.pr["head"]["sha"])

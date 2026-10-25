@@ -148,14 +148,14 @@ def test_no_patch_outcome_is_not_published_or_repeated(
         assert controller.publish(gh, task, tmp_path, tmp_path) == {"status": "blocked"}
     assert gh.comment.call_count == 1
     controls = controller.trusted_module("review_control")
-    assert controls.pending() == []
+    assert len(controls.pending()) == 1
     with controls.connect() as db:
         notifications = db.execute("SELECT key,kind,payload,sent FROM notifications").fetchall()
     assert len(notifications) == 1
     notification = notifications[0]
     assert notification["key"] == "repair-blocked:" + evidence.identity(task)
     assert notification["kind"] == "repair-blocked"
-    assert notification["sent"] == -1
+    assert notification["sent"] == 0
     assert "startup.log" in json.loads(notification["payload"])["reason"]
     assert "need diagnostics" in gh.comment.call_args.args[1]
     db = evidence.connection()

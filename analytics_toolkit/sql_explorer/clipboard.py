@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import sys
 from contextlib import suppress
 from typing import Callable, Protocol
@@ -52,6 +53,17 @@ class TerminalClipboard:
 
     def paste_fallback(self) -> str:
         return self._fallback
+
+
+def paste_fragments(value: str, count: int, copied: tuple[str, ...] | None) -> tuple[str, ...]:
+    """Choose VS Code-style document-order insertions for a paste."""
+    if count > 1:
+        if copied is not None and len(copied) == count:
+            return copied
+        lines = tuple(re.split(r"\r\n|\r|\n", re.sub(r"(?:\r\n|\r|\n)\Z", "", value)))
+        if len(lines) == count:
+            return lines
+    return (value,) * count
 
 
 __all__ = ["TerminalClipboard", "osc52_sequence"]

@@ -23,6 +23,9 @@ if TYPE_CHECKING:
     from .workspace import SqlExplorerWorkspace
 
 
+_COMPLETION_MIN_HEIGHT = 3
+
+
 class SqlExplorerCompletionCommandsMixin:
     """Keep completion UI and metadata callbacks attached to their owner tab."""
 
@@ -348,10 +351,44 @@ class SqlExplorerCompletionCommandsMixin:
             app._insert_completion(context, suggestions[0], workspace)
             menu.action_close()
             return
-        editor = workspace.editor
-        cursor_x, cursor_y = editor.cursor_render_offset
-        menu.styles.offset = (cursor_x + editor.gutter_width + 1, cursor_y + 1)
         menu.open(suggestions)
+        app._position_completion(workspace)
+        app.call_after_refresh(app._position_completion, workspace)
+
+    def _position_completion(self, workspace: SqlExplorerWorkspace) -> None:
+        """Position the screen overlay below (or above) the visible SQL row."""
+        app = cast("Any", self)
+        editor, menu = workspace.editor, workspace.completion_menu
+        # Hidden layout retains candidates; an explicit close clears them.
+        if not menu.suggestions or not editor.is_mounted:
+            return
+        if editor.cursor_count > 1 or not editor.selection.is_empty:
+            menu.styles.display = "none"
+            return
+        cursor_x, cursor_y = editor.wrapped_document.location_to_offset(editor.cursor_location)
+        viewport = editor.scrollable_content_region
+        screen = app.screen.content_region
+        row = viewport.y + cursor_y - int(editor.scroll_y)
+        if not viewport.y <= row < viewport.bottom:
+            menu.styles.display = "none"
+            return
+        width = min(32, screen.width)
+        desired_height = min(12, len(menu.suggestions) + 2)
+        below, above = viewport.bottom - row - 1, row - viewport.y
+        height = min(desired_height, max(below, above))
+        if height < _COMPLETION_MIN_HEIGHT:
+            menu.styles.display = "none"
+            return
+        y = row + 1 if below >= desired_height or below >= above else row - height
+        x = viewport.x + editor.gutter_width + cursor_x - int(editor.scroll_x)
+        x = max(screen.x, min(x, screen.right - width))
+        menu.styles.width = width
+        menu.styles.height = height
+        # Screen overlays escape clipping, but docking retains the parent's
+        # content origin. Convert the visible screen position exactly once.
+        origin = cast("Any", menu.parent).content_region
+        menu.styles.offset = (x - origin.x, y - origin.y)
+        menu.styles.display = "block"
 
     def _accept_completion(
         self,
@@ -416,7 +453,7 @@ class SqlExplorerCompletionCommandsMixin:
         if editor.cursor_count > 1 or not editor.selection.is_empty:
             menu.styles.display = "none"
             return
-        if not menu.is_open:
+        if not menu.suggestions:
             return
         previous = workspace.completion_context
         context = app._completion_at_cursor(workspace)

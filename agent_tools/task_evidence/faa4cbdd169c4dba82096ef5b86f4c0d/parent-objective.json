@@ -1,0 +1,38 @@
+{
+  "kind": "fresh-source-successor-retained-parent-context",
+  "repository": "Karapsin/analytics_toolkit",
+  "parent_pr": 43,
+  "parent_head": "e2abd24c66142af59cafffeb99118234e748c2ac",
+  "parent_source_head": "21ce0928372f23302a6d313d9a69d80a94e5fba3",
+  "dev": "f66a80ebe4b3c28dbca17fbc58c2d6ffe464bb01",
+  "parent_task_digest": "b26559025548e5e04d9b1c23c8c4a6139a44e17908dd4c0fac8582f1b6ab5e6c",
+  "parent_task_file": "parent-task.json",
+  "parent_task_bytes_sha256": "b26559025548e5e04d9b1c23c8c4a6139a44e17908dd4c0fac8582f1b6ab5e6c",
+  "full_original_parent_source_hashes": {
+    ".github/agent/capture_isolation.py": "6aa4f93fbf0037a50a04217df8012f51ee5782fceb9e856f129fe1c9391bf440",
+    ".github/agent/capture_isolation_probe.py": "9ededcb75cbe4b3a5b9fab4bf4c526be49c09e779a391296bede075906249407",
+    ".github/agent/capture_sandbox.py": "4dc6c61dc7da17f24fd6d038cfe0865f50085f1de3c330b590f39490a58fefae",
+    ".github/workflows/agent-visual.yml": "c23692b243f03cee2aaf79381bc19654b1b6ef134f97cb2e49d99440f6ce1fcf",
+    ".github/workflows/tests.yml": "446b6975c78fb41c17a0dd89900dfa29330880478be8a54111f08fd36c0e691e",
+    "agent_tools/task_evidence/6c55e5559ba84e33a764d78025e0e315/capture-isolation-independent-plan-review.json": "52651d32c31c034ff3a9a1bc66cd9ffda0512f3209ff4a9540d2cfd00ccbcab9",
+    "agent_tools/task_evidence/6c55e5559ba84e33a764d78025e0e315/capture-isolation-leaf-plan.md": "08115be783a40c79468b053769e5bcd569bc2d422d92c03f4a8b20adb794a2a2",
+    "agent_tools/task_evidence/6c55e5559ba84e33a764d78025e0e315/parent-objective.json": "13709cd4f59741c3d3ac49a2f8f5ce8745ab4a0c971c7a46b2fe7c1f0b1be84a",
+    "docs/CHANGELOG.md": "83b3c957add6b5859bf2bd13e47c782919ae8423bd7cd501c1f7d5757ff9f42c",
+    "docs/GITHUB_AGENT_OPERATIONS.md": "5b70a4e1149f1af3860db6109bc7b15b08e0a8f367cfefeb62e22a4d2d0b4f57",
+    "tests/repository/capture_artifact.py": "89faadd28a00e5de0deaf7603afb48590e8495732b0feb04b36bf9d03104bc4f",
+    "tests/repository/capture_isolation.py": "df396a9a955f371039e265f8144685aaef1d6dff09063517e2fc5ce013e74aec"
+  },
+  "current_task": "faa4cbdd169c4dba82096ef5b86f4c0d",
+  "authority_limit": "Exact archived original context and published source preserved. No prior plan/source/protected/native approval transfers; fresh source is independently reviewed. Complete parent PR39/37/9/10 obligations and all qualifying actual successful dev merges remain.",
+  "original_failures": {
+    "run": 39126299210,
+    "artifact_ids": [
+      12136221585,
+      12136427233
+    ],
+    "zip_sha256": [
+      "1b6ea929b6cd01138e0e988ff0b91c3bb9de1b6934d33fb94f3fce840dbb3a52",
+      "9dd88d22ccbe580d2d495fd04c66d3fc561201218213a5cc44ede27a96ac071e"
+    ]
+  }
+}

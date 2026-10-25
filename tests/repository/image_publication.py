@@ -5,12 +5,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from tests.repository.agent_lifecycle import (
+from tests.repository.github_agent import controller
+from tests.repository.task_evidence_publication import (
     publication_blob,
     publication_context,
     reference_publication,
 )
-from tests.repository.github_agent import controller
 
 if TYPE_CHECKING:
     from pathlib import Path

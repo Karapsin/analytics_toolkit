@@ -1,0 +1,90 @@
+name: agent-visual-profile
+run-name: capture-receiver-v2 ${{ inputs.purpose }} ${{ inputs.monitor_comment_id }} ${{ fromJSON(inputs.envelope).attempt.nonce }}
+on:
+  workflow_dispatch:
+    inputs:
+      protocol:
+        required: true
+        type: string
+      purpose:
+        required: true
+        type: string
+      expected_trusted_head:
+        required: true
+        type: string
+      monitor_comment_id:
+        required: true
+        type: string
+      envelope:
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  issues: read
+jobs:
+  capture:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'Karapsin/analytics_toolkit' &&
+      inputs.protocol == 'capture-receiver-v2' &&
+      (inputs.purpose == 'production' || inputs.purpose == 'receiver-rehearsal') &&
+      github.ref == format('refs/tags/agent-visual-source-v1-{0}', inputs.expected_trusted_head) &&
+      github.sha == inputs.expected_trusted_head && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Authenticate source and purpose before candidate execution
+        id: guard
+        run: |
+          cd "$RUNNER_TEMP"
+          python -I "$GITHUB_WORKSPACE/control/.github/agent/capture_receiver.py" preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PROTOCOL: ${{ inputs.protocol }}
+          INPUT_PURPOSE: ${{ inputs.purpose }}
+          INPUT_EXPECTED_TRUSTED_HEAD: ${{ inputs.expected_trusted_head }}
+          INPUT_MONITOR_COMMENT_ID: ${{ inputs.monitor_comment_id }}
+          INPUT_ENVELOPE: ${{ inputs.envelope }}
+      - uses: actions/checkout@v6
+        if: steps.guard.outputs.ok == 'true' && steps.guard.outputs.purpose == 'production'
+        with:
+          ref: ${{ steps.guard.outputs.candidate }}
+          path: candidate
+          persist-credentials: false
+      - name: Capture isolated candidate
+        id: capture
+        if: steps.guard.outputs.ok == 'true' && steps.guard.outputs.purpose == 'production'
+        run: |
+          cd "$RUNNER_TEMP"
+          python -I "$GITHUB_WORKSPACE/control/.github/agent/capture_isolation.py"
+        env:
+          CANDIDATE: ${{ steps.guard.outputs.candidate }}
+          CANDIDATE_ROOT: ${{ github.workspace }}/candidate
+      - name: Run fixed receiver sentinel
+        if: steps.guard.outputs.ok == 'true' && steps.guard.outputs.purpose == 'receiver-rehearsal'
+        run: |
+          cd "$RUNNER_TEMP"
+          python -I "$GITHUB_WORKSPACE/control/.github/agent/capture_receiver.py" rehearsal
+        env:
+          PREFLIGHT_ROOT: ${{ steps.guard.outputs.artifact_root }}
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.guard.outputs.artifact_root != ''
+        with:
+          name: receiver-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.guard.outputs.artifact_root }}
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.capture.outputs.artifact_root != '' && steps.guard.outputs.purpose == 'production'
+        with:
+          name: agent-visual-${{ steps.guard.outputs.candidate }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.capture.outputs.artifact_root }}
+          if-no-files-found: error

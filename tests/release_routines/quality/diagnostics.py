@@ -179,7 +179,7 @@ def test_quality_workflow_always_uploads_diagnostics_and_passes_source_identity(
         "GITHUB_RUN_ATTEMPT",
         "GITHUB_JOB",
     ):
-        assert key in passed
+        assert key in passed or (key.startswith("GITHUB_") and "GITHUB_*" in passed)
 
 
 @pytest.mark.usefixtures("diagnostic_identity")

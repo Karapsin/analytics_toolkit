@@ -13,42 +13,49 @@ jobs:
   capture:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.candidate }}
+          path: candidate
           persist-credentials: false
           fetch-depth: 0
+      - name: Load trusted artifact exporter
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: .agent-visual-controller
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      - run: python -m pip install -e '.[tui]' -r agent_tools/requirements-mcp.txt
       - name: Capture every scene headlessly
+        id: capture
+        working-directory: ${{ runner.temp }}
         env:
           CANDIDATE: ${{ inputs.candidate }}
-        run: |
-          python - <<'PY'
-          import json, os, shutil
-          from pathlib import Path
-          from agent_tools.sql_explorer_visual import visual_workflow, session_path
-          root = Path.cwd()
-          result = visual_workflow('start', root=str(root))
-          assert result['ok'], result
-          review = result['review_id']
-          result = visual_workflow('capture', review_id=review, root=str(root))
-          assert result['ok'], result
-          session = json.loads(session_path(root, review).read_text())
-          assert session['capture']['status'] == 'pass'
-          Path('visual-artifact').mkdir()
-          for scene_id, scene in session['scenes'].items():
-              shutil.copyfile(scene['screenshot'], f'visual-artifact/{scene_id}.png')
-              shutil.copyfile(scene['geometry'], f'visual-artifact/{scene_id}.json')
-          session['candidate'] = os.environ['CANDIDATE']
-          Path('visual-artifact/capture.json').write_text(json.dumps(session))
-          PY
+          CANDIDATE_ROOT: ${{ github.workspace }}/candidate
+        run: python -I "$GITHUB_WORKSPACE/.agent-visual-controller/.github/agent/capture_isolation.py"
       - uses: actions/upload-artifact@v4
         with:
           name: agent-visual-${{ inputs.candidate }}
-          path: visual-artifact/
+          path: ${{ steps.capture.outputs.artifact_root }}/visual-artifact/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload failed capture diagnostics
+        if: always() && steps.capture.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-visual-diagnostics-${{ inputs.candidate }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.capture.outputs.artifact_root }}/visual-diagnostics/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload container and collection diagnostics
+        if: always() && steps.capture.outputs.artifact_root != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-visual-isolation-${{ inputs.candidate }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.capture.outputs.artifact_root }}/isolation-diagnostics/
+          if-no-files-found: error
           retention-days: 7

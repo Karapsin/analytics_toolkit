@@ -3,16 +3,437 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
 import pytest
 
-from tests.repository.github_agent import checks, controller, owned_pr
+from tests.repository.github_agent import controller
 from tests.repository.review_control import GitHub
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@pytest.fixture
+def control(tmp_path: Path, monkeypatch: Any) -> Any:
+    monkeypatch.setenv("AGENT_STATE_DIR", str(tmp_path))
+    return controller.trusted_module("review_control")
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Feature context does not match the host-owned request.",
+        "PR task context is not bound to its signed head commit.",
+        "Supply the original image.",
+        "Owner cancelled the request.",
+        "Owner disapproved the controller/security change via Telegram.",
+    ],
+)
+@pytest.mark.parametrize("changed_head", [False, True])
+def test_factual_answer_cannot_replace_existing_authority_hold(
+    control: Any,
+    reason: str,
+    changed_head: bool,
+) -> None:
+    gh = GitHub()
+    branch = gh.pr["head"]["ref"]
+    control.enroll_feature(gh.repository, branch, "original-digest")
+    with control.connect() as db:
+        db.execute(
+            "INSERT INTO pauses VALUES (?,?,?,?,?)",
+            (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], reason, 1),
+        )
+        original = tuple(db.execute("SELECT * FROM pauses").fetchone())
+    if changed_head:
+        gh.pr["head"]["sha"] = "b" * 40
+
+    # This is the real controller entrypoint used by authenticated Telegram
+    # replies, including factual answers to mixed coordinator/account questions.
+    control.hold_feature(gh, gh.pr)
+    restarted = controller.trusted_module("review_control")
+    restarted.hold_feature(gh, gh.pr)
+    assert restarted.paused(gh, gh.pr)
+    with restarted.connect() as db:
+        assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == original
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+    assert not restarted.pending()
+
+
+@pytest.mark.parametrize("orchestrator", [False, True])
+@pytest.mark.parametrize("replacement", [None, "image", "cancel", "same-reason", "new-head"])
+def test_publication_recovery_cannot_delete_a_replacement_pause(
+    control: Any,
+    monkeypatch: Any,
+    orchestrator: bool,
+    replacement: str | None,
+) -> None:
+    gh = GitHub()
+    gh.pr["head"]["ref"] = (
+        "codex/orchestrator-task" if orchestrator else "codex/telegram-feature-task"
+    )
+    digest = "a" * 64
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], digest)
+    reason = (
+        "Feature context does not match the host-owned request."
+        if orchestrator
+        else "PR task context is not bound to its signed head commit."
+    )
+    with control.connect() as db:
+        db.execute(
+            "INSERT INTO pauses VALUES (?,?,?,?,?)",
+            (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], reason, 1000),
+        )
+    enroll = control.enrolled_feature
+    expected: tuple[Any, ...] | None = None
+
+    def replace_during_verification(*args: Any) -> bool:
+        nonlocal expected
+        enrolled = enroll(*args)
+        if replacement is not None:
+            replacement_reason = {
+                "image": "Supply the original image.",
+                "cancel": "Owner cancelled the request.",
+            }.get(replacement, reason)
+            head = "b" * 40 if replacement == "new-head" else gh.pr["head"]["sha"]
+            with control.connect() as db:
+                db.execute(
+                    "UPDATE pauses SET head=?,reason=?,created=?",
+                    (head, replacement_reason, 2000),
+                )
+                expected = tuple(db.execute("SELECT * FROM pauses").fetchone())
+        return enrolled
+
+    # Deterministic interleaving after the pause read and before its deletion.
+    # No worker, sleeps, network or external services are needed.
+    monkeypatch.setattr(control, "enrolled_feature", replace_during_verification)
+    control.recover_feature_publication(gh, gh.pr, task_digest=digest if orchestrator else None)
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    restarted = controller.trusted_module("review_control")
+    with restarted.connect() as db:
+        row = db.execute("SELECT * FROM pauses").fetchone()
+        assert (tuple(row) if row is not None else None) == expected
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+    assert restarted.paused(gh, gh.pr) == (replacement is not None)
+    if replacement in {"image", "cancel"}:
+        restarted.recover_feature_publication(
+            gh, gh.pr, task_digest=digest if orchestrator else None
+        )
+        with restarted.connect() as db:
+            assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == expected
+
+
+def _discovery_client(gh: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    client = Mock(repository=gh.repository)
+    client.pull.side_effect = gh.pull
+    client.pulls.return_value = [gh.pr]
+    client.base.return_value = "base"
+    client.checks.return_value = []
+    client.pages.side_effect = lambda path, *args: gh.comments if "/comments?" in path else []
+    client.api.side_effect = lambda path, *args: (
+        {"permission": "admin"}
+        if path.endswith("/permission")
+        else {"behind_by": 0}
+        if path.startswith("compare/")
+        else gh.api(path, *args)
+    )
+    monkeypatch.setattr(controller, "monitor", lambda client: (None, {"started": "", "runs": {}}))
+    monkeypatch.setattr(controller, "save_monitor", lambda *args: None)
+    monkeypatch.setattr(controller, "_integration_tasks", lambda *args: [])
+    monkeypatch.setattr(controller, "signed_head", lambda *args: True)
+    metadata = Mock(return_value={"task_digest": "digest"})
+    monkeypatch.setattr(controller, "task_metadata", metadata)
+    monkeypatch.setattr(controller, "authorization_error", lambda *args, recover=True: None)
+    return client, metadata
+
+
+class _PauseReadConnection:
+    """Wrap only the pause read, leaving actual SQLite writes unchanged."""
+
+    def __init__(self, db: Any, cursor_type: Any) -> None:
+        self.db = db
+        self.cursor_type = cursor_type
+
+    def execute(self, sql: str, parameters: Any = ()) -> Any:
+        cursor = self.db.execute(sql, parameters)
+        if sql.startswith("SELECT") and "FROM pauses" in sql:
+            return self.cursor_type(cursor)
+        return cursor
+
+
+@pytest.mark.parametrize("replacement", ["image", "cancel", "same-reason", "new-head"])
+def test_correction_recovery_preserves_concurrent_hold_after_restart(
+    control: Any,
+    monkeypatch: Any,
+    tmp_path: Path,
+    replacement: str,
+) -> None:
+    gh = GitHub()
+    control.hold_correction(gh, gh.pr)
+    reason = {
+        "image": "Supply the original image.",
+        "cancel": "Owner cancelled the correction.",
+    }.get(replacement, "Correction agent requires user input.")
+    head = "b" * 40 if replacement == "new-head" else gh.pr["head"]["sha"]
+    expected = (gh.repository, gh.pr["number"], head, reason, 2000)
+    real_connect = control.connect
+    attempted = False
+    deferred = False
+
+    def replace_hold() -> None:
+        # A real second SQLite connection, with no wait or background worker.
+        writer = sqlite3.connect(tmp_path / "review_control.sqlite3", timeout=0)
+        try:
+            with writer:
+                writer.execute("INSERT OR REPLACE INTO pauses VALUES (?,?,?,?,?)", expected)
+        finally:
+            writer.close()
+
+    class Cursor:
+        def __init__(self, cursor: Any) -> None:
+            self.cursor = cursor
+
+        def fetchone(self) -> Any:
+            nonlocal attempted, deferred
+            row = self.cursor.fetchone()
+            self.cursor.fetchall()  # Exhaust the single-row read before the other writer.
+            if not attempted:
+                attempted = True
+                try:
+                    replace_hold()
+                except sqlite3.OperationalError as error:
+                    if "locked" not in str(error):
+                        raise
+                    # The protected transaction wins this ordering. The writer
+                    # retries immediately after commit, before label cleanup.
+                    deferred = True
+            return row
+
+    @contextmanager
+    def interleaved_connect() -> Any:
+        db = real_connect()
+        try:
+            with db:
+                yield _PauseReadConnection(db, Cursor)
+            if deferred:
+                replace_hold()
+        finally:
+            db.close()
+
+    # On the old implementation the writer succeeds after SELECT, then the
+    # broad DELETE erases its replacement. This hook fixes the interleaving
+    # without timing assumptions, threads, sleeps or external services.
+    with monkeypatch.context() as patch:
+        patch.setattr(control, "connect", interleaved_connect)
+        control.resume_correction(gh, gh.pr)
+    assert attempted
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    restarted = controller.trusted_module("review_control")
+    with restarted.connect() as db:
+        assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == expected
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+    assert restarted.paused(gh, gh.pr)
+    assert control.PAUSED in {label["name"] for label in gh.pr["labels"]}
+
+    client, metadata = _discovery_client(gh, monkeypatch)
+    assert controller.discover(client, 17) == {"include": []}
+    monkeypatch.setattr(controller, "ready", lambda *args: True)
+    controller.merge_selected(client, 17, tmp_path, pr_numbers={gh.pr["number"]})
+    metadata.assert_not_called()
+    assert not any(call.args[0].endswith("/merge") for call in client.api.call_args_list)
+
+
+@pytest.mark.parametrize(
+    "unrelated",
+    [None, "Supply the original image.", "Owner disapproved protected changes."],
+)
+@pytest.mark.parametrize("changed_head", [False, True])
+def test_new_amendment_rejects_stale_resume_after_restart_and_discovery(
+    control: Any,
+    monkeypatch: Any,
+    tmp_path: Path,
+    changed_head: bool,
+    unrelated: str | None,
+) -> None:
+    gh = GitHub()
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "original-digest")
+    monkeypatch.setattr(control.time, "time", lambda: 1000)
+    if unrelated is None:
+        control.hold_feature(gh, gh.pr)
+    else:
+        with control.connect() as db:
+            db.execute(
+                "INSERT INTO pauses VALUES (?,?,?,?,?)",
+                (gh.repository, gh.pr["number"], gh.pr["head"]["sha"], unrelated, 1000),
+            )
+    if changed_head:
+        gh.pr["head"]["sha"] = "b" * 40
+    gh.comments.append(
+        {
+            "body": "/agent resume " + gh.pr["head"]["sha"],
+            "user": {"type": "User", "login": "owner"},
+            "created_at": datetime.fromtimestamp(2000, timezone.utc).isoformat(),
+        }
+    )
+    monkeypatch.setattr(control.time, "time", lambda: 3000)
+    control.hold_feature(gh, gh.pr)
+    if unrelated is not None:
+        with control.connect() as db:
+            row = dict(db.execute("SELECT * FROM pauses").fetchone())
+            assert (row["reason"], row["created"]) == (unrelated, 1000)
+            assert db.execute("SELECT created FROM feature_amendments").fetchone()[0] == 3000
+    monkeypatch.delitem(controller.MODULES, "review_control")
+    restarted = controller.trusted_module("review_control")
+    assert restarted.paused(gh, gh.pr)
+    with restarted.connect() as db:
+        pause = dict(db.execute("SELECT * FROM pauses").fetchone())
+        assert pause["created"] == 3000
+        assert pause["head"] == gh.pr["head"]["sha"]
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
+
+    # Exercise discovery with the real pause parser and label reconciliation.
+    # Only GitHub, signatures and unrelated integration bookkeeping are faked.
+    client, metadata = _discovery_client(gh, monkeypatch)
+    assert controller.discover(client, 17) == {"include": []}
+    metadata.assert_not_called()
+    assert restarted.paused(gh, gh.pr)
+    monkeypatch.setattr(controller, "ready", lambda *args: True)
+    controller.merge(client, 17, tmp_path)
+    metadata.assert_not_called()
+    assert not any(call.args[0].endswith("/merge") for call in client.api.call_args_list)
+
+    # A later authenticated exact-head resume still works; it grants no approval.
+    gh.comments.append(
+        {
+            **gh.comments[0],
+            "created_at": datetime.fromtimestamp(4000, timezone.utc).isoformat(),
+        }
+    )
+    assert not restarted.paused(gh, gh.pr)
+    assert controller.discover(client, 17)["include"][0]["kind"] == "review"
+    assert not restarted.approved(gh.repository, 1, gh.pr["head"]["sha"])
+
+
+def test_policy_decision_cannot_release_a_newer_pending_amendment(
+    control: Any, monkeypatch: Any
+) -> None:
+    gh = GitHub()
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "original-digest")
+    with control.connect() as db:
+        db.execute(
+            "INSERT INTO pauses VALUES (?,?,?,?,?)",
+            (
+                gh.repository,
+                gh.pr["number"],
+                gh.pr["head"]["sha"],
+                "Owner disapproved policy.",
+                1000,
+            ),
+        )
+    gh.comments.append(
+        {
+            "body": "/agent approve-policy " + gh.pr["head"]["sha"],
+            "user": {"type": "User", "login": "owner"},
+            "created_at": datetime.fromtimestamp(2000, timezone.utc).isoformat(),
+        }
+    )
+    monkeypatch.setattr(control.time, "time", lambda: 3000)
+    control.hold_feature(gh, gh.pr)
+    assert control.paused(gh, gh.pr)
+    with control.connect() as db:
+        assert db.execute("SELECT created FROM pauses").fetchone()[0] == 3000
+    assert not control.approved(gh.repository, gh.pr["number"], gh.pr["head"]["sha"])
+
+
+def test_unheld_answer_still_requires_replanning_and_cancel_still_closes(
+    control: Any,
+    monkeypatch: Any,
+) -> None:
+    gh = GitHub()
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "original-digest")
+    control.hold_feature(gh, gh.pr)
+    with control.connect() as db:
+        assert db.execute("SELECT reason FROM pauses").fetchone()[0] == (
+            "Owner changed the request; renewed planning is required."
+        )
+
+    api = Mock(wraps=gh.api)
+    monkeypatch.setattr(gh, "api", api)
+    control.hold_feature(gh, gh.pr, cancel=True)
+    api.assert_any_call(f"pulls/{gh.pr['number']}", "PATCH", {"state": "closed"})
+    control.hold_feature(gh, gh.pr)
+    with control.connect() as db:
+        assert (
+            db.execute("SELECT reason FROM pauses").fetchone()[0] == "Owner cancelled the request."
+        )
+    assert control.paused(gh, gh.pr)
+
+
+def test_unenrolled_answer_cannot_create_or_replace_a_hold(control: Any) -> None:
+    gh = GitHub()
+    with pytest.raises(ValueError, match="not host-enrolled"):
+        control.hold_feature(gh, gh.pr)
+    with control.connect() as db:
+        assert db.execute("SELECT count(*) FROM pauses").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("replacement", [None, "same-reason", "provenance", "veto", "review"])
+def test_publication_capability_retains_exact_amendment_for_discovery_and_merge(
+    control: Any,
+    monkeypatch: Any,
+    tmp_path: Path,
+    replacement: str | None,
+) -> None:
+    gh = GitHub()
+    control.enroll_feature(gh.repository, gh.pr["head"]["ref"], "new-digest")
+    control.hold_feature(gh, gh.pr)
+    with control.connect() as db:
+        snapshot = dict(db.execute("SELECT * FROM pauses").fetchone())
+    client, metadata = _discovery_client(gh, monkeypatch)
+    task = {
+        "kind": "feature",
+        "number": gh.pr["number"],
+        "head": gh.pr["head"]["sha"],
+        "base": "base",
+        "branch": gh.pr["head"]["ref"],
+        "task_digest": "new-digest",
+        "previous_task_digest": "digest",
+    }
+    with pytest.raises(RuntimeError, match="awaiting user instructions"):
+        controller.publication_authority(client, task)
+    assert controller.publication_authority(client, task, renewal_hold=snapshot) == gh.pr
+    # Publication permission never releases review/merge or supplies approval.
+    assert control.paused(client, gh.pr)
+    metadata.reset_mock()
+    assert controller.discover(client, 17) == {"include": []}
+    monkeypatch.setattr(controller, "ready", lambda *args: True)
+    controller.merge_selected(client, 17, tmp_path, pr_numbers={gh.pr["number"]})
+    metadata.assert_not_called()
+    assert not any(call.args[0].endswith("/merge") for call in client.api.call_args_list)
+    if replacement is None:
+        return
+    with control.connect() as db:
+        if replacement in {"same-reason", "provenance"}:
+            db.execute("UPDATE pauses SET created=created+1")
+            if replacement == "provenance":
+                db.execute("UPDATE pauses SET reason='Supply the original image.'")
+        elif replacement == "veto":
+            db.execute(
+                "INSERT INTO vetoes VALUES (?,?,?,?)",
+                (gh.repository, gh.pr["number"], task["head"], 1),
+            )
+        else:
+            task["kind"] = "review"
+        original = tuple(db.execute("SELECT * FROM pauses").fetchone())
+    with pytest.raises(RuntimeError, match="amendment authority changed"):
+        controller.publication_authority(client, task, renewal_hold=snapshot)
+    with control.connect() as db:
+        assert tuple(db.execute("SELECT * FROM pauses").fetchone()) == original
+        assert db.execute("SELECT count(*) FROM approvals").fetchone()[0] == 0
 
 
 def test_rejection_queues_fresh_correction_without_user_resume(
@@ -29,7 +450,9 @@ def test_rejection_queues_fresh_correction_without_user_resume(
     assert not control.correction(gh.repository, 1, gh.pr["head"]["sha"], "e" * 64)
     control.reject(gh, gh.pr, task, "Missing requested receipt validation.", "Adds PR receipts")
     events = control.pending()
-    assert events == []  # Routine rejection is retained on GitHub, without Telegram noise.
+    assert len(events) == 1
+    assert events[0]["token"] is None
+    assert "no resume command" in json.loads(events[0]["payload"])["command"]
     assert gh.comments[0]["body"].count("What changed:") == 1
 
 
@@ -186,442 +609,3 @@ def test_cleanup_uses_merged_head_receipt_for_squash_and_leased_delete(
         ":refs/heads/codex/merged",
     )
     assert cleanup.cleanup(gh, tmp_path)["status"] == "not_due"
-
-
-@pytest.fixture
-def merge_environment(monkeypatch: Any) -> tuple[Any, Any, Any]:
-    selected = owned_pr()
-    selected.update(number=11, mergeable=True, labels=[])
-    owned = copy.deepcopy(selected)
-    owned["number"] = 7
-    owned["labels"] = [{"name": "agent:writing"}]
-    gh = Mock(repository="owner/repo")
-    gh.pulls.return_value = [owned, selected]
-    gh.pull.side_effect = lambda number: {7: owned, 11: selected}[number]
-    gh.base.return_value = "base"
-    gh.checks.return_value = checks()
-    gh.pages.return_value = []
-    gh.api.return_value = {"merged": True}
-    controls = Mock()
-    controls.paused.return_value = False
-    cleanup = Mock()
-    original_module = controller.trusted_module
-    modules = {"review_control": controls, "branch_cleanup": cleanup}
-
-    def module(name: str) -> Any:
-        return modules.get(name) or original_module(name)
-
-    monkeypatch.setattr(controller, "trusted_module", module)
-    monkeypatch.setattr(controller, "authorization_error", Mock(return_value=None))
-    monkeypatch.setattr(controller, "task_metadata", Mock(return_value={}))
-    monkeypatch.setattr(controller, "monitor", Mock(return_value=(99, {})))
-    monkeypatch.setattr(controller, "dispatch", Mock())
-    monkeypatch.setattr(controller, "save_monitor", Mock())
-    return gh, controls, cleanup
-
-
-def test_selected_merge_skips_owned_pr_and_preserves_unpublished_branches(
-    tmp_path: Path, merge_environment: tuple[Any, Any, Any]
-) -> None:
-    gh, _, cleanup = merge_environment
-    active = {"codex/correction-queued", "codex/telegram-feature-running"}
-    controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=active)
-    gh.pull.assert_called_once_with(11)
-    gh.api.assert_called_once_with(
-        "pulls/11/merge", "PUT", {"sha": "a" * 40, "merge_method": "squash"}
-    )
-    cleanup.cleanup.assert_called_once_with(gh, tmp_path, force=True, active_branches=active)
-    controller.dispatch.assert_called_once_with(
-        gh, "integration", {"candidate": "a" * 40, "number": 11}
-    )
-
-
-def test_empty_merge_selection_is_inert(
-    tmp_path: Path, merge_environment: tuple[Any, Any, Any]
-) -> None:
-    gh, _, cleanup = merge_environment
-    controller.merge_selected(gh, 17, tmp_path, pr_numbers=set(), active_branches=set())
-    gh.pull.assert_not_called()
-    gh.api.assert_not_called()
-    cleanup.cleanup.assert_not_called()
-
-
-def test_legacy_merge_still_inspects_every_pr(
-    tmp_path: Path, merge_environment: tuple[Any, Any, Any]
-) -> None:
-    gh, _, cleanup = merge_environment
-    controller.merge(gh, 17, tmp_path)
-    assert [call.args[0] for call in gh.pull.call_args_list] == [7, 11]
-    gh.api.assert_called_once()
-    cleanup.cleanup.assert_called_once_with(gh, tmp_path, force=True, active_branches=set())
-
-
-@pytest.mark.parametrize("gate", ["provenance", "missing-policy", "stale-policy", "veto"])
-def test_selected_merge_retains_authorization_gates(
-    gate: str,
-    tmp_path: Path,
-    monkeypatch: Any,
-    merge_environment: tuple[Any, Any, Any],
-) -> None:
-    gh, controls, cleanup = merge_environment
-    if gate == "provenance":
-        monkeypatch.setattr(controller, "trusted", lambda *args: False)
-    elif gate in {"missing-policy", "stale-policy"}:
-        controller.authorization_error.return_value = gate
-    else:
-        controls.paused.return_value = True
-    controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=set())
-    gh.api.assert_not_called()
-    controller.dispatch.assert_not_called()
-    cleanup.cleanup.assert_not_called()
-
-
-def test_selected_merge_rejects_changed_task_digest(
-    tmp_path: Path, merge_environment: tuple[Any, Any, Any]
-) -> None:
-    gh, _, cleanup = merge_environment
-    controller.task_metadata.side_effect = ValueError("Changed signed task digest")
-    with pytest.raises(ValueError, match="signed task digest"):
-        controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=set())
-    gh.api.assert_not_called()
-    controller.dispatch.assert_not_called()
-    cleanup.cleanup.assert_not_called()
-
-
-@pytest.mark.parametrize("gate", ["stale-review", "failed-ci", "missing-ci"])
-def test_selected_merge_retains_review_and_ci_gates(
-    gate: str, tmp_path: Path, merge_environment: tuple[Any, Any, Any]
-) -> None:
-    gh, _, cleanup = merge_environment
-    if gate == "stale-review":
-        gh.checks.return_value[0]["external_id"] = "old-base"
-    elif gate == "failed-ci":
-        gh.checks.return_value[1]["conclusion"] = "failure"
-    else:
-        gh.checks.return_value = gh.checks.return_value[:1]
-    controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=set())
-    gh.api.assert_not_called()
-    controller.dispatch.assert_not_called()
-    cleanup.cleanup.assert_not_called()
-
-
-@pytest.mark.parametrize("gate", ["fragment", "base-race"])
-def test_selected_merge_retains_publication_gates(
-    gate: str, tmp_path: Path, merge_environment: tuple[Any, Any, Any]
-) -> None:
-    gh, _, cleanup = merge_environment
-    if gate == "fragment":
-        gh.pages.return_value = [
-            {"filename": "agent_tools/changelog/pending.md", "status": "added"}
-        ]
-    else:
-        gh.base.side_effect = ["base", "changed-base"]
-    controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=set())
-    gh.api.assert_not_called()
-    controller.dispatch.assert_not_called()
-    cleanup.cleanup.assert_not_called()
-
-
-def test_selected_merge_head_race_does_not_clean_branches(
-    tmp_path: Path, merge_environment: tuple[Any, Any, Any]
-) -> None:
-    gh, _, cleanup = merge_environment
-    gh.api.return_value = {"merged": False}
-    controller.merge_selected(gh, 17, tmp_path, pr_numbers={11}, active_branches=set())
-    assert gh.api.call_args.args[2]["sha"] == "a" * 40
-    cleanup.cleanup.assert_not_called()
-
-
-def publication_plan(proto: Any, location: str, resolution: str) -> dict[str, Any]:
-    text = "Preserve export fidelity."
-    approvals = {("approved", "correction"): 1}
-    approval_index = 0 if resolution == "unrelated" else approvals.get((resolution, location))
-    return {
-        "id": proto.plan_id(text),
-        "text": text,
-        "approval_index": approval_index,
-        "starting_prompt_approval": resolution == "approved" and location == "starting",
-    }
-
-
-def publication_blob(context: dict[str, Any], *args: str) -> str | bytes:
-    png = b"\x89PNG\r\n\x1a\nsanitized image"
-    if args[1] == "ls-tree":
-        path = context["images"][0]["path"]
-        return ("100644 blob " + "f" * 40 + "\t" + path + "\0").encode()
-    return {"-t": "blob", "-s": str(len(png))}.get(args[2], png)
-
-
-def publication_git(context: dict[str, Any], mode: str, branch: str) -> Any:
-    proto = controller.trusted_module("task_context")
-    responses = {
-        "diff": "tests/regression.py",
-        "write-tree": "tree",
-        "rev-parse": "tree",
-        "commit-tree": "c" * 40,
-        "log": "Recovered feature" + proto.trailers(context, context["producer_id"]),
-        "ls-remote": "d" * 40 + "\trefs/heads/" + branch if mode == "recovered-feature" else "",
-    }
-
-    def command(*args: str, **kwargs: Any) -> str | bytes:
-        if args[1] in {"ls-tree", "cat-file"}:
-            return publication_blob(context, *args)
-        return responses.get(args[1], "")
-
-    return command
-
-
-def publication_context(reference: str, location: str, resolution: str) -> dict[str, Any]:
-    proto = controller.trusted_module("task_context")
-    context: dict[str, Any] = {
-        "version": 2,
-        "task_id": "publication-references",
-        "producer_id": "author:test",
-        "source": "user",
-        "starting_prompt": reference if location == "starting" else "Preserve exports.",
-        "corrections": ["Use the written replacement scope."],
-        "plans": [],
-        "images": [],
-        "replacements": [],
-        "decisions": [],
-        "questions": [],
-    }
-    if location == "correction":
-        context["corrections"].append(reference)
-    if resolution in {"approved", "unapproved", "unrelated"}:
-        context["plans"].append(publication_plan(proto, location, resolution))
-    elif resolution == "image":
-        image_hash = hashlib.sha256(b"\x89PNG\r\n\x1a\nsanitized image").hexdigest()
-        context["images"].append(
-            {
-                "reference": reference,
-                "description": "Owner-reviewed export layout.",
-                "path": f"agent_tools/task_evidence/{context['task_id']}/{image_hash}.png",
-                "sha256": image_hash,
-                "approval_index": 0,
-            }
-        )
-    elif resolution == "replacement":
-        context["replacements"].append(
-            {
-                "reference": "Implement the plan" if "plan" in reference else reference,
-                "user_index": 0,
-            }
-        )
-    return context
-
-
-@pytest.fixture
-def reference_publication(tmp_path: Path, monkeypatch: Any) -> Any:
-    proto = controller.trusted_module("task_context")
-    controls = Mock()
-    controls.paused.return_value = False
-    monkeypatch.setattr(controller, "signed_head", Mock(return_value=True))
-    original_module = controller.trusted_module
-    monkeypatch.setattr(
-        controller,
-        "trusted_module",
-        lambda name: controls if name == "review_control" else original_module(name),
-    )
-    monkeypatch.setattr(controller, "trusted", Mock(return_value=True))
-    monkeypatch.setattr(controller, "authorization_error", Mock(return_value=None))
-    monkeypatch.setattr(controller, "verify_correction_plan", Mock())
-    monkeypatch.setattr(controller, "signing_options", Mock(return_value=[]))
-    monkeypatch.setattr(controller, "monitor", Mock(return_value=(99, {})))
-
-    def prepare(context: dict[str, Any], mode: str) -> tuple[Any, dict[str, Any], Any]:
-        kind = "feature" if mode == "recovered-feature" else mode
-        number = 0 if kind == "feature" else 1
-        task: dict[str, Any] = {
-            "number": number,
-            "kind": kind,
-            "head": "a" * 40,
-            "base": "b" * 40,
-            "branch": "codex/reference-publication",
-            "user_task": context,
-            "producer_id": context["producer_id"],
-            "task_digest": proto.digest(context),
-        }
-        (tmp_path / "task.json").write_text(json.dumps(task))
-        (tmp_path / "fix.patch").write_text("mocked patch")
-        if kind == "repair":
-            (tmp_path / "verdict.json").write_text(
-                json.dumps({"outcome": "patch", "reason": "repair", "required_evidence": []})
-            )
-        gh = Mock(repository="owner/repo")
-        gh.base.return_value = task["base"]
-        gh.pull.return_value = {
-            "number": 1,
-            "head": {"sha": task["head"]},
-            "body": "Feature description.",
-            "html_url": "https://github.com/owner/repo/pull/1",
-        }
-        gh.pulls.return_value = []
-        gh.api.return_value = gh.pull.return_value
-        monkeypatch.setattr(
-            controller, "task_metadata", Mock(return_value={"task_digest": task["task_digest"]})
-        )
-
-        git = Mock(side_effect=publication_git(context, mode, task["branch"]))
-        monkeypatch.setattr(controller, "command", git)
-        return gh, task, git
-
-    return prepare
-
-
-@pytest.mark.parametrize(
-    "mode", ["feature", "recovered-feature", "correction", "conflict", "repair"]
-)
-@pytest.mark.parametrize("location", ["starting", "correction"])
-@pytest.mark.parametrize("failure", ["absent", "unapproved", "unrelated", "image"])
-def test_unresolved_references_block_all_publication_writes(
-    tmp_path: Path, reference_publication: Any, mode: str, location: str, failure: str
-) -> None:
-    reference = "[Image #1]" if failure == "image" else "Implement the plan."
-    context = publication_context(reference, location, "absent" if failure == "image" else failure)
-    proto = controller.trusted_module("task_context")
-    # Legacy reading/signature verification stays independent of the publication gate.
-    legacy = proto.legacy(context)
-    assert proto.parse(proto.render(legacy)) == legacy
-    proto.verify_commit(legacy, proto.trailers(legacy))
-    gh, task, git = reference_publication(context, mode)
-    reason = "Missing image evidence" if failure == "image" else "exact approved plan"
-    with pytest.raises(ValueError, match=reason):
-        controller.publish(gh, task, tmp_path, tmp_path)
-    git.assert_not_called()  # No patch application, signing, recovery fetch or push.
-    controller.signing_options.assert_not_called()
-    controller.verify_correction_plan.assert_not_called()
-    gh.api.assert_not_called()
-    gh.comment.assert_called_once()
-    assert reason in gh.comment.call_args.args[1]
-    if task["number"]:
-        gh.label.assert_called_once_with(task["number"], acquire=False)
-    else:
-        gh.label.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "mode", ["feature", "recovered-feature", "correction", "conflict", "repair"]
-)
-@pytest.mark.parametrize("location", ["starting", "correction"])
-@pytest.mark.parametrize(
-    "resolution", ["approved", "image", "replacement-plan", "replacement-image"]
-)
-def test_resolved_references_publish_with_real_resolver(
-    tmp_path: Path, reference_publication: Any, mode: str, location: str, resolution: str
-) -> None:
-    reference = "[Image #1]" if "image" in resolution else "Implement the plan."
-    context = publication_context(
-        reference, location, "replacement" if resolution.startswith("replacement") else resolution
-    )
-    gh, task, git = reference_publication(context, mode)
-    result = controller.publish(gh, task, tmp_path, tmp_path)
-    pushes = [call.args for call in git.call_args_list if call.args[1] == "push"]
-    assert len(pushes) == 1
-    head = "d" * 40 if mode == "recovered-feature" else "c" * 40
-    if mode == "recovered-feature":
-        controller.signing_options.assert_not_called()
-        controller.signed_head.assert_called_once_with(gh.repository, head)
-    assert pushes[0][-1] == head + ":refs/heads/" + task["branch"]
-    assert gh.api.call_args.args[:2] == (
-        ("pulls", "POST") if not task["number"] else ("pulls/1", "PATCH")
-    )
-    body = gh.api.call_args.args[2]["body"]
-    assert controller.trusted_module("task_context").parse(body) == context
-    gh.comment.assert_not_called()
-    if task["kind"] in {"feature", "correction"}:
-        assert result is not None
-        assert result["head"] == head
-    if task["number"]:
-        gh.label.assert_called_once_with(task["number"], acquire=False)
-
-
-def test_ordinary_v1_context_still_publishes(tmp_path: Path, reference_publication: Any) -> None:
-    proto = controller.trusted_module("task_context")
-    context = proto.legacy(publication_context("Preserve exports.", "starting", "absent"))
-    gh, task, git = reference_publication(context, "feature")
-    controller.publish(gh, task, tmp_path, tmp_path)
-    assert any(call.args[1] == "push" for call in git.call_args_list)
-    assert proto.parse(gh.api.call_args.args[2]["body"]) == context
-
-
-def test_review_of_unresolved_history_does_not_require_publication_evidence(
-    tmp_path: Path, reference_publication: Any, monkeypatch: Any
-) -> None:
-    proto = controller.trusted_module("task_context")
-    context = proto.legacy(publication_context("Implement the plan.", "starting", "absent"))
-    gh, task, git = reference_publication(context, "review")
-    (tmp_path / "review-execution.json").write_text("{}")
-    (tmp_path / "verdict.json").write_text(
-        json.dumps(
-            {
-                "alignment": "aligned",
-                "change_summary": "Preserves the feature.",
-                "approved": True,
-                "summary": "Historical attachment remains verifiable.",
-                "findings": [],
-            }
-        )
-    )
-    monkeypatch.setattr(controller, "verify_review_execution", Mock())
-    controller.publish(gh, task, tmp_path, tmp_path)
-    assert [call.args[0] for call in gh.api.call_args_list] == [
-        "check-runs",
-        "pulls/1/reviews",
-    ]
-    git.assert_not_called()
-    gh.label.assert_not_called()
-
-
-def test_conflict_marker_check_rejects_before_artifact_serialization(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    failure = RuntimeError("docs/CHANGELOG.md:11: leftover conflict marker")
-    command = Mock(side_effect=["", failure])
-    monkeypatch.setattr(controller, "command", command)
-    output = tmp_path / "artifacts"
-    with pytest.raises(RuntimeError, match="leftover conflict marker"):
-        controller.collect({"kind": "correction", "head": "a" * 40}, tmp_path, output)
-    assert command.call_args.args == ("git", "diff", "--cached", "--check")
-    assert command.call_count == 2
-    assert not (output / "fix.patch").exists()
-    assert not (output / "task.json").exists()
-
-
-def test_corrected_checkpoint_passes_check_and_retains_patch_bytes(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    patch = b"retained checkpoint patch\n"
-    command = Mock(side_effect=["", "", "", patch])
-    monkeypatch.setattr(controller, "command", command)
-    output = tmp_path / "artifacts"
-    task = {"kind": "correction", "head": "a" * 40}
-    controller.collect(task, tmp_path, output)
-    assert command.call_args_list[1].args == ("git", "diff", "--cached", "--check")
-    assert (output / "fix.patch").read_bytes() == patch
-    assert json.loads((output / "task.json").read_text()) == task
-
-
-@pytest.mark.parametrize("failure", ["signature", "producer"])
-def test_recovered_feature_rejects_untrusted_head_before_any_publication(
-    tmp_path: Path, reference_publication: Any, monkeypatch: Any, failure: str
-) -> None:
-    context = publication_context("Preserve exports.", "starting", "absent")
-    gh, task, git = reference_publication(context, "recovered-feature")
-    if failure == "signature":
-        controller.signed_head.return_value = False
-    else:
-        original = git.side_effect
-        proto = controller.trusted_module("task_context")
-
-        def command(*args: str, **kwargs: Any) -> Any:
-            if args[1] == "log":
-                return "Another producer" + proto.trailers(context, "author:other")
-            return original(*args, **kwargs)
-
-        git.side_effect = command
-    with pytest.raises(RuntimeError, match=r"trusted signed head|another producer"):
-        controller.publish(gh, task, tmp_path, tmp_path)
-    assert not any(call.args[1] == "push" for call in git.call_args_list)
-    controller.signing_options.assert_not_called()
-    gh.api.assert_not_called()

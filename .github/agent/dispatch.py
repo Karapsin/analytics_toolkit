@@ -5,9 +5,19 @@ import json
 import os
 import re
 import subprocess
+import importlib.util
 from pathlib import Path
 
 PREFIX = '<!-- github-agent-dispatch\n'
+
+
+def profile_receiver():
+    spec = importlib.util.spec_from_file_location("profile_dispatch_receiver", Path(__file__).with_name("capture_receiver.py"))
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Unique capture receiver unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def validated(event, slug):
@@ -40,7 +50,16 @@ def validated(event, slug):
 
 
 def main():
-    event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+    event_path = Path(os.environ['GITHUB_EVENT_PATH'])
+    if event_path.stat().st_size > 2 * 1024 * 1024:
+        raise ValueError('Dispatch event exceeds bounded metadata capacity')
+    event = json.loads(event_path.read_text())
+    # New tagged operations are parsed through their own strict bounded route.
+    # Unsupported/malformed profile requests never become a legacy visual call.
+    text = event.get('comment', {}).get('body', '')
+    if isinstance(text, str) and 'visual-profile' in text:
+        profile_receiver().bridge_main(event)
+        return
     task = validated(event, os.environ['APP_SLUG'])
     prefix = 'repos/' + os.environ['GITHUB_REPOSITORY'] + '/'
     if task['operation'] == 'rerun':

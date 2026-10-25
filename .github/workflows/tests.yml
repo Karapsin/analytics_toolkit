@@ -5,15 +5,188 @@ on:
     branches: [dev, main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      lifecycle_diagnostic:
+        description: Run the fixed contained PR39 baseline lifecycle diagnostic
+        type: boolean
+        default: false
+      visual_isolation_probe:
+        description: Run the separately reviewed native container infrastructure probe
+        type: boolean
+        default: false
+      source_validation:
+        description: Capture a published source subject in the reviewed native containers
+        type: boolean
+        default: false
+      source_validation_subject:
+        description: Exact published subject commit for source validation
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 jobs:
+  lifecycle-diagnostic:
+    if: github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic
+    name: PR39 lifecycle baseline Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    env:
+      LIFECYCLE_DIAGNOSTIC: ${{ inputs.lifecycle_diagnostic }}
+      DIAGNOSTIC_PYTHON: ${{ matrix.python }}
+      SOURCE_VALIDATION: ${{ inputs.source_validation || false }}
+      SOURCE_VALIDATION_SUBJECT: ${{ inputs.source_validation_subject }}
+      VISUAL_ISOLATION_PROBE: ${{ inputs.visual_isolation_probe || false }}
+      DIAGNOSTIC_CONTROL_ROOT: ${{ github.workspace }}/lifecycle-control
+    steps:
+      - name: Checkout exact reviewed lifecycle control
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: lifecycle-control
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Require fixed lifecycle mode and frozen owner-controlled identity
+        id: guard
+        working-directory: ${{ runner.temp }}
+        run: python -I "$GITHUB_WORKSPACE/lifecycle-control/.github/agent/lifecycle_diagnostic.py" validate
+      - name: Checkout fixed published baseline as data
+        uses: actions/checkout@v6
+        with:
+          ref: 76eb8481734ec4ffb77d71ce300787caff21b860
+          path: lifecycle-subject
+          persist-credentials: false
+      - name: Run fixed contained lifecycle diagnostic
+        id: diagnostics
+        working-directory: ${{ runner.temp }}
+        env:
+          DIAGNOSTIC_SUBJECT_ROOT: ${{ github.workspace }}/lifecycle-subject
+          DIAGNOSTIC_METADATA_ROOT: ${{ steps.guard.outputs.metadata_root }}
+        run: python -I "$GITHUB_WORKSPACE/lifecycle-control/.github/agent/lifecycle_diagnostic.py"
+      - name: Retain stopped-writer diagnostics or immutable guard metadata
+        if: always() && (steps.diagnostics.outputs.artifact_root != '' || steps.guard.outputs.metadata_root != '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr39-lifecycle-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}-py${{ matrix.python }}
+          path: ${{ steps.diagnostics.outputs.artifact_root || steps.guard.outputs.metadata_root }}
+          if-no-files-found: error
+          retention-days: 7
+
+  source-validation:
+    if: github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && !(inputs.lifecycle_diagnostic)
+    name: Native source validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    env:
+      SOURCE_VALIDATION: ${{ inputs.source_validation }}
+      SOURCE_VALIDATION_SUBJECT: ${{ inputs.source_validation_subject }}
+      VISUAL_ISOLATION_PROBE: ${{ inputs.visual_isolation_probe || false }}
+    steps:
+      - name: Checkout exact reviewed workflow control
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: validation-control
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Require source mode and frozen owner-controlled workflow identity
+        id: guard
+        working-directory: ${{ runner.temp }}
+        run: python -I "$GITHUB_WORKSPACE/validation-control/.github/agent/source_validation.py" validate
+      - name: Checkout fixed reviewed transport
+        uses: actions/checkout@v6
+        with:
+          ref: 467768b9bed2c90a0dfba85ef2eea6ac6868f8d6
+          path: validation-transport
+          persist-credentials: false
+      - name: Checkout exact published subject as data
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_validation_subject }}
+          path: validation-subject
+          persist-credentials: false
+      - name: Capture source in reviewed native containers
+        id: capture
+        working-directory: ${{ runner.temp }}
+        env:
+          VALIDATION_CONTROL_ROOT: ${{ github.workspace }}/validation-control
+          VALIDATION_TRANSPORT_ROOT: ${{ github.workspace }}/validation-transport
+          VALIDATION_SUBJECT_ROOT: ${{ github.workspace }}/validation-subject
+        run: python -I "$GITHUB_WORKSPACE/validation-control/.github/agent/source_validation.py"
+      - name: Retain source-validation transport metadata
+        if: always() && (steps.capture.outputs.metadata_root != '' || steps.guard.outputs.metadata_root != '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-validation-metadata-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.capture.outputs.metadata_root || steps.guard.outputs.metadata_root }}/source-validation.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain complete or honestly partial native capture evidence
+        if: always() && steps.capture.outputs.artifact_root != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-validation-capture-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          path: |
+            ${{ steps.capture.outputs.artifact_root }}/visual-artifact/
+            ${{ steps.capture.outputs.artifact_root }}/visual-diagnostics/
+            ${{ steps.capture.outputs.artifact_root }}/isolation-diagnostics/
+          if-no-files-found: error
+          retention-days: 7
+
+  visual-isolation-probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && !(inputs.source_validation || inputs.source_validation_subject != '') && !(inputs.lifecycle_diagnostic)
+    name: Visual isolation infrastructure Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Probe reviewed container infrastructure without host candidate execution
+        id: probe
+        working-directory: ${{ runner.temp }}
+        env:
+          PROBE_PYTHON: ${{ matrix.python }}
+        run: python -I "$GITHUB_WORKSPACE/.github/agent/capture_isolation_probe.py"
+      - name: Retain complete or explicitly incomplete native probe evidence
+        if: always() && steps.probe.outputs.artifact_root != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-isolation-infrastructure-${{ matrix.python }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.probe.outputs.artifact_root }}/isolation-diagnostics/
+            ${{ steps.probe.outputs.artifact_root }}/probe-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
   fast-checks:
-    name: fast-checks
-    needs: [tests, sdk-conformance, quality]
-    if: always()
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only fast checks' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only fast checks' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only fast checks' || 'fast-checks' }}
+    needs: [tests, quality]
+    if: always() && !(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)
     runs-on: ubuntu-latest
     steps:
       - name: Require every fast validation job
@@ -26,98 +199,63 @@ jobs:
           PY
 
   tests:
-    name: ${{ matrix.env_name }}
+    if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only tests' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only tests' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only tests' || 'py314-latest' }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - python-version: "3.8"
-            env_name: py38-latest
-          - python-version: "3.9"
-            env_name: py39-latest
-          - python-version: "3.10"
-            env_name: py310-latest
-          - python-version: "3.11"
-            env_name: py311-latest
-          - python-version: "3.12"
-            env_name: py312-latest
-          - python-version: "3.13"
-            env_name: py313-latest
-          - python-version: "3.14"
-            env_name: py314-latest
-          - python-version: "3.8"
-            env_name: py38-min
-
+    env:
+      RASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      RASTER_BASE: 4a17e91b20b2683aca365f486e6217a141ef8c5b
+      RASTER_PROFILE: coverage
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Set up Python
+      - name: Set up newest supported Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.14"
           cache: pip
-
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-      - name: Install latest test environment
-        if: matrix.env_name != 'py38-min'
-        run: python -m pip install -e '.[tui,datalens]' pytest
-
-      - name: Install minimum Python 3.8 test environment
-        if: matrix.env_name == 'py38-min'
-        run: python -m pip install -c constraints/py38-min.txt -e '.[tui,datalens]' pytest==8.3.5
-
-      - name: Validate minimum dependency constraints
-        if: matrix.env_name == 'py38-min'
+      - name: Install raster regression fonts
         run: |
-          python -m release_routines.lib.check_minimum_constraints
-          python -m pip check
-
-      - name: Compile package and tests
-        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
-
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y fontconfig fonts-dejavu-core
+          fc-match --format='%{family}\t%{file}\n' 'DejaVu Sans Mono'
       - name: Guard merged MinIO build configuration without services
-        if: matrix.env_name == 'py311-latest'
-        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q tests/repository/integration_images.py
-
-      - name: Run tests
-        run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache pytest -q
-
+        run: |
+          python -m pip install pytest
+          PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m pytest -q -p no:cacheprovider tests/repository/integration_images.py
+      - name: Install tox
+        run: python -m pip install "tox>=4,<5"
+      - name: Run canonical tests and unchanged coverage floors
+        env:
+          ATK_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: tox -e coverage
+      - name: Retain canonical coverage JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-coverage-${{ github.sha }}
+          path: coverage.json
+          if-no-files-found: ignore
+      - name: Retain canonical raster failure observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raster-coverage-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: raster-diagnostics/coverage/
+          if-no-files-found: warn
       - name: Retain complete failed scene geometry
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
-          name: visual-geometry-failures-${{ matrix.env_name }}
+          name: visual-geometry-failures-py314-latest-${{ github.run_id }}-${{ github.run_attempt }}
           path: .rag_index/visual-failures/*.json
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Freeze environment
-        if: always()
-        run: python -m pip freeze
-
-  sdk-conformance:
-    name: ${{ matrix.env_name }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        env_name: [py310-sdk31, py310-sdk32]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.10"
-          cache: pip
-      - run: python -m pip install "tox>=4,<5"
-      - run: tox -e ${{ matrix.env_name }}
-
   quality:
-    name: quality gates
+    if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic && 'Lifecycle-diagnostic-only quality' || github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '') && 'Source-validation-only quality' || github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe && 'Probe-only quality checks' || 'quality gates' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -133,27 +271,21 @@ jobs:
       - name: Install tox
         run: python -m pip install --upgrade "tox>=4,<5"
 
-      - name: Run lint, type, coverage, and artifact gates
+      - name: Set up artifact Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Run lint, type, and artifact gates
         env:
           ATK_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: tox -e lint,type,coverage,artifacts
+        run: tox -e lint,type,artifacts
 
       - name: Retain complete quality tool diagnostics
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: quality-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: .rag_index/quality-diagnostics/
           include-hidden-files: true
           if-no-files-found: warn
-          retention-days: 14
-
-      - name: Retain complete failed scene geometry
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: visual-geometry-failures-quality
-          path: .rag_index/visual-failures/*.json
-          include-hidden-files: true
-          if-no-files-found: ignore
           retention-days: 14

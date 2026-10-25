@@ -248,3 +248,52 @@ def test_resolve_root_defaults_to_repo_root_even_when_cwd_has_pyproject(
     assert mcp_server._resolve_root("") == repo_root.resolve()
     assert mcp_server._resolve_root("nested") == (repo_root / "nested").resolve()
     assert mcp_server._resolve_root(str(outside)) == outside.resolve()
+
+
+@pytest.mark.parametrize("healthy", [True, False])
+def test_prepare_start_uses_cached_bootstrap_before_certifying_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    healthy: bool,
+) -> None:
+    root = _write_minimal_repo_files(tmp_path / "project")
+    monkeypatch.setenv("ATK_BOOTSTRAP_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(mcp_server, "_startup_preflight", lambda root, results: None)
+    monkeypatch.setattr(
+        mcp_server, "_run_command", lambda root, command: _command_result(command["display"], "ok")
+    )
+    monkeypatch.setattr(mcp_server, "repo_health", lambda root: {"branch": "dev"})
+    monkeypatch.setattr(
+        mcp_server.docs_assistant,
+        "build_docs_index",
+        lambda **kwargs: types.SimpleNamespace(file_count=1, chunk_count=1),
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "workflow_status",
+        lambda **kwargs: {
+            "result": {
+                "repo_health": {"branch": "dev"},
+                "metadata_status": {"ok": True},
+                "required_instruction_files": ["AGENTS.md"],
+            }
+        },
+    )
+    calls = []
+
+    def prepare(root, **kwargs):
+        calls.append(kwargs)
+        return [_command_result("cached environment", "ok", ok=healthy)], {
+            "key": "cache-key",
+            "reused": True,
+        }
+
+    monkeypatch.setattr(mcp_server.bootstrap_env, "prepare", prepare)
+    result = mcp_server.prepare_start("bootstrap", root=str(root))
+    assert result["ok"] is healthy
+    assert len(calls) == 1
+    assert (root / mcp_server.ENV_STATE_FILE).exists() is healthy
+    if healthy:
+        assert result["result"]["environment"]["cache"]["key"] == "cache-key"
+    else:
+        assert result["result"]["phase"] == "environment_cache"

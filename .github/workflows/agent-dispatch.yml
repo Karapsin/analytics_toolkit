@@ -1,20 +1,34 @@
 name: agent-dispatch
+run-name: agent-dispatch-comment-${{ github.event.comment.id }}
 on:
   issue_comment:
     types: [created]
 permissions:
   contents: read
   actions: write
+  issues: read
 jobs:
   dispatch:
     if: startsWith(github.event.comment.body, '<!-- github-agent-dispatch') && github.event.sender.login == format('{0}[bot]', vars.AGENT_APP_SLUG)
     runs-on: ubuntu-latest
+    concurrency:
+      group: agent-profile-comment-${{ github.event.comment.id }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - run: python .github/agent/dispatch.py
+      - id: profile
+        run: |
+          cd "$RUNNER_TEMP"
+          python -I "$GITHUB_WORKSPACE/.github/agent/dispatch.py"
         env:
           APP_SLUG: ${{ vars.AGENT_APP_SLUG }}
           GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.profile.outputs.artifact_root != ''
+        with:
+          name: ${{ steps.profile.outputs.artifact_name }}
+          path: ${{ steps.profile.outputs.artifact_root }}
+          if-no-files-found: error
