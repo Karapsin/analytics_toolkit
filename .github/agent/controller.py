@@ -71,6 +71,7 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError("Trusted signature checkout is unavailable.")
         message = command("git", "log", "-1", "--format=%B", head, cwd=Path(directory))
         actor = proto.verify_commit(value, message)
+        verify_task_images(value, Path(directory), head)
     branch = pr["head"].get("ref", "")
     if branch.startswith(("codex/telegram-feature-", "codex/orchestrator-")) and not trusted_module("review_control").enrolled_feature(
             gh.repository, branch, proto.digest(value)):
@@ -881,8 +882,12 @@ def fold(work: Path) -> bool:
 
 
 def visual_required(paths: list[str]) -> bool:
-    return any(path.startswith(("analytics_toolkit/sql_explorer/", "agent_tools/sql_explorer_visual",
-                                "visual-tests/sql_explorer/", "tests/sql_explorer/")) for path in paths)
+    harness = {"tests/agent_tools/visual.py", "tests/agent_tools/_support/visual.py",
+               "tests/agent_tools/_support/geometry.py", "tests/agent_tools/visual_diagnostics.py",
+               "tests/agent_tools/geometry_reporting.py"}
+    return any(path in harness or path.startswith((
+        "analytics_toolkit/sql_explorer/", "agent_tools/sql_explorer_visual",
+        "visual-tests/sql_explorer/", "tests/sql_explorer/")) for path in paths)
 
 
 def candidate(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> str:
@@ -1002,6 +1007,31 @@ def conflict_path_entry(work: Path, path: str, revision: str | None) -> tuple[by
     return mode, oid
 
 
+def verify_task_images(value: dict[str, Any], work: Path, revision: str) -> None:
+    """Verify owner-approved PNG bytes from an immutable Git tree, never symlinks."""
+    trusted_module("task_context").validate(value)
+    for image in value.get("images", []):
+        raw = command("git", "ls-tree", "--full-tree", "-z", revision, "--",
+                      image["path"], cwd=work, raw_stdout=True)
+        if not raw:
+            raise ValueError("Image evidence is missing from the candidate tree.")
+        mode, oid = conflict_entry_metadata(raw, image["path"], staged=False)
+        if mode not in {b"100644", b"100755"}:
+            raise ValueError("Image evidence must be a regular Git blob.")
+        object_id = oid.decode("ascii")
+        if (SHA.fullmatch(object_id) is None
+                or command("git", "cat-file", "-t", object_id, cwd=work) != "blob"):
+            raise ValueError("Image evidence object is unavailable.")
+        size = int(command("git", "cat-file", "-s", object_id, cwd=work))
+        if not 1 <= size <= 524288:
+            raise ValueError("Image evidence size is outside the publication limit.")
+        data = command("git", "cat-file", "blob", object_id, cwd=work, raw_stdout=True)
+        if len(data) != size or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ValueError("Image evidence must contain the declared PNG bytes.")
+        if hashlib.sha256(data).hexdigest() != image["sha256"]:
+            raise ValueError("Image evidence does not match its signed task digest.")
+
+
 def inherited_controller_path(task: dict[str, Any], work: Path, path: str) -> bool:
     """Prove a conflict change came solely from immutable dev, including absence."""
     for revision in (task["head"], task["base"]):
@@ -1104,6 +1134,7 @@ def publish(
                 reason = verdict["summary"] + "\n" + "\n".join(str(x) for x in verdict["findings"])
                 controls.reject(gh, pr, task, reason, verdict["change_summary"])
             return
+        trusted_module("task_context").require_resolved(task["user_task"])
         if task["kind"] == "correction":
             verify_correction_plan(task, artifact)
         patch = artifact / "fix.patch"
@@ -1146,7 +1177,7 @@ def publish(
             raise RuntimeError("No repair produced. Diagnose credentials/infrastructure explicitly.")
         if patch.read_bytes().strip():
             command("git", "apply", "--index", str(patch.resolve()), cwd=work)
-        paths = command("git", "diff", "--cached", "--name-only", task["head"], cwd=work).splitlines()
+        paths = command("git", "diff", "--cached", "--name-only", "--no-renames", task["head"], cwd=work).splitlines()
         protected_conflicts: list[str] = []
         for path in paths:
             sensitive = path.startswith(".git/") or path in {".connections", ".env"}
@@ -1179,25 +1210,34 @@ def publish(
         if visual_required(paths):
             verify_visual(artifact, patch, task)
         tree = command("git", "write-tree", cwd=work)
+        verify_task_images(task["user_task"], work, tree)
         parents = ["-p", task["head"]]
         if task["kind"] in {"conflict", "repair", "feature", "correction"} and task["base"] != task["head"]:
             parents.extend(["-p", task["base"]])
         message = "GitHub agent: " + task["kind"] + proto.trailers(task["user_task"], task["producer_id"])
-        commit = command("git", *signing_options(), "commit-tree", "-S", tree, *parents,
-                         "-m", message, cwd=work)
+        commit = None
         if task["kind"] == "feature" and not number:
             remote = command("git", "ls-remote", "origin", "refs/heads/" + task["branch"], cwd=work)
             if remote:
                 existing_head = remote.split()[0]
+                if SHA.fullmatch(existing_head) is None or not signed_head(gh.repository, existing_head):
+                    raise RuntimeError("Existing feature branch lacks a trusted signed head.")
                 command("git", "fetch", "origin", existing_head, cwd=work)
                 if command("git", "rev-parse", existing_head + "^{tree}", cwd=work) != tree:
                     raise RuntimeError("Existing feature branch differs; publication recovery requires owner correction.")
-                proto.verify_commit(task["user_task"], command("git", "log", "-1", "--format=%B", existing_head, cwd=work))
+                actor = proto.verify_commit(task["user_task"], command(
+                    "git", "log", "-1", "--format=%B", existing_head, cwd=work))
+                if actor != task["producer_id"]:
+                    raise RuntimeError("Existing feature branch belongs to another producer.")
+                verify_task_images(task["user_task"], work, existing_head)
                 commit = existing_head
         body = proto.publish(task["user_task"], api=gh.api, repository=gh.repository, prefix=prefix)
         current = publication_authority(gh, task, renewal_hold=renewal_hold)
         if number and current.get("body") != pr.get("body"):
             raise RuntimeError("PR description changed during archive publication.")
+        if commit is None:
+            commit = command("git", *signing_options(), "commit-tree", "-S", tree, *parents,
+                             "-m", message, cwd=work)
         push = ["git", "push"]
         if number:
             push.append(f"--force-with-lease=refs/heads/{task['branch']}:{task['head']}")

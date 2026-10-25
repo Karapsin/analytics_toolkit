@@ -567,6 +567,7 @@ def test_cleanup_uses_merged_head_receipt_for_squash_and_leased_delete(
             "codex/active",
             "codex/reused",
             "codex/unsubmitted",
+            "codex/open",
         )
     ]
     merged = [
@@ -575,11 +576,13 @@ def test_cleanup_uses_merged_head_receipt_for_squash_and_leased_delete(
             "merged_at": "2026-10-12",
             "head": {"ref": name, "sha": head, "repo": {"full_name": gh.repository}},
         }
-        for number, name in enumerate(("codex/merged", "codex/active", "codex/reused"), 1)
+        for number, name in enumerate(
+            ("codex/merged", "codex/active", "codex/reused", "codex/open"), 1
+        )
     ]
     branches[4]["commit"]["sha"] = "b" * 40
     gh.pages.side_effect = lambda path: branches if path.startswith("branches") else merged
-    gh.pulls.return_value = []
+    gh.pulls.return_value = [{"head": {"ref": "codex/open"}}]
     gh.pull.side_effect = lambda number: merged[number - 1]
     calls: list[tuple[str, ...]] = []
 
@@ -597,6 +600,7 @@ def test_cleanup_uses_merged_head_receipt_for_squash_and_leased_delete(
         "codex/active",
         "codex/reused",
         "codex/unsubmitted",
+        "codex/open",
     }
     assert calls[-1] == (
         "push",

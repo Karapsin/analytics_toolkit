@@ -219,9 +219,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y fontconfig fonts-dejavu-core
           fc-match --format='%{family}\t%{file}\n' 'DejaVu Sans Mono'
+      - name: Guard merged MinIO build configuration without services
+        run: |
+          python -m pip install pytest
+          PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m pytest -q -p no:cacheprovider tests/repository/integration_images.py
       - name: Install tox
         run: python -m pip install "tox>=4,<5"
       - name: Run canonical tests and unchanged coverage floors
+        env:
+          ATK_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: tox -e coverage
       - name: Retain canonical coverage JSON
         if: always()
@@ -237,6 +243,15 @@ jobs:
           name: raster-coverage-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: raster-diagnostics/coverage/
           if-no-files-found: warn
+      - name: Retain complete failed scene geometry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-geometry-failures-py314-latest-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .rag_index/visual-failures/*.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
 
   quality:
     if: "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe) && !(github.event_name == 'workflow_dispatch' && (inputs.source_validation || inputs.source_validation_subject != '')) && !(github.event_name == 'workflow_dispatch' && inputs.lifecycle_diagnostic)"
@@ -261,4 +276,16 @@ jobs:
         with:
           python-version: "3.14"
       - name: Run lint, type, and artifact gates
+        env:
+          ATK_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: tox -e lint,type,artifacts
+
+      - name: Retain complete quality tool diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .rag_index/quality-diagnostics/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

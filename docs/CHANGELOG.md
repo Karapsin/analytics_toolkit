@@ -18,6 +18,11 @@ Generated from package version bumps and recent commit history.
 - Retire only the exact inspected publication pause during verified recovery; preserve replacement evidence, cancellation and newer same-reason holds with fast restart regressions.
 
 - Preserve provenance and owner pauses when recording feature answers; retain overlapping amendments separately and keep the exact renewed-planning hold through failed publication, retiring it only after verifying the signed successor.
+- Preserve plans, images and clarification context; recover Pi tooling, default recommended choices, filter alerts and support ten workers.
+
+- Validate approved PNG evidence in staged and recovered Git trees before publication, repair focused CI fixtures, and pin the corrected staged RPI companion.
+- Preserve merged MinIO builds and changelog history, retain publication regressions within strict lint gates, and align RPI rollout with the corrected companion pin.
+
 - Suppress explicitly local request status retries in the Telegram outbox while retaining owner questions, context-blocked correction requests, delivery evidence and request history.
 
 - Add the worker-compatible scoped merge entrypoint so unrelated live jobs do not starve ready PRs; preserve every merge gate and protect unpublished branches during cleanup.
@@ -125,6 +130,8 @@ Generated from package version bumps and recent commit history.
 - Preserve SQL Explorer caret underlines in PNG exports with span-derived strokes, causal raster coverage, lossless captured-SVG fixtures and current-dev safeguards.
 - Preserve SQL Explorer editing while retaining bounded causal raster evidence, a disposable Python 3.9 renderer probe, current-versus-historical provenance regressions and behavior-preserving quality corrections for GitHub validation.
 - Replace managed PR status labels atomically while preserving unrelated labels and recovering uncertain responses
+- Reconcile signed task plans, questions, images and provenance with archived transport; retain RPI coordination, full visual routing and complete quality diagnostics without weakening approval or validation gates.
+- Fix diagnostic tool-version lookup lint and visual/publication regression regex formatting, preserving missing-tool metadata, error propagation and all validation gates.
 
 ## 1.3.12.5 - 2026-10-14
 

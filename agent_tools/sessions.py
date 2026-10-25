@@ -218,6 +218,7 @@ def writable(root: Path) -> dict[str, Any]:
 def push(root: Path) -> dict[str, Any]:
     state = writable(root)
     clean(root)
+    task_context.preflight(root)
     from agent_tools import local_review  # noqa: PLC0415 - avoid the session/reviewer import cycle.
 
     head = run(root, "git", "rev-parse", "HEAD")

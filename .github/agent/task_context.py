@@ -138,10 +138,19 @@ def require_resolved(value: dict[str, Any]) -> None:
         "\u201cImplement the plan\u201d or `[Image #1]`. "
         "Require attached evidence or an explicit user replacement of the missing requirement."
     )
-    prompts = [
-        value["starting_prompt"],
-        *[prompt.replace(example, "") for prompt in value["corrections"]],
-    ]
+    prompts = [value["starting_prompt"], *value["corrections"]]
+    for sequence, prompt in enumerate(prompts):
+        # A later recovery message can quote the actual earlier approval while
+        # reproducing that same exact plan. Resolve only that bound quotation;
+        # other quoted requirements and later implementation requests still gate.
+        for plan in value.get("plans", []):
+            index = plan["approval_index"]
+            if index is None or index >= sequence - 1 or plan["text"].rstrip("\n") not in prompt:
+                continue
+            approval = value["corrections"][index]
+            for left, right in (('"', '"'), ("\u201c", "\u201d")):
+                prompt = prompt.replace(left + approval + right, "")
+        prompts[sequence] = prompt.replace(example, "")
     replacements = {item["reference"] for item in value.get("replacements", [])}
     images = {item["reference"] for item in value.get("images", [])}
     missing = {reference for prompt in prompts for reference in re.findall(r"\[Image\s+#?\d+\]", prompt, re.I)
