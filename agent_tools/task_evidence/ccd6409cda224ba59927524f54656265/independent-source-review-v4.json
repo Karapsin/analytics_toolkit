@@ -1,0 +1,115 @@
+{
+  "schema": "capture-receiver-first-unit-complete-independent-source-review/v4",
+  "reviewer": "/root/review_checked_authority_source_v1",
+  "decision": "request_changes",
+  "approve_source": false,
+  "completeness": "complete whole-feature source and contract assessment",
+  "source_inventory": "/private/tmp/capture-receiver-first-unit-full-source-inventory-v4.json",
+  "source_inventory_sha256": "042fe97d13fb98144f73c6741866947722fcf6f9f9a8cab297a6f2722fd6cc33",
+  "snapshot": "/private/tmp/capture-receiver-first-unit-full-source-v4-snapshot",
+  "complete_membership_count": 33,
+  "all_33_sizes_and_hashes_independently_verified": true,
+  "branch": "codex/c6ae69d3fbfb4367-9835247a",
+  "base": "f66a80ebe4b3c28dbca17fbc58c2d6ffe464bb01",
+  "task_id": "ccd6409cda224ba59927524f54656265",
+  "bindings": {
+    "approved_receiver_plan_sha256": "05b6ce5bd5d4adbf84c33efaea781e052d360033a23e1af879a48aa33ef2a0df",
+    "approved_wire_sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba",
+    "independent_plan_review_sha256": "b51128799c83e3c16e794f87d9ac925ee63bac0d0295ee5187eafc6838f4797b",
+    "prior_complete_v2_rejection_sha256": "49a93fe49c47fb1f1d97dc0c608988fd9e6541d33cc0edb258ed33f67a9b7e7d",
+    "full_parent_task_sha256": "9e234588b44a3310e115541df26b8c2765e20dc40c4a8224cb471d4f3756ed14",
+    "candidate_base_clarification_sha256": "5e5d31f2cf31933cb30231e7482d56ac73b5f98fe5e9c051c1f11a33dfc7542f",
+    "candidate_base_review_sha256": "16aa92c768bcedc40c911fff2366f39fe18a841c833a8a2ea470f16a7b31b779",
+    "native_image_assessment_sha256": "a45fb9c29ed23d2401e29a280b6ea2738adf64f7d695168667bd01cfd4506a9a",
+    "v3_to_v4_test_delta_sha256": "3e9ba146bb5bae0a26b506ef2e359b45066dd9bfa98be33d60a0d6c61f234e5f",
+    "base_to_v3_feature_diff_sha256": "aa920d83ed6ebdf4ce39c45b9d3ebf55d8a64334dceb62709371880343d433c5"
+  },
+  "review_method": [
+    "Fresh separate source reviewer. Read all lines of the complete current capture_data, capture_transport, capture_receiver, controller and dispatch; complete fixed receiver schema, both workflows, classification manifest, fixture manifest and sentinel; complete current test/support files, all971 operations-documentation lines and source/provenance/correction/validation records. This is not a diff-only or eight-finding-only assessment.",
+    "Read full V2 rejection and all eight correction mappings. Reassessed actual public host wrappers, private primitives, issue-comment bridge, trusted runner preflight, purpose workflow branches, fixed rehearsal lifecycle and safe artifact paths as a coherent feature. Missing genuine capabilities are assessed as actual executable Pending guards, not claimed future implementations.",
+    "Rebound the complete original task by exact55949-byte hash and prior full task assessment, reread its current full corrections/decisions/question/options/answer and all four retained plans, preserving chronology. Reassessed the complete approved receiver plan/wire and independent plan review using deduplicated formal-schema inspection: independently verified parsed receiver equality, all five corresponding plan/wire transport definitions and mandatory-semantic array equality. Previously personally read factual candidate-parent and native-image assessments were rebound to their exact unchanged current copies. No inherited source verdict or authority is transferred.",
+    "Read all four complete sealed PR45 source bodies in approved45.json and its complete authentic App comment. Independently hashed each decoded source string: artifact7a032c, isolation6aa4f9, sandbox4dc6c6 and renderer2284b4 match their declared exact hashes. These are synthetic administrative component fixtures, not native or GitHub acceptance.",
+    "Independently verified all33 snapshot paths have exact inventoried byte lengths and SHA256. Independently compared complete V3 and V4 snapshot directories: only the three declared test/support files differ. Read complete exact test patch; assertions are preserved by fixture extraction/import ordering. No current runtime/workflow/schema/docs/task byte is altered by that refactor.",
+    "Source/text/data/hash review only. No candidate/helper import, program, test, compilation, build, scene, SSH, API, DB, lock/service, owner approval, repository mutation, merge or deployment was executed by this reviewer. Only this new private review is written."
+  ],
+  "prior_findings": [
+    {
+      "id": "RECEIVER-V2-PRIVATE-RESPONSE-RETENTION",
+      "status": "taint_paths_corrected_but_lifecycle_retention_still_blocked",
+      "assessment": "HTTP validates private Store availability before mutation, then retains body/facts/status outside upload roots. Body and every delivered safe string header receive exact token-taint checks; Journal retains only safe delivery-pending reference on taint. Actual after-effect body/header regressions bind private originals/status and no secondPOST. However abnormal read/close exits still precede the common retention path; see the single complete finding below."
+    },
+    {
+      "id": "RECEIVER-V2-CROSS-RUN-DURABILITY",
+      "status": "closed_as_explicit_unavailable_capability",
+      "assessment": "Actual dispatch_from_event reaches bounded prior navigation and an unconditional Pending before its POST because genuine host durable intent/current-row history is absent. Distinct fresh stores/runs and partial navigation regressions produce GET only and retain navigation. This safely closes the unsafe fresh-store route; it does not implement cross-run durable positive authority or a runnable bridge."
+    },
+    {
+      "id": "RECEIVER-V2-STRICT-WIRE-PARITY",
+      "status": "closed_in_source",
+      "assessment": "Nested body_ref exact fields and bytes exactint precede equality; Retry-After and rate-limit remaining enforce2147483647 in both parser and validator. False/True/0.0/1.0 nested counts and header max/max+1 regressions exercise actual validators. Normative20058-byte receiver schema is unchanged and equals approved wire."
+    },
+    {
+      "id": "RECEIVER-V2-RUN-IDENTITY-PROOF",
+      "status": "closed_as_explicit_unavailable_positive_retrieval",
+      "assessment": "Intent persists real epoch/monotonic begin values before mutation. verified_run refuses the apparent metadata match with Pending because exact authenticated receiver originals/interval are unavailable; discover retains incomplete resolution and immutable original outcome. Perfect titles/successful steps plus wrong-envelope/before-intent assertions cannot create a match. This does not implement genuine positive artifact retrieval."
+    },
+    {
+      "id": "RECEIVER-V2-MONITOR-IDENTITY",
+      "status": "closed_in_source",
+      "assessment": "authenticate_comment requires agent:state and actual open nonPR repository/App identities. Both bridge and preflight enumerate the bounded full eligible set and require exact unique event issue identity. Missing/changed/unlabelled/duplicate/partial monitors refuse; replacement issues are never created. Actual App sample remains a PR negative and positives are labelled synthetic."
+    },
+    {
+      "id": "RECEIVER-V2-JOINT-BUDGET",
+      "status": "closed_in_source",
+      "assessment": "A shared conservative Budget now joins HTTP and Store plus actual source/fixture evidence and generated immutable records; bounded response/copy capacity is prepaid and consumed, additional retained/read bytes charge before operations. Workflow budget checkpoint carries usage into rehearsal. Fixed capacity-negative reserve and cumulative individually-permitted source/record regression preserve earlier data and deny overflow. Conjunctive conservative refusal grants no fit or actual retention success."
+    },
+    {
+      "id": "RECEIVER-V2-LIVE-WRITER-UPLOAD",
+      "status": "closed_in_source",
+      "assessment": "Rehearsal work/streams/resources are created in separate capture-private-execution sibling outside the upload root from inception. Only stopped/logs-safe/nonquarantined descriptor/hash-verified stream parts are copied. Actual sealed contained_output uncertain-reader+failed-quarantine fixture leaves its unsafe flag while upload root has no execution path/raw stream part. Failure metadata remains inert, preserving unchanged PR45 safety."
+    },
+    {
+      "id": "RECEIVER-V2-PREPARED-PARENT-BINDING",
+      "status": "closed_in_source",
+      "assessment": "Required task head/base SHA and digest validate before inert Git and actual checkout head must equal task.head. Closed prepared record validates exact fields/types and prepared.head equals authorization.candidate_base before Pending. Wrong/missing parent regressions refuse; feature sole-parent and distinct dev-base future Gate bindings remain separate."
+    }
+  ],
+  "findings": [
+    {
+      "id": "RECEIVER-V4-ABNORMAL-HTTP-EXIT-LOSES-OBSERVATION",
+      "severity": "P2",
+      "path": ".github/agent/capture_transport.py",
+      "lines": [203,220,233,235,237,239,244,265,272,480],
+      "title": "Read interruption or response-close failure bypasses retention of already observed POST status/body",
+      "requirement": "Approved bounded_host_transport_response_contract/receipt_delivery and wire mandatory semantics require actual known status plus captured complete/prefix bytes/hash and truthful incomplete private observation to survive failed mutation transport, without exposing credentials or permitting replay. Null is only no observed final status. Lifecycle cleanup cannot erase an already observed potentially applied result.",
+      "failure": "HTTP.request accumulates status/raw/counts inside try, but quarantine and facts are built only afterward. Its except list omits unexpected exceptions and KeyboardInterrupt/SystemExit. A read1 interruption after one admitted block therefore exits before any private body/facts record. Independently, unguarded response.close() in finally at239 can raise OSError or another exception after complete or partial response observation, overriding even a previously caught error and bypassing all retention at244-274. Journal has already durably written intent/started but catches only PrivateObservationPending; the actually observed status/body/hash are lost. Current normal body/header-taint tests do not cover this path. This is a static source failure deduction, not a claim a real POST or storage/credential incident occurred.",
+      "correction": "Use one bounded lifecycle finalization/retention path for every abnormal read/open/close exit, including unexpected exceptions and interruption, preserving whatever actual status and bounded prefix/counts/completeness were genuinely observed. Independently catch/record close failure without bypassing retention or replacing a known status withnull. Keep such outcomes incomplete/uncertain or safe Pending, never accepted; retain private originals before any rethrow/delivery decision. Preserve token-taint checks for all delivered fields, exact closed wire/error semantics, no opaque exception text, shared caps and at-most-one POST. If private storage itself fails, report truthful unavailable/delivery pending rather than claiming storage succeeded. Do not swallow an interruption into a positive action or automatically retry.",
+      "meaningful_regressions": "Exercise actual HTTP+Journal with an after-effect fake opener: close OSError after known status/full body; close failure after partial/read failure; read1 returns a bounded prefix then raises KeyboardInterrupt and an unexpected RuntimeError/TypeError; optional pre-status interruption remainsnull honestly. Assert one remote effect, exact retained known status/prefix/hash/byte facts or explicit unavailable persistence, no accepted identity, no secondPOST after restart/same intent, and safe private-only handling when captured bytes/header/exception text contains the synthetic token. No real network effect is necessary.",
+      "required_successor": "Preserve frozen V4/rejection/validation history. Author a coherent narrow correction, meaningful fault regressions and fresh exact whole-source inventory for separate complete review; complete final managed validation before publication."
+    }
+  ],
+  "whole_feature_assessment": {
+    "legacy_and_source_scope": "Complete legacy GitHub.api/comment/dispatch/candidate and existing review/publication/merge behavior remain distinct. Additive profile APIs do not call combined legacy visual fallback. Dispatch script uses trusted event SHA/Python-I; exact fixed profile workflow policy literal and classification preserve unrelated denials. No SQL/harness/scene/package version/dependency change is in this snapshot.",
+    "strict_metadata": "Fixed duplicate/nonfinite/UTF8/depth/node/string/integer validation, exact tagged production/rehearsal schema, canonical4096-byte envelope, derived source tag and <=300s freshness are enforced. Fixed host admission parser resolves descriptor-safe originals and binds core hash/current receipt fields without minting a live capability. Existing source-origin/whole-controller/native/operation evidence is not replaced by shape validation.",
+    "actual_boundaries": "Public production publish/dispatch, source-pin creation and rehearsal host wrapper are actual Pending boundaries; raw private primitives are not model authority entrypoints. Bridge is actually Pending before POST for missing durable cross-run history, and run reconciliation is actually incomplete for missing exact originals/interval. These are required future source dependencies, not harmless operational warnings or runnable positive paths.",
+    "workflow_and_rehearsal": "Exact event/repository/protocol/purpose/tag/SHA/attempt guards precede candidate/sentinel. Preflight checks fresh main/tag, exact App comment/unique monitor, workflow/run, full fixed composed source inventory and candidate feature parent or fixed fixture. Production and rehearsal steps are mutually purpose-gated. Rehearsal lazily loads unchanged sealed helpers, compares actual resolved immutable3.11 image to approved literal before create, uses capture/network-none/fixed nonsecret argv and owned remove/cleanup. It emits no product approval or prerequisite satisfaction.",
+    "retention_and_uncertainty": "Immutable intents/started/outcomes and separate discovery indexes/reconciliation do not rewrite initial statuses. Complete recognized API rejection is narrower than enum membership; malformed success,204null-ID,408/5xx, overflow/truncation/timeout remain uncertainty. Source create always needs exact readback and never force/delete. New private quarantine solves normal secret-body/header delivery; abnormal lifecycle retention remains the finding blocking this verdict.",
+    "native_component_test_evidence": "Actual sealed helper APIs run through administrative fakes in tests; unsafe reader/quarantine, timeout/cleanup and changed image negatives retain non-success and safe upload separation. Component tests are useful regressions, not evidence of actual current native image/platform/GitHub acceptance, actual workflow registration, real host issuer, positive worker or deployed caller compatibility.",
+    "composition": "Final effective controller must contain both separately owned root46 helper literal and this exact profile-workflow literal in one genuine merged blob. This f66-based snapshot alone is not that future composition or its whole-controller admission. Source-set/fixture/schema origins, real dev/main projection and subsequent native/receiver acceptance must bind actual final bytes."
+  },
+  "validation_status": {
+    "reviewer_executed_checks": false,
+    "author_v3_focused": "Inventory binds1126 passed/no warning summary on V3. V4 test-only refactor does not inherit an independently executed V4 focused receipt.",
+    "author_precommit_89588": "Author reported staticPASS, coverage interrupted/notPASS, artifacts/matrix not run; owned dedicated process group stopped after established retention finding, exit143. This report does not independently execute or grant a full validation pass.",
+    "required": "Fresh corrected exact tree must pass all four mandatory managed precommit stages, then final signed head needs actual CI and fresh source/task binding."
+  },
+  "remaining_gates": [
+    "No exact V4 source approval is granted. Fix the single lifecycle retention finding and obtain a fresh complete bound source verdict; the eight earlier findings cannot supply a source pass by themselves.",
+    "Genuine host/current-row Gate and source-operation issuer/history, concrete authenticated receiver-original retrieval/interval proof, whole-controller admission route and actual compatible positive consumer remain absent and mandatory. Source-only syntax, safe Pending and fake component execution do not satisfy them.",
+    "Protected exact-head owner/delegated policy decision, signed source/task/final CI/dev merge, final main/source origin/composition, immutable tag deployment and actual pinned positive/negative receiver evidence/independent acceptance are separate. No operational approval or activation is granted.",
+    "Preserve current875/b59 and completed/frozen rollout receipts, actual freeze/drain/cancel/security/provenance/authentication boundaries, all full parent Q/options/A/plans and diagnostics. Continue parent monitoring/repairs through actual successful dev merges of every qualifying PR; this leaf cannot establish completion."
+  ],
+  "unread_runtime_schema_workflow_test_documentation_files": [],
+  "source_edits_or_program_execution": [],
+  "ssh_pi_approval_merge_deployment_actions": []
+}

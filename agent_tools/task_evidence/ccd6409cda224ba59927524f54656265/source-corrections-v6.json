@@ -1,0 +1,67 @@
+{
+  "schema": "capture-receiver-pre-POST-capacity-correction/v6",
+  "complete_v5_review_sha256": "2da6f62bf8773373283941590a397b7fe774d06e70a365e2ca81b4b346d7d526",
+  "prior_v5_inventory_sha256": "b8a24cdee001baf840e70851df3b09974acd05f2dbcc3f5feb8545a3e549532d",
+  "finding": "RECEIVER-V5-POST-PAYLOAD-BUDGET-RESERVATION-LOSES-OBSERVATION",
+  "scope": "Narrow in-contract request/response reservation correction. No new authority/interface, bounds increase or receiver/transport receipt schema change. Full previous source/task/Q+A/plans/rejections and parent objective preserved.",
+  "implementation": [
+    "Actual canonical request cost is charged before response cap selection.",
+    "A single shared Budget holds the whole maximum response-header/body/finalization allowance before opener.open can have effect. Settlement releases only unused capacity and converts already paid retained copies into credits.",
+    "Unexpected accounting settlement failures cannot escape before safe observed status/count/hash pending-unavailable delivery. The original reservation remains charged; unavailable originals are never claimed.",
+    "Bounded emergency capacity retains safe delivery-pending metadata; credentials and opaque error text remain private/excluded. Normal exact HTTP success/rejection semantics and no-repost journal remain."
+  ],
+  "meaningful_actual_path_tests": [
+    "132-byte source-ref payload; genuine earlier BytesIO source input read/charged through same shared object after Journal intent. No used/credit assignment.",
+    "Exact reported used16056312/zero-credit state with 655368 remaining; exact conservative full-response allowance655500; one byte less655499; actual earlier empty GET creates positive retained-copy credit.",
+    "Maximum permitted65536 header bytes and full65536 body; exact prefix/hash/status/body completeness, immutable private originals, cached restart no second POST.",
+    "Near-boundary secret-bearing closeOSError and readKeyboardInterrupt retain known503 exact private prefix; safe public pending/no repost.",
+    "Before-effect insufficient capacity; actual complete401 rejection; unexpected settlement RuntimeError retains safe actual503/hash as pending-unavailable with no claimed original or second POST."
+  ],
+  "v5_validation_history": {
+    "schema": "capture-receiver-validation-progress/v5",
+    "source_inventory_sha256": "b8a24cdee001baf840e70851df3b09974acd05f2dbcc3f5feb8545a3e549532d",
+    "session": 92182,
+    "status": "explicitly_interrupted",
+    "exit_code": 143,
+    "cancelled_owned_process_group": 41800,
+    "verified_owned_descendants_gone": [
+      41800,
+      51216,
+      51236,
+      51440
+    ],
+    "static": {
+      "status": "passed",
+      "log": ".rag_index/tool_logs/1792360821530088000-537fe20771.log",
+      "bytes": 31066,
+      "sha256": "65eb50944fa08391415fec19e7bb6a77c7e6e58a1869fea920e64844c1157ab6"
+    },
+    "coverage": {
+      "status": "passed",
+      "log": ".rag_index/tool_logs/1792361283907728000-b21a529eab.log",
+      "bytes": 27895,
+      "sha256": "0af10405fb5fc5ba3a238716a0ebc8c4f1b606afd328943872711bdd44c35289"
+    },
+    "artifact": "interrupted_NOT_PASSED",
+    "python_matrix": "not_run",
+    "reason": "Complete V5 independent source review identified pre-POST request/response reservation defect. Only owned check group cancelled before V6 source edits. Successful old-tree static/coverage facts remain historical, not final V6 validation."
+  },
+  "v6_focused_history": [
+    {
+      "status": "failed_fixture_only",
+      "log": ".rag_index/tool_logs/1792361790823783000-63615765c3.log",
+      "passed": 1140,
+      "failed": 11,
+      "reason": "All new cases refused incomplete synthetic source-ref binding before HTTP. Corrected test helper by adding required purpose=source-deployment; no runtime/wire relaxation."
+    },
+    {
+      "status": "passed",
+      "log": ".rag_index/tool_logs/1792361888425274000-63615765c3.log",
+      "sha256": "df4395caa74a662f5b3b59de79281e920f09f126d58134aeadf5edf8cf3d49c5",
+      "passed": 1151,
+      "elapsed_seconds": 81.98,
+      "warning_summary": false
+    }
+  ],
+  "remaining_gates": "Fresh complete independent exact-tree source review first; final mandatory managed static/coverage/artifacts/Python matrix still required before signed publication. No GitHub mutation, CI, protected approval, source tag/main, host authority/current-row Gate, runtime activation or parent completion claimed. Missing live cross-run history/authenticated receiver-original retrieval remain honest Pending; root46 final controller composition and genuine whole-controller admission remain mandatory."
+}

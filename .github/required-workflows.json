@@ -65,6 +65,15 @@
           "reason": "The installed App posts fixed requests; a trusted metadata-only workflow dispatches GitHub validation without widening App Actions permissions."
         },
         {
+          "name": "agent-visual-profile",
+          "path": ".github/workflows/agent-visual-profile.yml",
+          "classification": "agent_visual",
+          "events": [
+            "workflow_dispatch"
+          ],
+          "reason": "Source-pinned purpose-separated captures and fixed synthetic receiver rehearsals require genuine independent admission; no push or new dev merge check is introduced."
+        },
+        {
           "name": "sql-integration",
           "path": ".github/workflows/sql-integration.yml",
           "classification": "agent_integration",

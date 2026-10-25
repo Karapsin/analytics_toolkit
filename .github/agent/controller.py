@@ -279,6 +279,7 @@ def policy_path(path: str) -> bool:
     return (path.startswith((".github/agent/", ".codex/")) or path in {
         ".github/workflows/github-agent.yml", ".github/workflows/agent-dispatch.yml",
         ".github/workflows/agent-visual.yml", ".github/workflows/publish.yml",
+        ".github/workflows/agent-visual-profile.yml",
         ".github/required-workflows.json", "agent_tools/machine_signing.py",
         "agent_tools/sql_explorer_visual_render.py"})
 
@@ -692,6 +693,8 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
     if kind in {"conflict", "repair", "correction"} and task["head"] != task["base"]:
         subprocess.run(["git", "merge", "--no-commit", "--no-ff", task["base"]], cwd=work,
                        capture_output=True, check=False)
+    if kind == "conflict":
+        route_preparation_conflicts(gh, task, work)
     logs = []
     if kind == "repair":
         if not task.get("runs"):
@@ -713,6 +716,46 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path) -> None
     if kind == "metadata" and not fold(work):
         raise RuntimeError("Changelog candidate changed; reconcile again.")
     _write_preparation_context(task, control, logs)
+
+
+def unresolved_conflict_paths(work: Path) -> list[str]:
+    """Read the unresolved index without quoting or splitting unusual filenames."""
+    raw = command("git", "diff", "--name-only", "--diff-filter=U", "-z",
+                  "--no-ext-diff", "--no-textconv", cwd=work, raw_stdout=True)
+    if not isinstance(raw, bytes) or (raw and not raw.endswith(b"\0")):
+        raise RuntimeError("Unavailable or malformed unresolved conflict paths.")
+    try:
+        paths = raw[:-1].decode("utf-8").split("\0") if raw else []
+    except UnicodeError as error:
+        raise RuntimeError("Unavailable UTF-8 conflict paths.") from error
+    if any(not path or path.startswith("/") or any(
+            part in {"", ".", ".."} for part in path.split("/")) for path in paths):
+        raise RuntimeError("Malformed unresolved conflict paths.")
+    return paths
+
+
+def route_preparation_conflicts(gh: GitHub, task: dict[str, Any], work: Path) -> None:
+    """Stop the generic worker before it receives conflicts it cannot edit."""
+    controls = trusted_module("review_control")
+    snapshot = controls.correction_snapshot(gh.repository, task["number"])
+    paths = unresolved_conflict_paths(work)
+    if any(path.startswith(".git/") or path in {".git", ".connections", ".env"} for path in paths):
+        raise RuntimeError("Unresolved sensitive files; maintainer review required.")
+    protected = [path for path in paths if path.startswith(".github/agent/")
+                 or path == ".github/workflows/github-agent.yml"]
+    if not protected:
+        return
+    if not task["number"]:
+        raise RuntimeError("Protected conflicts require an existing PR correction scope.")
+    pr = publication_authority(gh, task)
+    reason = ("Protected conflict resolution requires a fresh correction plan and independent review: "
+              + json.dumps(protected)
+              + ". Preserve the existing PR changes and current dev; protected exact-head approval still applies.")
+    if not controls.require_correction(
+            gh.repository, task["number"], task["head"], task["task_digest"], reason,
+            pr.get("title", "PR changes"), expected=snapshot):
+        raise RuntimeError("Correction findings changed during execution; preserve the newer request.")
+    raise RuntimeError("Protected conflicts; fresh correction planning queued. " + reason)
 
 
 def _preparation_ci(gh: GitHub, task: dict[str, Any]) -> list[str]:
@@ -853,6 +896,58 @@ def candidate(gh: GitHub, task: dict[str, Any], artifact: Path, work: Path) -> s
     command("git", "push", "origin", f"{commit}:refs/heads/{branch}", cwd=work)
     dispatch(gh, "visual", commit)
     return commit
+
+
+def prepare_profile_visual_candidate(gh: GitHub, task: dict[str, Any], artifact: Path,
+                                     work: Path) -> dict[str, Any]:
+    """Inert local signed preparation; no ref push, dispatch or PR execution."""
+    if not isinstance(task, dict) or gh.repository != "Karapsin/analytics_toolkit" or any(
+            not isinstance(task.get(key), str) or SHA.fullmatch(task[key]) is None
+            for key in ("head", "base")) or not isinstance(task.get("task_digest"), str) or re.fullmatch(
+            r"[0-9a-f]{64}", task["task_digest"]) is None:
+        raise ValueError("Invalid prepared capture task")
+    if command("git", "-c", "core.hooksPath=/dev/null", "rev-parse", "HEAD", cwd=work) != task["head"]:
+        raise ValueError("Prepared capture checkout/head mismatch")
+    patch = artifact / "fix.patch"
+    raw = patch.read_bytes()
+    if raw.strip():
+        command("git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+                "apply", "--index", str(patch.resolve()), cwd=work)
+    tree = command("git", "write-tree", cwd=work)
+    commit = command("git", *signing_options(), "commit-tree", "-S", tree, "-p", task["head"],
+                     "-m", "Temporary visual candidate", cwd=work)
+    if SHA.fullmatch(tree) is None or SHA.fullmatch(commit) is None:
+        raise RuntimeError("Invalid local signed candidate identity")
+    return {"candidate": commit, "head": task["head"], "base": task["base"], "tree": tree,
+            "patch_sha256": hashlib.sha256(raw).hexdigest(), "task_digest": task["task_digest"]}
+
+
+def publish_profile_visual_candidate(gh: GitHub, prepared: dict[str, Any],
+                                     envelope: dict[str, Any], admission_ref: dict[str, Any]) -> None:
+    """No schema-valid file can substitute for the absent live production Gate."""
+    receiver = trusted_module("capture_receiver")
+    receiver.validate_envelope(receiver.D.canonical(envelope), expected_purpose="production",
+                               now=int(time.time()))
+    fields = {"candidate", "head", "base", "tree", "patch_sha256", "task_digest"}
+    if (not isinstance(prepared, dict) or set(prepared) != fields
+            or any(not isinstance(prepared[key], str) or SHA.fullmatch(prepared[key]) is None
+                   for key in ("candidate", "head", "base", "tree"))
+            or any(not isinstance(prepared[key], str) or re.fullmatch(r"[0-9a-f]{64}", prepared[key]) is None
+                   for key in ("patch_sha256", "task_digest"))
+            or gh.repository != receiver.T.REPOSITORY or any(prepared[key] != envelope["authorization"][field]
+            for key, field in (("candidate", "candidate"), ("head", "candidate_base"), ("patch_sha256", "patch_sha256"), ("task_digest", "task_digest")))):
+        raise ValueError("Prepared candidate/admission mismatch")
+    receiver.require_live_host_boundary("production")
+
+
+def dispatch_profile_request(gh: GitHub, envelope: dict[str, Any],
+                             admission_ref: dict[str, Any]) -> None:
+    receiver = trusted_module("capture_receiver")
+    receiver.validate_envelope(receiver.D.canonical(envelope), expected_purpose="production",
+                               now=int(time.time()))
+    if gh.repository != receiver.T.REPOSITORY:
+        raise ValueError("Unsupported profile repository")
+    receiver.require_live_host_boundary("production")
 
 
 def verify_visual(artifact: Path, patch: Path, task: dict[str, Any]) -> None:

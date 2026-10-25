@@ -1,0 +1,27 @@
+{
+  "schema": "capture-receiver-candidate-base-independent-factual-clarification-review/v1",
+  "reviewer": "/root/review_checked_authority_source_v1",
+  "decision": "approve_clarification",
+  "clarification": {"path": "/private/tmp/capture-receiver-candidate-base-factual-clarification-v1.json", "sha256": "5e5d31f2cf31933cb30231e7482d56ac73b5f98fe5e9c051c1f11a33dfc7542f"},
+  "bindings": {
+    "approved_concrete_plan": {"path": "/private/tmp/capture-receiver-first-protected-unit-concrete-plan-v2.json", "sha256": "05b6ce5bd5d4adbf84c33efaea781e052d360033a23e1af879a48aa33ef2a0df"},
+    "wire": {"path": "/private/tmp/capture-receiver-first-unit-wire-schema-v2.json", "sha256": "c70d9f194988bf78d1cc97e3c0164af61e745ff1a9be22c198c3fb4b3eea10ba"},
+    "actual_controller": {"path": ".github/agent/controller.py", "sha256": "4ad12163c313fa3d8a05682081954ebc03ddb01052a65765cc908558572f5e4e", "candidate_lines": [696, 707]}
+  },
+  "review_method": "Read the complete clarification; inspect exact productionAuthorization schema candidate/candidate_base required SHA40 fields, approved plan baseline and new prepare/publish/preflight contracts plus entire workflow-order section; inspect actual unchanged candidate source and nearby distinct task head/base call sites. Independently SHA256-bind all four artifacts/source. Existing independent unit-plan review reports approve_plan with no findings. This is a narrow factual term clarification, not a repeated full unit-plan/source review. No imports, tests, Git mutation, SSH or live action performed.",
+  "assessment": {
+    "actual_parent_semantics": "Actual controller.candidate applies the optional patch to the local index, writes its tree and invokes git commit-tree -S <tree> -p task[head] -m 'Temporary visual candidate'. Exactly one -p is passed; task[base] is not a parent argument. The function then pushes only agent-visual/<candidate> and dispatches that candidate. Consequently production.authorization.candidate_base correctly denotes the temporary signed candidate's sole parent, the feature/PR task head.",
+    "plan_compatibility": "The approved additive prepare contract explicitly preserves existing patch/tree/parent/message semantics while retaining exact task/head/base bindings and separating all push/comment/dispatch effects. Interpreting candidate_base as reviewed dev base would contradict that unchanged sole-parent implementation whenever PR head differs from dev. The clarification resolves the existing term without adding/defaulting wire fields or changing the source identity contract.",
+    "dev_base_remains_distinct": "Reviewed dev base task[base] remains in the complete task/plan/Gate proof and actual current caller admission. A sole-parent or current-PR-head check cannot establish private reviewed dev-base freshness, task alignment, current global/source controls or an actual Gate. The clarification explicitly retains those independent checks rather than replacing them with Git ancestry. This term is about temporary visual candidates; it does not redefine feature-publication commit parent handling.",
+    "remote_preexecution_checks": "Before candidate checkout/execution, the fixed trusted preflight must authenticate the exact temporary ref/candidate, exactly one commit parent equal to candidate_base, actual current PR head equal to that same feature-head identity and dev target. All existing open/current PR, App/monitor/source/purpose/nonce/receipt/request/Gate/expiry/control checks remain conjunctive; no check is waived by this clarification. Wrong, absent or additional parent, moved PR head, wrong dev target or moved source rejects before candidate execution.",
+    "meaningful_regression_scope": "A positive fixture with distinct feature head and reviewed dev base must establish the preserved parent semantics; separate negatives cover wrong/extra/no parent and current PR/dev/source movement. The local prepared/task and true Gate bindings must still retain the distinct dev base. Synthetic App fixtures must stay honestly synthetic and do not prove actual production readiness."
+  },
+  "findings": [],
+  "limits": [
+    "Confirms only exact clarification5e5d31f2... against plan05b6ce5b..., wirec70d9f19... and unchanged actual controller4ad12163....",
+    "No source implementation, tests, CI, candidate publication/dispatch, operation, protected approval, schema change or hold release is approved by this factual confirmation.",
+    "Full exact-source review, mandatory managed checks, signed publication/task evidence, final-head policy/CI/independent review, whole-controller source admission, real receiver/native/visual/Gate evidence and later operational approvals remain required."
+  ],
+  "executed_checks": [],
+  "production_actions": []
+}

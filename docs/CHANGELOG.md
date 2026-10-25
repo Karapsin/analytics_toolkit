@@ -81,6 +81,7 @@ Generated from package version bumps and recent commit history.
 - Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
 - Prevent precommit stage reuse and certification across observed source or toolchain changes
 - Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
+- Add a source-pinned purpose-separated capture receiver with truthful bounded transport and immutable retry evidence
 - Add receipt-bound transactional coordinator authority renewal with strict replay checks
 - Isolate candidate visual installation and capture from the GitHub runner and retain bounded host-owned diagnostics.
 - Preserve native capture failure diagnostics, produced renderer artifacts and safe post-cleanup evidence without weakening glyph or isolation checks.
@@ -93,6 +94,7 @@ Generated from package version bumps and recent commit history.
 - Align local-review task scope and Telegram operations with owner amendments, preserving deferred PR #9, stopped automations and existing repair controls without a new retry limit.
 - Corrected local-review prompt wrapping and regression-test formatting while preserving the workflow redesign and existing validation gates.
 - Bound PR #53 companion evidence to the accepted pause-preserving successor, retaining historical provenance and all administrative holds.
+- Reconcile the capture receiver with current dev and route protected conflicts to guarded correction planning before worker launch.
 
 - Preserve SQL Explorer multicursor editing, clipboard spreading and readable thin carets; repair confirmed UI and scene blockers, create-table selector clipping and strict capture readiness, with focused service-free compositor, containment, keyboard and failure regressions.
 - Fixed SQL Explorer completion readiness and hidden-popup recovery, preserved thin caret text colors and inherited backgrounds, corrected modal button hover/disabled compatibility, and documented isolated full-scene review before correction publication while retaining multicursor selection, clipboard and undo behavior.
