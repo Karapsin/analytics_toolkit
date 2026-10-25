@@ -124,6 +124,7 @@ Generated from package version bumps and recent commit history.
 - Center SQL filename dialogs with mounted resize regressions, preserve current-dev validation safeguards and Python profiles, and correct diagnostic lint/format findings without weakening assertions.
 - Preserve SQL Explorer caret underlines in PNG exports with span-derived strokes, causal raster coverage, lossless captured-SVG fixtures and current-dev safeguards.
 - Preserve SQL Explorer editing while retaining bounded causal raster evidence, a disposable Python 3.9 renderer probe, current-versus-historical provenance regressions and behavior-preserving quality corrections for GitHub validation.
+- Replace managed PR status labels atomically while preserving unrelated labels and recovering uncertain responses
 
 ## 1.3.12.5 - 2026-10-14
 

@@ -466,6 +466,12 @@ class _RefreshDiscoveryGitHub:
         self.calls.append(path)
         if path in self.errors:
             raise self.errors[path]
+        route = path.split("?", 1)[0]
+        if route.startswith("issues/") and route.endswith("/labels"):
+            pr = self.pull(int(route.split("/")[1]))
+            if method == "PUT":
+                pr["labels"] = [{"name": name} for name in data["labels"]]
+            return pr.get("labels", [])
         return self._response(path, method)
 
     def _response(self, path: str, method: str) -> Any:

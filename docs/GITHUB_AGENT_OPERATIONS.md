@@ -941,7 +941,9 @@ pointer.
 
 Controlled lifecycle-label producers share the display-only `status_transition`
 boundary: attention creation/recovery, phase reconciliation and writer
-acquisition/release remove conflicting statuses before appending the current one.
+acquisition/release replace the complete label set with one GitHub PUT. Complete
+label pagination preserves unrelated labels, including semantic `agent:` labels;
+only the seven managed lifecycle statuses are projected.
 Per-PR host locks serialize controlled writers without a global worker lock.
 Each mutation rechecks the open/closed state, exact head, authoritative issue
 labels and private attention. A changed head aborts the old decision; a push by
@@ -957,8 +959,10 @@ comment recovery remains an explicit separate workflow. Display updates do not
 grant approval, clear a veto, answer questions or release a Future. Persistent
 API errors and bounded lock/convergence failures retry through normal
 reconciliation. GitHub does not provide an atomic compare-and-swap across label
-requests, so the periodic reconciler remains recovery for interrupted operations
-and external writers. Paired companion source/tests and exact-commit checks must
+requests. The single replacement removes the controlled delete/add gap, while
+fresh reads resolve an accepted write whose response was lost. Independent
+writers can still race a complete-set update; bounded normal reconciliation
+remains recovery for visible drift and failed operations. Paired companion source/tests and exact-commit checks must
 cover the final controller bytes before activation.
 
 An authenticated amendment may require a new plan while its factual prerequisite
