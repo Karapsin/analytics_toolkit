@@ -149,6 +149,29 @@ TASK_DOCS = {
 }
 
 TEST_COMMANDS = {
+    "bootstrap": [
+        {
+            "display": "pytest -q tests/agent_tools/bootstrap_offline.py",
+            "args": ["pytest", "-q", "tests/agent_tools/bootstrap_offline.py"],
+        }
+    ],
+    "handoff": [
+        {
+            "display": (
+                "pytest -q tests/agent_tools/local_review.py tests/agent_tools/handoff.py "
+                "tests/agent_tools/bootstrap_offline.py tests/agent_tools/mcp tests/repository"
+            ),
+            "args": [
+                "pytest",
+                "-q",
+                "tests/agent_tools/local_review.py",
+                "tests/agent_tools/handoff.py",
+                "tests/agent_tools/bootstrap_offline.py",
+                "tests/agent_tools/mcp",
+                "tests/repository",
+            ],
+        }
+    ],
     "datalens_utils": [
         {
             "display": "pytest -q tests/datalens_utils",
@@ -236,15 +259,14 @@ PRECOMMIT_CHECK_COMMANDS = [
         "args": ["release_routines/pre_commit_checks.sh", "--artifacts"],
         "env": {},
     },
+]
+
+RELEASE_CHECK_COMMANDS = [
     {
-        "stage": "matrix",
         "display": "release_routines/pre_commit_checks.sh --matrix",
         "args": ["release_routines/pre_commit_checks.sh", "--matrix"],
         "env": {},
     },
-]
-
-RELEASE_CHECK_COMMANDS = [
     {
         "display": "release_routines/scripts/check_package_metadata.sh",
         "args": ["release_routines/scripts/check_package_metadata.sh"],
@@ -1626,7 +1648,9 @@ def _feature_commit_context(root: Path) -> tuple[list[str], str]:
     user_tasks = importlib.import_module(
         f"{__package__}.task_context" if __package__ else "task_context"
     )
-    return sessions.commit_options(root), user_tasks.commit_trailers(root)
+    return sessions.commit_options(root), user_tasks.commit_trailers(
+        root
+    ) + "\nAgent-Review-Policy: local-v1"
 
 
 def _session_workflow_result(
@@ -1637,6 +1661,15 @@ def _session_workflow_result(
 ) -> dict[str, Any]:
     if action == "start":
         return sessions.start(root, sha)
+    if action == "review":
+        from agent_tools import local_review  # noqa: PLC0415
+
+        receipt = local_review.review(root)
+        return {
+            "status": "reviewed",
+            "head": receipt["payload"]["head"],
+            "reviewer_id": receipt["payload"]["reviewer_id"],
+        }
     if action == "feedback":
         return sessions.feedback(root, sha, pr) if pr else sessions.feedback(root, sha)
     if action == "refresh":
@@ -1688,13 +1721,13 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             summary="Invalid GitHub check wait interval.",
             blockers=[{"phase": "validate", "message": "wait_seconds must be positive"}],
         )
-    if action in {"start", "feedback", "refresh", "sync", "handoff"}:
+    if action in {"start", "review", "feedback", "refresh", "sync", "handoff"}:
         try:
             result = _session_workflow_result(root_path, action, sha, pr)
             return _tool_output(
                 "git_workflow", input_summary, summary="Session workflow completed.", result=result
             )
-        except (RuntimeError, OSError, ValueError, KeyError) as exc:
+        except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
             return _tool_output(
                 "git_workflow",
                 input_summary,
@@ -1711,7 +1744,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             blockers=[
                 {
                     "phase": "validate",
-                    "message": "action must be checks, commit, push, start, feedback, refresh, sync, or handoff",
+                    "message": "action must be checks, commit, push, start, review, feedback, refresh, sync, or handoff",
                 }
             ],
         )
@@ -2538,7 +2571,17 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     git_parser = subparsers.add_parser("git-workflow")
     git_parser.add_argument(
         "action",
-        choices=["checks", "commit", "push", "start", "feedback", "refresh", "sync", "handoff"],
+        choices=[
+            "checks",
+            "commit",
+            "push",
+            "start",
+            "review",
+            "feedback",
+            "refresh",
+            "sync",
+            "handoff",
+        ],
     )
     git_parser.add_argument("--message")
     git_parser.add_argument("--path", dest="paths", action="append")
@@ -4174,9 +4217,17 @@ def _record_precommit_success(
 ) -> None:
     state_path = root / CHECK_STATE_FILE
     state_path.parent.mkdir(parents=True, exist_ok=True)
+    content = _working_content_fingerprint(root)
+    try:
+        unchanged = _working_tree_fingerprint(root) == fingerprint
+    except _FingerprintError:
+        unchanged = False
+    if not unchanged:
+        content = None  # Never transfer a receipt to content changed after validation.
     payload = {
         "format_version": PRECOMMIT_RECEIPT_VERSION,
         "fingerprint": fingerprint,
+        "content_fingerprint": content,
         "toolchain_fingerprint": (toolchain_fingerprint or _precommit_toolchain_fingerprint(root)),
         "recorded_at": date.today().isoformat(),
         "commands": [
@@ -4190,6 +4241,62 @@ def _record_precommit_success(
     }
     state_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     state_path.chmod(0o600)
+
+
+def _working_content_fingerprint(root: Path) -> str | None:
+    """Identify checked file content independently of staging and commit metadata."""
+    try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if top.returncode or Path(top.stdout.strip()).resolve() != root.resolve():
+            return None
+        listed = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            cwd=root,
+            capture_output=True,
+            check=False,
+        )
+        staged = subprocess.run(
+            ["git", "ls-files", "--stage", "-z"], cwd=root, capture_output=True, check=False
+        )
+        if (
+            listed.returncode
+            or staged.returncode
+            or any(entry.startswith(b"160000 ") for entry in staged.stdout.split(b"\0"))
+        ):
+            return None
+        entries = []
+        for name in sorted({os.fsdecode(name) for name in listed.stdout.split(b"\0") if name}):
+            relative = Path(name)
+            if (
+                relative.is_absolute()
+                or ".." in relative.parts
+                or ".connections" in relative.parts
+                or any(
+                    root.joinpath(*relative.parts[:index]).is_symlink()
+                    for index in range(1, len(relative.parts))
+                )
+            ):
+                return None
+            path = root / relative
+            if path.is_symlink():
+                data, mode = os.fsencode(os.readlink(path)), "link"
+            elif path.is_file():
+                data = path.read_bytes()
+                mode = "executable" if path.stat().st_mode & 0o111 else "file"
+            elif path.exists():
+                return None  # Submodules and special files cannot use this transfer.
+            else:
+                continue  # A checked deletion is absent in the resulting commit too.
+            entries.append((name, mode, hashlib.sha256(data).hexdigest()))
+        return hashlib.sha256(json.dumps(entries, ensure_ascii=True).encode()).hexdigest()
+    except (OSError, UnicodeError):
+        return None
 
 
 def _verify_precommit_success(root: Path) -> dict[str, Any]:
@@ -4209,7 +4316,8 @@ def _verify_precommit_success(root: Path) -> dict[str, Any]:
             "fingerprint_error": exc.to_dict(),
         }
     recorded = state.get("fingerprint")
-    if recorded != current:
+    content = state.get("content_fingerprint")
+    if recorded != current and (not content or content != _working_content_fingerprint(root)):
         return {
             "ok": False,
             "message": "Recorded pre-commit check fingerprint does not match the current tree.",
@@ -4266,6 +4374,9 @@ def _push_dev_result(root: Path) -> dict[str, Any]:
                 "blockers": [{"phase": "visual_review", "message": visual["message"]}],
             }
         try:
+            from agent_tools import local_review  # noqa: PLC0415
+
+            local_review.review(root)
             result = sessions.push(root)
             return {
                 **result,
@@ -4273,7 +4384,7 @@ def _push_dev_result(root: Path) -> dict[str, Any]:
                 "command_results": [],
                 "blockers": [],
             }
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
             return {
                 "readiness": {},
                 "command_results": [],

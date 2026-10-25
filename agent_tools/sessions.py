@@ -218,9 +218,14 @@ def writable(root: Path) -> dict[str, Any]:
 def push(root: Path) -> dict[str, Any]:
     state = writable(root)
     clean(root)
+    from agent_tools import local_review  # noqa: PLC0415 - avoid the session/reviewer import cycle.
+
+    head = run(root, "git", "rev-parse", "HEAD")
+    review = local_review.verified(root, head)
     prefix = (
-        "Implemented in an isolated Codex session. The Pi owns independent "
-        "review, corrections, GitHub checks and merging."
+        "Implemented and independently reviewed on the developing machine. "
+        "Publication is a one-way handoff to the orchestrator; later failures belong "
+        "to separate Pi repair workers.\n\n" + local_review.protocol(root).attachment(review)
     )
     # Complete transport preflight precedes even the feature push. Archive refs
     # contain only task data and do not change the reviewed candidate tree.
@@ -326,6 +331,24 @@ def handoff(root: Path) -> dict[str, Any]:
     if proto.digest(attached) != proto.digest(proto.public_context(context)):
         msg = "Published PR task attachment does not match the signed local task."
         raise RuntimeError(msg)
+    from agent_tools import local_review  # noqa: PLC0415
+
+    published_review = (
+        local_review.protocol(root).extract(pr["body"])
+        if "atk-local-review:v1" in pr["body"]
+        else None
+    )
+    policy_required = "\nAgent-Review-Policy: local-v1" in run(
+        root, "git", "log", "-1", "--format=%B", head
+    )
+    local = (
+        local_review.verified(root, head)
+        if published_review is not None or policy_required
+        else None
+    )
+    if local is not None and published_review != local:
+        msg = "Published local review receipt does not match this handoff."
+        raise RuntimeError(msg)
     if pr["headRefOid"] != head:
         run(root, "git", "fetch", "origin", pr["headRefOid"])
         run(root, "git", "merge-base", "--is-ancestor", head, pr["headRefOid"])
@@ -336,6 +359,11 @@ def handoff(root: Path) -> dict[str, Any]:
         "sha": head,
         "task_id": context["task_id"],
         "task_digest": proto.digest(proto.public_context(context)),
+        **(
+            {"local_review_digest": local_review.protocol(root).digest(local)}
+            if local is not None
+            else {}
+        ),
         "owner": "pi",
     }
     state.setdefault("handoffs", []).append(receipt)

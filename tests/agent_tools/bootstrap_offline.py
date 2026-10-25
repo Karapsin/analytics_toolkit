@@ -11,7 +11,7 @@ from pathlib import Path
 from agent_tools import bootstrap_process
 from tests.agent_tools._support.bootstrap import prepare, project
 
-BACKEND = """
+BACKEND = r"""
 import pathlib
 import zipfile
 
@@ -19,11 +19,11 @@ def build_editable(wheel_directory, config_settings=None, metadata_directory=Non
     name = "fixture_project-1.0-py3-none-any.whl"
     info = "fixture_project-1.0.dist-info/"
     with zipfile.ZipFile(pathlib.Path(wheel_directory) / name, "w") as wheel:
-        wheel.writestr("fixture_project.pth", str(pathlib.Path.cwd()) + "\\n")
+        wheel.writestr("fixture_project.pth", str(pathlib.Path.cwd()) + "\n")
         wheel.writestr(info + "METADATA",
-            "Metadata-Version: 2.1\\nName: fixture-project\\nVersion: 1.0\\n")
-        wheel.writestr(info + "WHEEL", "Wheel-Version: 1.0\\nGenerator: fixture\\n"
-            "Root-Is-Purelib: true\\nTag: py3-none-any\\n")
+            "Metadata-Version: 2.1\nName: fixture-project\nVersion: 1.0\n")
+        wheel.writestr(info + "WHEEL", "Wheel-Version: 1.0\nGenerator: fixture\n"
+            "Root-Is-Purelib: true\nTag: py3-none-any\n")
         wheel.writestr(info + "RECORD", "")
     return name
 """
@@ -44,6 +44,10 @@ def wheel(path: Path, name: str, modules: tuple[str, ...] = (), version: str = "
 
 
 def test_warm_cache_installs_and_imports_the_second_clone_without_pypi(tmp_path, monkeypatch):
+    # A caller's editable project must not enter this disposable wheel fixture's
+    # dependency inventory through the inherited Python import search path.
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.delenv("PYTHONHOME", raising=False)
     first = project(tmp_path / "first")
     (first / "backend.py").write_text(BACKEND)
     (first / "analytics_toolkit").mkdir()
@@ -78,7 +82,9 @@ def test_warm_cache_installs_and_imports_the_second_clone_without_pypi(tmp_path,
         check=True,
     )
     warm, status = prepare(second, runner)
-    assert all(item["ok"] for item in [*cold, *warm]), [*cold, *warm]
+    assert all(item["ok"] for item in [*cold, *warm]), "\n".join(
+        str(item) for item in [*cold, *warm] if not item["ok"]
+    )
     assert status["reused"] is True
     assert len(downloads) == 1
     output = subprocess.run(

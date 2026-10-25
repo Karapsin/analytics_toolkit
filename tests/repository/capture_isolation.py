@@ -37,7 +37,6 @@ def test_probe_dispatch_cannot_start_ordinary_host_candidate_jobs() -> None:
         "visual-isolation-probe",
         "fast-checks",
         "tests",
-        "sdk-conformance",
         "quality",
     }
     guard = "!(github.event_name == 'workflow_dispatch' && inputs.visual_isolation_probe)"

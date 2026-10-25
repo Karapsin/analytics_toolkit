@@ -156,7 +156,12 @@ Each reviewer is a fresh read-only session separate from the candidate authors.
 Confirmed reviewer defects start a fresh Pi correction agent followed by
 independent review, repeating until approved. An unfinished source assessment
 continues in fresh read-only invocations of the same immutable assignment; it
-does not request code changes or owner approval. Typed source protocol 1 binds
+does not request code changes or owner approval. Signed local-review receipts
+still undergo provenance and signature verification; an active durable source
+assignment for the PR prevents local approval publication, even if its head or
+base differs. Matching pending review continues past an earlier completed or
+failed review check without inventing a correction. Concrete corrections and
+failed fast CI still queue repairs. Typed source protocol 1 binds
 the full task, head, dev base, producer, companion inventory, complete capture
 and individual scene evidence to durable assessment checkpoints. The host
 records served pages separately from substantive file/evidence assessments.
@@ -292,8 +297,9 @@ do not recreate the consumed fragment. Before validation, verify that coordinato
 metadata children also preserve these invariants instead of applying an entry-count bump.
 Corrections retain current-dev repair discovery, bounded evidence handling, and
 unchanged no-patch retry suppression with their fast mocked regressions.
-GitHub then validates the exact corrected head through the focused regressions,
-Python matrix, SDK conformance, lint, type, coverage, and artifact gates. Successful
+GitHub then validates the exact corrected head through focused regressions,
+lint, type, Python 3.14 coverage, and artifact gates. Compatibility and SDK checks
+run after merge and during release validation. Successful
 `fast-checks`, fresh independent review, and authenticated exact-head owner policy
 approval for protected paths are required before merge; earlier-head results and
 approvals cannot substitute. This release feature changes protected publishing
@@ -317,10 +323,11 @@ x86_64 hosts, runs the marked integration tests, captures failure logs, and
 always removes its containers and volumes. It must not be redirected to
 external database endpoints.
 
-Managed pre-commit checks run as separate static, coverage, artifact, and Python
-matrix commands, stopping before downstream work when a stage fails. Coverage
-is the canonical Python 3.11 test run; the remaining Python 3.9 through 3.14
-matrix omits that duplicate and defaults to three parallel tox workers. Set
+Managed pre-commit checks run as separate static, coverage and artifact commands,
+stopping before downstream work when a stage fails. Coverage and artifacts use
+Python 3.14; static tooling retains its pinned Python 3.11 environment. The full
+Python 3.9 through 3.14 matrix runs after merges and during releases, and defaults
+to three parallel tox workers. Set
 `PRECOMMIT_PARALLELISM` to a positive integer to tune it. The minimum-dependency profile runs on Python 3.9
 and retains `pip check`; Python 3.8 is excluded from runtime checks. Artifact installs use
 fresh virtual environments with a shared `.tox/pip-cache` download cache.
@@ -402,16 +409,24 @@ stdlib-only and must stay outside public package CLI commands and package
 extras. It does not use vector stores, hosted LLM SDKs, Ollama, or embedding
 models.
 
-The private Telegram worker also accepts `/prompt_agent <description>`, authenticates
-the owner (with an owner-only confirmation button for anonymous channel posts),
-validates the request in a separate session, and opens a native Codex Plan-mode
-exchange through App Server with read-only source tools.
-Reply to a current question or use `/reply_agent <request-id> <answer>`; use
-`/cancel_agent <request-id>` to cancel. A separate agent must approve the completed
-plan against the initial prompt and all user responses before another agent codes.
-Questions during coding pause work and return through the same exchange. The Pi
-runs no repository checks, builds or renders; GitHub performs validation and a fresh
-independent agent reviews the final PR.
+Telegram feature intake and feature development are disabled. Develop features
+locally; publication starts a fresh read-only Codex reviewer with immutable Git
+reads and no shell. It must inspect every diff page and approve the complete task.
+Rejections remain local for correction and another fresh review. The signed
+receipt binds head, tree, dev base, task digest and separate reviewer identity.
+The orchestrator verifies it against host-owned enrollment before accepting it.
+`git-workflow review` reviews a committed candidate; `push` retries publication.
+
+Publication is a one-way handoff. The orchestrator coordinates checks and merges;
+the GitHub coding role resolves conflicts only. A dedicated Pi repair role handles
+pre-merge CI and post-merge compatibility/integration failures, with fresh
+independent review after mutation or dev-base advancement. No work returns to the
+developing machine. Incident accounting deduplicates failed heads and preserves
+rejected patches and private work across retries, partial repairs and restarts.
+No new retry limit applies; established repair controls and holds remain in force.
+Telegram keeps authenticated controls, policy decisions, notifications and repair
+questions. The Pi runs no repository checks, builds or renders. Activation of the
+currently paused service is a separate deployment decision.
 
 The agent-only validation environment retains the reviewed
 `virtualenv>=21.1,<21.5` toolchain. Project setup resolves this constraint together
