@@ -6,6 +6,9 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Repair lint and formatting in read-only preparation regressions while preserving all assertions, protocol cases and resumable source-review safeguards.
+
+- Restore meaningful merge-readiness regression coverage with isolated private state and a healthy baseline before independently blocking stale reviews, wrong review Apps, failed fast checks and active writers.
 - Direct host-owned task-context mismatch notices to coordinator verification with an additive rendering status, preserving provenance holds and owner approval gates; controller activation and paired completion still require verified companion delivery eligibility.
 - Preserve a durable correction gate when verified coordinator dependencies return to planning, blocking earlier green heads through unavailable workers and restart; resolve restored controller conflicts without weakening pause retirement.
 
@@ -84,6 +87,8 @@ Generated from package version bumps and recent commit history.
 - Preserve available failed visual capture artifacts through the trusted workflow without changing candidate harnesses or treating unknown stream coverage as complete.
 - Mark session-only failed visual diagnostics incomplete while preserving finalized session bytes and hashes for durable partial retention.
 - Record refreshed PR #38 producer-consumer regression proof and exact source/CI bindings while preserving historical evidence and remaining activation gates.
+- Resume incomplete independent source reviews with immutable assessment checkpoints, durable merge exclusion and replay-safe terminal publication.
+- Restore merge-readiness regressions with valid PR identity, isolated private state and independent stale-review, wrong-App, failed-fast-check and active-writer cases.
 - Prevent precommit stage reuse and certification across observed source or toolchain changes
 - Keep factual coordinator holds through exact read-only prerequisite reassessment and inventory replacement
 - Add a source-pinned purpose-separated capture receiver with truthful bounded transport and immutable retry evidence
@@ -92,8 +97,11 @@ Generated from package version bumps and recent commit history.
 - Preserve native capture failure diagnostics, produced renderer artifacts and safe post-cleanup evidence without weakening glyph or isolation checks.
 - Protect and promote the exact shared visual-rendering infrastructure helper without admitting adjacent tools or application code.
 - Add isolated nonproduction native-capture source validation; exclude Python 3.8 runtime checks while preserving Python 3.9 minimum-dependency coverage.
+- Reconcile resumable source review and isolated readiness regressions with current dev safeguards, preserving checked-renewal receipts and later control barriers through review completion.
 - Add a source-pinned contained lifecycle diagnostic for the published PR39 baseline with separate uninstrumented and observed results.
 - Preserve coordinator-held read-only preparation and reject stale closed-PR discovery denials.
+- Reconcile resumable source review with current dev safeguards, preserve default and read-only preparation, and establish the concrete correction fixture before verifying retained control barriers.
+- Repair read-only preparation regression lint and formatting without changing assertions, protocol cases or resumable source-review behavior.
 - Made isolated Codex startup resilient to download timeouts, reuse validated dependency wheels, and resume interrupted preparation
 - Move initial feature review locally, retain one-way orchestration and separate Pi repair, split fast checks from compatibility validation, and preserve reviewed successor and release-preparation publication.
 - Align local-review task scope and Telegram operations with owner amendments, preserving deferred PR #9, stopped automations and existing repair controls without a new retry limit.
@@ -133,6 +141,7 @@ Generated from package version bumps and recent commit history.
 - Reconcile signed task plans, questions, images and provenance with archived transport; retain RPI coordination, full visual routing and complete quality diagnostics without weakening approval or validation gates.
 - Fix diagnostic tool-version lookup lint and visual/publication regression regex formatting, preserving missing-tool metadata, error propagation and all validation gates.
 - Retain complete failed GitHub visual capture diagnostics and both child output streams without granting visual approval
+- Reconcile resumable source review with signed local-review admission, preserving active assignments and current dev safeguards without incomplete-review correction loops.
 
 ## 1.3.12.5 - 2026-10-14
 

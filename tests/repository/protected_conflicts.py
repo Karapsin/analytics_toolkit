@@ -301,7 +301,7 @@ def test_preparation_retains_ordinary_conflicts_and_clean_protected_inheritance(
     )
     controller.prepare(case.gh, case.task, case.work, case.control)
     case.ci.assert_called_once_with(case.gh, case.task)
-    case.prompt.assert_called_once_with(case.task, case.control, [])
+    case.prompt.assert_called_once_with(case.task, case.control, [], source_protocol=None)
     assert not control.correction_snapshot(case.gh.repository, 1)
     if proposal is None:
         assert not case.git("ls-files", "--unmerged", "-z")

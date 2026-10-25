@@ -22,9 +22,12 @@ def test_local_approval_verifies_signature_and_only_certifies_reviewed_base(monk
         digest=lambda value: "digest",
     )
     controls = SimpleNamespace(assess=Mock())
-    monkeypatch.setattr(
-        controller, "trusted_module", lambda name: proto if name == "local_review" else controls
-    )
+    modules = {
+        "local_review": proto,
+        "review_control": controls,
+        "source_review": SimpleNamespace(current=Mock(return_value=None)),
+    }
+    monkeypatch.setattr(controller, "trusted_module", modules.__getitem__)
     monkeypatch.setenv("AGENT_CONTROL_DIR", "/trusted")
     monkeypatch.setenv("AGENT_ALLOWED_SIGNERS", "/trusted/signers")
     monkeypatch.setattr(controller, "command", lambda *args, **kwargs: "tree")

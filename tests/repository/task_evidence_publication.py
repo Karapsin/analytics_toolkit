@@ -248,11 +248,11 @@ def test_review_of_unresolved_history_does_not_require_publication_evidence(
         )
     )
     monkeypatch.setattr(controller, "verify_review_execution", Mock())
-    controller.publish(gh, task, tmp_path, tmp_path)
-    assert [call.args[0] for call in gh.api.call_args_list] == [
-        "check-runs",
-        "pulls/1/reviews",
-    ]
+    # Legacy untyped reviews record source-review progress; the controls are mocked here.
+    monkeypatch.setattr(controller.trusted_module("source_review"), "begin", Mock())
+    # Untyped legacy verdicts continue as pending source reviews (no terminal review).
+    assert controller.publish(gh, task, tmp_path, tmp_path) == {"review_status": "pending"}
+    assert [call.args[0] for call in gh.api.call_args_list] == ["check-runs"]
     git.assert_not_called()
     gh.label.assert_not_called()
 

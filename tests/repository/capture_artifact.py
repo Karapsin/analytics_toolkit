@@ -384,7 +384,6 @@ def test_capture_child_retains_both_streams_and_timeout_partial_bytes(
     assert observed["transport"].closed is True
 
 
-
 def test_child_output_capacity_is_bounded_and_marked_incomplete(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
