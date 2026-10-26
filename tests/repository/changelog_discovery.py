@@ -119,26 +119,36 @@ def local_receipt_discovery(
     monkeypatch.setenv("AGENT_CONTROL_DIR", "/trusted")
     monkeypatch.setenv("AGENT_ALLOWED_SIGNERS", "/trusted/signers")
     commands = []
+    pi_message = "GitHub agent: metadata" + controller.trusted_module("task_context").trailers(
+        metadata["user_task"], metadata["producer_id"]
+    )
+
+    reviewed_message = (
+        original_message.replace(receipt["payload"]["task_digest"], "f" * 64)
+        if invalid == "provenance"
+        else original_message
+    )
+    parent = "d" * 40 if invalid == "ancestry" else old_head
 
     def command(*args: str, **kwargs: Any) -> str:
         commands.append(args)
-        if args[:2] == ("git", "rev-parse"):
-            assert args[2] == old_head + "^{tree}"
-            return "tree"
-        if args[:2] == ("git", "log"):
-            assert args[-1] == old_head
-            return (
-                original_message.replace(receipt["payload"]["task_digest"], "f" * 64)
-                if invalid == "provenance"
-                else original_message
-            )
-        assert args == ("git", "merge-base", "--is-ancestor", old_head, successor[0])
-        if invalid == "ancestry":
-            message = "Reviewed commit is not an ancestor"
-            raise RuntimeError(message)
-        return ""
+        # The folded head is a Pi commit whose first parent is the reviewed head.
+        responses = {
+            ("git", "fetch"): "",
+            ("git", "rev-list"): "\n".join([*successor, parent]),
+            ("git", "rev-parse"): "tree",
+            # Only the Pi controller key may sign a Pi fix (verified signer fingerprint).
+            ("git", "-c"): "SHA256:pi-controller",
+        }
+        if args[:2] in responses:
+            return responses[args[:2]]
+        assert args[:2] == ("git", "log")
+        if args[3] == "--format=%cn":
+            return controller.app_login()
+        return pi_message if successor and args[-1] == successor[0] else reviewed_message
 
     monkeypatch.setattr(controller, "command", command)
+    monkeypatch.setattr(controller, "pi_signer_fingerprint", lambda: "SHA256:pi-controller")
     return gh, metadata, old_head, successor, verified, commands
 
 
@@ -152,11 +162,11 @@ def test_local_receipt_cannot_skip_required_fragment_folding(
     enriched_task: bool,
     invalid: str | None,
 ) -> None:
-    gh, metadata, old_head, successor, verified, commands = local_receipt_discovery
+    gh, metadata, old_head, successor, verified, _ = local_receipt_discovery
     task = next(item for item in controller.discover(gh, 17)["include"] if item["number"] == 1)
     assert task["kind"] == "metadata"
     assert not verified
-    # Folding produces a new head. Its old local receipt must then yield a fresh Pi review.
+    # Folding produces a Pi metadata head; it is admitted only through the fraud check.
     pages = gh.pages
     monkeypatch.setattr(
         gh,
@@ -172,17 +182,23 @@ def test_local_receipt_cannot_skip_required_fragment_folding(
         metadata["producer_id"] = "author:independent-correction"
     if enriched_task:
         metadata["task_digest"] = "e" * 64
-    if invalid:
-        with pytest.raises((ValueError, RuntimeError)):
-            controller.admit_local_review(gh, gh.pull(1), gh.base(), metadata)
+    if invalid in {"signature", "provenance"}:
+        with pytest.raises(ValueError, match=r"signature|does not approve"):
+            controller.admission(gh, gh.pull(1), gh.base(), metadata)
+        return
+    if invalid in {"ancestry", "unsigned"}:
+        # Uncovered or laundered heads require a new receipt; they are never failures.
+        assert controller.admission(gh, gh.pull(1), gh.base(), metadata)["state"] == "required"
+        assert not any(item["number"] == 1 for item in controller.discover(gh, 17)["include"])
         return
     task = next(item for item in controller.discover(gh, 17)["include"] if item["number"] == 1)
-    assert task["kind"] == "review"
+    assert task["kind"] == "fraud-review"
     assert task["head"] == successor[0]
+    assert task["anchor"] == old_head
+    assert task["fix_commits"] == [successor[0]]
     assert task["producer_id"] == metadata["producer_id"]
     assert task["task_digest"] == metadata["task_digest"]
     assert len(verified) == 1
-    assert ("git", "merge-base", "--is-ancestor", old_head, successor[0]) in commands
 
 
 def test_removed_fragment_is_not_read_or_recreated(
@@ -198,7 +214,8 @@ def test_removed_fragment_is_not_read_or_recreated(
         return result
 
     monkeypatch.setattr(gh, "pages", files)
-    assert controller.discover(gh, 17)["include"][0]["kind"] == "review"
+    # Without a local receipt the PR is marked action_required, never Pi-reviewed.
+    assert controller.discover(gh, 17)["include"] == []
     assert not any(path.startswith("contents/") for path in gh.calls)
 
 
@@ -209,5 +226,5 @@ def test_private_owner_hold_is_preserved_before_fragment_inspection(
     controls = controller.trusted_module("review_control")
     monkeypatch.setattr(controls, "paused", lambda gh, pr: pr["number"] == 1)
     monkeypatch.setattr(controls, "reconcile_label", lambda *args, **kwargs: True)
-    assert [task["number"] for task in controller.discover(gh, 17)["include"]] == [2]
+    assert controller.discover(gh, 17)["include"] == []
     assert not any(path.startswith("contents/") for path in gh.calls)

@@ -39,6 +39,10 @@ def _inventory_api(
             return {"permission": "admin"}
         if path.startswith("compare/"):
             return {"behind_by": 0}
+        if path == "check-runs":
+            # Receipt-less PR 1 is marked action_required instead of queued.
+            assert data["conclusion"] == "action_required"
+            return data
         assert path == "issues/99"
         assert method == "PATCH"
         return None
@@ -109,7 +113,6 @@ def _discovery_with_inventory_failure(
     gh.api.side_effect = _inventory_api(metadata, failure, endpoint, status)
     gh.pages.side_effect = pages
     controls = Mock()
-    monkeypatch.setattr(controller.trusted_module("source_review"), "pending", lambda *args: False)
     controls.paused.return_value = False
     controls.correction.side_effect = lambda repository, number, head, digest: (
         {"reason": "fix", "changes": "fix"} if number == 2 else None
@@ -149,7 +152,6 @@ def test_transient_inventory_preserves_pr_tasks_and_retries(
     )
     tasks = controller.discover(gh, 17)["include"]
     assert [(task["number"], task["kind"]) for task in tasks] == [
-        (1, "review"),
         (2, "correction"),
         (3, "conflict"),
         (4, "metadata"),

@@ -63,7 +63,7 @@ tests are allowed only through `run_checks(area="sql", level="integration")`;
 that workflow owns endpoint validation, temporary configuration, diagnostics,
 and container/network/volume teardown. The `all` profile is exhaustive and
 includes destructive fault groups and resource-intensive stress scenarios;
-the GitHub agent queues advisory validation for final reviewed PR heads.
+the GitHub agent queues advisory validation for final admitted PR heads.
 Fault and stress profiles run as part of exhaustive candidate or manual validation. On x86_64, a skipped core/auth manifest
 scenario is a failure.
 
@@ -124,11 +124,13 @@ available authenticated evidence rather than asking the owner to repeat an
 already recorded objective; preserve the immutable starting prompt, original
 signed context and chronological corrections. Keep source provenance outside the
 v1 task-context fields, retain the prior-head digest for publication verification,
-and bind the restored context to a fresh independently reviewed correction head.
+and bind the restored context to a fresh correction head, which the Pi admits
+through the fraud check and green fast CI.
 Restoring context does not transfer owner approval from the source PR.
 
-1. Launch bare `codex` from the canonical repository. The launcher prepares a
-   separate clone on refreshed dev before entering native Plan mode.
+1. Launch bare `codex` or bare `claude` from the canonical repository. Either
+   launcher prepares a separate clone on refreshed dev before entering native
+   Plan mode; both runtimes are generated from `agent_tools/agent_runtimes.py`.
 2. Call `prepare_start(...)` for role-aware context and read its routed files.
    Pass the exact starting message as `user_prompt`; append subsequent user
    task corrections with `task_context(action="append", user_prompt=...)`.
@@ -141,18 +143,31 @@ Restoring context does not transfer owner approval from the source PR.
 5. Run focused checks and `version_bump(...)` (creates a unique fragment).
 6. Run mandatory `run_checks(level="precommit")`, then workflow status.
 7. Commit explicit paths with `git_workflow(action="commit", ...)`. Before any
-   publication this starts a fresh independent read-only local reviewer. Rejected
-   candidates stay local for correction and another fresh review. `review` retries
-   review of a committed candidate; `push` retries publication after approval.
+   publication this starts a fresh independent read-only local reviewer of the
+   session's CLI (`ATK_LOCAL_REVIEWER=codex|claude` overrides it; the receipt
+   records `reviewer_runtime`). Rejected candidates stay local for correction and
+   another fresh review. `review` retries review of a committed candidate; `push`
+   retries publication after approval. This signed local review is the only
+   source review the PR ever receives.
 8. Publication verifies the signed head and task attachment, archives the task,
    and hands ownership to the Pi. Finish with the PR link without waiting for
    review, approval, CI or merge. Never edit a handed-off branch.
-9. The orchestrator verifies signed local approval, coordinates checks and merges.
-   Its GitHub coding role only resolves conflicts. Separate Pi repair agents own
-   pre-merge CI, post-merge compatibility and integration failures. Changed heads
-   and changed dev bases receive fresh independent Pi review. Published work never
-   returns to its developing machine. Diagnostic accounting and retained evidence
-   survive retries, changed heads, partial repairs and restarts; no new retry limit
+9. The orchestrator verifies the signed local review receipt against the exact
+   head and admits the PR (`agent-review` success); an uncovered head gets
+   `action_required` and waits for a new local receipt. Its GitHub coding role
+   only resolves conflicts. Separate Pi fix agents own pre-merge CI, post-merge
+   compatibility and integration failures; they decide fixes themselves and never
+   ask the owner planning questions. The only pauses are genuine credential,
+   authentication or subscription problems, missing original plan or image
+   evidence, and existing owner holds or vetoes. Only commits signed by the Pi
+   controller key count as Pi fixes. Pi fix heads are admitted only after a narrow
+   read-only fraud check (no deleted, skipped or weakened tests, no relaxed CI,
+   baselines, coverage or checks configuration); a rejection queues a Pi
+   correction. Merge needs that admission plus green fast-checks on the exact head;
+   protected paths additionally need the owner's exact-head Telegram approval,
+   requested only after fast-checks is green. Published work never returns to its
+   developing machine. Diagnostic accounting and retained evidence survive
+   retries, changed heads, partial repairs and restarts; no new retry limit
    applies. Established repair controls and holds remain in force.
 10. Handoff refreshes clean dev. Recover interrupted publication with `push`,
     interrupted handoff with `handoff`, and pending dev refresh with `sync`.
@@ -162,8 +177,9 @@ Restoring context does not transfer owner approval from the source PR.
     distinct even while previous PRs are open.
 
 The GitHub integration-repair role is explicitly authorized to monitor and fix
-advisory integration after merge. Each repair requires fast regression coverage,
-independent review, and fast CI. Integration never gates a dev feature merge.
+advisory integration after merge. Each repair should add fast regression coverage
+and is gated by the fraud check and fast CI. Integration never gates a dev feature
+merge.
 Bootstrap-only legacy pushes retain the exact-SHA required-check watch.
 
 Default direct `docs(...)` calls to `top_k=3`, avoid parallel broad reads, and

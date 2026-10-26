@@ -5,6 +5,7 @@ import os
 import sys
 import warnings
 from contextlib import AsyncExitStack
+from types import SimpleNamespace
 
 from tests.agent_tools._support.mcp import (
     Path,
@@ -36,11 +37,15 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
             self.name = name
             self.instructions = instructions
             self.tools: list[str] = []
+            self.read_only: set[str] = set()
             self.resources: list[str] = []
 
-        def tool(self):
+        def tool(self, *, annotations):
             def register(func):
                 self.tools.append(func.__name__)
+                if annotations.read_only_hint:
+                    assert not annotations.destructive_hint
+                    self.read_only.add(func.__name__)
                 return func
 
             return register
@@ -60,10 +65,12 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
         return server
 
     monkeypatch.setattr(mcp_server, "MCPServer", fake_factory)
+    monkeypatch.setattr(mcp_server, "ToolAnnotations", SimpleNamespace)
 
     mcp_server.create_mcp_server()
 
     assert "prepare_start" in created[0].instructions
+    assert created[0].read_only == {"docs", "workflow_status", "workflow_metrics", "change_impact"}
     assert created[0].tools == [
         "prepare_start",
         "task_context",
@@ -122,19 +129,48 @@ def test_mcp_v2_stdio_server_exposes_consolidated_contract() -> None:
             "release_workflow",
         ]
         assert "repo://AGENTS.md" in {str(resource.uri) for resource in resources.resources}
+        # Claude Code Plan mode runs only read-only tools without an approval prompt.
+        read_only = {
+            tool.name
+            for tool in tools.tools
+            if tool.annotations and tool.annotations.read_only_hint
+        }
+        assert (
+            read_only
+            == set(mcp_server.READ_ONLY_TOOLS)
+            == {
+                "docs",
+                "workflow_status",
+                "workflow_metrics",
+                "change_impact",
+            }
+        )
+        for tool in tools.tools:
+            assert tool.annotations is not None
+            assert tool.annotations.destructive_hint is (tool.name not in read_only)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         asyncio.run(exercise())
 
 
-def test_project_codex_config_registers_portable_mcp_launcher() -> None:
-    config = (mcp_server.REPO_ROOT / ".codex" / "config.toml").read_text(encoding="utf-8")
+@pytest.mark.parametrize("runtime", ["codex", "claude"])
+def test_project_config_registers_portable_mcp_launcher(runtime: str) -> None:
+    from agent_tools import agent_runtimes  # noqa: PLC0415
 
-    assert "[mcp_servers.analytics_toolkit_agent_tools]" in config
+    if runtime == "codex":
+        config = (mcp_server.REPO_ROOT / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert config == agent_runtimes.render_codex_config()
+        assert "[mcp_servers.analytics_toolkit_agent_tools]" in config
+        assert "required = false" in config
+        assert "tool_timeout_sec = 7200" in config
+    else:
+        config = (mcp_server.REPO_ROOT / ".mcp.json").read_text(encoding="utf-8")
+        assert config == agent_runtimes.render_mcp_json()
+        server = json.loads(config)["mcpServers"]["analytics_toolkit_agent_tools"]
+        assert server["type"] == "stdio"
+        assert agent_runtimes.claude_launch_env()["MCP_TOOL_TIMEOUT"] == "7200000"
     assert "git rev-parse --show-toplevel" in config
-    assert "required = false" in config
-    assert "tool_timeout_sec = 7200" in config
 
 
 def test_mcp_tool_wrapper_routes_force_release_flag(tmp_path: Path) -> None:

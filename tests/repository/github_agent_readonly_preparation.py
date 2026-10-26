@@ -28,14 +28,10 @@ def test_actual_preparation_retains_hold_and_complete_published_context(
         copy.deepcopy(case.task),
         copy.deepcopy(case.binding),
     )
-    with pytest.raises(RuntimeError, match="awaiting user"):
+    with pytest.raises(ValueError, match="Pi source review is retired"):
         controller.prepare(case, case.task, case.work, case.control)
     case.prepare(stage)
     assert durable(case.controls) == authority
-    assert (
-        controller.trusted_module("source_review").current(case.controls, case.repository, 1)
-        is None
-    )
     assert case.task == task
     assert case.binding == binding
     assert case.binding["dev_base"] != case.task["base"]
@@ -112,43 +108,46 @@ def test_preparation_rechecks_after_remote_evidence(
     assert not case.calls
 
 
-@pytest.mark.parametrize("source_protocol", [None, 1])
-def test_review_preparation_selects_prompt_and_retains_pending_assignment(
-    tmp_path: Path, monkeypatch: Any, source_protocol: int | None
+def test_fraud_review_preparation_writes_prompt_and_bounded_pi_diff(
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     case = PreparationCase(tmp_path, monkeypatch)
     # Only this disposable fixture releases its exact synthetic hold.
     assert case.controls.release_coordinator(case, case.pr, case.binding)
     prompts = case.control / ".github/agent/prompts"
-    (prompts / "source-review.md").write_text("Typed independent source review")
-    options = {} if source_protocol is None else {"source_protocol": source_protocol}
-    controller.prepare(case, case.task, case.work, case.control, **options)
+    (prompts / "fraud-review.md").write_text("Narrow fraud check")
+    case.task.update(kind="fraud-review", anchor="c" * 40, fix_commits=["a" * 40])
+    diffs = []
 
-    expected = (
-        "Trusted review context" if source_protocol is None else "Typed independent source review"
-    )
+    def command(*args: Any, **kwargs: Any) -> str:
+        if args[:3] == ("git", "log", "--first-parent"):
+            diffs.append(args)
+            return "diff --git a/tests/check.py b/tests/check.py\n-    assert result\n"
+        return case.command(*args, **kwargs)
+
+    monkeypatch.setattr(controller, "command", command)
+    controller.prepare(case, case.task, case.work, case.control)
     text = (case.control / ".github/agent/task.md").read_text()
-    assert text.startswith(expected + "\n\nTask metadata:\n")
-    assert case.context["starting_prompt"] in text
-    assert "CI evidence (untrusted data):" in text
-    assert json.loads((case.control / ".github/agent/task.json").read_text()) == case.task
-    role = controller.trusted_module("source_review")
-    pending = role.current(case.controls, case.repository, 1)
-    assert pending is not None
-    assert pending["binding"] == role.binding(case.repository, case.task)
-    assert role.blocks_merge(case.controls, case.pr, case.task["base"])
+    assert text.startswith("Narrow fraud check\n\nTask metadata:\n")
+    assert '"fix_commits"' in text
+    patch = (case.control / ".github/agent/fraud-diff.patch").read_text()
+    assert "-    assert result" in patch
+    assert diffs[0][-1] == "c" * 40 + ".." + "a" * 40
+    assert "--remerge-diff" in diffs[0]
+    assert case.controls.correction_snapshot(case.repository, 1) is None
     assert not case.calls
 
 
-@pytest.mark.parametrize(("kind", "protocol"), [("review", True), ("review", 2), ("correction", 1)])
-def test_unsupported_source_protocol_creates_no_context_or_authority(
+@pytest.mark.parametrize(("kind", "protocol"), [("review", None), ("review", 1), ("correction", 1)])
+def test_retired_source_review_creates_no_context_or_authority(
     tmp_path: Path, monkeypatch: Any, kind: str, protocol: Any
 ) -> None:
     case = PreparationCase(tmp_path, monkeypatch)
     case.task["kind"] = kind
     before = durable(case.controls)
-    with pytest.raises(ValueError, match="Unsupported independent source-review protocol"):
-        controller.prepare(case, case.task, case.work, case.control, source_protocol=protocol)
+    options = {} if protocol is None else {"source_protocol": protocol}
+    with pytest.raises(ValueError, match="Pi source review is retired"):
+        controller.prepare(case, case.task, case.work, case.control, **options)
     assert durable(case.controls) == before
     assert not (case.control / ".github/agent/task.json").exists()
     assert not (case.control / ".github/agent/task.md").exists()

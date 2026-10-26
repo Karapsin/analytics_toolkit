@@ -1,4 +1,4 @@
-"""Start the native Codex Plan mode before forwarding user input."""
+"""Start native Plan mode in Codex or Claude Code before forwarding user input."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from agent_tools import bootstrap_process, machine_signing, sessions
+from agent_tools import agent_runtimes, bootstrap_process, machine_signing, sessions
 
 SESSION_ID_LENGTH = 16
 
@@ -115,18 +115,7 @@ def launch(executable: str, root: Path, *, timeout: float = 90) -> int:
         os.chdir(root)
         os.execv(  # noqa: S606 - explicit installed CLI executable, without a shell.
             executable,
-            [
-                executable,
-                "-C",
-                str(root),
-                "-m",
-                "gpt-6.1-sol",
-                "-c",
-                'model_reasoning_effort="medium"',
-                "-c",
-                'plan_mode_reasoning_effort="medium"',
-                "--no-alt-screen",
-            ],
+            agent_runtimes.RUNTIMES["codex"].interactive_argv(executable, root),
         )
     status = 0
     deadline = time.monotonic() + timeout
@@ -159,6 +148,25 @@ def launch(executable: str, root: Path, *, timeout: float = 90) -> int:
                 with contextlib.suppress(ProcessLookupError):
                     os.kill(pid, signal.SIGKILL)
                 os.waitpid(pid, 0)
+
+
+def launch_claude(executable: str, root: Path) -> int:
+    """Replace the launcher with Claude Code, natively in Plan mode from its first prompt."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        msg = "Interactive launcher requires a terminal; use claude -p separately."
+        raise RuntimeError(msg)
+    config = root / agent_runtimes.CLAUDE_LAUNCH_CONFIG
+    config.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    config.write_text(agent_runtimes.render_mcp_json(root))
+    environment = os.environ.copy()
+    environment.update(agent_runtimes.claude_launch_env())
+    os.chdir(root)
+    os.execve(  # noqa: S606 - explicit installed CLI executable, without a shell.
+        executable,
+        agent_runtimes.RUNTIMES["claude"].interactive_argv(executable, root),
+        environment,
+    )
+    return 0  # pragma: no cover - execve does not return
 
 
 def _resume_root(source: Path, directory: Path, identity: str) -> Path:
@@ -194,7 +202,7 @@ def _resume_root(source: Path, directory: Path, identity: str) -> Path:
     return root
 
 
-def _prepare(source: Path, root: Path, *, refresh: bool) -> None:
+def _prepare(source: Path, root: Path, *, refresh: bool, runtime: str = "codex") -> None:
     directory = root / ".rag_index/bootstrap"
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     log = directory / "launcher.log"
@@ -212,7 +220,7 @@ def _prepare(source: Path, root: Path, *, refresh: bool) -> None:
             str(root / "agent_tools/mcp_tool.sh"),
             "prepare-start",
             "--task",
-            "New isolated Codex session",
+            f"New isolated {agent_runtimes.RUNTIMES[runtime].display} session",
             "--root",
             str(root),
         ],
@@ -267,6 +275,7 @@ def bootstrap_env_directory(source: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--runtime", choices=sorted(agent_runtimes.RUNTIMES), default="codex")
     parser.add_argument("source", type=Path)
     parser.add_argument("executable")
     mode = parser.add_mutually_exclusive_group()
@@ -274,6 +283,10 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--refresh-bootstrap-cache", action="store_true")
     args = parser.parse_args(argv)
     source = args.source.resolve()
+    reviewer = os.environ.get(agent_runtimes.REVIEWER_ENV) or args.runtime
+    if reviewer not in agent_runtimes.RUNTIMES:
+        message = f"Unknown local reviewer runtime: {reviewer}"
+        raise RuntimeError(message)
     directory = (
         Path.home()
         / ".local/share/analytics-toolkit-agent/sessions"
@@ -295,17 +308,25 @@ def main(argv: list[str] | None = None) -> int:
                 refreshed["base"] = sessions.sync_dev(root)
                 sessions.save(root, refreshed)
             machine_signing.configure(root, machine_signing.ensure_key(Path.home()))
-            _prepare(source, root, refresh=args.refresh_bootstrap_cache)
+            _prepare(source, root, refresh=args.refresh_bootstrap_cache, runtime=args.runtime)
             state = sessions.load(root)
-            state.update(phase="planning", base=sessions.run(root, "git", "rev-parse", "HEAD"))
+            state.update(
+                phase="planning",
+                base=sessions.run(root, "git", "rev-parse", "HEAD"),
+                runtime=args.runtime,
+                reviewer=reviewer,
+            )
             sessions.save(root, state)
     except (OSError, RuntimeError, subprocess.CalledProcessError, KeyboardInterrupt) as exc:
         print(
-            f"Bootstrap stopped: {exc}\nResume from {source}: codex --resume-bootstrap {root.name}",
+            f"Bootstrap stopped: {exc}\nResume from {source}: "
+            f"{args.runtime} --resume-bootstrap {root.name}",
             file=sys.stderr,
         )
         return 130 if isinstance(exc, KeyboardInterrupt) else 1
     print("Starting native Plan mode.", flush=True)
+    if args.runtime == "claude":
+        return launch_claude(args.executable, root)
     return launch(args.executable, root)
 
 

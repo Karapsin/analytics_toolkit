@@ -16,14 +16,16 @@ prepares one new four-part version, with carry at 19, and preserves historical n
    The tool synchronizes origin/dev in an isolated workspace, folds fragments,
    prepares version/README/release notes, runs local pre-commit validation and
    fresh independent local review, then publishes a signed preparation PR
-   to dev through the existing task attachment and independent-review workflow.
+   to dev through the existing task attachment workflow. Its signed local review
+   receipt is the PR's only review; the Pi admits it without reviewing again.
    A release without unreleased entries requires a summary, including README-only
    releases. Never push a release metadata commit directly to dev.
 3. Pending results include the preparation PR URL. Re-enter the same action after
-   review, exact-head GitHub checks, and merge. Retries recover the same branch,
+   admission, exact-head GitHub checks, and merge. Retries recover the same branch,
    PR and version from private `.git/atk-release.json` state.
-4. Promotion requires current dev content to match the final independently reviewed
-   preparation head, with successful fast-checks and agent-review on that exact SHA.
+4. Promotion requires current dev content to match the final admitted preparation
+   head (locally reviewed, or a Pi fix on it accepted by the fraud check), with
+   successful fast-checks and agent-review on that exact SHA.
    Corrections merged through the same PR retain its prepared version and final
    reviewed notes, even when Unreleased is empty and no new summary is supplied.
    Recovery archives the previous candidate and invalidates validation receipts,
@@ -98,6 +100,6 @@ not replace the reviewed PR sequence or authorize publication.
   Completed stages are bound to the candidate SHA and version in the private state.
 
 Private controller implementation workers do not execute validation. GitHub runs
-fast checks, independent review, compatibility, quality, coverage and artifact
-checks after publication. Controller edits retain owner exact-head policy approval.
+fast checks, compatibility, quality, coverage and artifact checks after
+publication; the Pi's only model gate is the read-only fraud check on its fixes. Controller edits retain owner exact-head policy approval.
 An actual release additionally requires exhaustive validation before TestPyPI.

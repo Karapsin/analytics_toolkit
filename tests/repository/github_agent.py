@@ -505,6 +505,10 @@ class _RefreshDiscoveryGitHub:
         return self._patch_monitor(path, method)
 
     def _patch_monitor(self, path: str, method: str) -> None:
+        if path == "check-runs":
+            # Receipt-less owner PRs are marked action_required, never queued.
+            assert method == "POST"
+            return
         assert path == "issues/99"
         assert method == "PATCH"
 
@@ -571,7 +575,6 @@ def run_refresh_discovery(monkeypatch: Any) -> tuple[Any, dict[str, Any], list[A
     monkeypatch.setattr(controller, "signed_head", lambda *args: True)
     monkeypatch.setattr(controller, "task_metadata", lambda *args: metadata)
     controls = controller.trusted_module("review_control")
-    monkeypatch.setattr(controller.trusted_module("source_review"), "pending", lambda *args: False)
     monkeypatch.setattr(controls, "paused", lambda *args: False)
     monkeypatch.setattr(controls, "correction", lambda *args: None)
     return _RefreshDiscoveryGitHub(base), state, saved, metadata
@@ -587,10 +590,7 @@ def test_run_metadata_5xx_preserves_records_and_pr_work_then_retries(
     gh.errors = {"actions/runs/1": error, "actions/runs/2": error}
 
     result = controller.discover(gh, 17)
-    assert [(task["number"], task["kind"]) for task in result["include"]] == [
-        (1, "metadata"),
-        (2, "review"),
-    ]
+    assert [(task["number"], task["kind"]) for task in result["include"]] == [(1, "metadata")]
     for task in result["include"]:
         assert {key: task[key] for key in metadata} == metadata
     for key in ("1", "2"):

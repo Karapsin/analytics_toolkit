@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Make Claude Code and Codex sessions equivalent from one runtime source: `agent_tools/agent_runtimes.py` renders both MCP registrations, launcher arguments, reviewer isolation policy, prompt and the `AGENTS.md` runtime table; bare `claude` launches isolated Plan-mode sessions like bare `codex`; the strict fail-closed local reviewer runs either CLI and records its runtime, version, model and auth; a fast drift test keeps both runtimes synchronized; read-only repository MCP tools (`docs`, `workflow_status`, `workflow_metrics`, `change_impact`) carry `readOnlyHint` so Claude Plan mode prompts only for state-changing tools.
+
 - Support Airflow 3 SQL connections: resolve Airflow Connections and Variables through the Task SDK on Airflow 3 while keeping the Airflow 2.4+ hook/model APIs, and widen the optional `airflow` extra to `apache-airflow>=2.4,<4`.
 
 - Repair lint and formatting in read-only preparation regressions while preserving all assertions, protocol cases and resumable source-review safeguards.
