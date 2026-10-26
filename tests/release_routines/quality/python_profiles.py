@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import configparser
 import os
-import re
 import subprocess
+
+from release_routines.lib import python_support
 
 from tests._support.paths import REPO_ROOT
 
@@ -77,9 +78,10 @@ def test_github_and_tox_profiles_exclude_python38_and_retain_minimum_dependencie
     assert "constraints/py39-min.txt" in configuration["testenv"]["commands_pre"]
     assert "min: python -m pip check" in configuration["testenv"]["commands"]
     workflow = (REPO_ROOT / ".github/workflows/compatibility.yml").read_text()
-    matrix = workflow.split("\n  tests:\n", 1)[1].split("\n  sdk-conformance:\n", 1)[0]
-    profiles = re.findall(r'python-version: "([0-9.]+)"\n\s+env_name: ([a-z0-9-]+)', matrix)
-    assert set(profiles) == {
+    tests_job = workflow.split("\n  tests:\n", 1)[1].split("\n  sdk-conformance:\n", 1)[0]
+    assert "matrix: ${{ fromJSON(needs.policy.outputs.matrix) }}" in tests_job
+    rows = python_support.compatibility_matrix(python_support.load_policy(REPO_ROOT))["include"]
+    assert {(row["python-version"], row["env_name"]) for row in rows} == {
         ("3.9", "py39-latest"),
         ("3.10", "py310-latest"),
         ("3.11", "py311-latest"),
@@ -88,5 +90,8 @@ def test_github_and_tox_profiles_exclude_python38_and_retain_minimum_dependencie
         ("3.14", "py314-latest"),
         ("3.9", "py39-min"),
     }
-    assert "constraints/py39-min.txt" in matrix
-    assert "python -m pip check" in matrix
+    assert [row["constraints"] for row in rows if row["profile"] == "min"] == [
+        "constraints/py39-min.txt"
+    ]
+    assert '-c "${{ matrix.constraints }}"' in tests_job
+    assert "python -m pip check" in tests_job
