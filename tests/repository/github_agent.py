@@ -4,6 +4,7 @@ import base64
 import importlib.util
 import json
 import subprocess
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -459,7 +460,8 @@ class _RefreshDiscoveryGitHub:
                 "run_attempt": 1,
                 "html_url": f"run-{key}",
                 "event": "workflow_dispatch",
-                "updated_at": "2026-10-12",
+                # Recent enough to survive the monitor's 14-day retention cutoff.
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             for key in (1, 2, 3)
         }

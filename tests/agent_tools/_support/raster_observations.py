@@ -14,8 +14,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from agent_tools import sql_explorer_svg_evidence as evidence
 from agent_tools.sql_explorer_svg_underlines import normalize_terminal_underlines
+
+from agent_tools import sql_explorer_svg_evidence as evidence
 from tests._support.paths import REPO_ROOT
 from tests.agent_tools._support import raster_transport
 from tests.agent_tools._support.raster_transport import source_binding

@@ -65,21 +65,20 @@ def test_stage_bytes_hashes_dimensions_and_single_reduction_are_not_mocked_verdi
 
 def test_pixel_samples_retain_rgb_differences_runs_and_the_unmodified_predicate() -> None:
     region = (2.0, 2.0, 5.0)
-    with Image.new("RGB", (20, 10), "#202020") as plain:
-        with plain.copy() as changed:
-            for x in range(2, 7):
-                changed.putpixel((x, 3), (226, 226, 226))
-            before = changed.tobytes(), plain.tobytes()
-            result = observations.pixel_observations(changed, plain, region, raster)
-            shifted = observations.pixel_observations(changed, plain, (12, 2, 5), raster)
-            assert result["predicate_result"] == raster._visible_underline(changed, plain, region)
-            assert result["predicate_result"] is True
-            assert shifted["predicate_result"] is False
-            assert result["rows"][1]["qualifying_runs"] == [1, 2, 3, 4, 5]
-            assert result["rows"][1]["pixels"][0]["channel_differences"] == [194, 194, 194]
-            assert len(result["rows"]) == 3
-            assert all(len(row["pixels"]) == 5 for row in result["rows"])
-            assert (changed.tobytes(), plain.tobytes()) == before
+    with Image.new("RGB", (20, 10), "#202020") as plain, plain.copy() as changed:
+        for x in range(2, 7):
+            changed.putpixel((x, 3), (226, 226, 226))
+        before = changed.tobytes(), plain.tobytes()
+        result = observations.pixel_observations(changed, plain, region, raster)
+        shifted = observations.pixel_observations(changed, plain, (12, 2, 5), raster)
+        assert result["predicate_result"] == raster._visible_underline(changed, plain, region)
+        assert result["predicate_result"] is True
+        assert shifted["predicate_result"] is False
+        assert result["rows"][1]["qualifying_runs"] == [1, 2, 3, 4, 5]
+        assert result["rows"][1]["pixels"][0]["channel_differences"] == [194, 194, 194]
+        assert len(result["rows"]) == 3
+        assert all(len(row["pixels"]) == 5 for row in result["rows"])
+        assert (changed.tobytes(), plain.tobytes()) == before
 
 
 def test_later_cases_survive_first_failure_and_unknown_probes_stay_explicit(
@@ -127,8 +126,8 @@ def test_later_cases_survive_first_failure_and_unknown_probes_stay_explicit(
 def test_retained_fixture_identities_and_mapping_precede_any_raster() -> None:
     case = observations._captured_case("editor-command-caret", raster)
     assert case["fixture"]["decoded"]["sha256"] == case["fixture"]["provenance"]["sha256"]
-    assert case["fixture"]["envelope"]["sha256"] == (
-        case["fixture"]["provenance"]["envelope_sha256"]
+    assert (
+        case["fixture"]["envelope"]["sha256"] == (case["fixture"]["provenance"]["envelope_sha256"])
     )
     assert case["regions"] == raster._target_regions(
         case["variants"]["original"], case["mapping_inputs"]["screen_cells"]
@@ -140,7 +139,7 @@ def test_retained_fixture_identities_and_mapping_precede_any_raster() -> None:
 def test_renderer_failure_keeps_direct_bytes_and_continues_other_variants(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(evidence, "RASTER_VIEWPORT", (8, 5))
+    monkeypatch.setattr(evidence, "RASTER_VIEWPORT", (12, 5))
     calls = []
 
     def render(svg: str) -> bytes:
@@ -148,7 +147,7 @@ def test_renderer_failure_keeps_direct_bytes_and_continues_other_variants(
         if svg == evidence.supersampling_svg("bad"):
             message = "intermediate renderer failure"
             raise RuntimeError(message)
-        return _png((16, 10) if svg.startswith("<svg") else (8, 5), "#202020")
+        return _png((24, 10) if svg.startswith("<svg") else (12, 5), "#202020")
 
     monkeypatch.setattr(evidence, "_render_svg", render)
     case = {
@@ -308,11 +307,13 @@ def test_artifact_admission_preserves_caps_and_reports_original_omitted_identiti
 ) -> None:
     monkeypatch.setattr(raster_transport, "MAX_REPORT_BYTES", 4)
     monkeypatch.setattr(raster_transport, "MAX_ARTIFACT_BYTES", 9)
-    (tmp_path / "a").write_bytes(b"1234")
-    (tmp_path / "b").write_bytes(b"12")
-    omitted = raster_transport.bound_artifacts(tmp_path)
-    assert (tmp_path / "a").read_bytes() == b"1234"
-    assert not (tmp_path / "b").exists()
+    output = tmp_path / "artifacts"
+    output.mkdir()
+    (output / "a").write_bytes(b"1234")
+    (output / "b").write_bytes(b"12")
+    omitted = raster_transport.bound_artifacts(output)
+    assert (output / "a").read_bytes() == b"1234"
+    assert not (output / "b").exists()
     assert omitted[0]["path"] == "b"
     assert omitted[0]["byte_length"] == 2
     assert omitted[0]["sha256"] == evidence.digest(b"12")

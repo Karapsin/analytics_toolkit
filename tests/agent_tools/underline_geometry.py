@@ -3,17 +3,16 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 import pytest
-
 from agent_tools.sql_explorer_svg_underlines import normalize_terminal_underlines
 
 _SVG = (
     '<svg xmlns="http://www.w3.org/2000/svg"><style>'
-    '.terminal-probe-matrix {font-size:20px;fill:#abcdef}'
-    '.caret {text-decoration:underline line-through}'
+    ".terminal-probe-matrix {font-size:20px;fill:#abcdef}"
+    ".caret {text-decoration:underline line-through}"
     '</style><defs><clipPath id="row"><rect width="100" height="40"/>'
     '</clipPath></defs><g transform="translate(9,41)" class="terminal-probe-matrix">'
     '<text class="caret" x="12.2" y="20" textLength="24.4" clip-path="url(#row)">界</text>'
-    '</g></svg>'
+    "</g></svg>"
 )
 
 
@@ -59,7 +58,7 @@ def test_inherited_decoration_and_independently_positioned_nested_spans() -> Non
         '<text transform="translate(3,4)"><tspan x="0" y="20" textLength="12.2">é</tspan>'
         '<tspan x="12.2" y="20" textLength="24.4" fill="#123456" '
         'text-decoration-color="#fedcba" clip-path="url(#inner)">界</tspan></text>'
-        '</g></svg>'
+        "</g></svg>"
     )
     normalized, records = normalize_terminal_underlines(svg)
     assert [record["width"] for record in records] == [12.2, 24.4]
