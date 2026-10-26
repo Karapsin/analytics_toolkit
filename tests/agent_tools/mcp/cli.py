@@ -5,6 +5,7 @@ import os
 import sys
 import warnings
 from contextlib import AsyncExitStack
+from types import SimpleNamespace
 
 from tests.agent_tools._support.mcp import (
     Path,
@@ -36,11 +37,15 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
             self.name = name
             self.instructions = instructions
             self.tools: list[str] = []
+            self.read_only: set[str] = set()
             self.resources: list[str] = []
 
-        def tool(self):
+        def tool(self, *, annotations):
             def register(func):
                 self.tools.append(func.__name__)
+                if annotations.read_only_hint:
+                    assert not annotations.destructive_hint
+                    self.read_only.add(func.__name__)
                 return func
 
             return register
@@ -60,10 +65,12 @@ def test_create_mcp_server_exposes_only_consolidated_tools(
         return server
 
     monkeypatch.setattr(mcp_server, "MCPServer", fake_factory)
+    monkeypatch.setattr(mcp_server, "ToolAnnotations", SimpleNamespace)
 
     mcp_server.create_mcp_server()
 
     assert "prepare_start" in created[0].instructions
+    assert created[0].read_only == {"docs", "workflow_status", "workflow_metrics", "change_impact"}
     assert created[0].tools == [
         "prepare_start",
         "task_context",
@@ -122,6 +129,25 @@ def test_mcp_v2_stdio_server_exposes_consolidated_contract() -> None:
             "release_workflow",
         ]
         assert "repo://AGENTS.md" in {str(resource.uri) for resource in resources.resources}
+        # Claude Code Plan mode runs only read-only tools without an approval prompt.
+        read_only = {
+            tool.name
+            for tool in tools.tools
+            if tool.annotations and tool.annotations.read_only_hint
+        }
+        assert (
+            read_only
+            == set(mcp_server.READ_ONLY_TOOLS)
+            == {
+                "docs",
+                "workflow_status",
+                "workflow_metrics",
+                "change_impact",
+            }
+        )
+        for tool in tools.tools:
+            assert tool.annotations is not None
+            assert tool.annotations.destructive_hint is (tool.name not in read_only)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
