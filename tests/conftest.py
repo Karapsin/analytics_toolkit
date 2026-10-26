@@ -9,8 +9,22 @@ from typing import TYPE_CHECKING
 import analytics_toolkit.general as general_module
 import pytest
 
+from tests._support import extras as _extras
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+
+# Lagging extras omitted from a compatibility environment (docs/PYTHON_SUPPORT.md).
+# A hook rather than ``collect_ignore``: nested conftests define their own lists.
+_EXTRA_IGNORED = frozenset(
+    Path(__file__).parent / path for path in _extras.collect_ignore(Path(__file__).parent)
+)
+
+
+def pytest_ignore_collect(collection_path: Path) -> bool | None:
+    if collection_path in _EXTRA_IGNORED or _EXTRA_IGNORED.intersection(collection_path.parents):
+        return True
+    return None
 
 
 DEFAULT_SQL_CONNECTIONS = {

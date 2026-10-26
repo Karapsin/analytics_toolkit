@@ -53,6 +53,10 @@ remain reviewed edits.
 - Everyday `tests.yml` fast checks run on Python 3.14 only.
 - After every merge, `compatibility.yml` reads the policy and runs the full test
   suite on every runtime-validated minor plus the minimum-dependency profile.
+- While an extra lags the newest minor, that minor's environment omits the extra.
+  `ATK_WITHOUT_EXTRAS` then skips every test module that imports the extra's
+  dependencies (directly or through test support modules), and the SQL Explorer
+  renderer diagnostics are skipped; the core suite still runs on that minor.
 - The same workflow runs a drift check against actual CPython releases and
   extra support.
 

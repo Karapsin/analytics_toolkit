@@ -141,10 +141,16 @@ def minimum_constraints(policy: dict[str, Any]) -> str:
     return f"constraints/{env_name(policy['runtime_floor'], 'min')}.txt"
 
 
+def omitted_extras(policy: dict[str, Any], python: str) -> list[str]:
+    """Matrix extras that cannot install on ``python`` because they lag the newest minor."""
+    lagging = set(policy["lagging_extras"]) if python == policy["newest"] else set()
+    return [extra for extra in MATRIX_EXTRAS if extra in lagging]
+
+
 def install_target(policy: dict[str, Any], python: str) -> str:
     """Editable install target with the matrix extras that support ``python``."""
-    lagging = set(policy["lagging_extras"]) if python == policy["newest"] else set()
-    extras = [extra for extra in MATRIX_EXTRAS if extra not in lagging]
+    omitted = omitted_extras(policy, python)
+    extras = [extra for extra in MATRIX_EXTRAS if extra not in omitted]
     return f".[{','.join(extras)}]" if extras else "."
 
 
@@ -156,6 +162,7 @@ def compatibility_matrix(policy: dict[str, Any]) -> dict[str, list[dict[str, str
             "env_name": env_name(python),
             "profile": "latest",
             "install_target": install_target(policy, python),
+            "without_extras": ",".join(omitted_extras(policy, python)),
             "constraints": "",
         }
         for python in runtime_minors(policy)
@@ -167,6 +174,7 @@ def compatibility_matrix(policy: dict[str, Any]) -> dict[str, list[dict[str, str
             "env_name": env_name(floor, "min"),
             "profile": "min",
             "install_target": install_target(policy, floor),
+            "without_extras": ",".join(omitted_extras(policy, floor)),
             "constraints": minimum_constraints(policy),
         }
     )
