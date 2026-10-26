@@ -375,7 +375,9 @@ def test_preparation_never_reports_queued_when_inspection_or_persistence_fails(
     case = preparation(publication, monkeypatch)
     if fault == "inspection":
         monkeypatch.setattr(
-            controller, "unresolved_conflict_paths", Mock(side_effect=RuntimeError("Git unavailable"))
+            controller,
+            "unresolved_conflict_paths",
+            Mock(side_effect=RuntimeError("Git unavailable")),
         )
     else:
         monkeypatch.setattr(
@@ -410,7 +412,15 @@ def test_preparation_preserves_concurrent_correction_rows(
         with control.connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO corrections VALUES (?,?,?,?,?,?,?)",
-                (case.gh.repository, 1, newer_head, newer_digest, "New findings", "New scope", 99.0),
+                (
+                    case.gh.repository,
+                    1,
+                    newer_head,
+                    newer_digest,
+                    "New findings",
+                    "New scope",
+                    99.0,
+                ),
             )
         return inspect(work)
 

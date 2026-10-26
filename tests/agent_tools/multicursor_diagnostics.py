@@ -341,7 +341,7 @@ def test_svg_caret_decoration_attributes_survive_reduced_layer_evidence() -> Non
     svg = (
         '<svg><defs><clipPath id="terminal-line-5"><rect y="0" height="20"/>'
         '</clipPath></defs><g clip-path="url(#terminal-line-5)" text-decoration="underline">'
-        '<text>界</text></g></svg>'
+        "<text>界</text></g></svg>"
     )
     terminal = {"regions": [{"composed_rows": [{"y": 5}]}]}
     result = diagnostics.svg_diagnostics(svg, terminal)

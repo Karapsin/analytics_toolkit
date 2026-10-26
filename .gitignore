@@ -21,3 +21,6 @@ dist/
 *.egg-info/
 .DS_Store
 ~$*.xlsx
+
+# Generated raster observation diagnostics from tox runs
+raster-diagnostics/

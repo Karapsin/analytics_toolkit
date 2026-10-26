@@ -91,8 +91,7 @@ def wheel_identity(path: Path) -> dict[str, Any]:
 def inspect_installed(output: Path) -> None:
     renderer = importlib.import_module("resvg_py")
     svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2">'
-        '<path d="M0 0h2v2H0"/></svg>'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><path d="M0 0h2v2H0"/></svg>'
     )
     png = bytes(renderer.svg_to_bytes(svg_string=svg))
     path = output / "api.png"
