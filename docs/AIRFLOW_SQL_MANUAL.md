@@ -71,6 +71,11 @@ clients until a runtime helper resolves a connection or opens a client.
 
 ## Airflow `.connections`
 
+The toolkit supports Airflow 2.4+ and Airflow 3. Airflow 3 resolves Connections and Variables
+through the public Task SDK during task execution; Airflow 2 uses its legacy
+hook/model APIs. Both versions share the same toolkit configuration and SQL calls.
+The optional `airflow` extra accepts `apache-airflow>=2.4,<4`.
+
 Put an Airflow-source `.connections` file in a directory visible from the task
 or DAG script, usually the DAG project root. On the first lookup,
 `analytics_toolkit` searches from the calling Python script through its parent

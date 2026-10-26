@@ -9,10 +9,11 @@ from analytics_toolkit.sql.execution.cancellation import (
     raise_if_cancelled,
     register_connection_alias,
 )
+from analytics_toolkit.sql.execution.observation import observed_connection
 
 from ..backends import get_backend
-from analytics_toolkit.sql.execution.observation import observed_connection
 from ..execution.operation_runner import timed_public_sql_function
+from .airflow_compat import variable_getter
 from .config import ChConfig, get_connection_config, get_connections_file_path
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
 
@@ -83,7 +84,7 @@ def _resolve_ch_ca_certs(config: ChConfig) -> str | None:
         return None
 
     try:
-        from airflow.models.variable import Variable
+        get_variable = variable_getter()
     except ImportError as exc:
         raise SqlConfigError(
             f"SQL connection '{config.connection_key}' uses ca_certs_variable "
@@ -91,7 +92,7 @@ def _resolve_ch_ca_certs(config: ChConfig) -> str | None:
         ) from exc
 
     try:
-        ca_certs = Variable.get(config.ca_certs_variable)
+        ca_certs = get_variable(config.ca_certs_variable)
     except Exception as exc:
         raise SqlConfigError(
             f"Could not resolve Airflow Variable '{config.ca_certs_variable}' "

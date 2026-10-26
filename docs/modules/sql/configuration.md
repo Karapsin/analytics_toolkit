@@ -555,6 +555,11 @@ key contents are redacted.
 
 ## Airflow-Source Connections
 
+The toolkit supports Airflow 2.4+ and Airflow 3. Airflow 3 resolves Connections and Variables
+through the public Task SDK during task execution; Airflow 2 uses its legacy
+hook/model APIs. Both versions share the same toolkit configuration and SQL calls.
+The optional `airflow` extra accepts `apache-airflow>=2.4,<4`.
+
 In Airflow DAGs, keep credentials in Airflow Connections and use an
 Airflow-source `.connections` file with routing metadata only:
 

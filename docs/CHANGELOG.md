@@ -6,6 +6,8 @@ Generated from package version bumps and recent commit history.
 
 ## Unreleased
 
+- Support Airflow 3 SQL connections: resolve Airflow Connections and Variables through the Task SDK on Airflow 3 while keeping the Airflow 2.4+ hook/model APIs, and widen the optional `airflow` extra to `apache-airflow>=2.4,<4`.
+
 - Repair lint and formatting in read-only preparation regressions while preserving all assertions, protocol cases and resumable source-review safeguards.
 
 - Restore meaningful merge-readiness regression coverage with isolated private state and a healthy baseline before independently blocking stale reviews, wrong review Apps, failed fast checks and active writers.
