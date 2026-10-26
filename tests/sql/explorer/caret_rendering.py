@@ -485,3 +485,35 @@ def test_native_renderer_preserves_syntax_and_completion_separator_colors(
             assert editor.text == line + "\n" + line
 
     asyncio.run(exercise())
+
+
+def test_end_caret_inside_stale_search_match_renders_dark_bar_before_refresh() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(120, 40)) as pilot:
+            editor = app.active_workspace.editor
+            editor.text = "SELECT order"
+            editor._set_selections(Selection.cursor((0, 12)), [])
+            editor.set_search_pattern("order")
+            await pilot.pause()
+            assert editor._search_matches == (((0, 7), (0, 12)),)
+
+            # Render before TextArea.Changed refreshes the matches: the shortened
+            # line leaves the end caret inside the previous match.
+            editor.delete((0, 11), (0, 12))
+            assert editor.document[0] == "SELECT orde"
+            assert editor.selection.end == (0, 11)
+            assert editor._search_matches == (((0, 7), (0, 12)),)
+            strip = editor.render_line(0)
+            caret = strip.crop(editor.gutter_width + 11, editor.gutter_width + 12)
+            assert caret.text == "│"
+            segment = next(iter(caret))
+            assert segment.style is not None
+            assert segment.style.color is not None
+            assert segment.style.color.get_truecolor().hex == "#000000"
+            assert segment.style.underline is False
+
+            await pilot.pause()
+            assert editor._search_matches == ()
+
+    asyncio.run(exercise())
