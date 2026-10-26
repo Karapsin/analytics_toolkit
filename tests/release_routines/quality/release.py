@@ -5,7 +5,7 @@ import pathlib
 import subprocess
 
 import pytest
-from release_routines.lib import artifact_smoke, check_docs_links
+from release_routines.lib import artifact_smoke, check_docs_links, python_support
 from release_routines.lib.check_minimum_constraints import validate_minimum_constraints
 from release_routines.lib.project_metadata import load_project
 
@@ -106,7 +106,10 @@ def test_github_test_matrix_installs_optional_tui_dependencies() -> None:
         encoding="utf-8"
     )
 
-    assert workflow.count("-e '.[tui,datalens]'") == 2
+    assert workflow.count('-e "${{ matrix.install_target }}"') == 2
+    policy = python_support.load_policy(REPO_ROOT)
+    rows = python_support.compatibility_matrix(policy)["include"]
+    assert {row["install_target"] for row in rows} == {".[tui,datalens]"}
     fast = (REPO_ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
     assert "tox -e coverage" in fast
     tox = (REPO_ROOT / "tox.ini").read_text(encoding="utf-8")

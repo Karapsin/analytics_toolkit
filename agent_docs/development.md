@@ -19,6 +19,9 @@ coverage, plus the stricter committed statement and branch ratchets in
 3.9 through 3.14 compatibility matrix and Python 3.9 minimum-dependency environment
 run after dev merges and during release validation, outside the dev merge gate. The matrix
 also runs offline DataLens conformance on Python 3.10 with SDK 3.1.0 and 3.2.0.
+The post-merge Python matrix comes from `release_routines/python_support.json`;
+its drift check fails when CPython releases or extra support make the window
+stale. See `docs/PYTHON_SUPPORT.md` before changing supported Python versions.
 The matrix defaults to three parallel tox workers; set `PRECOMMIT_PARALLELISM` to a
 positive integer to tune local resource use. The minimum environment must also
 pass `pip check`. Runtime validation starts at Python 3.9; package support metadata

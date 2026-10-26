@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "normal_window": 7,
+  "extended_window": 8,
+  "newest": "3.14",
+  "minimum": "3.8",
+  "runtime_floor": "3.9",
+  "lagging_extras": [],
+  "extras": ["airflow", "clickhouse-native", "tui", "datalens"],
+  "extra_floors": {"datalens": "3.10"}
+}

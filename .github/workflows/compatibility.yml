@@ -11,8 +11,25 @@ permissions:
   contents: read
 
 jobs:
+  policy:
+    name: python-support-policy
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Require repository metadata to match the Python support policy
+        run: python -m release_routines.lib.python_support check
+      - name: Build the compatibility matrix from the Python support policy
+        id: matrix
+        run: echo "matrix=$(python -m release_routines.lib.python_support matrix)" >> "$GITHUB_OUTPUT"
+
   tests:
     name: ${{ matrix.env_name }}
+    needs: policy
     runs-on: ubuntu-latest
     env:
       RASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -20,22 +37,8 @@ jobs:
       RASTER_PROFILE: ${{ matrix.env_name }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - python-version: "3.9"
-            env_name: py39-latest
-          - python-version: "3.10"
-            env_name: py310-latest
-          - python-version: "3.11"
-            env_name: py311-latest
-          - python-version: "3.12"
-            env_name: py312-latest
-          - python-version: "3.13"
-            env_name: py313-latest
-          - python-version: "3.14"
-            env_name: py314-latest
-          - python-version: "3.9"
-            env_name: py39-min
+      # Driven by release_routines/python_support.json; see docs/PYTHON_SUPPORT.md.
+      matrix: ${{ fromJSON(needs.policy.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -67,16 +70,16 @@ jobs:
 
       - name: Install latest test environment
         id: latest
-        if: ${{ !cancelled() && matrix.env_name != 'py39-min' }}
-        run: python -m pip install -e '.[tui,datalens]' pytest "Pillow>=10,<13" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
+        if: ${{ !cancelled() && matrix.profile == 'latest' }}
+        run: python -m pip install -e "${{ matrix.install_target }}" pytest "Pillow>=10,<13" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
 
-      - name: Install minimum Python 3.9 test environment
+      - name: Install minimum dependency test environment
         id: minimum
-        if: ${{ !cancelled() && matrix.env_name == 'py39-min' }}
-        run: python -m pip install -c constraints/py39-min.txt -e '.[tui,datalens]' pytest==8.3.5 "Pillow>=10,<13" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
+        if: ${{ !cancelled() && matrix.profile == 'min' }}
+        run: python -m pip install -c "${{ matrix.constraints }}" -e "${{ matrix.install_target }}" pytest==8.3.5 "Pillow>=10,<13" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
 
       - name: Validate minimum dependency constraints
-        if: matrix.env_name == 'py39-min'
+        if: matrix.profile == 'min'
         run: |
           python -m release_routines.lib.check_minimum_constraints
           python -m pip check
@@ -129,9 +132,44 @@ jobs:
       - run: python -m pip install "tox>=4,<5"
       - run: tox -e ${{ matrix.env_name }}
 
+  python-support-drift:
+    name: python-support-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      # Exit status 3 / "RELEASE DATA UNAVAILABLE" means the window was not judged; rerun.
+      - name: Fetch stable CPython releases
+        id: released
+        run: python -m release_routines.lib.python_support_drift released --output "$RUNNER_TEMP/python-releases.json"
+      - name: Set up the newest stable CPython
+        id: newest
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ steps.released.outputs.newest }}
+      - name: Report an unavailable newest CPython interpreter
+        if: failure() && steps.newest.outcome == 'failure'
+        env:
+          NEWEST: ${{ steps.released.outputs.newest }}
+        run: |
+          echo "::error title=Python release data unavailable::CPython $NEWEST is not yet available from actions/setup-python; rerun later."
+          echo "RELEASE DATA UNAVAILABLE: the support window was not evaluated." >&2
+          exit 3
+      - name: Resolve core and every extra on the newest stable CPython
+        run: python -m release_routines.lib.python_support_drift probe --output "$RUNNER_TEMP/python-support-probe.json"
+      # Exit status 1 / "STALE PYTHON SUPPORT WINDOW" needs a reviewed policy update PR.
+      - name: Compare the Python support window with releases and extra support
+        run: >-
+          python -m release_routines.lib.python_support_drift evaluate
+          --released "$RUNNER_TEMP/python-releases.json"
+          --probe "$RUNNER_TEMP/python-support-probe.json"
+
   compatibility-checks:
     name: compatibility-checks
-    needs: [tests, sdk-conformance]
+    needs: [policy, tests, sdk-conformance, python-support-drift]
     if: always()
     runs-on: ubuntu-latest
     steps:
