@@ -11,7 +11,7 @@ from textual.document._document import Selection
 from textual.strip import Strip
 from textual.widgets import TextArea
 
-from tests.sql._support.carets import CARET, caret_cells, without_cells
+from tests.sql._support.carets import assert_caret_block, caret_cells, input_cursor_style
 from tests.sql._support.explorer import FakeSession
 
 
@@ -46,12 +46,13 @@ def test_multiline_highlight_clips_both_ends_and_preserves_occupied_carets(
 
             monkeypatch.setattr(TextArea, "render_line", native_line)
             for row in range(4):
-                rendered = editor.render_line(row)
+                strip = editor.render_line(row)
                 cells = caret_cells(editor, row)
-                strip = without_cells(rendered, cells)
-                assert strip.text == native_line(editor, row).text[: width - len(cells)]
-                assert rendered.cell_length == width
-                for x in range(gutter, width - len(cells)):
+                assert strip.text == native_line(editor, row).text
+                assert strip.cell_length == width
+                for x in range(gutter, width):
+                    if x in cells:
+                        continue
                     column = x - gutter + scroll_x
                     expected = row < 3 and (row != 0 or column >= 4)
                     expected = expected and (row != 2 or column < 16)
@@ -64,15 +65,13 @@ def test_multiline_highlight_clips_both_ends_and_preserves_occupied_carets(
                 x = gutter + column - scroll_x
                 rendered = editor.render_line(row - 1)
                 assert caret_cells(editor, row - 1) == [x]
-                caret = list(rendered.crop(x, x + 1))
-                assert [segment.text for segment in caret] == [CARET]
-                # Inside the find match, the bar keeps the yellow cell and turns black.
-                assert caret[0].style.bgcolor.get_truecolor().hex == "#ffff00"
-                assert caret[0].style.color.get_truecolor().hex == "#000000"
-                assert caret[0].style.bold is False
+                # Inside the find match, the caret is the same input-cursor block.
+                assert_caret_block(rendered, x, input_cursor_style(app), text=lines[row][column])
                 following = rendered.crop(x + 1, x + 2)
-                assert following.text == lines[row][column]
-                assert all(not segment.style.underline for segment in following)
+                assert following.text == lines[row][column + 1]
+                assert all(
+                    segment.style.bgcolor.get_truecolor().hex == "#ffff00" for segment in following
+                )
             assert editor.text == "\n".join(lines)
 
     asyncio.run(exercise())

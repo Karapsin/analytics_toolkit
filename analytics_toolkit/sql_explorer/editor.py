@@ -8,14 +8,15 @@ from copy import copy
 from time import monotonic
 from typing import TYPE_CHECKING, Any, ClassVar, Tuple, cast
 
+from rich.cells import cell_len
 from rich.segment import Segment
 from rich.style import Style
 from textual import events
 from textual.binding import Binding, BindingType
 from textual.document._document import Document, Selection
-from textual.geometry import Offset, Region, Size, Spacing
+from textual.expand_tabs import expand_tabs_inline
 from textual.strip import Strip
-from textual.widgets import TextArea
+from textual.widgets import Input, TextArea
 from typing_extensions import TypeAlias
 
 from .clipboard import paste_fragments
@@ -30,9 +31,28 @@ if TYPE_CHECKING:
 _INDENT = "    "
 _DOUBLE_CLICK_SECONDS = 0.5
 _SEARCH_MATCH_STYLE = Style(color="#000000", bgcolor="#ffff00", bold=True)
-# A thick (left half block) bar drawn in its own cell before the character at the caret.
-CARET_GLYPH = "\u258c"
-_CARET_RESET = Style(bold=False, italic=False, underline=False, reverse=False, blink=False)
+CARET_COMPONENT = "sql-editor--caret"
+# Editor carets reuse the command pane input's block cursor rule and theme variables.
+_INPUT_CURSOR_CSS = (
+    """
+    SqlEditor > .sql-editor--caret {
+        background: $input-cursor-background;
+        color: $input-cursor-foreground;
+        text-style: $input-cursor-text-style;
+    }
+    SqlEditor:ansi > .sql-editor--caret {
+        text-style: reverse;
+    }
+    """
+    if "$input-cursor-background" in Input.DEFAULT_CSS
+    else """
+    SqlEditor > .sql-editor--caret {
+        background: $surface;
+        color: $text;
+        text-style: reverse;
+    }
+    """
+)
 SearchMatch: TypeAlias = Tuple[Tuple[int, int], Tuple[int, int]]
 
 
@@ -52,6 +72,9 @@ class _CaretRenderTheme:
 
 class SqlEditor(TextArea):
     """A Textual editor with independent cursors and anchored selections."""
+
+    COMPONENT_CLASSES: ClassVar[set[str]] = {*TextArea.COMPONENT_CLASSES, CARET_COMPONENT}
+    DEFAULT_CSS = _INPUT_CURSOR_CSS
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("up", "cursor_up", "Cursor up", show=False),
@@ -90,10 +113,6 @@ class SqlEditor(TextArea):
             ]
         ] = []
         self._cursor_preferences: dict[Selection, int] = {}
-        # Caret bar offsets as last drawn per wrapped row; mouse mapping follows the screen.
-        self._drawn_carets: dict[int, list[int]] = {}
-        # Extra soft-wrap cells reserved so every bar on a wrapped row fits on screen.
-        self._caret_reserve = 0
         self._search_pattern = ""
         self._search_matches: tuple[SearchMatch, ...] = ()
         self._search_index = -1
@@ -115,8 +134,6 @@ class SqlEditor(TextArea):
         self._secondary_selections.clear()
         self._cursor_preferences.clear()
         self._cursor_edits.clear()
-        self._drawn_carets.clear()
-        self._caret_reserve = 0
         super().load_text(text)
 
     def _sync_horizontal_scrollbar(self) -> None:
@@ -200,7 +217,6 @@ class SqlEditor(TextArea):
             item: resolved_preferences.get(item, item.end[1]) for _, item in merged
         }
         self.selection = active
-        self._sync_caret_reserve()
         self.scroll_cursor_visible()
         self.refresh()
         self.post_message(self.SelectionChanged(self.selection, self))
@@ -211,7 +227,6 @@ class SqlEditor(TextArea):
             self._cursor_preferences = {
                 self.selection: self._cursor_preferences.get(self.selection, self.selection.end[1])
             }
-            self._sync_caret_reserve()
             self.refresh()
 
     def _collapse_for_single_cursor_action(self) -> None:
@@ -811,7 +826,7 @@ class SqlEditor(TextArea):
         return count
 
     def render_line(self, y: int) -> Strip:
-        # Textual's block cursor must not mask SQL or an active find match.
+        # Textual's native cursor is replaced by the block caret overlay below.
         theme = self._theme
         if theme is not None:
             self._theme = cast("Any", _CaretRenderTheme(theme))
@@ -850,101 +865,47 @@ class SqlEditor(TextArea):
                             strip.crop(right),
                         ]
                     )
-        # VS Code-style carets: a thick bar occupies its own cell *between* the
-        # previous character and the character at the caret, which keeps every
-        # document character visible. Insert right to left so the original cell
-        # positions of carets further left stay valid; the overflow is cropped.
-        accent = Style(color=self.app.get_css_variables()["accent"])
+        # Block carets, like the command pane input's cursor: the character cell at
+        # each caret (every cell of an expanded tab or wide character) is drawn in
+        # the input cursor colors. No cell is inserted, so text never shifts.
+        caret_style = self.get_component_rich_style(CARET_COMPONENT)
         visual_row = y + int(self.scroll_y)
-        offsets = self._caret_offsets(visual_row)
-        # Bars left of the horizontal viewport are not drawn and occupy no cell.
-        self._drawn_carets[visual_row] = [
-            offset for offset in offsets if offset >= int(self.scroll_x)
-        ]
-        # A caret inside a find match is dark, even before stale matches refresh.
-        dark = {
-            tuple(self.wrapped_document.location_to_offset(selection.end))
-            for selection in self.cursor_selections
-            if any(start <= selection.end < end for start, end in self._search_matches)
-        }
-        for offset in reversed(offsets):
-            x = offset - int(self.scroll_x) + self.gutter_width
-            if not self.gutter_width <= x <= strip.cell_length:
+        for selection in self.cursor_selections:
+            row, column = selection.end
+            # Secondary carets can briefly trail the document during a batch edit.
+            if row >= self.document.line_count:
                 continue
-            cell = next(iter(strip.crop(x, x + 1)), Segment(" ", self.rich_style))
-            caret_style = (cell.style or Style()) + accent + _CARET_RESET
-            if (offset, visual_row) in dark or (
-                cell.style is not None and cell.style.bgcolor == _SEARCH_MATCH_STYLE.bgcolor
-            ):
-                caret_style += Style(color="#000000")
-            caret = Strip([Segment(CARET_GLYPH, caret_style)])
-            strip = Strip.join([strip.crop(0, x), caret, strip.crop(x)])
+            cursor_x, cursor_y = self.wrapped_document.location_to_offset(selection.end)
+            if cursor_y != visual_row:
+                continue
+            x = cursor_x - int(self.scroll_x) + self.gutter_width
+            width = 1
+            if column < len(self.document[row]):
+                next_x, next_y = self.wrapped_document.location_to_offset((row, column + 1))
+                # Before a soft wrap the next offset is on another row, so measure the
+                # character itself; a tab keeps its expanded width.
+                width = (
+                    max(1, next_x - cursor_x)
+                    if next_y == cursor_y
+                    else self._character_cells(row, column)
+                )
+            left = max(self.gutter_width, x)
+            right = min(strip.cell_length, x + width)
+            if left < right:
+                caret = Strip(
+                    Segment(segment.text, (segment.style or Style()) + caret_style, segment.control)
+                    for segment in strip.crop(left, right)
+                )
+                strip = Strip.join([strip.crop(0, left), caret, strip.crop(right)])
         return strip.adjust_cell_length(self.scrollable_content_region.width, self.rich_style)
 
-    @property
-    def wrap_width(self) -> int:
-        """Textual reserves one cell for a caret; reserve one more per extra bar."""
-        width = super().wrap_width
-        return max(1, width - self._caret_reserve) if width else width
-
-    def _sync_caret_reserve(self) -> None:
-        """Rewrap soft-wrapped text when the most bars sharing one line changes."""
-        counts: dict[int, int] = {}
-        for selection in self.cursor_selections:
-            counts[selection.end[0]] = counts.get(selection.end[0], 0) + 1
-        reserve = max(counts.values(), default=1) - 1
-        if reserve != self._caret_reserve:
-            self._caret_reserve = reserve
-            if self.soft_wrap and self.is_mounted:
-                self._rewrap_and_refresh_virtual_size()
-
-    def _caret_offsets(self, visual_row: int) -> list[int]:
-        """Return the sorted wrapped-document x offsets of carets on a visual row."""
-        offsets = []
-        for selection in self.cursor_selections:
-            # Secondary carets can briefly trail the document during a batch edit.
-            if selection.end[0] >= self.document.line_count:
-                continue
-            x, caret_row = self.wrapped_document.location_to_offset(selection.end)
-            if caret_row == visual_row:
-                offsets.append(x)
-        return sorted(offsets)
-
-    def scroll_cursor_visible(self, center: bool = False, animate: bool = False) -> Offset:
-        """Scroll the main caret's bar into view, including cells added by earlier bars."""
-        cast("Any", self)._recompute_cursor_offset()  # noqa: SLF001 -- untyped Textual helper.
-        x, y = self._cursor_offset
-        x += sum(1 for offset in self._caret_offsets(y) if offset < x)
-        if not self.soft_wrap and x + 3 + self.gutter_width > self.virtual_size.width:
-            # Bars widen the row, so make room to scroll to the shifted caret.
-            self.virtual_size = Size(x + 3 + self.gutter_width, self.virtual_size.height)
-        return self.scroll_to_region(
-            Region(x, y, width=3, height=1),
-            spacing=Spacing(right=self.gutter_width),
-            animate=animate,
-            force=True,
-            center=center,
-        )
-
-    def get_target_document_location(self, event: events.MouseEvent) -> tuple[int, int]:
-        """Map a mouse cell to the document, skipping the cells occupied by caret bars.
-
-        The bars as drawn are used, because a click first collapses extra cursors.
-        """
-        scroll_x, scroll_y = self.scroll_offset
-        target_x = event.x - self.gutter_width + scroll_x - self.gutter.left
-        target_y = event.y + scroll_y - self.gutter.top
-        offsets = self._drawn_carets.get(target_y)
-        if offsets is None:
-            offsets = [offset for offset in self._caret_offsets(target_y) if offset >= scroll_x]
-        adjusted = target_x
-        for index, offset in enumerate(offsets):
-            bar = offset + index
-            if target_x < bar:
-                break
-            adjusted = offset if target_x == bar else target_x - index - 1
-        location = self.wrapped_document.offset_to_location(Offset(adjusted, target_y))
-        return location[0], location[1]
+    def _character_cells(self, row: int, column: int) -> int:
+        """Return the terminal cells of one document character, expanding tabs."""
+        line = self.document[row]
+        if line[column] == "\t":
+            prefix = cell_len(expand_tabs_inline(line[:column], self.indent_width))
+            return self.indent_width - prefix % self.indent_width
+        return max(1, cell_len(line[column]))
 
     def _selection_style(self) -> Style:
         theme = self._theme

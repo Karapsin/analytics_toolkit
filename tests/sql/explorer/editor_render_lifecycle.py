@@ -11,7 +11,7 @@ from textual.document._document import Selection
 from textual.strip import Strip
 from textual.widgets import TextArea
 
-from tests.sql._support.carets import CARET, assert_caret_bar, caret_cells, without_cells
+from tests.sql._support.carets import assert_caret_block, caret_cells, input_cursor_style
 from tests.sql._support.explorer import FakeSession
 
 
@@ -63,12 +63,12 @@ def test_theme_absence_preserves_cells_carets_and_restores_state_on_failure(
                 editor._theme = None
                 rendered = editor.render_line(0)
                 cells = caret_cells(editor, 0)
-                assert cells == [editor.gutter_width, editor.gutter_width + 8]
-                assert without_cells(rendered, cells).text == source.text[: width - 2]
+                assert cells == [editor.gutter_width, editor.gutter_width + 7]
+                assert rendered.text == source.text
                 assert rendered.cell_length == width
-                accent = app.get_css_variables()["accent"]
-                for x in cells:
-                    assert_caret_bar(rendered, x, accent)
+                cursor = input_cursor_style(app)
+                assert_caret_block(rendered, cells[0], cursor, text="S")
+                assert_caret_block(rendered, cells[1], cursor, text="v")
                 assert editor._theme is None
 
                 def fail(_editor: TextArea, _row: int) -> Strip:
@@ -114,11 +114,12 @@ def test_wholly_clipped_search_match_leaves_visible_match_and_cell_width_intact(
             editor._search_matches = (hidden, ((0, 107), (0, 112)))
             rendered = editor.render_line(0)
             assert caret_cells(editor, 0) == [gutter + 15]
-            assert rendered.crop(gutter + 15, gutter + 16).text == CARET
+            assert_caret_block(rendered, gutter + 15, input_cursor_style(app))
             assert rendered.cell_length == width
-            rendered = without_cells(rendered, [gutter + 15])
-            assert rendered.text == source.text[: width - 1]
-            for x in range(gutter, gutter + len(visible) - 1):
+            assert rendered.text == source.text
+            for x in range(gutter, gutter + len(visible)):
+                if x == gutter + 15:
+                    continue
                 cell = rendered.crop(x, x + 1)
                 highlighted = 107 <= x - gutter + 100 < 112
                 assert all(

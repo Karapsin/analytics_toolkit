@@ -10,7 +10,7 @@ from analytics_toolkit.sql_explorer.movement import move_command
 from analytics_toolkit.sql_explorer.ruler import ColumnRuler, column_numbers, ruler_labels
 from textual.document._document import Selection
 
-from tests.sql._support.carets import assert_caret_bar
+from tests.sql._support.carets import assert_caret_block, input_cursor_style
 from tests.sql._support.explorer import FakeSession
 
 
@@ -123,15 +123,13 @@ def test_ruler_tracks_main_cursor_scroll_and_command_focus() -> None:
             editor._set_selections(active, [item for item in selections if item != active])
             await pilot.pause()
             rendered_row = editor.render_line(0)
-            assert_caret_bar(
-                rendered_row, left, app.get_css_variables()["accent"], bgcolor=original.bgcolor
-            )
+            assert_caret_block(rendered_row, left, input_cursor_style(app), text="x")
             following = rendered_row.crop(left + 1, left + 2)
             assert following.text == "x"
             assert all(
                 segment.style.color == original.color
                 and segment.style.bgcolor == original.bgcolor
-                and not segment.style.underline
+                and not segment.style.reverse
                 for segment in following
             )
             assert editor.get_line(0).plain == editor.document[0]
@@ -206,7 +204,7 @@ def _assert_tab_ruler_rows(app: SqlExplorerApp) -> None:
     composed = rows[editor.content_region.y]
     assert first_row.crop(0, editor.gutter_width).text.strip() == "1"
     assert composed.crop(editor.content_region.x, text_x).text.strip() == "1"
-    visible_text = "SELECT 1;" if editor.text else "▌"
+    visible_text = "SELECT 1;" if editor.text else " "
     text_end = editor.gutter_width + len(visible_text)
     assert first_row.crop(editor.gutter_width, text_end).text == visible_text
     assert composed.crop(text_x, text_x + len(visible_text)).text == visible_text
