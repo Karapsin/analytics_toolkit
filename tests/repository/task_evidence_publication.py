@@ -229,30 +229,15 @@ def test_ordinary_v1_context_still_publishes(tmp_path: Path, reference_publicati
     assert proto.parse(gh.api.call_args.args[2]["body"]) == context
 
 
-def test_review_of_unresolved_history_does_not_require_publication_evidence(
-    tmp_path: Path, reference_publication: Any, monkeypatch: Any
+def test_retired_review_task_has_no_publication_effects(
+    tmp_path: Path, reference_publication: Any
 ) -> None:
+    """A legacy queued Pi review cannot post checks, reviews or labels any more."""
     proto = controller.trusted_module("task_context")
     context = proto.legacy(publication_context("Implement the plan.", "starting", "absent"))
     gh, task, git = reference_publication(context, "review")
-    (tmp_path / "review-execution.json").write_text("{}")
-    (tmp_path / "verdict.json").write_text(
-        json.dumps(
-            {
-                "alignment": "aligned",
-                "change_summary": "Preserves the feature.",
-                "approved": True,
-                "summary": "Historical attachment remains verifiable.",
-                "findings": [],
-            }
-        )
-    )
-    monkeypatch.setattr(controller, "verify_review_execution", Mock())
-    # Legacy untyped reviews record source-review progress; the controls are mocked here.
-    monkeypatch.setattr(controller.trusted_module("source_review"), "begin", Mock())
-    # Untyped legacy verdicts continue as pending source reviews (no terminal review).
-    assert controller.publish(gh, task, tmp_path, tmp_path) == {"review_status": "pending"}
-    assert [call.args[0] for call in gh.api.call_args_list] == ["check-runs"]
+    assert controller.publish(gh, task, tmp_path, tmp_path) == {"review_status": "retired"}
+    gh.api.assert_not_called()
     git.assert_not_called()
     gh.label.assert_not_called()
 

@@ -11,9 +11,14 @@ import pytest
 from tests.repository.github_agent import controller
 
 
-@pytest.mark.parametrize("base", ["base", "advanced"])
-def test_local_approval_verifies_signature_and_only_certifies_reviewed_base(monkeypatch, base):
-    payload = {"base": "base", "head": "head", "summary": "Reviewed", "reviewer_id": "reviewer:id"}
+@pytest.mark.parametrize(
+    ("base", "ancestor"), [("b" * 40, True), ("c" * 40, True), ("c" * 40, False)]
+)
+def test_local_approval_verifies_signature_and_admits_only_covered_bases(
+    monkeypatch, base, ancestor
+):
+    payload = {"base": "b" * 40, "head": "a" * 40, "summary": "Reviewed"}
+    payload["reviewer_id"] = "reviewer:id"
     receipt = {"payload": payload, "signature": "signed"}
     proto = SimpleNamespace(
         extract=Mock(return_value=receipt),
@@ -21,31 +26,33 @@ def test_local_approval_verifies_signature_and_only_certifies_reviewed_base(monk
         verify_signature=Mock(),
         digest=lambda value: "digest",
     )
-    controls = SimpleNamespace(assess=Mock())
-    modules = {
-        "local_review": proto,
-        "review_control": controls,
-        "source_review": SimpleNamespace(current=Mock(return_value=None)),
-    }
-    monkeypatch.setattr(controller, "trusted_module", modules.__getitem__)
+    monkeypatch.setattr(controller, "trusted_module", {"local_review": proto}.__getitem__)
     monkeypatch.setenv("AGENT_CONTROL_DIR", "/trusted")
     monkeypatch.setenv("AGENT_ALLOWED_SIGNERS", "/trusted/signers")
-    monkeypatch.setattr(controller, "command", lambda *args, **kwargs: "tree")
-    monkeypatch.setattr(controller, "_current_discovery_target", lambda *args: True)
-    gh = SimpleNamespace(repository="owner/repo", api=Mock())
-    pr = {"number": 9, "body": "receipt", "head": {"sha": "head"}}
-    metadata = {"producer_id": "session:author", "task_digest": "task"}
-    assert controller.admit_local_review(gh, pr, base, metadata) is (base == "base")
+
+    def command(*args, **kwargs):
+        if args[:3] == ("git", "merge-base", "--is-ancestor") and not ancestor:
+            message = "not an ancestor"
+            raise RuntimeError(message)
+        return "tree"
+
+    monkeypatch.setattr(controller, "command", command)
+    pr = {"number": 9, "body": "receipt", "head": {"sha": "a" * 40}, "user": {"type": "User"}}
+    metadata = {"producer_id": "session:author", "task_digest": "task", "user_task": {}}
+    result = controller.admission(SimpleNamespace(repository="owner/repo"), pr, base, metadata)
+    assert result["state"] == ("admitted" if ancestor else "required")
     proto.verify_signature.assert_called_once()
-    assert gh.api.call_count == (1 if base == "base" else 0)
+    if ancestor:
+        assert result["reviewer"] == "reviewer:id (codex)"
 
 
-def test_missing_required_or_malformed_receipt_cannot_become_approval(monkeypatch):
+def test_missing_receipt_requires_local_review_and_required_policy_is_provenance(monkeypatch):
     proto = SimpleNamespace(extract=lambda body: None)
     monkeypatch.setattr(controller, "trusted_module", lambda name: proto)
-    assert controller.admit_local_review(None, {}, "base", {}) is False
+    pr = {"head": {"sha": "a" * 40}, "user": {"type": "User"}}
+    assert controller.admission(None, pr, "base", {})["state"] == "required"
     with pytest.raises(ValueError, match="requires a matching"):
-        controller.admit_local_review(None, {}, "base", {"local_review_required": True})
+        controller.admission(None, pr, "base", {"local_review_required": True})
 
 
 @pytest.mark.parametrize("payload", [None, [], "invalid", 1])
@@ -53,7 +60,7 @@ def test_malformed_payload_is_a_per_pr_provenance_failure(monkeypatch, payload):
     proto = SimpleNamespace(extract=lambda body: {"payload": payload})
     monkeypatch.setattr(controller, "trusted_module", lambda name: proto)
     with pytest.raises(ValueError, match="Malformed local review payload"):
-        controller.admit_local_review(None, {"head": {"sha": "head"}}, "base", {})
+        controller.admission(None, {"head": {"sha": "head"}, "user": {"type": "User"}}, "base", {})
 
 
 def test_same_job_name_in_another_workflow_cannot_resolve_failure():

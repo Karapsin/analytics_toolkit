@@ -13,6 +13,7 @@ from typing import Any
 MARKER = "atk-local-review:v1"
 NAMESPACE = "atk-local-review-v1"
 LIMIT = 48 * 1024
+RUNTIMES = frozenset({"codex", "claude-code"})
 
 
 def canonical(value: dict[str, Any]) -> bytes:
@@ -57,6 +58,10 @@ def validate_binding(receipt: dict[str, Any], *, repository: str, head: str, bas
             or not isinstance(payload.get("summary"), str) or not payload["summary"].strip()
             or not isinstance(receipt.get("signature"), str)):
         raise ValueError("Local review does not approve this exact source, task and base")
+    # Claude/Codex parity: an absent runtime is a legacy Codex receipt.
+    if (any(not isinstance(value, str) for key, value in payload.items() if key.startswith("reviewer_"))
+            or payload.get("reviewer_runtime", "codex") not in RUNTIMES):
+        raise ValueError("Local review names an unsupported reviewer runtime")
     return payload
 
 

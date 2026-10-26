@@ -809,10 +809,10 @@ def reject(gh: Any, pr: dict[str, Any], task: dict[str, Any], reason: str, chang
                    (gh.repository, number, head, task["task_digest"], reason, changes, time.time()))
     marker = f"<!-- agent-correction-{head}-{task['task_digest']} -->"
     if not any(marker in item["body"] for item in gh.pages(f"issues/{number}/comments?per_page=100")):
-        gh.comment(number, marker + "\nReviewer requested changes.\n\nWhat changed: " + changes
+        gh.comment(number, marker + "\nChanges requested.\n\nWhat changed: " + changes
                    + "\n\nWhy rejected:\n" + reason
                    + "\n\nA separate correction agent on RPi5 is queued. "
-                   "It will plan the correction and submit it for independent review.")
+                   "Its fix is gated by the read-only fraud check and green fast CI.")
     enqueue(f"reject:{gh.repository}:{number}:{head}:{task['task_digest']}", "rejection",
             {"repository": gh.repository, "number": number, "head": head,
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
@@ -893,9 +893,9 @@ def approval_notice(gh: Any, pr: dict[str, Any], paths: list[str], task: dict[st
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
              "title": pr.get("title", "PR " + str(number)),
              "changes": row["changes"][:2500], "paths": paths,
-             "reason": "These files govern the reviewer/controller, its trusted prompts or "
+             "reason": "These files govern the controller, agent runtimes, their trusted prompts or "
              "security and merge permissions. Your retained policy requires owner approval "
-             "for this exact head, in addition to separate review and fast CI.",
+             "for this exact head. Admission and fast CI are already green on it.",
              "command": "/agent approve-policy " + head,
              **_notification_metadata(pr, "owner_approval", digest)}, buttons=True)
 
@@ -941,7 +941,7 @@ def callback(gh: Any, query: dict[str, Any], owner_id: int, chat_id: int) -> str
     else:
         clear_owner_decline(gh, pr["number"], value["head"])
         reconcile_label(gh, pr, approval_required=False)
-    return "Approved; separate review and fast CI still apply." if action == "approve" else "Disapproved; PR paused."
+    return "Approved; green fast CI on this exact head still gates the merge." if action == "approve" else "Disapproved; PR paused."
 
 
 def cursor(key: str, default: str | None = None) -> str | None:
