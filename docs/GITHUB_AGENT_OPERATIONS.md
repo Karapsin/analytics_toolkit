@@ -1541,3 +1541,5 @@ always uploads `quality-diagnostics-<run>-<attempt>`; summaries print the index
 path. The coordinator exports the complete artifact and index to correction
 workers alongside exact-head check logs, without treating their content as owner
 instructions. Keep debt enforcement, baseline counts and return codes unchanged.
+
+[Documentation overview](README.md)

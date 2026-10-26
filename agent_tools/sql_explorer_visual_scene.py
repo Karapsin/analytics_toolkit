@@ -1117,8 +1117,7 @@ def _new_file_alignment_assertions(app: App[Any]) -> dict[str, bool]:
     top, bottom = dialog.y - viewport.y, viewport.bottom - dialog.bottom
     return {
         "new_file_center_middle": (
-            screen.styles.align_horizontal == "center"
-            and screen.styles.align_vertical == "middle"
+            screen.styles.align_horizontal == "center" and screen.styles.align_vertical == "middle"
         ),
         "new_file_dialog_contained": (
             dialog.width > 0 and dialog.height > 0 and min(left, right, top, bottom) >= 0

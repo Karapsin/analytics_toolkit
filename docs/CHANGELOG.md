@@ -144,6 +144,7 @@ Generated from package version bumps and recent commit history.
 - Fix diagnostic tool-version lookup lint and visual/publication regression regex formatting, preserving missing-tool metadata, error propagation and all validation gates.
 - Retain complete failed GitHub visual capture diagnostics and both child output streams without granting visual approval
 - Reconcile resumable source review with signed local-review admission, preserving active assignments and current dev safeguards without incomplete-review correction loops.
+- Repaired dev CI after force merges: lint/format findings, MinIO guard environment, Python 3.9 renderer gating, time-independent monitor fixture, raster test fixtures, font-dependent raster quarantine, and restored branch coverage for stale search-match end carets.
 
 ## 1.3.12.5 - 2026-10-14
 

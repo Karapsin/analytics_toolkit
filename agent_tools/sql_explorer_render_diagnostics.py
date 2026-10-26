@@ -979,10 +979,7 @@ def _border_sample_clips(region: Region) -> list[Region]:
     clips = [Region(0, y, min(width, MAX_CELLS), 1) for y in sorted({0, height - 1})]
     side_rows = sorted({1, height // 2, height - 2} - {0, height - 1})
     clips.extend(
-        Region(x, y, 1, 1)
-        for y in side_rows
-        if 0 < y < height - 1
-        for x in sorted({0, width - 1})
+        Region(x, y, 1, 1) for y in side_rows if 0 < y < height - 1 for x in sorted({0, width - 1})
     )
     return clips
 
