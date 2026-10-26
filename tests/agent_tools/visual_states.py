@@ -344,7 +344,7 @@ def _assert_ruler_workspace(app: scenes.VisualExplorerApp, snapshot: dict[str, A
     assert snapshot["ruler"]["region"]["height"] == 1
     assert snapshot["ruler"]["widget_row"]["text"].strip() == "1"
     assert snapshot["editor"]["widget_row"]["text"][: editor.gutter_width].strip() == "1"
-    assert snapshot["editor"]["widget_row"]["text"][editor.gutter_width :].strip() == "▌"
+    assert snapshot["editor"]["widget_row"]["text"][editor.gutter_width :].strip() == ""
     assert app.focused is workspace.command_input
 
 

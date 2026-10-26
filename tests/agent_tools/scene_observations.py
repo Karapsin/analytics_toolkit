@@ -58,7 +58,7 @@ def test_added_scene_diagnostics_observe_actual_layers_without_changing_state(
                 ]
                 for layer in ("widget_rows", "composed_rows"):
                     assert caret[layer] is not None
-                    assert caret[layer]["text"] == "\u258c"
+                    assert caret[layer]["text"] == editor.document[1][14]
                     assert caret[layer]["cells"] == 1
             else:
                 snapshot = result["new_file"]

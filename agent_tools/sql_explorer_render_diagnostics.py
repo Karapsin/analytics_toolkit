@@ -49,6 +49,10 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+# SqlEditor's component class for block carets in the input cursor style.
+CARET_COMPONENT = "sql-editor--caret"
+
+
 def _color(color: Color | None, *, foreground: bool) -> str:
     color = color or Color.default()
     triplet = color.get_truecolor(foreground=foreground)
@@ -546,21 +550,31 @@ def _caret_cells(
     }
 
 
+def _caret_style(editor: Any) -> dict[str, Any]:
+    """Record the block caret colors, which match the command pane input cursor."""
+    style = editor.get_component_rich_style(CARET_COMPONENT)
+    return {
+        "foreground": _color(style.color, foreground=True),
+        "background": _color(style.bgcolor, foreground=False),
+        "reverse": bool(style.reverse),
+    }
+
+
 def _caret_mapping(editor: Any, selection: Any) -> dict[str, Any]:
     row, column = selection.end
     wrapped_x, wrapped_y = editor.wrapped_document.location_to_offset(selection.end)
-    # Each caret is a one-cell bar inserted before its character, so bars drawn
-    # further left on the same visual row displace it by one cell each.
-    preceding = sum(
-        1
-        for other in editor.cursor_selections
-        if (offset := editor.wrapped_document.location_to_offset(other.end))[1] == wrapped_y
-        and int(editor.scroll_x) <= offset[0] < wrapped_x
-    )
-    x = wrapped_x - int(editor.scroll_x) + editor.gutter_width + preceding
+    x = wrapped_x - int(editor.scroll_x) + editor.gutter_width
     y = wrapped_y - int(editor.scroll_y)
     in_document = column < len(editor.document[row])
+    # A block caret covers every terminal cell of the character at its position.
     width = 1
+    if in_document:
+        next_x, next_y = editor.wrapped_document.location_to_offset((row, column + 1))
+        width = (
+            max(1, next_x - wrapped_x)
+            if next_y == wrapped_y
+            else max(1, editor.scrollable_content_region.width - x)
+        )
     origin = editor.content_region
     screen_x, screen_y = origin.x + x, origin.y + y
     viewport = editor.scrollable_content_region
@@ -600,8 +614,13 @@ def _observe_caret_layers(
             result["missing"].append(f"{name}:{layer}:unavailable_or_clipped")
             continue
         # A recorded style is not a PNG visibility verdict.
-        marked = observed["text"] == "\u258c" and not any(
-            span["flags"]["underline"] or span["flags"]["reverse"] for span in observed["spans"]
+        expected = caret["caret_style"]
+        marked = bool(observed["spans"]) and all(
+            span["foreground"] == expected["foreground"]
+            and span["background"] == expected["background"]
+            and span["flags"]["reverse"] == expected["reverse"]
+            for span in observed["spans"]
+            if span["cells"]
         )
         if not marked:
             result["multicursor"]["findings"].append(f"{name}:{layer}:caret_mark_absent")
@@ -619,6 +638,7 @@ def _collect_caret(editor: Any, selection: Any, index: int, result: dict[str, An
     }
     result["multicursor"]["carets"].append(caret)
     try:
+        caret["caret_style"] = _caret_style(editor)
         caret.update(_caret_mapping(editor, selection))
         _observe_caret_layers(caret, result["regions"], result)
     except (AttributeError, LookupError, RuntimeError, TypeError, ValueError) as error:

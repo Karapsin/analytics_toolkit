@@ -20,6 +20,8 @@ from tests.agent_tools._support import wait_for_scene
 if TYPE_CHECKING:
     from pathlib import Path
 
+_FAKE_CARET = Style(color="#0e1113", bgcolor="#f1eeec")
+
 
 def _state(app: Any) -> tuple[Any, ...]:
     editor = app.active_workspace.editor
@@ -54,16 +56,18 @@ def _assert_caret_layers(app: Any, caret: dict[str, Any], composed: Any) -> None
         "widget_rows": editor.render_line(local_y).crop(local_x, local_x + 1),
         "composed_rows": composed[screen_y].crop(screen_x, screen_x + 1),
     }
-    following = {
-        "widget_rows": editor.render_line(local_y).crop(local_x + 1, local_x + 2),
-        "composed_rows": composed[screen_y].crop(screen_x + 1, screen_x + 2),
-    }
+    expected = diagnostics._caret_style(editor)
+    assert caret["caret_style"] == expected
     for layer, strip in strips.items():
         observed = caret[layer]
         assert observed == diagnostics.strip_record(strip, x=screen_x, y=screen_y, width=1)
-        # The caret is a bar cell drawn before, not over, the character it precedes.
-        assert observed["text"] == "\u258c"
-        assert following[layer].text == editor.document[row][column]
+        # The caret is a block drawn over the character at its position.
+        assert observed["text"] == editor.document[row][column]
+        assert all(
+            span["foreground"] == expected["foreground"]
+            and span["background"] == expected["background"]
+            for span in observed["spans"]
+        )
         assert all(
             isinstance(span["flags"][flag], bool)
             for span in observed["spans"]
@@ -138,9 +142,8 @@ def test_mounted_unicode_and_tab_mapping_uses_terminal_cells(
                 assert caret["wrapped_offset"] == list(offset)
                 x, y = caret["content_local_cell"]
                 width = caret["cell_width"]
-                assert width == 1
                 original = editor.render_line(y).crop(x, x + width)
-                assert original.text == "\u258c"
+                assert original.text == (line + " ")[observed_column].expandtabs(width)
                 for layer in ("widget_rows", "composed_rows"):
                     assert caret[layer]["text"] == original.text
                     assert caret[layer]["cells"] == original.cell_length == width
@@ -169,13 +172,14 @@ def _fake_observation() -> tuple[Any, dict[str, Any]]:
         gutter=SimpleNamespace(left=0),
         has_focus=True,
         _cursor_preferences=dict.fromkeys(selections, 14),
+        get_component_rich_style=lambda *_names, **_options: _FAKE_CARET,
     )
     rows = [
         diagnostics.strip_record(
             Strip(
                 [
                     Segment(" " * 17, Style(color="#abcdef")),
-                    Segment("\u258c", Style(color="#d78900")),
+                    Segment("4", _FAKE_CARET),
                     Segment(" " * 22, Style(color="#abcdef")),
                 ]
             ),
@@ -206,7 +210,7 @@ def _fake_observation() -> tuple[Any, dict[str, Any]]:
 
 @pytest.mark.parametrize("layer", ["widget_rows", "composed_rows"])
 @pytest.mark.parametrize(
-    "damage", ["missing_row", "missing_flag", "lost_bar", "underlined_bar", "reversed_bar"]
+    "damage", ["missing_row", "missing_flag", "lost_foreground", "lost_background", "reversed"]
 )
 def test_missing_layer_and_lost_style_are_observed_separately(layer: str, damage: str) -> None:
     app, result = _fake_observation()
@@ -214,19 +218,20 @@ def test_missing_layer_and_lost_style_are_observed_separately(layer: str, damage
     if damage == "missing_row":
         rows.pop(0)
     elif damage == "missing_flag":
-        del rows[0]["spans"][1]["flags"]["underline"]
-    elif damage == "lost_bar":
-        rows[0]["spans"][1]["text"] = "x"
+        del rows[0]["spans"][1]["flags"]["reverse"]
+    elif damage == "lost_foreground":
+        rows[0]["spans"][1]["foreground"] = "#abcdef"
+    elif damage == "lost_background":
+        rows[0]["spans"][1]["background"] = "#000000"
     else:
-        flag = "underline" if damage == "underlined_bar" else "reverse"
-        rows[0]["spans"][1]["flags"][flag] = True
+        rows[0]["spans"][1]["flags"]["reverse"] = True
     before = deepcopy(result)
     diagnostics._multicursor_diagnostics(app, result)
     assert result["regions"] == before["regions"]
     caret = result["multicursor"]["carets"][0]
-    if damage in {"lost_bar", "underlined_bar", "reversed_bar"}:
+    if damage in {"lost_foreground", "lost_background", "reversed"}:
         assert not result["missing"]
-        assert caret[layer]["spans"][0]["text"] in {"x", "\u258c"}
+        assert caret[layer]["spans"][0]["text"] == "4"
         assert result["multicursor"]["findings"] == [
             f"multicursor:caret:0:{layer}:caret_mark_absent",
         ]
@@ -380,7 +385,7 @@ def test_padding_marks_and_state_mismatches_are_reported_without_repair() -> Non
     app.focused = None
     rows = [
         diagnostics.strip_record(
-            Strip([Segment(" " * 17 + "▌" + " " * 22)]),
+            Strip([Segment(" " * 17), Segment(" ", _FAKE_CARET), Segment(" " * 22)]),
             x=2,
             y=5 + row,
             width=40,
@@ -398,7 +403,7 @@ def test_padding_marks_and_state_mismatches_are_reported_without_repair() -> Non
     ]
     assert not result["missing"]
     assert all(not caret["in_document"] for caret in snapshot["carets"])
-    assert all(caret["widget_rows"]["text"] == "▌" for caret in snapshot["carets"])
+    assert all(caret["widget_rows"]["text"] == " " for caret in snapshot["carets"])
     assert app.keyboard_mode is False
     assert editor.selection is editor.cursor_selections[0]
 

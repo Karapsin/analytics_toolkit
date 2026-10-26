@@ -9,6 +9,12 @@ from analytics_toolkit.sql_explorer.clipboard import paste_fragments
 from textual import events
 from textual.document._document import Selection
 
+from tests.sql._support.carets import (
+    assert_caret_block,
+    assert_no_caret_cells,
+    caret_cells,
+    input_cursor_style,
+)
 from tests.sql.explorer.app import FakeSession
 
 
@@ -143,7 +149,7 @@ def test_multiline_fragments_cut_and_clipboard_replacement(monkeypatch) -> None:
     asyncio.run(exercise())
 
 
-def test_carets_draw_bars_before_occupied_and_blank_cells() -> None:
+def test_carets_draw_blocks_on_occupied_and_blank_cells() -> None:
     async def exercise() -> None:
         application = SqlExplorerApp(FakeSession())
         async with application.run_test() as pilot:
@@ -152,45 +158,21 @@ def test_carets_draw_bars_before_occupied_and_blank_cells() -> None:
             editor._set_selections(
                 Selection.cursor((0, 2)), [Selection.cursor((1, 0)), Selection.cursor((2, 4))]
             )
+            cursor = input_cursor_style(application)
             for focused in (True, False):
                 if focused:
                     editor.focus()
                 else:
                     application.query_one("#command-input").focus()
-                # Compare with the same cells before secondary carets are drawn.
-                # Textual may resolve their inherited background on newer versions.
-                editor._set_selections(Selection.cursor((0, 2)), [])
                 await pilot.pause()
-                backgrounds = {
-                    row: next(
-                        iter(
-                            editor.render_line(row).crop(
-                                editor.gutter_width + column, editor.gutter_width + column + 1
-                            )
-                        )
-                    ).style.bgcolor
-                    for row, column in ((1, 0), (2, 4))
-                }
-                editor._set_selections(
-                    Selection.cursor((0, 2)),
-                    [Selection.cursor((1, 0)), Selection.cursor((2, 4))],
-                )
-                await pilot.pause()
-                for row in range(3):
+                for row, (column, text) in enumerate(((2, "l"), (0, " "), (4, " "))):
                     strip = editor.render_line(row)
-                    bars = [segment for segment in strip if segment.text == "▌"]
-                    assert len(bars) == 1
-                    if row == 0:
-                        assert "se▌lect 1" in strip.text
-                        following = strip.crop(editor.gutter_width + 3, editor.gutter_width + 4)
-                        assert following.text == "l"
-                        assert all(not segment.style.underline for segment in following)
-                    else:
-                        assert len(bars) == 1
-                        assert bars[0].style.bold is False
-                        assert bars[0].style.bgcolor == backgrounds[row]
-                        assert not bars[0].style.reverse
-                        assert not bars[0].style.underline
+                    x = editor.gutter_width + column
+                    assert caret_cells(editor, row) == [x]
+                    assert_caret_block(strip, x, cursor, text=text)
+                    assert_no_caret_cells(strip, cursor, [x])
+                assert "select 1" in editor.render_line(0).text
+                assert "last" in editor.render_line(2).text
             assert editor.text == "select 1\n\nlast"
 
     asyncio.run(exercise())

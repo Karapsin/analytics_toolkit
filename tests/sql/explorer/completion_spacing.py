@@ -7,7 +7,7 @@ from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.completion import CompletionRequest, CompletionResult
 from analytics_toolkit.sql_explorer.editor_actions import completion_text
 
-from tests.sql._support.carets import CARET
+from tests.sql._support.carets import assert_caret_block, input_cursor_style
 from tests.sql._support.completion import _install_stub
 from tests.sql._support.explorer import FakeSession
 
@@ -208,18 +208,15 @@ def test_column_completion_preserves_the_rendered_separator_and_suffix_through_h
                 editor.render_line(0),
                 composed.crop(viewport.x, viewport.right),
             ):
-                assert strip.crop(left, left + len(original) + 1).text == (
-                    original[:10] + CARET + original[10:]
-                )
-                separator = strip.crop(left + 11, left + 12)
-                assert separator.text == " "
-                assert all(not segment.style.underline for segment in separator)
+                assert strip.crop(left, left + len(original)).text == original
+                # The block caret covers the separator without hiding or moving it.
+                assert_caret_block(strip, left + 10, input_cursor_style(app), text=" ")
             assert editor.text == original
             await pilot.press("enter")
             assert editor.text == completed
             assert editor.cursor_location == (0, len("SELECT c.customer_id"))
             assert editor.text[len("SELECT c.customer_id") :] == suffix
-            assert "customer_id" + CARET + " FROM" in editor.render_line(0).text
+            assert "customer_id FROM" in editor.render_line(0).text
             editor.action_undo()
             assert editor.text == original
             assert editor.cursor_location == (0, 10)
