@@ -18,6 +18,7 @@ from ..backends.registry import (
     normalize_backend_name as _registry_normalize_backend_name,
 )
 from ..execution.operation_runner import timed_public_sql_function
+from .airflow_compat import connection_getter
 from .config_cache import load_cached_connections_source
 from .config_diagnostics import (
     connection_config_diagnostics,
@@ -791,14 +792,14 @@ def _get_airflow_raw_connection_config_and_extras(
 
 def _get_airflow_connection(connection_id: str) -> Any:
     try:
-        from airflow.hooks.base import BaseHook
+        get_connection = connection_getter()
     except ImportError as exc:
         raise SqlConfigError(
             "Airflow connection resolution requires the 'apache-airflow' package."
         ) from exc
 
     try:
-        return BaseHook.get_connection(connection_id)
+        return get_connection(connection_id)
     except Exception as exc:
         raise UnsupportedConnectionTypeError(
             f"Unknown Airflow connection ID: {connection_id}. {type(exc).__name__}: {exc}"

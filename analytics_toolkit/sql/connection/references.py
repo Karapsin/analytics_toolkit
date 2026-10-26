@@ -4,9 +4,9 @@ import json
 import os
 import re
 from collections.abc import Mapping
-from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
+from .airflow_compat import variable_getter
 from .errors import SqlConfigError
 from .secret_file import load_secret_values
 
@@ -200,7 +200,7 @@ def _read_airflow_variable(
     variable_key: str,
 ) -> Any:
     try:
-        variable_module = import_module("airflow.models.variable")
+        get_variable = variable_getter()
     except ImportError as exc:
         message = (
             f"SQL connection '{connection_key}' field '{field_name}' references "
@@ -209,7 +209,7 @@ def _read_airflow_variable(
         raise SqlConfigError(message) from exc
 
     try:
-        return variable_module.Variable.get(variable_key)
+        return get_variable(variable_key)
     except Exception as exc:
         message = (
             f"Could not resolve Airflow Variable '{variable_key}' for SQL connection "
