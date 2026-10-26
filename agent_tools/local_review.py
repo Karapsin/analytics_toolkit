@@ -552,9 +552,10 @@ def visual_evidence(root: Path, subject: dict[str, str]) -> dict[str, Any] | Non
     fingerprint is the exact candidate tree. Incomplete, stale or unreadable
     receipts fail before the reviewer starts.
     """
+    # NUL-separated names avoid core.quotePath quoting of non-ASCII paths.
     changed = sessions.run(
-        root, "git", "diff", "--name-only", "--no-renames", subject["base"], subject["head"]
-    ).splitlines()
+        root, "git", "diff", "--name-only", "-z", "--no-renames", subject["base"], subject["head"]
+    ).split("\0")
     visual_paths = sorted(
         path for path in changed if sql_explorer_visual.visual_review_required([path])
     )
@@ -573,6 +574,7 @@ def visual_evidence(root: Path, subject: dict[str, str]) -> dict[str, Any] | Non
     if hashlib.sha256(data).hexdigest() != status["receipt_sha256"]:
         msg = "SQL Explorer visual-review receipt changed during verification"
         raise RuntimeError(msg)
+    _completed_visual_receipt(root, json.loads(data))
     return {
         "kind": "sql-explorer-visual-review",
         "verified": True,
@@ -584,3 +586,66 @@ def visual_evidence(root: Path, subject: dict[str, str]) -> dict[str, Any] | Non
         "receipt_sha256": status["receipt_sha256"],
         "receipt": json.loads(data),
     }
+
+
+def _sha256_hex(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64  # noqa: PLR2004 - SHA-256 hex digest length
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+def _completed_visual_receipt(root: Path, receipt: dict[str, Any]) -> None:
+    """Require a receipt written by ``complete_review`` and its completed session record."""
+    incomplete = "SQL Explorer visual-review receipt is not a completed visual review: "
+    scenes = receipt.get("scenes")
+    review_id = receipt.get("review_id")
+    if (
+        receipt.get("schema_version") != 1
+        or not isinstance(review_id, str)
+        or not isinstance(receipt.get("host"), dict)
+        or receipt.get("viewport") != list(sql_explorer_visual.VIEWPORT)
+        or not isinstance(receipt.get("completed_at_epoch"), int)
+        or not isinstance(scenes, dict)
+        or not scenes
+    ):
+        raise RuntimeError(incomplete + "completion metadata is missing")
+    for scene_id, scene in scenes.items():
+        if not (
+            isinstance(scene, dict)
+            and scene.get("verdict") == "pass"
+            and _sha256_hex(scene.get("screenshot_sha256"))
+            and _sha256_hex(scene.get("geometry_sha256"))
+        ):
+            raise RuntimeError(incomplete + "scene evidence is missing for " + str(scene_id))
+    try:
+        session_file = sql_explorer_visual.session_path(root, review_id)
+    except sql_explorer_visual.VisualReviewError as exc:
+        raise RuntimeError(incomplete + str(exc)) from exc
+    if session_file.is_symlink() or not session_file.is_file():
+        raise RuntimeError(incomplete + "the review session record is missing")
+    session = json.loads(session_file.read_text(encoding="utf-8"))
+    capture = session.get("capture") if isinstance(session, dict) else None
+    recorded = session.get("scenes") if isinstance(session, dict) else None
+    if (
+        not isinstance(capture, dict)
+        or capture.get("status") != "pass"
+        or capture.get("workspace_removed") is not True
+        or not isinstance(recorded, dict)
+        or set(recorded) != set(scenes)
+        or any(
+            not isinstance(recorded[scene_id], dict)
+            or recorded[scene_id].get("capture") != "pass"
+            or any(
+                recorded[scene_id].get(key) != scene[key]
+                for key in ("screenshot_sha256", "geometry_sha256", "verdict")
+            )
+            for scene_id, scene in scenes.items()
+        )
+        or any(
+            session.get(key) != receipt.get(key)
+            for key in ("review_id", "content_fingerprint", "manifest_sha256", "capture_mode")
+        )
+    ):
+        raise RuntimeError(incomplete + "the review session does not match a completed capture")

@@ -152,31 +152,34 @@ def visual_candidate(root: Path) -> None:
     )
 
 
+def complete_visual_review(root: Path) -> dict[str, Any]:
+    """Drive the real producer; only the headless capture itself is simulated."""
+    session = sql_explorer_visual.start_review(root, "review-0001")
+    session["capture"] = {"status": "pass", "workspace_removed": True}
+    for index, scene in enumerate(session["scenes"].values()):
+        scene.update(
+            capture="pass",
+            screenshot_sha256=f"{index:064x}",
+            geometry_sha256=f"{index + 10:064x}",
+            verdict="pass",
+            notes="Reviewed full PNG",
+        )
+    path = sql_explorer_visual.session_path(root, "review-0001")
+    path.write_text(json.dumps(session))
+    sql_explorer_visual.complete_review(root, "review-0001")
+    return json.loads((root / sql_explorer_visual.RECEIPT).read_text())
+
+
 def write_visual_receipt(root: Path, **changes: Any) -> dict[str, Any]:
-    receipt = {
-        "schema_version": 1,
-        "review_id": "review-0001",
-        "content_fingerprint": sql_explorer_visual.content_fingerprint(root),
-        "manifest_sha256": hashlib.sha256(
-            (root / sql_explorer_visual.MANIFEST).read_bytes()
-        ).hexdigest(),
-        "capture_mode": sql_explorer_visual.CAPTURE_MODE,
-        "scenes": {
-            scene: {"verdict": "pass", "screenshot_sha256": "a" * 64}
-            for scene in ("main", "picker")
-        },
-        **changes,
-    }
-    path = root / sql_explorer_visual.RECEIPT
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(receipt))
+    receipt = {**complete_visual_review(root), **changes}
+    (root / sql_explorer_visual.RECEIPT).write_text(json.dumps(receipt))
     return receipt
 
 
 def test_review_attaches_current_visual_receipt_bound_to_task(candidate, monkeypatch) -> None:
     calls = capture_review(monkeypatch)
     visual_candidate(candidate)
-    receipt = write_visual_receipt(candidate)
+    receipt = complete_visual_review(candidate)
     spoof = sessions.state_path(candidate).with_name("atk-local-review-evidence.json")
     digest = local_review.binding(candidate, git(candidate, "rev-parse", "HEAD"))["task_digest"]
     spoof.write_text(
@@ -235,3 +238,55 @@ def test_non_visual_change_never_attaches_or_accepts_visual_evidence(
     local_review.review(candidate)
     (call,) = calls
     assert call["request"]["evidence"] == {"task_digest": digest, "scope": "Approved"}
+
+
+def scene_without_geometry(receipt: dict[str, Any]) -> dict[str, Any]:
+    return {
+        name: {"verdict": "pass", "screenshot_sha256": scene["screenshot_sha256"]}
+        for name, scene in receipt["scenes"].items()
+    }
+
+
+@pytest.mark.parametrize("defect", ["metadata", "geometry", "session", "mismatch"])
+def test_review_rejects_receipts_not_produced_by_a_completed_review(
+    candidate, monkeypatch, defect
+) -> None:
+    calls = capture_review(monkeypatch)
+    visual_candidate(candidate)
+    receipt = complete_visual_review(candidate)
+    session = sql_explorer_visual.session_path(candidate, "review-0001")
+    if defect == "metadata":
+        receipt.pop("completed_at_epoch")
+    elif defect == "geometry":
+        receipt["scenes"] = scene_without_geometry(receipt)
+    elif defect == "session":
+        session.unlink()
+    else:
+        recorded = json.loads(session.read_text())
+        recorded["capture"]["workspace_removed"] = False
+        session.write_text(json.dumps(recorded))
+    (candidate / sql_explorer_visual.RECEIPT).write_text(json.dumps(receipt))
+    # The existing gate accepts these; the reviewer attachment must not.
+    assert sql_explorer_visual.verify_visual_receipt(
+        candidate, paths=["analytics_toolkit/sql_explorer/app.py"]
+    )["ok"]
+    with pytest.raises(RuntimeError, match="not a completed visual review"):
+        local_review.review(candidate)
+    assert calls == []
+
+
+def test_quoted_non_ascii_sql_explorer_paths_still_require_the_receipt(
+    candidate, monkeypatch
+) -> None:
+    calls = capture_review(monkeypatch)
+    git(candidate, "config", "core.quotePath", "true")
+    commit(
+        candidate,
+        {
+            ".gitignore": ".rag_index/\n",
+            "analytics_toolkit/sql_explorer/r\u00e9sum\u00e9.py": "VALUE = 1\n",
+        },
+    )
+    with pytest.raises(RuntimeError, match="No complete"):
+        local_review.review(candidate)
+    assert calls == []
