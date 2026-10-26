@@ -75,11 +75,52 @@ def test_unsafe_archive_paths_are_rejected(tmp_path: Path, path: str) -> None:
         evidence.extract(archive({path: "bad"}), tmp_path, str)
 
 
-def test_symlinks_and_large_diagnostics_are_rejected(tmp_path: Path) -> None:
+def test_symlinks_are_rejected_and_large_diagnostics_keep_redacted_tail(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Unsafe"):
         evidence.extract(archive({"startup.log": "outside"}, symlink=True), tmp_path, str)
-    with pytest.raises(ValueError, match="file limit"):
-        evidence.extract(archive({"startup.log": "x" * (evidence.MAX_FILE + 1)}), tmp_path, str)
+    # Real fault-injection compose.log files reach about 2.4 MB uncompressed.
+    secret = "TOKEN=synthetic-private\n"
+    log = secret + "x" * (evidence.MAX_FILE * 3) + "\n" + secret + "final failure\n"
+    redact = controller.trusted_module("task_context").redact
+    files = evidence.extract(archive({"compose.log": log}), tmp_path, redact)
+    content = (tmp_path / "compose.log").read_bytes()
+    assert len(content) <= evidence.MAX_FILE
+    assert content.startswith(evidence.TRUNCATED)
+    assert content.endswith(b"final failure\n")
+    assert b"synthetic-private" not in content
+    assert files == {"compose.log": hashlib.sha256(content).hexdigest()}
+
+
+def test_artifact_limits_degrade_to_missing_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = [
+        {
+            "run": 7,
+            "attempt": 1,
+            "head": "a" * 40,
+            "artifacts": [
+                {"id": 4, "expired": False, "size_in_bytes": 10},
+                {"id": 5, "expired": False, "size_in_bytes": 10},
+                {"id": 6, "expired": False, "size_in_bytes": 10},
+            ],
+        }
+    ]
+    expanded = archive({"build.log": "partial", "other.bin": "x" * (evidence.MAX_ARCHIVE + 1)})
+    archives = {4: expanded, 5: b"not a zip", 6: archive({"startup.log": "pull denied"})}
+    monkeypatch.setattr(evidence, "inventory", lambda gh, runs: snapshot)
+    monkeypatch.setattr(evidence, "download", lambda repo, identity: archives[identity])
+    task = {"runs": [7], "evidence_key": evidence.fingerprint(snapshot)}
+    destination = tmp_path / "evidence"
+    evidence.prepare(Mock(repository="owner/repo"), task, destination, str)
+    manifest = json.loads((destination / "manifest.json").read_text())
+    assert manifest["missing"] == [
+        "Artifact 4: evidence unavailable: Integration artifact expansion limit exceeded",
+        "Artifact 5: evidence unavailable: File is not a zip file",
+    ]
+    assert list(manifest["files"]) == ["run-7/artifact-6/startup.log"]
+    assert not (destination / "run-7/artifact-4").exists()
 
 
 def test_expired_artifact_is_explicit_and_not_downloaded(

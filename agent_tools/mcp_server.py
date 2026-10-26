@@ -166,13 +166,15 @@ TEST_COMMANDS = {
     "handoff": [
         {
             "display": (
-                "pytest -q tests/agent_tools/local_review.py tests/agent_tools/handoff.py "
+                "pytest -q tests/agent_tools/local_review.py "
+                "tests/agent_tools/local_review_evidence.py tests/agent_tools/handoff.py "
                 "tests/agent_tools/bootstrap_offline.py tests/agent_tools/mcp tests/repository"
             ),
             "args": [
                 "pytest",
                 "-q",
                 "tests/agent_tools/local_review.py",
+                "tests/agent_tools/local_review_evidence.py",
                 "tests/agent_tools/handoff.py",
                 "tests/agent_tools/bootstrap_offline.py",
                 "tests/agent_tools/mcp",

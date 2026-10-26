@@ -150,6 +150,8 @@ Generated from package version bumps and recent commit history.
 - Drive the post-merge compatibility Python matrix from a rolling seven-minor support policy (extended to eight while an extra lags the newest CPython), add a post-merge drift check against CPython releases and extra support (full installs in disposable environments on the newest CPython). While an extra lags, the newest-minor compatibility environment skips that extra's test modules. Everyday fast checks stay on Python 3.14.
 - Replace Pi source, plan and visual reviews with signed local review admission, a narrow Pi-fix fraud check and green fast CI; protect Claude/Codex runtime configuration and accept Claude Code review receipts.
 - Draw SQL Explorer editor carets as VS Code-style thick bars (left half block) between characters for main and secondary cursors in every state, keeping all characters visible, reserving soft-wrap room and scrolling so every bar stays on screen, and mapping mouse clicks past drawn bars
+- Local review advances the feature dev base to merged origin/dev with a revalidation receipt and attaches the verified, completed SQL Explorer visual receipt
+- Keep Pi repair preparation running when integration evidence exceeds limits: retain the redacted tail of oversized startup/build/compose diagnostics and record artifacts that exceed archive limits or are unreadable as unavailable evidence instead of aborting the repair.
 
 ## 1.3.12.5 - 2026-10-14
 
