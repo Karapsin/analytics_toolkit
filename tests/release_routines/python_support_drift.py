@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
@@ -187,7 +188,8 @@ def test_release_fetch_falls_back_and_reports_every_source_failure() -> None:
         (1, "error: metadata-generation-failed", "unsupported"),
         (1, "Max retries exceeded with url: /simple/pandas/", "unavailable"),
         (1, "HTTP error 503 Service Unavailable", "unavailable"),
-        (124, "pip resolution timed out after 1200 seconds", "unavailable"),
+        (124, "pip installation timed out after 1200 seconds", "unavailable"),
+        (1, "ERROR: Failed building wheel for numpy", "unsupported"),
     ],
 )
 def test_pip_outcomes_distinguish_unsupported_from_unavailable(
@@ -294,3 +296,44 @@ def test_cli_probe_writes_running_interpreter_results(
         python_support_drift.main(["probe", "--root", str(REPO_ROOT), "--output", str(output)]) == 0
     )
     assert json.loads(output.read_text())["core"] is True
+
+
+def test_probe_installs_into_fresh_environment_so_unbuildable_sdists_are_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created: list[Path] = []
+    commands: list[list[str]] = []
+
+    def create(self: Any, directory: Path) -> None:
+        created.append(directory)
+
+    def run(command: list[str], **kwargs: Any) -> Any:
+        commands.append(command)
+        assert kwargs["timeout"] == python_support_drift.PROBE_TIMEOUT_SECONDS
+        return subprocess.CompletedProcess(command, 1, "", "error: Failed building wheel for x")
+
+    monkeypatch.setattr(python_support_drift.venv.EnvBuilder, "create", create)
+    monkeypatch.setattr(python_support_drift.subprocess, "run", run)
+    returncode, output = python_support_drift._run_pip(["native-sdist==1.0"])
+    assert python_support_drift.classify_probe(returncode, output) == "unsupported"
+    assert commands[0][0] == str(python_support_drift._environment_python(created[0]))
+    assert commands[0][1:4] == ["-m", "pip", "install"]
+    assert "--dry-run" not in commands[0]
+    assert commands[0][-1] == "native-sdist==1.0"
+    assert not created[0].parent.exists()
+
+    def timeout(command: list[str], **kwargs: Any) -> Any:
+        raise subprocess.TimeoutExpired(command, 5)
+
+    monkeypatch.setattr(python_support_drift.subprocess, "run", timeout)
+    returncode, output = python_support_drift._run_pip(["slow"])
+    assert python_support_drift.classify_probe(returncode, output) == "unavailable"
+
+
+def test_probe_environment_creation_failure_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(self: Any, directory: Path) -> None:
+        raise subprocess.CalledProcessError(1, ["python", "-m", "ensurepip"])
+
+    monkeypatch.setattr(python_support_drift.venv.EnvBuilder, "create", broken)
+    with pytest.raises(ReleaseDataUnavailable, match="disposable probe environment"):
+        python_support_drift._run_pip(["anything"])

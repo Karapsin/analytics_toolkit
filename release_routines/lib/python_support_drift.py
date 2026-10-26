@@ -3,7 +3,8 @@
 Three CLI steps keep network access separate from the pure comparison:
 
 * ``released`` fetches stable CPython minors (endoflife.date, then python.org);
-* ``probe`` resolves core and each extra with pip on the newest stable CPython;
+* ``probe`` installs core and each extra into disposable environments on the newest
+  stable CPython;
 * ``evaluate`` compares those facts with ``release_routines/python_support.json``.
 
 Exit status 1 means the policy window is stale and needs a reviewed policy PR.
@@ -19,7 +20,9 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.request
+import venv
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -184,7 +187,7 @@ def fetch_released_minors(
 
 
 def classify_probe(returncode: int, output: str) -> str:
-    """Classify one pip resolution as supported, unsupported, or unavailable."""
+    """Classify one pip installation as supported, unsupported, or unavailable."""
     if returncode == 0:
         return "supported"
     lowered = output.lower()
@@ -206,25 +209,40 @@ def requirement_sets(root: Path) -> dict[str, list[str]]:
 Runner = Callable[[list[str]], "tuple[int, str]"]
 
 
+def _environment_python(directory: Path) -> Path:
+    return directory / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
 def _run_pip(requirements: list[str]) -> tuple[int, str]:
-    command = [
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "--dry-run",
-        "--ignore-installed",
-        "--prefer-binary",
-        "--disable-pip-version-check",
-        "--quiet",
-        *requirements,
-    ]
-    try:
-        completed = subprocess.run(
-            command, capture_output=True, text=True, check=False, timeout=PROBE_TIMEOUT_SECONDS
-        )
-    except subprocess.TimeoutExpired as exc:
-        return 124, f"pip resolution timed out after {exc.timeout} seconds"
+    """Install ``requirements`` into a disposable environment, building any sdists.
+
+    A full install (not ``--dry-run``) is the support criterion: an extra counts
+    only when every distribution, including native ones built from source,
+    installs on the running interpreter.
+    """
+    with tempfile.TemporaryDirectory(prefix="atk-python-support-") as temporary:
+        directory = Path(temporary) / "env"
+        try:
+            venv.EnvBuilder(with_pip=True).create(directory)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            message = f"Could not create a disposable probe environment: {exc}"
+            raise ReleaseDataUnavailable(message) from exc
+        command = [
+            str(_environment_python(directory)),
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-input",
+            "--quiet",
+            *requirements,
+        ]
+        try:
+            completed = subprocess.run(
+                command, capture_output=True, text=True, check=False, timeout=PROBE_TIMEOUT_SECONDS
+            )
+        except subprocess.TimeoutExpired as exc:
+            return 124, f"pip installation timed out after {exc.timeout} seconds"
     return completed.returncode, completed.stdout + completed.stderr
 
 

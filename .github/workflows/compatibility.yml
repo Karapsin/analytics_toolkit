@@ -137,7 +137,7 @@ jobs:
   python-support-drift:
     name: python-support-drift
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6

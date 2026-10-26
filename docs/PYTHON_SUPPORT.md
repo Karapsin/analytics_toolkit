@@ -34,6 +34,21 @@ Current window: 7 minors ending at 3.14; extras lagging the newest minor: none. 
 Python 3.8 remains in the published metadata as the historical package floor,
 but runtime validation starts at Python 3.9.
 
+### Initial policy evidence (2026-10-26)
+
+The committed policy records the last validated window, ending at 3.14:
+
+- A full-install probe (`python_support_drift probe`) on CPython 3.14.5 installed
+  core and every extra (`airflow`, `clickhouse-native`, `tui`, `datalens`), so
+  3.14 has no lagging extras and the window is seven minors (3.8-3.14).
+- endoflife.date lists CPython 3.15 as released on 2026-10-09, and the newest
+  Airflow (3.3.2) declares `requires-python !=3.15,>=3.10`.
+
+The post-merge drift check is therefore expected to fail as soon as this policy
+lands, reporting the 3.15 release. The reviewed repair PR moves the window to 3.15
+with `airflow` lagging (eight minors, 3.8-3.15), or blocks on core dependencies
+that cannot yet install on 3.15.
+
 ## Single Policy File
 
 `release_routines/python_support.json` is the only place where the window is
@@ -66,8 +81,10 @@ The `python-support-drift` job runs after merges to `dev` and `main`:
 
 1. It reads stable CPython minors from endoflife.date, falling back to the
    python.org downloads API.
-2. On the newest stable CPython it resolves the core dependencies and each extra
-   with `pip install --dry-run`.
+2. On the newest stable CPython it installs the core dependencies, and each extra
+   together with them, into fresh disposable virtual environments. A full install
+   (building any source distributions) is the support criterion, so an extra
+   whose native dependencies cannot build does not count as supported.
 3. It compares those facts with the policy.
 
 The check fails with `STALE PYTHON SUPPORT WINDOW` when:
