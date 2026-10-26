@@ -10,6 +10,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,45 +24,8 @@ STATE_TITLE = "GitHub agent integration monitor"
 REPAIR_BRANCH = "codex/integration-repair-"
 SHA = re.compile(r"[0-9a-f]{40}")
 IDENTITIES: dict[tuple[str, str, str], bool] = {}
+PI_FINGERPRINTS: dict[str, str] = {}
 MODULES: dict[str, Any] = {}
-
-
-def source_review_protocol() -> int:
-    """Opt in only a compatible host worker; scene-child schemas stay unchanged."""
-    return 1
-
-
-def review_progress(repository: str, task: dict[str, Any]) -> dict[str, Any]:
-    role = trusted_module("source_review")
-    value = role.current(trusted_module("review_control"), repository, task["number"])
-    if value is None or value["binding"] != role.binding(repository, task):
-        raise ValueError("Independent source-review assignment changed")
-    return value
-
-
-def review_pending(repository: str, task: dict[str, Any]) -> bool:
-    role = trusted_module("source_review")
-    value = role.current(trusted_module("review_control"), repository, task["number"])
-    return bool(value and value["binding"] == role.binding(repository, task))
-
-
-def bind_review_bundle(repository: str, task: dict[str, Any], chain_id: str, bundle: str,
-                       inventory: dict[str, Any]) -> None:
-    trusted_module("source_review").bind_bundle(
-        trusted_module("review_control"), repository, task, chain_id, bundle, inventory)
-
-
-def require_review_evidence(repository: str, task: dict[str, Any], chain_id: str,
-                            bundle: str, required: list[str]) -> None:
-    trusted_module("source_review").require_evidence(
-        trusted_module("review_control"), repository, task, chain_id, bundle, required)
-
-
-def restart_review_generation(repository: str, task: dict[str, Any], previous_sha256: str | None,
-                              transition_id: str, completed_receipt: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Replace a pending immutable assignment under exact host evidence CAS."""
-    return trusted_module("source_review").begin(trusted_module("review_control"), repository, task,
-        previous_sha256=previous_sha256, transition_id=transition_id, completed_receipt=completed_receipt)
 
 
 def orchestrator_context(identity: str) -> dict[str, Any]:
@@ -118,15 +82,128 @@ def task_metadata(gh: GitHub, pr: dict[str, Any]) -> dict[str, Any]:
             **({"local_review_required": True} if "\nAgent-Review-Policy: local-v1" in message else {})}
 
 
-def admit_local_review(gh: GitHub, pr: dict[str, Any], base: str, metadata: dict[str, Any]) -> bool:
-    """Verify machine evidence, never ask a GitHub model to repeat local review."""
+ADMITTED = "Admitted: local review receipt verified"
+FRAUD_ACCEPTED = "Pi fix accepted by fraud check"
+FRAUD_PENDING = "Pi fix awaiting fraud check"
+FRAUD_REJECTED = "Pi fix rejected by fraud check"
+RECEIPT_REQUIRED = "Local review receipt required"
+PI_MESSAGE = re.compile(r"GitHub agent: (?:conflict|correction|repair|metadata|feature)(?:\n|$)")
+MAX_CHAIN = 200
+
+
+def app_login() -> str:
+    return os.environ.get("AGENT_APP_SLUG", "analytics-toolkit-agent-717959") + "[bot]"
+
+
+def pi_identity_env() -> dict[str, str]:
+    """Pi fix commits name the App as author and committer; admission relies on it."""
+    login = app_login()
+    email = login + "@users.noreply.github.com"
+    return {"GIT_AUTHOR_NAME": login, "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_NAME": login, "GIT_COMMITTER_EMAIL": email}
+
+
+def pi_signer_fingerprint() -> str | None:
+    """SHA256 fingerprint of the Pi controller's own signing key; None fails closed."""
+    key = os.environ.get("AGENT_SIGNING_KEY")
+    if not key:
+        return None
+    if key not in PI_FINGERPRINTS:
+        try:
+            public = Path(key + ".pub")
+            text = public.read_text() if public.is_file() else command("ssh-keygen", "-y", "-f", key)
+            with tempfile.TemporaryDirectory(prefix="atk-pi-key-") as directory:
+                path = Path(directory) / "pi.pub"
+                path.write_text(text.strip() + "\n")
+                fields = command("ssh-keygen", "-lf", str(path)).split()
+        except (OSError, RuntimeError):
+            return None
+        if len(fields) < 2 or not fields[1].startswith("SHA256:"):
+            return None
+        PI_FINGERPRINTS[key] = fields[1]
+    return PI_FINGERPRINTS[key]
+
+
+def pi_commit(gh: GitHub, sha: str, user_task: dict[str, Any]) -> bool:
+    """A Pi commit is signed by the Pi controller key, App-committed, kind-tagged and task-bound.
+
+    Any other enrolled signer (developer machines, other host roles) is not a Pi
+    commit even with an App committer name and a Pi-style message.
+    """
+    directory, allowed = os.environ.get("AGENT_CONTROL_DIR"), os.environ.get("AGENT_ALLOWED_SIGNERS")
+    expected = pi_signer_fingerprint()
+    if (not directory or not allowed or expected is None or SHA.fullmatch(sha) is None
+            or not signed_head(gh.repository, sha)):
+        return False
+    work = Path(directory)
+    try:
+        signer = command("git", "-c", "gpg.ssh.program=/usr/bin/ssh-keygen", "-c",
+                         "gpg.ssh.allowedSignersFile=" + allowed, "log", "-1", "--format=%GF", sha, cwd=work)
+    except RuntimeError:
+        return False
+    if signer != expected:
+        return False
+    if command("git", "log", "-1", "--format=%cn", sha, cwd=work) != app_login():
+        return False
+    message = command("git", "log", "-1", "--format=%B", sha, cwd=work)
+    if PI_MESSAGE.match(message) is None:
+        return False
+    try:
+        trusted_module("task_context").verify_commit(user_task, message)
+    except ValueError:
+        return False
+    return True
+
+
+def first_parent_chain(head: str, base: str) -> list[str]:
+    """Newest-first first-parent commits of head that dev does not contain."""
+    directory = os.environ.get("AGENT_CONTROL_DIR")
+    if not directory or SHA.fullmatch(head) is None or SHA.fullmatch(base) is None:
+        raise ValueError("Trusted history checkout or immutable identities are unavailable")
+    work = Path(directory)
+    command("git", "fetch", "origin", head, base, cwd=work)
+    commits = command("git", "rev-list", "--first-parent", "--max-count=" + str(MAX_CHAIN + 1),
+                      head, "--not", base, cwd=work).split()
+    if len(commits) > MAX_CHAIN or any(SHA.fullmatch(sha) is None for sha in commits):
+        raise ValueError("PR first-parent history is malformed or exceeds its admission bound")
+    return commits
+
+
+def _ancestor(older: str, newer: str) -> bool:
+    try:
+        command("git", "merge-base", "--is-ancestor", older, newer,
+                cwd=Path(os.environ["AGENT_CONTROL_DIR"]))
+    except RuntimeError:
+        return False
+    return True
+
+
+def _required(summary: str) -> dict[str, Any]:
+    return {"state": "required", "summary": summary}
+
+
+def admission(gh: GitHub, pr: dict[str, Any], base: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    """Classify a head: receipted, Pi fix on a receipted head, or not admissible.
+
+    Returns {"state": "admitted"|"fraud"|"required", ...}. Malformed or forged
+    provenance raises; a merely uncovered head is "required" (never a failure).
+    """
+    head = pr["head"]["sha"]
+    if pr["user"].get("type") == "Bot":
+        chain = first_parent_chain(head, base)
+        if not chain or not all(pi_commit(gh, sha, metadata["user_task"]) for sha in chain):
+            return _required("App-authored PRs are admitted only when every first-parent commit "
+                             "since dev is a host-signed Pi fix commit.")
+        anchor = command("git", "rev-parse", chain[-1] + "^", cwd=Path(os.environ["AGENT_CONTROL_DIR"]))
+        return {"state": "fraud", "anchor": anchor, "fix_commits": chain[::-1],
+                "summary": pr.get("title", "Pi-authored PR"), "reviewer": "none (App-authored)"}
     proto = trusted_module("local_review")
     receipt = proto.extract(pr.get("body") or "")
     if receipt is None:
         if metadata.get("local_review_required"):
             raise ValueError("Signed local-review policy requires a matching receipt")
-        return False  # Historical handoffs still receive independent Pi review.
-    head = pr["head"]["sha"]
+        return _required("No signed local review receipt is attached. Publish through the local "
+                         "git_workflow so a fresh local reviewer signs this exact head.")
     payload = receipt.get("payload")
     if not isinstance(payload, dict):
         raise ValueError("Malformed local review payload")
@@ -136,12 +213,23 @@ def admit_local_review(gh: GitHub, pr: dict[str, Any], base: str, metadata: dict
     reviewed_head = payload.get("head")
     if not isinstance(reviewed_head, str) or not reviewed_head:
         raise ValueError("Malformed local review head")
+    fixes: list[str] = []
+    if reviewed_head != head:
+        chain = first_parent_chain(head, base)
+        if reviewed_head not in chain:
+            return _required("The local review receipt does not cover this head or any first-parent "
+                             "ancestor of it; a new local review is required.")
+        fixes = chain[:chain.index(reviewed_head)]
+        if not all(pi_commit(gh, sha, metadata["user_task"]) for sha in fixes):
+            # Anti-laundering: only host-signed Pi fixes may follow the receipted head.
+            return _required("Commits after the locally reviewed head are not all host-signed Pi "
+                             "fix commits; a new local review receipt is required.")
     tree = command("git", "rev-parse", reviewed_head + "^{tree}", cwd=Path(directory))
     reviewed_base = payload.get("base")
     producer, task_digest = metadata["producer_id"], metadata["task_digest"]
     if reviewed_head != head:
-        if not signed_head(gh.repository, reviewed_head) or not signed_head(gh.repository, head):
-            raise ValueError("Local review successor and original must have enrolled signatures")
+        if not signed_head(gh.repository, reviewed_head):
+            raise ValueError("The locally reviewed head must have an enrolled signature")
         context = trusted_module("task_context")
         message = command("git", "log", "-1", "--format=%B", reviewed_head, cwd=Path(directory))
         actors = re.findall(r"^" + context.PRODUCER + r": ([A-Za-z0-9:-]{1,160})$", message, re.M)
@@ -153,22 +241,116 @@ def admit_local_review(gh: GitHub, pr: dict[str, Any], base: str, metadata: dict
     payload = proto.validate_binding(receipt, repository=gh.repository, head=reviewed_head, base=reviewed_base,
         tree=tree, task_digest=task_digest, producer_id=producer)
     proto.verify_signature(receipt, Path(allowed))
-    if reviewed_head != head:
-        command("git", "merge-base", "--is-ancestor", reviewed_head, head, cwd=Path(directory))
-        return False  # Authenticated successors retain provenance but need fresh Pi review.
-    if reviewed_base != base:
-        return False  # Dev advanced after handoff; a fresh Pi review owns revalidation.
+    reviewer = payload["reviewer_id"] + " (" + payload.get("reviewer_runtime", "codex") + ")"
+    if fixes:
+        return {"state": "fraud", "anchor": reviewed_head, "fix_commits": fixes[::-1],
+                "summary": payload["summary"], "reviewer": reviewer, "receipt": proto.digest(receipt)}
+    if reviewed_base != base and not _ancestor(str(reviewed_base), base):
+        return _required("The local review base is not part of current dev; a new local review is required.")
+    return {"state": "admitted", "summary": payload["summary"], "reviewer": reviewer,
+            "receipt": proto.digest(receipt)}
+
+
+def _post_review(gh: GitHub, pr: dict[str, Any], base: str, existing: dict[str, Any] | None,
+                 conclusion: str | None, title: str, summary: str) -> None:
+    output = existing.get("output", {}) if existing else {}
+    status = "in_progress" if conclusion is None else "completed"
+    if (existing and existing.get("status") == status and existing.get("conclusion") == conclusion
+            and output.get("title") == title and output.get("summary") == summary[:60000]):
+        return  # Idempotent: never repost an identical decision.
+    gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": pr["head"]["sha"], "external_id": base,
+        "status": status, **({"conclusion": conclusion} if conclusion else {}),
+        "output": {"title": title, "summary": summary[:60000]}})
+
+
+def admit_local_review(gh: GitHub, pr: dict[str, Any], base: str, metadata: dict[str, Any],
+                       existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Post the admission decision; never ask a GitHub model to repeat local review.
+
+    Uncovered heads get ``action_required`` (never ``failure``), so no correction
+    loop starts. Pi-fix heads wait for the narrow fraud check.
+    """
+    result = admission(gh, pr, base, metadata)
+    head, number = pr["head"]["sha"], pr["number"]
+    controls = trusted_module("review_control")
+    role = trusted_module("fraud_review")
+    if result["state"] == "fraud":
+        stored = role.current(gh.repository, number, head, metadata["task_digest"])
+        if stored is not None and stored["decision"] == "accept":
+            result = dict(result, state="accepted", verdict=stored["reason"])
+        elif stored is not None:
+            # Recover an interrupted rejection: the correction scope owns the next step.
+            controls.require_correction(gh.repository, number, head, metadata["task_digest"],
+                "Fraud check rejected this Pi fix:\n" + stored["reason"], pr.get("title", "PR changes"),
+                expected=controls.correction_snapshot(gh.repository, number))
+            result = dict(result, state="rejected", verdict=stored["reason"])
     if not _current_discovery_target(gh, pr, base):
         raise ValueError("PR changed during local review verification")
+    if result["state"] == "admitted":
+        controls.assess(gh.repository, number, head, metadata["task_digest"], result["summary"])
+        _post_review(gh, pr, base, existing, "success", ADMITTED, result["summary"]
+                     + "\n\nReviewer: " + result["reviewer"] + "; receipt: " + result["receipt"])
+    elif result["state"] == "accepted":
+        _accept_fraud_review(gh, pr, base, metadata["task_digest"], result, existing)
+    elif result["state"] == "rejected":
+        _post_review(gh, pr, base, existing, "action_required", FRAUD_REJECTED, result["verdict"])
+    elif result["state"] == "fraud":
+        _post_review(gh, pr, base, existing, None, FRAUD_PENDING,
+                     "Pi fix commits since the admitted source await the read-only fraud check: "
+                     + ", ".join(result["fix_commits"]))
+    else:
+        _post_review(gh, pr, base, existing, "action_required", RECEIPT_REQUIRED, result["summary"])
+    return result
+
+
+def _accept_fraud_review(gh: GitHub, pr: dict[str, Any], base: str, digest: str,
+                         result: dict[str, Any], existing: dict[str, Any] | None) -> None:
+    changes = result["summary"] + "\n\nPi fix commits: " + ", ".join(result["fix_commits"])
+    trusted_module("review_control").assess(gh.repository, pr["number"], pr["head"]["sha"], digest, changes)
+    _post_review(gh, pr, base, existing, "success", FRAUD_ACCEPTED, changes
+                 + "\n\nFraud check: " + result["verdict"] + "\nLocal reviewer: " + result["reviewer"])
+
+
+def record_fraud_verdict(gh: GitHub, task: dict[str, Any], verdict: Any) -> dict[str, str]:
+    """Worker entrypoint: bind a read-only fraud verdict to the discovered Pi-fix head.
+
+    accept -> assessment + agent-review success; reject -> CAS-queued correction
+    carrying the reason (a Pi correction fixes it) + agent-review action_required.
+    """
+    role = trusted_module("fraud_review")
+    number = task.get("number")
+    if task.get("kind") != role.KIND or type(number) is not int or number <= 0:
+        raise ValueError("Not a fraud-review task")
+    verdict = role.validate(verdict)
     controls = trusted_module("review_control")
-    if trusted_module("source_review").current(controls, gh.repository, pr["number"]) is not None:
-        return False  # A durable independent assignment owns review, including older generations.
-    controls.assess(gh.repository, pr["number"], head, metadata["task_digest"], payload["summary"])
-    gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": head, "external_id": base,
-        "status": "completed", "conclusion": "success", "output": {
-            "title": "Independent local review verified", "summary": payload["summary"]
-            + "\n\nReviewer: " + payload["reviewer_id"] + "; receipt: " + proto.digest(receipt)}})
-    return True
+    snapshot = controls.correction_snapshot(gh.repository, number)
+    pr = publication_authority(gh, task)
+    metadata = task_metadata(gh, pr)
+    result = admission(gh, pr, task["base"], metadata)
+    if (result["state"] != "fraud" or result["fix_commits"] != task.get("fix_commits")
+            or result["anchor"] != task.get("anchor")):
+        raise RuntimeError("Fraud-review target changed; discard the stale verdict.")
+    reason, digest, head = role.explanation(verdict), metadata["task_digest"], task["head"]
+    # Record first: a stale reject can never queue a correction on an accepted head.
+    if not role.record(gh.repository, number, head, task["base"], digest, verdict["decision"], reason):
+        raise RuntimeError("A different fraud-review verdict is already recorded for this head.")
+    if verdict["decision"] == "reject" and not controls.require_correction(
+            gh.repository, number, head, digest, "Fraud check rejected this Pi fix:\n" + reason,
+            pr.get("title", "PR changes"), expected=snapshot):
+        # The stored reject is recovered by discovery against the then-current scope.
+        raise RuntimeError("Correction findings changed during the fraud check; preserve the newer request.")
+    existing = review_check(gh.checks(head), task["base"], int(os.environ.get("AGENT_APP_ID", "0") or 0))
+    if not _current_discovery_target(gh, pr, task["base"]):
+        return {"fraud_review": "recorded"}  # Discovery re-derives the check from the stored verdict.
+    if verdict["decision"] == "accept":
+        _accept_fraud_review(gh, pr, task["base"], digest, dict(result, verdict=reason), existing)
+        return {"fraud_review": "accepted"}
+    _post_review(gh, pr, task["base"], existing, "action_required", FRAUD_REJECTED, reason)
+    marker = f"<!-- agent-fraud-review-{head}-{digest} -->"
+    if not any(marker in item["body"] for item in gh.pages(f"issues/{number}/comments?per_page=100")):
+        gh.comment(number, marker + "\nThe fraud check rejected this Pi fix (test/CI weakening):\n\n"
+                   + reason + "\n\nA Pi correction agent is queued to restore the checks.")
+    return {"fraud_review": "rejected"}
 
 
 def rejection_check(gh: GitHub, pr: dict[str, Any], base: str, reason: str,
@@ -177,23 +359,15 @@ def rejection_check(gh: GitHub, pr: dict[str, Any], base: str, reason: str,
         return
     gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": pr["head"]["sha"],
         "external_id": base, "status": "completed", "conclusion": "failure",
-        "output": {"title": "Reviewer rejected; awaiting user", "summary": reason[:60000]}})
+        "output": {"title": "Provenance rejected; awaiting user", "summary": reason[:60000]}})
     if _current_discovery_target(gh, pr, base):
         trusted_module("review_control").pause(gh, pr, reason, changes)
 
 
-def verify_review_execution(task: dict[str, Any], receipt: dict[str, Any]) -> None:
-    expected = {key: task[key] for key in ("head", "base", "task_digest", "producer_id")}
-    identity = receipt.get("reviewer_id")
-    if (task["kind"] != "review"
-            or any(receipt.get(key) != value for key, value in expected.items())
-            or receipt.get("kind") != "review" or receipt.get("mode") != "read-only"
-            or not isinstance(identity, str) or not identity.startswith("reviewer:")
-            or identity == task["producer_id"]):
-        raise RuntimeError("A separate read-only reviewer session is mandatory.")
-
-
 def verify_correction_plan(task: dict[str, Any], artifact: Path) -> None:
+    """Plan review is retired; a legacy receipt, when supplied, must still bind."""
+    if not (artifact / "plan-review.json").exists():
+        return
     receipt = json.loads((artifact / "plan-review.json").read_text())
     plan = (artifact / "approved-plan.md").read_text()
     expected_hash = hashlib.sha256((task["task_digest"] + task["base"] + plan + task["head"]).encode()).hexdigest()
@@ -203,26 +377,26 @@ def verify_correction_plan(task: dict[str, Any], artifact: Path) -> None:
             or receipt.get("mode") != "read-only"
             or not str(receipt.get("reviewer_id", "")).startswith("plan-reviewer:")
             or receipt["reviewer_id"] == task["producer_id"]):
-        raise RuntimeError("Correction requires an independent approved plan for this exact task and head.")
+        raise RuntimeError("A supplied legacy correction plan receipt does not bind this exact task and head.")
 
 
 @overload
 def command(*args: str, cwd: Path | None = None, data: str | None = None,
-            raw_stdout: Literal[False] = False) -> str: ...
+            raw_stdout: Literal[False] = False, env: dict[str, str] | None = None) -> str: ...
 
 
 @overload
 def command(*args: str, cwd: Path | None = None, data: str | None = None,
-            raw_stdout: Literal[True]) -> bytes: ...
+            raw_stdout: Literal[True], env: dict[str, str] | None = None) -> bytes: ...
 
 
 @overload
 def command(*args: str, cwd: Path | None = None, data: str | None = None,
-            raw_stdout: bool) -> str | bytes: ...
+            raw_stdout: bool, env: dict[str, str] | None = None) -> str | bytes: ...
 
 
 def command(*args: str, cwd: Path | None = None, data: str | None = None,
-            raw_stdout: bool = False) -> str | bytes:
+            raw_stdout: bool = False, env: dict[str, str] | None = None) -> str | bytes:
     result = subprocess.run(
         args,
         cwd=cwd,
@@ -230,7 +404,7 @@ def command(*args: str, cwd: Path | None = None, data: str | None = None,
         text=not raw_stdout,
         capture_output=True,
         timeout=180,
-        env=dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null"),
+        env=dict(os.environ, **(env or {}), GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null"),
     )
     if result.returncode:
         stderr = (result.stderr[:7200].decode("utf-8", errors="replace")[:1800]
@@ -282,7 +456,7 @@ class GitHub:
 def trusted(pr: dict[str, Any], repository: str) -> bool:
     author = pr.get("user", {})
     owner = repository.split("/")[0]
-    app = os.environ.get("AGENT_APP_SLUG", "analytics-toolkit-agent-717959") + "[bot]"
+    app = app_login()
     own = author.get("type") == "User" and author.get("login", "").casefold() == owner.casefold()
     repair = (author.get("type") == "Bot" and author.get("login") == app
               and pr["head"].get("ref", "").startswith(REPAIR_BRANCH))
@@ -317,12 +491,14 @@ def signed_head(repository: str, head: str) -> bool:
 
 
 def policy_path(path: str) -> bool:
-    return (path.startswith((".github/agent/", ".codex/")) or path in {
+    # Claude/Codex runtime parity: reviewer/runtime configuration is protected.
+    return (path.startswith((".github/agent/", ".codex/", ".claude/")) or path in {
         ".github/workflows/github-agent.yml", ".github/workflows/agent-dispatch.yml",
         ".github/workflows/agent-visual.yml", ".github/workflows/publish.yml",
         ".github/workflows/agent-visual-profile.yml",
         ".github/required-workflows.json", "agent_tools/machine_signing.py",
-        "agent_tools/sql_explorer_visual_render.py"})
+        "agent_tools/sql_explorer_visual_render.py",
+        ".mcp.json", "agent_tools/agent_runtimes.py", "CLAUDE.md"})
 
 
 def authorization_error(gh: GitHub, pr: dict[str, Any], require_policy: bool = True, *,
@@ -398,9 +574,8 @@ def fast_check(checks: list[dict[str, Any]]) -> dict[str, Any] | None:
 def ready(pr: dict[str, Any], checks: list[dict[str, Any]], base: str, app_id: int) -> bool:
     review, fast = review_check(checks, base, app_id), fast_check(checks)
     return (pr.get("mergeable") is True and not any(label["name"] in {WRITER, "agent:needs-user"} for label in pr["labels"])
-            and not trusted_module("source_review").blocks_merge(trusted_module("review_control"), pr, base)
-            and review is not None and review["conclusion"] == "success"
-            and fast is not None and fast["conclusion"] == "success")
+            and review is not None and review.get("conclusion") == "success"
+            and fast is not None and fast.get("conclusion") == "success")
 
 
 def approval_ready(pr: dict[str, Any], checks: list[dict[str, Any]], base: str, app_id: int) -> bool:
@@ -662,13 +837,14 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
         comparison = gh.api(f"compare/{base}...{head}")
         kind = "conflict" if pr.get("mergeable") is False or comparison["behind_by"] > 0 else "review"
         correction = controls.correction(gh.repository, pr["number"], head, metadata["task_digest"])
-        pending_review = trusted_module("source_review").pending(controls, gh.repository, pr["number"], head, base)
-        if existing and existing.get("conclusion") == "failure" and not pending_review:
+        if existing and existing.get("conclusion") == "failure":
+            # Historical Pi review rejections still route to a correction.
             correction = correction or {"reason": existing.get("output", {}).get("summary", "Reviewer requested changes."),
                                         "changes": pr.get("title", "PR changes")}
         if fast and fast["conclusion"] in {"failure", "cancelled", "timed_out"}:
             reason = "Fast CI failed; correct the failing checks: " + fast.get("html_url", "")
             correction = correction or {"reason": reason, "changes": pr.get("title", "PR changes")}
+        files: list[dict[str, Any]] = []
         if correction:
             kind = "correction"
         else:
@@ -692,19 +868,24 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
                               + "\n".join(problems), "changes": pr.get("title", "PR changes")}
             elif kind == "review" and fragments:
                 kind = "metadata"
-        if kind == "review" and not (existing and existing.get("conclusion") == "success"):
+        if kind == "review":
+            # Admission state: no Pi model reviews source. A verified local receipt,
+            # or Pi fixes on a receipted head accepted by the fraud check, admit it.
+            if existing and existing.get("status") == "completed" and existing.get("conclusion") == "success":
+                if approval_required:
+                    paths = sorted({path for item in files for path in (item["filename"], item.get("previous_filename", ""))
+                                    if policy_path(path)})
+                    controls.approval_notice(gh, pr, paths, metadata["user_task"])
+                continue
             try:
-                if admit_local_review(gh, pr, base, metadata):
-                    continue
+                outcome = admit_local_review(gh, pr, base, metadata, existing)
             except (RuntimeError, ValueError, OSError) as error:
                 rejection_check(gh, pr, base, str(error), pr.get("title", "Local review provenance"))
                 continue
-        if (kind == "review" and not pending_review and existing and existing["status"] == "completed"
-                and existing.get("output", {}).get("title") != "Authorization required"):
-            if approval_required:
-                paths = sorted({path for item in files for path in (item["filename"], item.get("previous_filename", ""))
-                                if policy_path(path)})
-                controls.approval_notice(gh, pr, paths, metadata["user_task"])
+            if outcome["state"] == "fraud":
+                tasks.append({"kind": trusted_module("fraud_review").KIND, "number": pr["number"],
+                              "head": head, "base": base, "branch": pr["head"]["ref"], **metadata,
+                              "anchor": outcome["anchor"], "fix_commits": outcome["fix_commits"]})
             continue
         tasks.append({"kind": kind, "number": pr["number"], "head": head,
                       "base": base, "branch": pr["head"]["ref"], **metadata,
@@ -716,9 +897,8 @@ def discover(gh: GitHub, app_id: int) -> dict[str, Any]:
 
 def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path, *, source_protocol: int | None = None) -> None:
     kind = task["kind"]
-    if source_protocol is not None and (kind != "review" or type(source_protocol) is not int
-                                         or source_protocol != source_review_protocol()):
-        raise ValueError("Unsupported independent source-review protocol")
+    if source_protocol is not None or kind == "review":
+        raise ValueError("Pi source review is retired; local review receipts and the fraud check admit PRs")
     if task["number"]:
         pr = gh.pull(task["number"])
         if pr["head"]["sha"] != task["head"] or not trusted(pr, gh.repository):
@@ -731,12 +911,6 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path, *, sour
         metadata = task_metadata(gh, pr)
         if any(task.get(key) != metadata[key] for key in ("task_digest", "producer_id", "user_task")):
             raise RuntimeError("User task context changed after discovery.")
-        if kind == "review":
-            progress = trusted_module("source_review")
-            controls = trusted_module("review_control")
-            previous = progress.current(controls, gh.repository, task["number"])
-            progress.begin(controls, gh.repository, task,
-                           previous_sha256=progress.digest(previous) if previous else None)
     else:
         proto = trusted_module("task_context")
         task.setdefault("producer_id", "standing-repair:" + task["head"])
@@ -767,7 +941,9 @@ def prepare(gh: GitHub, task: dict[str, Any], work: Path, control: Path, *, sour
     logs.extend(_preparation_ci(gh, task))
     if kind == "metadata" and not fold(work):
         raise RuntimeError("Changelog candidate changed; reconcile again.")
-    _write_preparation_context(task, control, logs, source_protocol=source_protocol)
+    if kind == trusted_module("fraud_review").KIND:
+        _write_fraud_evidence(task, work, control)
+    _write_preparation_context(task, control, logs)
 
 
 def unresolved_conflict_paths(work: Path) -> list[str]:
@@ -800,14 +976,14 @@ def route_preparation_conflicts(gh: GitHub, task: dict[str, Any], work: Path) ->
     if not task["number"]:
         raise RuntimeError("Protected conflicts require an existing PR correction scope.")
     pr = publication_authority(gh, task)
-    reason = ("Protected conflict resolution requires a fresh correction plan and independent review: "
+    reason = ("Protected conflict resolution requires a fresh correction: "
               + json.dumps(protected)
               + ". Preserve the existing PR changes and current dev; protected exact-head approval still applies.")
     if not controls.require_correction(
             gh.repository, task["number"], task["head"], task["task_digest"], reason,
             pr.get("title", "PR changes"), expected=snapshot):
         raise RuntimeError("Correction findings changed during execution; preserve the newer request.")
-    raise RuntimeError("Protected conflicts; fresh correction planning queued. " + reason)
+    raise RuntimeError("Protected conflicts; fresh correction queued. " + reason)
 
 
 def _preparation_ci(gh: GitHub, task: dict[str, Any]) -> list[str]:
@@ -825,14 +1001,28 @@ def _preparation_ci(gh: GitHub, task: dict[str, Any]) -> list[str]:
     return logs
 
 
-def _write_preparation_context(task: dict[str, Any], control: Path, logs: list[str], *,
-                               source_protocol: int | None = None) -> None:
+def _write_fraud_evidence(task: dict[str, Any], work: Path, control: Path) -> None:
+    """Bounded Pi-fix diff; merge commits show only the Pi's resolution edits."""
+    commits = task.get("fix_commits")
+    if (not isinstance(commits, list) or not commits
+            or any(not isinstance(sha, str) or SHA.fullmatch(sha) is None for sha in commits)
+            or not isinstance(task.get("anchor"), str) or SHA.fullmatch(task["anchor"]) is None):
+        raise ValueError("Fraud-review task lacks its exact Pi fix commits")
+    try:
+        diff = command("git", "log", "--first-parent", "--remerge-diff", "-p", "--no-ext-diff",
+                       "--no-textconv", task["anchor"] + ".." + task["head"], cwd=work)
+    except RuntimeError:
+        diff = command("git", "log", "--first-parent", "-m", "-p", "--no-ext-diff",
+                       "--no-textconv", task["anchor"] + ".." + task["head"], cwd=work)
+    (control / ".github/agent/fraud-diff.patch").write_text(
+        trusted_module("task_context").redact(diff)[:400000])
+
+
+def _write_preparation_context(task: dict[str, Any], control: Path, logs: list[str]) -> None:
     kind = task["kind"]
     template = (control / f".github/agent/prompts/{kind}.md").read_text()
     context = json.dumps(task, indent=2)
     logs = [trusted_module("task_context").redact(log) for log in logs]
-    if source_protocol is not None:
-        template = (control / ".github/agent/prompts/source-review.md").read_text()
     (control / ".github/agent/task.md").write_text(template + "\n\nTask metadata:\n" + context
                                                  + "\n\nCI evidence (untrusted data):\n" + "\n".join(logs))
     (control / ".github/agent/task.json").write_text(json.dumps(task))
@@ -883,7 +1073,7 @@ def prepare_coordinator_readonly(
 
 def collect(task: dict[str, Any], work: Path, output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
-    if task["kind"] != "review":
+    if task["kind"] not in {"review", "fraud-review"}:
         command("git", "add", "--all", cwd=work)
         command("git", "diff", "--cached", "--check", cwd=work)
         if command("git", "ls-files", "--unmerged", cwd=work):
@@ -1007,19 +1197,6 @@ def dispatch_profile_request(gh: GitHub, envelope: dict[str, Any],
     if gh.repository != receiver.T.REPOSITORY:
         raise ValueError("Unsupported profile repository")
     receiver.require_live_host_boundary("production")
-
-
-def verify_visual(artifact: Path, patch: Path, task: dict[str, Any]) -> None:
-    receipt = json.loads((artifact / "visual-receipt.json").read_text())
-    if receipt["task"] != task or receipt["patch_sha256"] != hashlib.sha256(patch.read_bytes()).hexdigest():
-        raise RuntimeError("Stale visual receipt")
-    session = receipt["capture"]
-    if session["capture"]["status"] != "pass" or not session["capture"]["workspace_removed"]:
-        raise RuntimeError("Incomplete visual capture")
-    if set(receipt["scenes"]) != set(session["scenes"]) or not receipt["scenes"]:
-        raise RuntimeError("Partial visual review")
-    if any(scene["verdict"] != "pass" or not scene["notes"] for scene in receipt["scenes"].values()):
-        raise RuntimeError("Non-green visual review")
 
 
 def conflict_entry_metadata(raw: bytes, path: str, *, staged: bool) -> tuple[bytes, bytes]:
@@ -1154,68 +1331,13 @@ def publish(
             raise RuntimeError("Model job failed; inspect its Actions run before retrying.")
         if json.loads((artifact / "task.json").read_text()) != task:
             raise RuntimeError("Artifact task identity does not match the claimed job.")
+        if task["kind"] == "review":
+            return {"review_status": "retired"}  # Pi source review no longer exists.
+        if task["kind"] == trusted_module("fraud_review").KIND:
+            return record_fraud_verdict(gh, task, json.loads((artifact / "verdict.json").read_text()))
         correction_scope = (trusted_module("review_control").correction_snapshot(gh.repository, number)
                             if number and task["kind"] == "conflict" else None)
         pr = publication_authority(gh, task, renewal_hold=renewal_hold)
-        if task["kind"] == "review":
-            receipt = json.loads((artifact / "review-execution.json").read_text())
-            verify_review_execution(task, receipt)
-            verdict = json.loads((artifact / "verdict.json").read_text())
-            if (verdict.get("alignment") not in {"aligned", "not_aligned", "uncertain"}
-                    or not isinstance(verdict.get("change_summary"), str)
-                    or not verdict["change_summary"].strip()):
-                raise RuntimeError("Reviewer must explicitly evaluate alignment with the user task.")
-            if not isinstance(verdict.get("summary"), str) or not isinstance(verdict.get("findings"), list):
-                raise RuntimeError("Malformed review verdict.")
-            summary = "What changed: " + verdict.get("change_summary", pr.get("title", "PR changes"))
-            summary += "\n\n" + verdict["summary"] + "\n" + "\n".join(str(x) for x in verdict["findings"])
-            controls = trusted_module("review_control")
-            progress = trusted_module("source_review")
-            visual_blocker = progress.visual_rejection(artifact, gh.repository, task, receipt)
-            typed = (progress.protocol(receipt.get("source_review_protocol"))
-                     and progress.protocol(verdict.get("source_review_protocol")))
-            outcome = "reject" if visual_blocker and typed else progress.disposition(verdict, receipt)
-            if typed:
-                if receipt.get("source_report_sha256") != hashlib.sha256((artifact / "verdict.json").read_bytes()).hexdigest():
-                    raise ValueError("Typed review verdict changed after host execution")
-                if outcome != "pending" and progress.completed(controls, gh.repository, task, receipt, outcome):
-                    return {"review_status": "approved" if outcome == "approve" else "rejected", "recovered": True}
-                progress.verify_assignment(controls, gh.repository, task, receipt)
-                if outcome == "approve":
-                    progress.verify_coverage(controls, artifact, gh.repository, task, receipt)
-            else:
-                progress.begin(controls, gh.repository, task)
-            if outcome == "pending":
-                gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": task["head"],
-                    "external_id": task["base"], "status": "in_progress",
-                    "output": {"title": "Independent review continuing", "summary": summary[:60000]}})
-                return {"review_status": "pending"}
-            approved = outcome == "approve"
-            confirmed = ["\n".join(finding[field] for field in ("location", "requirement", "failure", "correction"))
-                         for finding in verdict.get("confirmed_findings", [])]
-            summary += ("\n\nConfirmed findings:\n" + "\n\n".join(confirmed)) if confirmed else ""
-            controls.assess(gh.repository, number, task["head"], task["task_digest"], verdict["change_summary"])
-            if (artifact / "visual-receipt.json").exists():
-                visual = json.loads((artifact / "visual-receipt.json").read_text())
-                if visual["task"] != task or visual["capture"]["candidate"] != task["head"]:
-                    raise RuntimeError("Visual review identity mismatch")
-                summary += "\nEvery scene reviewed individually: " + visual["url"]
-            if typed:
-                reason = verdict["summary"] + "\n" + "\n".join([*map(str, verdict["findings"]), *confirmed])
-                progress.publish_terminal(controls, gh, task, receipt, outcome, summary, reason,
-                                          verdict["change_summary"], lambda: publication_authority(gh, task))
-                return {"review_status": "approved" if approved else "rejected"}
-            gh.api("check-runs", "POST", {"name": REVIEW, "head_sha": task["head"],
-                "external_id": task["base"], "status": "completed",
-                "conclusion": "success" if approved else "failure",
-                "output": {"title": "Approved" if approved else "Changes requested",
-                           "summary": summary[:60000]}})
-            gh.api(f"pulls/{number}/reviews", "POST", {"commit_id": task["head"],
-                "event": "COMMENT", "body": summary[:60000]})
-            if not approved:
-                reason = verdict["summary"] + "\n" + "\n".join([*map(str, verdict["findings"]), *confirmed])
-                controls.reject(gh, pr, task, reason, verdict["change_summary"])
-            return {"review_status": "approved" if approved else "rejected"}
         trusted_module("task_context").require_resolved(task["user_task"])
         if task["kind"] == "correction":
             verify_correction_plan(task, artifact)
@@ -1251,7 +1373,7 @@ def publish(
         prefix = ((pr.get("body") or "").split("## User task", 1)[0] if number else
                   ("Owner-requested Telegram feature. " if task["kind"] == "feature" else
                    "Automated integration repair. ")
-                  + "Includes a fast regression test; requires independent review and fast CI.")
+                  + "Pi fix: merges after the read-only fraud check and green fast CI.")
         # Preflight before patch/commit/push or archive writes. Metadata-only
         # archives never change the candidate tree or its visual receipt.
         proto.publication(task["user_task"], prefix=prefix, repository=gh.repository)
@@ -1275,7 +1397,7 @@ def publish(
         if protected_conflicts:
             if not number:
                 raise RuntimeError("Repair modifies controller or sensitive files; maintainer review required.")
-            reason = ("Protected conflict resolution requires a fresh correction plan and independent review: "
+            reason = ("Protected conflict resolution requires a fresh correction: "
                       + ", ".join(protected_conflicts)
                       + ". Preserve the existing PR changes and current dev; protected exact-head approval still applies.")
             pr = publication_authority(gh, task)
@@ -1284,13 +1406,8 @@ def publish(
                 pr.get("title", "PR changes"), expected=correction_scope)
             if not queued:
                 raise RuntimeError("Correction findings changed during execution; preserve the newer request.")
-            raise RuntimeError("Repair modifies controller or sensitive files; fresh correction planning queued. "
+            raise RuntimeError("Repair modifies controller or sensitive files; fresh correction queued. "
                                + reason)
-        if task["kind"] == "repair" and not any(path.startswith("tests/") and path.endswith(".py")
-                                                 for path in paths):
-            raise RuntimeError("Integration repair must include a fast regression test.")
-        if visual_required(paths):
-            verify_visual(artifact, patch, task)
         tree = command("git", "write-tree", cwd=work)
         verify_task_images(task["user_task"], work, tree)
         parents = ["-p", task["head"]]
@@ -1319,7 +1436,7 @@ def publish(
             raise RuntimeError("PR description changed during archive publication.")
         if commit is None:
             commit = command("git", *signing_options(), "commit-tree", "-S", tree, *parents,
-                             "-m", message, cwd=work)
+                             "-m", message, cwd=work, env=pi_identity_env())
         push = ["git", "push"]
         if number:
             push.append(f"--force-with-lease=refs/heads/{task['branch']}:{task['head']}")
@@ -1343,7 +1460,7 @@ def publish(
             gh.comment(issue, "Integration repair blocker: " + str(exc))
         raise
     finally:
-        if number and task["kind"] != "review":
+        if number and task["kind"] not in {"review", "fraud-review"}:
             gh.label(number, acquire=False)
 
 

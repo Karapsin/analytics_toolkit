@@ -165,8 +165,8 @@ def test_project_config_registers_portable_mcp_launcher(runtime: str) -> None:
         assert "required = false" in config
         assert "tool_timeout_sec = 7200" in config
     else:
-        # The committed .mcp.json is added separately; the renderer is authoritative.
-        config = agent_runtimes.render_mcp_json()
+        config = (mcp_server.REPO_ROOT / ".mcp.json").read_text(encoding="utf-8")
+        assert config == agent_runtimes.render_mcp_json()
         server = json.loads(config)["mcpServers"]["analytics_toolkit_agent_tools"]
         assert server["type"] == "stdio"
         assert agent_runtimes.claude_launch_env()["MCP_TOOL_TIMEOUT"] == "7200000"

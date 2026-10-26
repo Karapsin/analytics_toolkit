@@ -314,7 +314,11 @@ def test_new_amendment_rejects_stale_resume_after_restart_and_discovery(
         }
     )
     assert not restarted.paused(gh, gh.pr)
-    assert controller.discover(client, 17)["include"][0]["kind"] == "review"
+    # Resumed work is admitted only by a local receipt; without one it awaits it.
+    assert controller.discover(client, 17)["include"] == []
+    posted = [call.args for call in client.api.call_args_list if call.args[0] == "check-runs"]
+    assert posted[-1][2]["output"]["title"] == controller.RECEIPT_REQUIRED
+    assert posted[-1][2]["conclusion"] == "action_required"
     assert not restarted.approved(gh.repository, 1, gh.pr["head"]["sha"])
 
 
@@ -522,7 +526,7 @@ def test_repair_discovery_initializes_prepare_context(tmp_path: Path, monkeypatc
     )
 
 
-def test_correction_requires_independent_exact_plan_receipt(tmp_path: Path) -> None:
+def test_correction_plan_receipt_is_optional_but_binds_when_supplied(tmp_path: Path) -> None:
     task = {
         "head": "a" * 40,
         "base": "b" * 40,
@@ -530,6 +534,8 @@ def test_correction_requires_independent_exact_plan_receipt(tmp_path: Path) -> N
         "plan_hash": "d" * 64,
         "producer_id": "author:one",
     }
+    # Plan review is retired: no receipt means the Pi decided the correction itself.
+    controller.verify_correction_plan(task, tmp_path)
     plan = "Fix the exact reviewer findings and preserve feature behavior."
     (tmp_path / "approved-plan.md").write_text(plan)
     task["plan_hash"] = hashlib.sha256(
@@ -547,7 +553,7 @@ def test_correction_requires_independent_exact_plan_receipt(tmp_path: Path) -> N
         {"approved": False},
     ):
         path.write_text(json.dumps({**receipt, **change}))
-        with pytest.raises(RuntimeError, match="independent approved plan"):
+        with pytest.raises(RuntimeError, match="legacy correction plan receipt"):
             controller.verify_correction_plan(task, tmp_path)
 
 

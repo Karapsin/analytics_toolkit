@@ -73,7 +73,7 @@ def test_callback_requires_owner_channel_message_and_current_head(control: Any) 
     with pytest.raises(ValueError, match="PR changed"):
         control.callback(gh, query, 22, -1001)
     gh.pr["head"]["sha"] = "a" * 40
-    assert "separate review" in control.callback(gh, query, 22, -1001)
+    assert "green fast CI" in control.callback(gh, query, 22, -1001)
     assert control.approved(gh.repository, 1, "a" * 40)
     assert not control.approved(gh.repository, 1, "b" * 40)
     assert "/agent approve-policy " + "a" * 40 in gh.comments[0]["body"]
@@ -116,30 +116,34 @@ def test_normal_policy_and_test_repairs_no_longer_require_owner_comment(path: st
         ".github/required-workflows.json",
         ".github/workflows/agent-dispatch.yml",
         ".codex/config.toml",
+        ".github/agent/fraud_review.py",
+        ".github/agent/prompts/fraud-review.md",
     ],
 )
 def test_controller_security_paths_still_require_owner_comment(path: str) -> None:
     assert controller.policy_path(path)
 
 
-def test_review_execution_must_be_fresh_read_only_and_bound_to_task() -> None:
-    task = {
-        "kind": "review",
-        "head": "a" * 40,
-        "base": "b" * 40,
-        "task_digest": "c" * 64,
-        "producer_id": "author:one",
-    }
-    receipt = {**task, "mode": "read-only", "reviewer_id": "reviewer:two"}
-    controller.verify_review_execution(task, receipt)
-    for changed in (
-        {"head": "d" * 40},
-        {"task_digest": "e" * 64},
-        {"mode": "workspace-write"},
-        {"reviewer_id": "author:one"},
-    ):
-        with pytest.raises(RuntimeError):
-            controller.verify_review_execution(task, {**receipt, **changed})
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".mcp.json",
+        ".claude/settings.json",
+        ".claude/agents/reviewer.md",
+        "agent_tools/agent_runtimes.py",
+        "CLAUDE.md",
+    ],
+)
+def test_claude_codex_runtime_parity_paths_require_owner_approval(path: str) -> None:
+    assert controller.policy_path(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["docs/CLAUDE.md", "agent_tools/agent_runtimes.py.bak", "tests/.claude/x", ".mcp.json.bak"],
+)
+def test_runtime_parity_protection_is_exact(path: str) -> None:
+    assert not controller.policy_path(path)
 
 
 def test_app_features_need_host_enrollment_and_exact_task_context(control: Any) -> None:

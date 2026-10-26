@@ -2,9 +2,15 @@
 
 # Private GitHub agent operations
 
-The GitHub App reviews feature PRs targeting `dev`. The subscription-backed
-Codex worker runs on the private Raspberry Pi; GitHub runs all repository tests
-and SQL Explorer scene captures. No OpenAI API key is used.
+The GitHub App admits, fixes and merges feature PRs targeting `dev`. It does not
+review source: the signed local review receipt is the only review. The
+subscription-backed worker runs on the private Raspberry Pi; GitHub runs all
+repository tests and SQL Explorer scene captures. No OpenAI API key is used.
+
+Owner decision: the [admission, fraud check and merge gate](#admission-fraud-check-and-merge-gate)
+section is authoritative. Historical activation and evidence sections below that
+mention Pi independent source review, plan review, plan resolution or individual
+PNG review describe superseded rollouts; the Pi no longer runs those reviews.
 
 ## Local review and one-way publication
 
@@ -16,10 +22,13 @@ configuration. First installation requires a separately reviewed private bootstr
 bundle; candidate code cannot select its own executable file provider.
 
 The orchestrator remains responsible for admission, checks, coordination and merges.
-The GitHub coding agent resolves conflicts only. Dedicated Pi repair agents own
-pre-merge CI and post-merge compatibility/integration failures; changed heads and
-changed bases receive independent Pi review. Published work never returns to the
-developing machine. Dev checks retain lint/type/coverage/artifact requirements while
+The GitHub coding agent resolves conflicts only. Dedicated Pi fix agents own
+pre-merge CI and post-merge compatibility/integration failures. They decide fixes
+themselves and never ask the owner planning questions; the only pauses are
+genuine credential, authentication or subscription problems, missing original
+plan or image evidence, and existing owner holds or vetoes. The Pi runs no source,
+plan or visual review; its fix heads pass only the narrow fraud check described
+below. Published work never returns to the developing machine. Dev checks retain lint/type/coverage/artifact requirements while
 application runtime checks use Python 3.14. Full compatibility and SDK checks run
 after merge and during release validation.
 
@@ -33,6 +42,49 @@ Authenticated PR controls resume PR incidents. `/resume_repair <incident-id>` al
 the pinned Telegram owner to resume a genuinely held post-merge incident; anonymous
 messages cannot. The currently stopped Pi service stays paused until a separate
 activation decision. PR #9 remains outstanding and deferred outside PR #53.
+
+## Admission, fraud check and merge gate
+
+The controller keeps the required check name `agent-review` and posts it itself:
+
+- `success` "Admitted: local review receipt verified" when the signed receipt in
+  the PR body matches the exact head (task digest, producer, tree and an enrolled
+  reviewer signature) and its reviewed base is current dev or an ancestor of it.
+  Receipts may name `reviewer_runtime` `codex` or `claude-code`; a missing runtime
+  is a legacy Codex receipt and the admission summary shows the runtime.
+- `in_progress` "Pi fix awaiting fraud check", then `success` "Pi fix accepted by
+  fraud check", for a Pi fix head. On an owner PR every first-parent commit after
+  the receipted head (walking from the head until dev) must be a Pi commit: signed
+  by the Pi controller key itself (the verified `%GF` signer fingerprint must
+  equal the public key of `AGENT_SIGNING_KEY`; any other enrolled signer, such as
+  a developer machine, fails, and a missing key fails closed), committed by
+  `<app_slug>[bot]`, with a message starting
+  `GitHub agent: {conflict|correction|repair|metadata|feature}` and the PR's task
+  trailers. The first non-Pi commit must be the receipted head (anti-laundering).
+  On an App-authored PR every first-parent commit since dev must be a Pi commit.
+- `action_required` "Local review receipt required" otherwise, including any
+  owner commit after the receipt. It is never `failure`, so no correction loop
+  starts; a new local review receipt re-admits the PR.
+
+The fraud check is a read-only model task (`kind` `fraud-review`, prompt
+`.github/agent/prompts/fraud-review.md`, schema
+`.github/agent/fraud-review.schema.json`). It only detects test or CI cheating:
+deleted or weakened tests, added skip/xfail/skipif, loosened or removed
+assertions and edits to CI workflows, lint/quality baselines, coverage thresholds
+or checks configuration. It returns accept or reject with a reason and never
+judges design or quality. Accept records an assessment and posts the success
+check; reject queues a Pi correction carrying the findings (CAS-protected) and
+posts `action_required` "Pi fix rejected by fraud check". Verdicts are stored
+privately per PR, head and task digest before any correction is queued; a
+conflicting later verdict is refused, so a stale reject cannot reopen an accepted head.
+
+Merging requires that admission plus green `fast-checks` on the exact head,
+mergeability, no writer/needs-user label, no pending correction and no hold.
+Protected paths (`policy_path`) additionally require the owner's exact-head
+approval. The Telegram approval request is sent only after admission and green
+`fast-checks` on that exact head. Admission/provenance signatures, holds, vetoes,
+pauses, conflict routing, fast-CI correction routing, repair discovery and
+integration dispatch are unchanged.
 
 ## Failed visual capture artifacts
 
@@ -277,8 +329,7 @@ counter failures are recorded separately from the original error.
 After attempting the pinned dev merge, conflict preparation inspects unresolved
 index paths as raw NUL-delimited Git output before collecting CI context or
 constructing a generic worker prompt. Conflicts under `.github/agent/` or in
-`.github/workflows/github-agent.yml` require the existing planned-correction
-route; the generic worker cannot edit those files. Sensitive paths and unavailable
+`.github/workflows/github-agent.yml` require the existing correction route; the generic worker cannot edit those files. Sensitive paths and unavailable
 or malformed inspection stop preparation without claiming that planning is queued.
 
 Before persisting a correction, the controller rechecks current publication
@@ -286,7 +337,7 @@ authority and uses the correction row observed before inspection as its expected
 snapshot. Same-scope findings and concurrent replacement requests are preserved.
 Only confirmed persistence reports a queued correction. Restarted discovery
 retains the original head, pinned base and complete task context and selects
-fresh correction planning with separate plan review. Ordinary conflicts and
+a fresh Pi correction (no plan review). Ordinary conflicts and
 clean protected inheritance keep their existing paths. Collector rejection,
 publication checks, genuine holds and exact-head protected approval still apply;
 source publication or dev merge does not activate this repair.
@@ -519,13 +570,14 @@ dev merges, required post-merge validation, and companion live acceptance.
 
 ## Merge and repair behavior
 
-Merges require current `fast-checks` and the App's `agent-review`, against the
-current `dev` base. Integration success is not a merge gate. The worker monitors
-integration after merges and creates repair PRs with fast regression coverage.
+Merges require current `fast-checks` and the App's `agent-review` admission on the
+exact head, against the current `dev` base. Integration success is not a merge
+gate. The worker monitors integration after merges and creates repair PRs, which
+are admitted through the fraud check.
 
 The delivered companion admits up to ten Codex jobs concurrently. A PR has one writer and merges are
-serialized. Rebase and changelog folding precede final review and protected owner
-approval. Local agents finish after checked, signed PR publication and task-context
+serialized. Rebase and changelog folding precede final admission and protected
+owner approval. Local agents finish after checked, signed PR publication and task-context
 attachment; the Pi owns all later corrections, CI, approvals and merges. A durable
 handoff permits the local clone to refresh clean dev and begin another planned task
 while the previous PR remains pending. Offline machines refresh at their next start.
@@ -534,17 +586,16 @@ An automatic conflict job may inherit a protected controller entry only when the
 PR left its ancestor unchanged and the staged entry exactly matches current dev.
 A protected merge that requires any other resolution records a private correction
 request bound to the original head and task digest. The next reconciliation sends
-it through fresh correction planning and independent plan review instead of
-retrying the same blocked conflict publication. Sensitive paths remain denied;
-owner/security holds, fresh implementation review, fast CI and protected exact-head
-approval still gate the correction. This routing records no owner answer or
+it through a fresh Pi correction instead of retrying the same blocked conflict
+publication. Sensitive paths remain denied; owner/security holds, the fraud check,
+fast CI and protected exact-head approval still gate the correction. This routing records no owner answer or
 approval and sends no operational Telegram alert.
 
 Discovery reads each changed changelog fragment from the immutable PR head before
 queuing deterministic metadata folding. A malformed fragment starts a fresh
-correction plan with its exact path and formatting requirement, rather than
-repeating the same failed fold. The signed task context and normal independent
-plan review, final review, fast CI and protected approval requirements still apply.
+correction with its exact path and formatting requirement, rather than repeating
+the same failed fold. The signed task context, fraud check, fast CI and protected
+approval requirements still apply.
 GitHub read failures retry without inventing a formatting rejection; genuine
 owner holds remain in place.
 
@@ -558,7 +609,7 @@ The trusted controller exposes `merge_selected(gh, app_id, work, *, pr_numbers,
 active_branches)`. The worker selects ready unowned PRs while unrelated jobs run,
 excluding every worker-owned PR. An empty selection merges nothing. Selection
 only filters the merge loop: provenance, exact-head protected approval, vetoes,
-task verification, current-dev review, fast checks, fragment folding, base rechecks,
+task verification, current-dev admission, fast checks, fragment folding, base rechecks,
 advisory dispatch and expected-head merge requests still apply. Cleanup receives
 queued/running unpublished correction and Telegram-feature branches and retains
 its complete open-PR inventory. The original three-argument `merge` remains
@@ -1521,13 +1572,12 @@ recreating the consumed feature fragment would duplicate its entry.
 ## Visual routing and complete quality diagnostics
 
 Changes to the five agent visual/geometry helpers, production SQL Explorer,
-the scene manifest, capture harness and SQL Explorer tests require the full visual
-gate. Publication inspects both rename endpoints. Obtain a fresh exact-candidate
-capture, inspect every manifest PNG individually (currently 46), and retain task,
-patch and capture identity checks. Full failed geometry JSON is always uploaded
+the scene manifest, capture harness and SQL Explorer tests require the full local
+visual gate on the developing machine. Pi publication no longer has a visual or
+PNG review gate; Pi fixes are admitted by the fraud check and fast CI. Full failed geometry JSON is always uploaded
 alongside a bounded summary. A later passing capture does not identify the cause
-of an earlier failure; any UI behavior repair needs cause-specific planning and
-independent review. Preserve all geometry assertions.
+of an earlier failure; any UI behavior repair needs a cause-specific fix.
+Preserve all geometry assertions.
 
 The canonical quality wrapper retains complete Ruff lint/format and mypy stdout
 and stderr under `.rag_index/quality-diagnostics/<id>/` before parsing or debt

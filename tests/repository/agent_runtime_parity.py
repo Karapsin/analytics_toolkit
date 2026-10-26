@@ -87,9 +87,8 @@ def test_claude_mcp_json_matches_fixture_and_committed_file() -> None:
         codex["env"],
     )
     committed = REPO_ROOT / agent_runtimes.MCP_JSON_PATH
-    if not committed.exists():
-        pytest.skip("PROTECTED-FOLLOW-UP: .mcp.json is added by a separate owner-approved PR")
     assert committed.read_text(encoding="utf-8") == agent_runtimes.render_mcp_json()
+    assert committed.read_bytes() == MCP_FIXTURE.read_bytes()
 
 
 def test_launcher_mcp_config_binds_the_absolute_clone(tmp_path: Path) -> None:

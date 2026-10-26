@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "decision": {"type": "string", "enum": ["accept", "reject"]},
+    "reason": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "issue": {"type": "string"}
+        },
+        "required": ["path", "issue"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["decision", "reason", "findings"],
+  "additionalProperties": false
+}

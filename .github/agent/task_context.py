@@ -379,5 +379,5 @@ def repair_context(task_id: str, producer: str, *, validation: bool = False) -> 
             "starting_prompt": "User-authorized standing task: monitor post-merge validation and advisory integration "
             "through completion and repair failures until green. Include fast non-integration "
             "regression coverage. Use GitHub for tests and captures; never run them on the Pi. "
-            "Every repair requires a separate independent reviewer and fast CI. "
+            "Every repair is gated by the read-only fraud check and fast CI. "
             "Integration success does not gate dev merges."}

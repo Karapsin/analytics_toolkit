@@ -33,7 +33,7 @@ def test_blocked_protected_merge_durably_routes_to_fresh_correction(
     value = task(head, base)
     output = artifact(value)
 
-    with pytest.raises(RuntimeError, match="fresh correction planning queued"):
+    with pytest.raises(RuntimeError, match="fresh correction queued"):
         controller.publish(gh, value, output, work)
     assert not pushed
     assert git("rev-parse", "HEAD").decode().strip() == head
@@ -147,7 +147,7 @@ def test_inflight_conflict_cannot_replace_concurrent_correction(
         return inherited(*args)
 
     monkeypatch.setattr(controller, "inherited_controller_path", inspect)
-    message = "fresh correction planning queued" if changed == "findings" else "findings changed"
+    message = "fresh correction queued" if changed == "findings" else "findings changed"
     with pytest.raises(RuntimeError, match=message):
         controller.publish(gh, value, output, work)
     assert control.correction(gh.repository, 1, newer_head, newer_digest) == {
@@ -256,7 +256,7 @@ def test_preparation_routes_real_protected_index_conflicts_before_worker(
     path, _dev, rename = scenario
     case = preparation(publication, monkeypatch, scenario=scenario)
     untouched_head = case.git("rev-parse", "HEAD")
-    with pytest.raises(RuntimeError, match="fresh correction planning queued"):
+    with pytest.raises(RuntimeError, match="fresh correction queued"):
         controller.prepare(case.gh, case.task, case.work, case.control)
     assert_stopped(case, control)
     assert case.git("rev-parse", "HEAD") == untouched_head
@@ -265,7 +265,7 @@ def test_preparation_routes_real_protected_index_conflicts_before_worker(
     assert (rename or path).encode() in unresolved
     request = control.correction(case.gh.repository, 1, case.task["head"], case.task["task_digest"])
     assert request
-    assert "independent review" in request["reason"]
+    assert "fresh correction" in request["reason"]
     assert not control.paused(case.gh, case.gh.pr)
 
     # Restart and discover from the retained row, without collecting any worker result.
@@ -301,7 +301,7 @@ def test_preparation_retains_ordinary_conflicts_and_clean_protected_inheritance(
     )
     controller.prepare(case.gh, case.task, case.work, case.control)
     case.ci.assert_called_once_with(case.gh, case.task)
-    case.prompt.assert_called_once_with(case.task, case.control, [], source_protocol=None)
+    case.prompt.assert_called_once_with(case.task, case.control, [])
     assert not control.correction_snapshot(case.gh.repository, 1)
     if proposal is None:
         assert not case.git("ls-files", "--unmerged", "-z")
@@ -425,7 +425,7 @@ def test_preparation_preserves_concurrent_correction_rows(
         return inspect(work)
 
     monkeypatch.setattr(controller, "unresolved_conflict_paths", replace)
-    message = "planning queued" if replacement == "findings" else "findings changed"
+    message = "correction queued" if replacement == "findings" else "findings changed"
     with pytest.raises(RuntimeError, match=message):
         controller.prepare(case.gh, case.task, case.work, case.control)
     assert_stopped(case, control)
@@ -542,7 +542,7 @@ def test_preparation_retains_existing_same_scope_findings(
         expected=None,
     )
     before = control.correction_snapshot(case.gh.repository, 1)
-    with pytest.raises(RuntimeError, match="planning queued"):
+    with pytest.raises(RuntimeError, match="correction queued"):
         controller.prepare(case.gh, case.task, case.work, case.control)
     assert_stopped(case, control)
     assert control.correction_snapshot(case.gh.repository, 1) == before
