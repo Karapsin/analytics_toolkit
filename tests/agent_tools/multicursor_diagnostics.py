@@ -445,3 +445,19 @@ def test_caret_crop_keeps_cross_span_marks_only_with_their_complete_base(
         assert cropped["spans"][1]["foreground"] == "#abcdef"
         assert cropped["spans"][1]["background"] == "#654321"
         assert cropped["spans"][1]["flags"]["italic"]
+
+
+def test_caret_mapping_before_a_soft_wrap_measures_only_the_character() -> None:
+    app, _ = _fake_observation()
+    editor = app.active_workspace.editor
+    editor.indent_width = 4
+    editor.document = ["ab\t界xy"]
+    # Every following character wraps onto the next visual row.
+    editor.wrapped_document = SimpleNamespace(
+        location_to_offset=lambda point: (0, point[1]) if point[1] else (0, 0)
+    )
+    widths = {
+        column: diagnostics._caret_mapping(editor, Selection.cursor((0, column)))["cell_width"]
+        for column in range(4)
+    }
+    assert widths == {0: 1, 1: 1, 2: 2, 3: 2}

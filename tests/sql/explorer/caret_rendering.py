@@ -6,6 +6,7 @@ from copy import copy
 import pytest
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
 from analytics_toolkit.sql_explorer.editor import CARET_COMPONENT
+from rich.cells import cell_len
 from rich.segment import Segment
 from rich.style import Style
 from textual.document._document import Selection
@@ -248,6 +249,8 @@ def test_soft_wrapped_rows_draw_blocks_on_the_caret_visual_row() -> None:
             carets = [Selection.cursor((0, column)) for column in (1, 2, 3, wrap_width + 1)]
             editor._set_selections(Selection.cursor((0, wrap_width - 1)), carets)
             await pilot.pause()
+            # The main caret is on the last character before a soft wrap.
+            assert editor.wrapped_document.location_to_offset((0, wrap_width))[1] == 1
             cursor = input_cursor_style(app)
             shown = ""
             blocks = 0
@@ -549,5 +552,36 @@ def test_secondary_caret_trailing_the_document_is_skipped_while_rendering() -> N
             assert strip.crop(gutter, gutter + 6).text == "SELECT"
             assert_caret_block(strip, gutter + 1, cursor, text="E")
             assert_no_caret_cells(strip, cursor, [gutter + 1])
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("character", ["x", "界", "\t"])
+def test_caret_before_a_soft_wrap_covers_only_its_character(character: str) -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 30)) as pilot:
+            editor = app.active_workspace.editor
+            editor.soft_wrap = True
+            editor.show_line_numbers = False
+            await pilot.pause()
+            wrap_width = editor.wrap_width
+            # A tab stop that divides the row lets the expanded tab end it exactly.
+            editor.indent_width = next(n for n in range(2, wrap_width + 1) if wrap_width % n == 0)
+            cells = editor.indent_width if character == "\t" else cell_len(character)
+            filler = "y" * (wrap_width - cells)
+            editor.text = filler + character + "z" * 20
+            column = len(filler)
+            editor._set_selections(Selection.cursor((0, column)), [])
+            await pilot.pause()
+            x, visual_row = editor.wrapped_document.location_to_offset((0, column))
+            assert x + cells == wrap_width
+            assert editor.wrapped_document.location_to_offset((0, column + 1)) == (0, 1)
+            strip = editor.render_line(visual_row - int(editor.scroll_y))
+            left = x - int(editor.scroll_x) + editor.gutter_width
+            cursor = input_cursor_style(app)
+            assert_caret_block(strip, left, cursor, width=cells)
+            # The padding after the character keeps the editor background.
+            assert_no_caret_cells(strip, cursor, list(range(left, left + cells)))
 
     asyncio.run(exercise())

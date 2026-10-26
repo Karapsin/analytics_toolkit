@@ -8,11 +8,13 @@ from copy import copy
 from time import monotonic
 from typing import TYPE_CHECKING, Any, ClassVar, Tuple, cast
 
+from rich.cells import cell_len
 from rich.segment import Segment
 from rich.style import Style
 from textual import events
 from textual.binding import Binding, BindingType
 from textual.document._document import Document, Selection
+from textual.expand_tabs import expand_tabs_inline
 from textual.strip import Strip
 from textual.widgets import Input, TextArea
 from typing_extensions import TypeAlias
@@ -880,12 +882,12 @@ class SqlEditor(TextArea):
             width = 1
             if column < len(self.document[row]):
                 next_x, next_y = self.wrapped_document.location_to_offset((row, column + 1))
-                # When the next character wraps, this character fills the remaining
-                # visible cells. In particular, a tab must not shrink to one cell.
+                # Before a soft wrap the next offset is on another row, so measure the
+                # character itself; a tab keeps its expanded width.
                 width = (
                     max(1, next_x - cursor_x)
                     if next_y == cursor_y
-                    else max(1, strip.cell_length - x)
+                    else self._character_cells(row, column)
                 )
             left = max(self.gutter_width, x)
             right = min(strip.cell_length, x + width)
@@ -896,6 +898,14 @@ class SqlEditor(TextArea):
                 )
                 strip = Strip.join([strip.crop(0, left), caret, strip.crop(right)])
         return strip.adjust_cell_length(self.scrollable_content_region.width, self.rich_style)
+
+    def _character_cells(self, row: int, column: int) -> int:
+        """Return the terminal cells of one document character, expanding tabs."""
+        line = self.document[row]
+        if line[column] == "\t":
+            prefix = cell_len(expand_tabs_inline(line[:column], self.indent_width))
+            return self.indent_width - prefix % self.indent_width
+        return max(1, cell_len(line[column]))
 
     def _selection_style(self) -> Style:
         theme = self._theme

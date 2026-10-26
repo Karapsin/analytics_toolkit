@@ -57,11 +57,11 @@ def assert_caret_block(
 
 
 def assert_no_caret_cells(strip: Strip, cursor: Style, cells: list[int] | None = None) -> None:
-    """Assert that no cell outside ``cells`` uses the caret colors."""
+    """Assert that no single cell outside ``cells`` uses the caret colors."""
     allowed = set(cells or ())
-    x = 0
-    for segment in strip:
-        width = segment.cell_length
-        if not allowed.intersection(range(x, x + width)):
-            assert not is_caret_cell(segment.style, cursor), (x, segment)
-        x += width
+    for x in range(strip.cell_length):
+        if x in allowed:
+            continue
+        for segment in strip.crop(x, x + 1):
+            if segment.cell_length:
+                assert not is_caret_cell(segment.style, cursor), (x, segment)

@@ -16,6 +16,7 @@ from rich.style import Style
 from rich.text import Text
 from textual.app import ScreenStackError
 from textual.css.query import NoMatches
+from textual.expand_tabs import expand_tabs_inline
 from textual.geometry import Region
 
 # These limits apply across a scene, not independently to each widget.
@@ -560,6 +561,15 @@ def _caret_style(editor: Any) -> dict[str, Any]:
     }
 
 
+def _character_cells(editor: Any, row: int, column: int) -> int:
+    """Measure one character before a soft wrap, keeping a tab's expanded width."""
+    line = editor.document[row]
+    if line[column] == "\t":
+        prefix = cell_len(expand_tabs_inline(line[:column], editor.indent_width))
+        return editor.indent_width - prefix % editor.indent_width
+    return max(1, cell_len(line[column]))
+
+
 def _caret_mapping(editor: Any, selection: Any) -> dict[str, Any]:
     row, column = selection.end
     wrapped_x, wrapped_y = editor.wrapped_document.location_to_offset(selection.end)
@@ -573,7 +583,7 @@ def _caret_mapping(editor: Any, selection: Any) -> dict[str, Any]:
         width = (
             max(1, next_x - wrapped_x)
             if next_y == wrapped_y
-            else max(1, editor.scrollable_content_region.width - x)
+            else _character_cells(editor, row, column)
         )
     origin = editor.content_region
     screen_x, screen_y = origin.x + x, origin.y + y
