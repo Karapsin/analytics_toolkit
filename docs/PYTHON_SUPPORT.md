@@ -44,6 +44,7 @@ The committed policy records the last validated window, ending at 3.14:
 - endoflife.date lists CPython 3.15 as released on 2026-10-09, and the newest
   Airflow (3.3.2) declares `requires-python !=3.15,>=3.10`.
 
+By owner decision the initial window starts at the last validated minor (3.14).
 The post-merge drift check is therefore expected to fail as soon as this policy
 lands, reporting the 3.15 release. The reviewed repair PR moves the window to 3.15
 with `airflow` lagging (eight minors, 3.8-3.15), or blocks on core dependencies
