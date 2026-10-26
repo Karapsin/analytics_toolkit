@@ -126,11 +126,40 @@ def status_transition(
         raise ValueError("Invalid status transition")
     deadline = time.monotonic() + 30
 
+    def budget() -> None:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("PR status display did not converge")
+
+    def label_names(value: Any, maximum: int) -> set[str]:
+        if type(value) is not list or len(value) > maximum:
+            raise ValueError("Invalid PR status labels")
+        names: set[str] = set()
+        for item in value:
+            name = item.get("name") if type(item) is dict else None
+            if type(name) is not str or not name or len(name) > 100 or name in names:
+                raise ValueError("Invalid or repeated PR status label")
+            names.add(name)
+        return names
+
+    def labels() -> set[str]:
+        names: set[str] = set()
+        for page in range(1, 12):
+            budget()
+            batch = gh.api(f"issues/{number}/labels?per_page=100&page={page}")
+            current = label_names(batch, 100)
+            if names & current or len(names) + len(current) > 1000:
+                raise ValueError("PR status label pagination repeated or exceeded capacity")
+            names.update(current)
+            if len(batch) < 100:
+                return names
+        raise ValueError("PR status label pagination incomplete")
+
     def snapshot() -> tuple[dict[str, Any], set[str], bool, str | None] | None:
+        budget()
         fresh = gh.pull(number)
         if fresh["state"] != expected_state or fresh["head"]["sha"] != head:
             return None
-        names = {item["name"] for item in gh.api(f"issues/{number}/labels")}
+        names = labels()
         fresh = dict(fresh, labels=[{"name": name} for name in sorted(names)])
         if expected_state == "closed":
             required = PAUSED in names  # Closed cleanup changes phases only.
@@ -140,6 +169,7 @@ def status_transition(
         target = "" if required else choose(fresh)
         if target is not None and target != "" and target not in PHASES:
             raise ValueError("Unknown PR status phase")
+        budget()
         latest = gh.pull(number)
         if latest["state"] != expected_state or latest["head"]["sha"] != head:
             return None
@@ -148,35 +178,51 @@ def status_transition(
             required, target = True, ""
         return dict(latest, labels=fresh["labels"]), names, required, target
 
+    def desired(state: tuple[dict[str, Any], set[str], bool, str | None]) -> set[str]:
+        _fresh, names, required, target = state
+        result = names - (PHASES & remove)
+        if target is not None:
+            result -= PHASES
+            if target:
+                result.add(target)
+        if required:
+            result.add(PAUSED)
+        elif attention is not None and expected_state == "open":
+            result.discard(PAUSED)
+        return result
+
     with _status_lock(gh.repository, number):
         for _ in range(24):
             state = snapshot()
             if state is None:
                 return None  # Never transfer the old head's attention decision.
-            fresh, names, required, target = state
-            conflicts = names & PHASES & remove
-            if target is not None:
-                conflicts |= (names & PHASES) - {target}
-            if not required and attention is not None and expected_state == "open":
-                conflicts |= names & {PAUSED}
-            missing = PAUSED if required and PAUSED not in names else target if target and target not in names else ""
-            if not conflicts and not missing:
-                return fresh
-            if time.monotonic() >= deadline:
-                break
-            if conflicts:
-                name = sorted(conflicts)[0]
-                try:
-                    gh.api(f"issues/{number}/labels/{name}", "DELETE")
-                except Exception:
-                    # Only a successful authenticated label read proving absence
-                    # can turn a concurrent deletion into success. Head changes
-                    # and failed reads cannot conceal a persistent/auth error.
-                    observed = {item["name"] for item in gh.api(f"issues/{number}/labels")}
-                    if name in observed:
-                        raise
-            else:
-                gh.api(f"issues/{number}/labels", "POST", {"labels": [missing]})
+            if desired(state) == state[1]:
+                return state[0]
+            # Reproject current activity/private attention and complete labels
+            # immediately before replacement. The callback owns its data source;
+            # this display helper does not invent a fresh request/authority API.
+            state = snapshot()
+            if state is None:
+                return None
+            wanted = desired(state)
+            if wanted == state[1]:
+                return state[0]
+            if len(wanted) > 1000:
+                raise ValueError("Projected PR status labels exceeded capacity")
+            budget()
+            try:
+                response = gh.api(f"issues/{number}/labels", "PUT", {"labels": sorted(wanted)})
+                label_names(response, 1000)
+            except Exception:
+                # A lost response can follow an accepted replacement. Only fresh
+                # authenticated reads may establish convergence; otherwise keep
+                # the diagnostic and let ordinary reconciliation retry later.
+                observed = snapshot()
+                if observed is None:
+                    return None
+                if desired(observed) == observed[1]:
+                    return observed[0]
+                raise
         raise TimeoutError("PR status display did not converge")
 
 
@@ -763,10 +809,10 @@ def reject(gh: Any, pr: dict[str, Any], task: dict[str, Any], reason: str, chang
                    (gh.repository, number, head, task["task_digest"], reason, changes, time.time()))
     marker = f"<!-- agent-correction-{head}-{task['task_digest']} -->"
     if not any(marker in item["body"] for item in gh.pages(f"issues/{number}/comments?per_page=100")):
-        gh.comment(number, marker + "\nReviewer requested changes.\n\nWhat changed: " + changes
+        gh.comment(number, marker + "\nChanges requested.\n\nWhat changed: " + changes
                    + "\n\nWhy rejected:\n" + reason
                    + "\n\nA separate correction agent on RPi5 is queued. "
-                   "It will plan the correction and submit it for independent review.")
+                   "Its fix is gated by the read-only fraud check and green fast CI.")
     enqueue(f"reject:{gh.repository}:{number}:{head}:{task['task_digest']}", "rejection",
             {"repository": gh.repository, "number": number, "head": head,
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
@@ -847,9 +893,9 @@ def approval_notice(gh: Any, pr: dict[str, Any], paths: list[str], task: dict[st
              "url": pr.get("html_url", f"https://github.com/{gh.repository}/pull/{number}"),
              "title": pr.get("title", "PR " + str(number)),
              "changes": row["changes"][:2500], "paths": paths,
-             "reason": "These files govern the reviewer/controller, its trusted prompts or "
+             "reason": "These files govern the controller, agent runtimes, their trusted prompts or "
              "security and merge permissions. Your retained policy requires owner approval "
-             "for this exact head, in addition to separate review and fast CI.",
+             "for this exact head. Admission and fast CI are already green on it.",
              "command": "/agent approve-policy " + head,
              **_notification_metadata(pr, "owner_approval", digest)}, buttons=True)
 
@@ -895,7 +941,7 @@ def callback(gh: Any, query: dict[str, Any], owner_id: int, chat_id: int) -> str
     else:
         clear_owner_decline(gh, pr["number"], value["head"])
         reconcile_label(gh, pr, approval_required=False)
-    return "Approved; separate review and fast CI still apply." if action == "approve" else "Disapproved; PR paused."
+    return "Approved; green fast CI on this exact head still gates the merge." if action == "approve" else "Disapproved; PR paused."
 
 
 def cursor(key: str, default: str | None = None) -> str | None:

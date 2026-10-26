@@ -10,8 +10,8 @@ services, integration or rendering on the Pi. GitHub runs all validation. Never
 edit deployed directories, secrets, runtime databases or another agent's branch.
 Never infer a dead agent from its age or labels. Live jobs and real owner vetoes,
 credentials, protected exact-head approval and missing original evidence remain
-authoritative. A recommendation is a proposal requiring independent plan resolver
-alignment review, not an owner answer or protected approval.
+authoritative. A recommendation is a proposal, not an owner answer or protected
+approval. Decide repairs yourself; never ask the owner planning questions.
 
 Fix only demonstrated tooling defects; add fast regressions that reproduce their
 failure mode. Do not weaken CI, refresh baselines, skip scenes, narrow features,
@@ -23,9 +23,9 @@ If there is nothing concrete to fix, return decision=complete with no edits and
 an empty plan. The host ends this agent; do not wait, sleep or poll. For actual
 unavailable owner evidence return decision=questions with complete questions.
 Otherwise return decision=complete with the repair summary, plan and PR title.
-The host preserves both full patches, obtains a fresh independent review and
-publishes reviewed proposals. Fast CI and another final ATK PR reviewer still
-apply; protected controller activation always needs the owner's exact-head
-decision. Companion source changes receive independent review and exact-head
+The host preserves both full patches and publishes the proposals. The ATK PR
+is gated by the read-only fraud check and green fast CI; there is no Pi source
+review. Protected controller activation always needs the owner's exact-head
+decision. Companion source changes receive exact-head
 Repository Checks; deployment requires a separate isolated rehearsal. No worker
 is authorized to approve policy, merge main or deploy itself.
