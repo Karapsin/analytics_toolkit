@@ -10,6 +10,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from tests._support.paths import REPO_ROOT
 from tests.repository.github_agent import controller
 from tests.repository.review_control import control as control  # noqa: PLC0414 - pytest fixture
 from tests.repository.review_control import (
@@ -137,6 +138,65 @@ def test_expired_artifact_is_explicit_and_not_downloaded(
     manifest = json.loads((tmp_path / "evidence/manifest.json").read_text())
     assert manifest["missing"] == ["Run 7 attempt 1: artifacts missing or expired"]
     assert manifest["files"] == {}
+
+
+@pytest.mark.parametrize("workflow", ["tests.yml", "compatibility.yml"])
+def test_validation_only_incident_records_no_missing_artifacts(
+    tmp_path: Path,
+    workflow: str,
+) -> None:
+    gh = Mock(repository="owner/repo")
+    gh.api.return_value = {
+        "run_attempt": 1,
+        "head_sha": "a" * 40,
+        "run_started_at": "before",
+        "path": f".github/workflows/{workflow}@refs/heads/dev",
+    }
+    gh.pages.return_value = [
+        {"id": 9, "name": "coverage", "size_in_bytes": 1, "expired": False, "created_at": "now"}
+    ]
+    snapshot = evidence.inventory(gh, [7])
+    assert snapshot[0]["workflow"] == f".github/workflows/{workflow}"
+    assert snapshot[0]["artifacts"] == []
+    task = {"runs": [7], "evidence_key": evidence.fingerprint(snapshot)}
+    evidence.prepare(gh, task, tmp_path / "evidence", str)
+    manifest = json.loads((tmp_path / "evidence/manifest.json").read_text())
+    assert manifest["missing"] == []
+    assert manifest["files"] == {}
+
+
+def test_integration_run_without_artifacts_is_still_missing(tmp_path: Path) -> None:
+    snapshot = [
+        {
+            "run": 7,
+            "attempt": 1,
+            "head": "a" * 40,
+            "workflow": ".github/workflows/sql-integration.yml",
+            "artifacts": [],
+        },
+        {
+            "run": 8,
+            "attempt": 1,
+            "head": "a" * 40,
+            "workflow": ".github/workflows/compatibility.yml",
+            "artifacts": [],
+        },
+    ]
+    gh = Mock(repository="owner/repo")
+    task = {"runs": [7, 8], "evidence_key": evidence.fingerprint(snapshot)}
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(evidence, "inventory", lambda gh, runs: snapshot)
+        evidence.prepare(gh, task, tmp_path / "evidence", str)
+    manifest = json.loads((tmp_path / "evidence/manifest.json").read_text())
+    assert manifest["missing"] == ["Run 7 attempt 1: artifacts missing or expired"]
+
+
+def test_repair_prompt_treats_validation_ci_logs_as_authoritative() -> None:
+    prompt = " ".join((REPO_ROOT / ".github/agent/prompts/repair.md").read_text().split())
+    assert "tests.yml or compatibility.yml" in prompt
+    assert "CI logs and fast-CI evidence supplied with this task are authoritative" in prompt
+    assert "integration diagnostics are not required" in prompt
+    assert "For sql-integration failures, then read the captured startup.log" in prompt
 
 
 def test_blocked_repair_retries_only_after_identity_changes(

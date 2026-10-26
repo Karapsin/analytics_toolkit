@@ -1,4 +1,5 @@
-Diagnose the integration or repair-PR fast CI failures in the supplied evidence.
+Diagnose the integration, post-merge validation, or repair-PR fast CI failures
+in the supplied evidence.
 Fix their root cause in work against the current dev base. Preserve other features.
 Every integration-derived correction must include a fast non-integration Python
 regression test that detects the same failure without starting external services.
@@ -25,10 +26,15 @@ progress, explain that blocker; do not invent a code fix.
 Use only source_files MCP tools. Never execute repository programs, tests, builds,
 installs or services on the private host. GitHub runs every validation check.
 
-Read integration/manifest.json through read_evidence_file, then the captured
-startup.log, build.log and Compose diagnostics for the exact failing runs.
-The manifest lists missing/expired artifacts explicitly. Companion CI evidence
-is separate and does not replace integration diagnostics.
+Read integration/manifest.json through read_evidence_file. Each run records its
+workflow path. For sql-integration failures, then read the captured startup.log,
+build.log and Compose diagnostics for the exact failing runs; the manifest lists
+missing/expired artifacts explicitly, and companion CI evidence is separate and
+does not replace those integration diagnostics.
+For validation failures (runs of tests.yml or compatibility.yml), the failed-step
+CI logs and fast-CI evidence supplied with this task are authoritative. Those
+workflows upload no integration artifacts, so integration diagnostics are not
+required and their absence is not missing evidence; diagnose from the CI logs.
 Return the repair schema: outcome=patch only when a justified patch was made;
 otherwise outcome=blocked or no_change, with a concrete reason and the required
 evidence. A no-patch outcome leaves the incident unresolved and suppresses

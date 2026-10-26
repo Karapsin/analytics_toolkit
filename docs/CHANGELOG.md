@@ -153,6 +153,7 @@ Generated from package version bumps and recent commit history.
 - Local review advances the feature dev base to merged origin/dev with a revalidation receipt and attaches the verified, completed SQL Explorer visual receipt
 - Keep Pi repair preparation running when integration evidence exceeds limits: retain the redacted tail of oversized startup/build/compose diagnostics and record artifacts that exceed archive limits or are unreadable as unavailable evidence instead of aborting the repair.
 - Draw SQL Explorer editor carets as full-cell blocks in the command pane input cursor style, replacing the inserted thick bar; carets before a soft wrap cover only their character.
+- Treat validation-workflow repair incidents as CI-log evidence without missing integration artifacts, and report a newer CPython minor whose core dependencies cannot install yet as WAITING FOR UPSTREAM SUPPORT instead of a stale window.
 
 ## 1.3.12.5 - 2026-10-14
 

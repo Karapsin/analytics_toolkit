@@ -163,6 +163,7 @@ jobs:
       - name: Resolve core and every extra on the newest stable CPython
         run: python -m release_routines.lib.python_support_drift probe --output "$RUNNER_TEMP/python-support-probe.json"
       # Exit status 1 / "STALE PYTHON SUPPORT WINDOW" needs a reviewed policy update PR.
+      # "WAITING FOR UPSTREAM SUPPORT" (exit 0): a newer minor exists but core cannot install yet.
       - name: Compare the Python support window with releases and extra support
         run: >-
           python -m release_routines.lib.python_support_drift evaluate

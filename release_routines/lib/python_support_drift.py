@@ -8,6 +8,9 @@ Three CLI steps keep network access separate from the pure comparison:
 * ``evaluate`` compares those facts with ``release_routines/python_support.json``.
 
 Exit status 1 means the policy window is stale and needs a reviewed policy PR.
+A newer CPython minor on which the core dependencies cannot install yet is reported
+as ``WAITING FOR UPSTREAM SUPPORT`` with exit status 0: no policy change could pass
+until upstream packages support it, so it is not a stale-policy failure.
 Exit status 3 means release or package data was unavailable; the policy was not
 judged and the run should be retried rather than repaired.
 """
@@ -75,12 +78,18 @@ class ReleaseDataUnavailable(RuntimeError):  # noqa: N818 - public outcome name
 class DriftReport:
     reasons: list[str] = field(default_factory=list)
     expected: dict[str, Any] | None = None
+    waiting: str | None = None
 
     @property
     def stale(self) -> bool:
         return bool(self.reasons)
 
     def message(self, policy: dict[str, Any]) -> str:
+        if self.waiting is not None:
+            return (
+                f"WAITING FOR UPSTREAM SUPPORT: {self.waiting} The policy window stays "
+                f"{policy['minimum']}-{policy['newest']} until core dependencies install."
+            )
         if not self.stale:
             return (
                 f"Python support window is current: {policy['minimum']}-{policy['newest']} "
@@ -246,6 +255,21 @@ def _run_pip(requirements: list[str]) -> tuple[int, str]:
     return completed.returncode, completed.stdout + completed.stderr
 
 
+def failure_reason(output: str, limit: int = 300) -> str:
+    """Return the most specific short pip failure line for status messages."""
+    lines = [" ".join(line.split()) for line in output.splitlines() if line.strip()]
+    errors = [index for index, line in enumerate(lines) if line.upper().startswith("ERROR:")]
+    if not errors:
+        reason = (lines or ["no installer output"])[-1]
+    else:
+        reason = lines[errors[-1]]
+        # Recent pip names the failing distribution after the error ("╰─> scipy").
+        culprits = [line[3:].strip() for line in lines[errors[-1] :] if line.startswith("╰─>")]
+        if culprits:
+            reason = f"{reason}: {culprits[0]}"
+    return reason if len(reason) <= limit else reason[: limit - 3] + "..."
+
+
 def probe_support(
     python: str,
     requirements: dict[str, list[str]],
@@ -257,6 +281,7 @@ def probe_support(
         message = f"Package index control resolution failed on {python}: {output.strip()[-800:]}"
         raise ReleaseDataUnavailable(message)
     results: dict[str, bool] = {}
+    reasons: dict[str, str] = {}
     for name, items in requirements.items():
         returncode, output = run(items)
         outcome = classify_probe(returncode, output)
@@ -267,12 +292,16 @@ def probe_support(
             raise ReleaseDataUnavailable(message)
         results[name] = outcome == "supported"
         if not results[name]:
+            reasons[name] = failure_reason(output)
             print(f"{name} does not resolve on CPython {python}:\n{output.strip()[-2000:]}")
-    return {
+    result: dict[str, Any] = {
         "python": python,
         "core": results.pop("core"),
         "extras": {extra: results[extra] for extra in EXTRAS},
     }
+    if not result["core"]:
+        result["core_reason"] = reasons["core"]
+    return result
 
 
 def evaluate_drift(
@@ -290,6 +319,14 @@ def evaluate_drift(
         raise ReleaseDataUnavailable(message)
     report = DriftReport()
     current = policy["newest"]
+    if minor(newest) > minor(current) and not probe["core"]:
+        # No policy update can pass until upstream ships support, so a repair
+        # would be impossible; report the release without failing the window.
+        reason = probe.get("core_reason") or "see the probe log"
+        report.waiting = (
+            f"CPython {newest} released; core dependencies do not install yet ({reason})."
+        )
+        return report
     if minor(newest) > minor(current):
         report.reasons.append(
             f"CPython {newest} has been released, but the policy window still ends at {current}."
@@ -372,6 +409,9 @@ def main(argv: list[str] | None = None) -> int:
     except ReleaseDataUnavailable as exc:
         return _unavailable(exc)
     print(report.message(policy))
+    if report.waiting is not None:
+        print(f"::notice title=Waiting for upstream Python support::{report.message(policy)}")
+        return 0
     if report.stale:
         print(
             "::error title=Stale Python support window::"

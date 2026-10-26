@@ -108,6 +108,55 @@ def test_policy_ahead_of_releases_and_core_failure_are_stale() -> None:
     assert "cannot be computed" in report.message(policy)
 
 
+NUMPY_ERROR = "ERROR: No matching distribution found for numpy<2"
+
+
+def test_new_minor_without_core_support_waits_for_upstream() -> None:
+    probe = {**_probe("3.15", core=False, lagging=("airflow",)), "core_reason": NUMPY_ERROR}
+    report = python_support_drift.evaluate_drift(_policy(), _released(15), probe)
+    assert not report.stale
+    assert report.expected is None
+    message = report.message(_policy())
+    assert message.startswith(
+        "WAITING FOR UPSTREAM SUPPORT: CPython 3.15 released; core dependencies do not "
+        f"install yet ({NUMPY_ERROR})."
+    )
+    assert "STALE" not in message
+    skipped = python_support_drift.evaluate_drift(
+        _policy(), _released(16), _probe("3.16", core=False)
+    )
+    assert skipped.waiting is not None
+    assert "CPython 3.16 released" in skipped.waiting
+    assert "see the probe log" in skipped.waiting
+
+
+def test_core_failure_on_supported_newest_minor_is_still_stale() -> None:
+    report = python_support_drift.evaluate_drift(
+        _policy(), _released(14), _probe("3.14", core=False)
+    )
+    assert report.waiting is None
+    assert report.reasons == ["Core dependencies do not resolve on CPython 3.14."]
+
+
+def test_failure_reason_prefers_last_pip_error_line() -> None:
+    output = (
+        "Collecting scipy\n  error: subprocess-exited-with-error\n"
+        "ERROR: Failed building wheel for scipy\n"
+        "ERROR:   Failed to build installable wheels for some pyproject.toml projects (scipy)\n"
+    )
+    assert python_support_drift.failure_reason(output) == (
+        "ERROR: Failed to build installable wheels for some pyproject.toml projects (scipy)"
+    )
+    scipy = "  error: subprocess\nerror: metadata-generation-failed\n\nEncountered\n╰─> scipy\n"
+    expected = "error: metadata-generation-failed: scipy"
+    assert python_support_drift.failure_reason(scipy) == expected
+    assert python_support_drift.failure_reason("a\nlast line\n") == "last line"
+    assert python_support_drift.failure_reason("") == "no installer output"
+    long_reason = python_support_drift.failure_reason("ERROR: " + "x" * 500)
+    assert len(long_reason) == 300
+    assert long_reason.endswith("...")
+
+
 @pytest.mark.parametrize(
     ("released", "probe"),
     [
@@ -217,6 +266,16 @@ def test_probe_resolves_core_and_each_extra_with_core(capsys: pytest.CaptureFixt
     assert "tui does not resolve on CPython 3.15" in capsys.readouterr().out
 
 
+def test_probe_records_short_core_failure_reason() -> None:
+    def run(requirements: list[str]) -> tuple[int, str]:
+        return (1, "noise\n" + NUMPY_ERROR + "\n") if "core-dep" in requirements else (0, "")
+
+    requirements = {"core": ["core-dep"], **{extra: ["core-dep"] for extra in EXTRAS}}
+    result = python_support_drift.probe_support("3.15", requirements, run)
+    assert result["core"] is False
+    assert result["core_reason"] == NUMPY_ERROR
+
+
 @pytest.mark.parametrize("failing", ["control", "airflow-dep"])
 def test_probe_network_failures_are_unavailable(failing: str) -> None:
     def run(requirements: list[str]) -> tuple[int, str]:
@@ -263,6 +322,13 @@ def test_cli_exit_codes_distinguish_stale_from_unavailable(
         python_support_drift.main([*arguments, "--probe", str(probe)]) == python_support_drift.STALE
     )
     assert "::error title=Stale Python support window::" in capsys.readouterr().err
+
+    probe.write_text(json.dumps({**_probe("3.15", core=False), "core_reason": NUMPY_ERROR}))
+    assert python_support_drift.main([*arguments, "--probe", str(probe)]) == 0
+    captured = capsys.readouterr()
+    assert "WAITING FOR UPSTREAM SUPPORT: CPython 3.15 released" in captured.out
+    assert "::notice title=Waiting for upstream Python support::" in captured.out
+    assert "Stale" not in captured.err
 
     probe.write_text(json.dumps(_probe("3.14")))
     assert (
