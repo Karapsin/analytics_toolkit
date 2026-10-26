@@ -19,6 +19,17 @@ MAX_ARCHIVE = 4 * 1024 * 1024
 MAX_FILE = 512 * 1024
 DIAGNOSTICS = {"startup.log", "build.log", "compose.log", "service-health.json"}
 TRUNCATED = b"[truncated: earlier diagnostic output omitted]\n"
+# Validation workflows never upload integration artifacts; their failed-step CI
+# logs are the authoritative evidence, so absent artifacts are not a gap.
+VALIDATION_WORKFLOWS = ("tests.yml", "compatibility.yml")
+
+
+def workflow_path(metadata: dict[str, Any]) -> str:
+    return str(metadata.get("path") or "").split("@", 1)[0]
+
+
+def validation_run(run: dict[str, Any]) -> bool:
+    return str(run.get("workflow") or "").endswith(VALIDATION_WORKFLOWS)
 
 
 def inventory(gh: Any, runs: list[int]) -> list[dict[str, Any]]:
@@ -27,7 +38,8 @@ def inventory(gh: Any, runs: list[int]) -> list[dict[str, Any]]:
         metadata = gh.api(f"actions/runs/{run}")
         artifacts = gh.pages(f"actions/runs/{run}/artifacts?per_page=100", "artifacts")
         result.append({"run": run, "attempt": metadata["run_attempt"],
-                       "head": metadata["head_sha"], "artifacts": sorted([
+                       "head": metadata["head_sha"], "workflow": workflow_path(metadata),
+                       "artifacts": sorted([
                            {key: item[key] for key in
                             ("id", "name", "size_in_bytes", "expired", "created_at")}
                            for item in artifacts if item["name"].startswith("sql-integration-")
@@ -109,7 +121,7 @@ def prepare(gh: Any, task: dict[str, Any], destination: Path, redact: Any) -> No
     files, missing = {}, []
     for run in snapshot:
         available = [item for item in run["artifacts"] if not item["expired"]]
-        if not available:
+        if not available and not validation_run(run):
             missing.append(f"Run {run['run']} attempt {run['attempt']}: artifacts missing or expired")
         for item in available:
             if item["size_in_bytes"] > MAX_ARCHIVE:
