@@ -549,17 +549,18 @@ def _caret_cells(
 def _caret_mapping(editor: Any, selection: Any) -> dict[str, Any]:
     row, column = selection.end
     wrapped_x, wrapped_y = editor.wrapped_document.location_to_offset(selection.end)
-    x = wrapped_x - int(editor.scroll_x) + editor.gutter_width
+    # Each caret is a one-cell bar inserted before its character, so bars drawn
+    # further left on the same visual row displace it by one cell each.
+    preceding = sum(
+        1
+        for other in editor.cursor_selections
+        if (offset := editor.wrapped_document.location_to_offset(other.end))[1] == wrapped_y
+        and int(editor.scroll_x) <= offset[0] < wrapped_x
+    )
+    x = wrapped_x - int(editor.scroll_x) + editor.gutter_width + preceding
     y = wrapped_y - int(editor.scroll_y)
     in_document = column < len(editor.document[row])
     width = 1
-    if in_document:
-        next_x, next_y = editor.wrapped_document.location_to_offset((row, column + 1))
-        width = (
-            max(1, next_x - wrapped_x)
-            if next_y == wrapped_y
-            else max(1, editor.scrollable_content_region.width - x)
-        )
     origin = editor.content_region
     screen_x, screen_y = origin.x + x, origin.y + y
     viewport = editor.scrollable_content_region
@@ -599,10 +600,8 @@ def _observe_caret_layers(
             result["missing"].append(f"{name}:{layer}:unavailable_or_clipped")
             continue
         # A recorded style is not a PNG visibility verdict.
-        marked = (
-            all(span["flags"]["underline"] for span in observed["spans"])
-            if caret["in_document"]
-            else observed["text"] == "│"
+        marked = observed["text"] == "\u258c" and not any(
+            span["flags"]["underline"] or span["flags"]["reverse"] for span in observed["spans"]
         )
         if not marked:
             result["multicursor"]["findings"].append(f"{name}:{layer}:caret_mark_absent")

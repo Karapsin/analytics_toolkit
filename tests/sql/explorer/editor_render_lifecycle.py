@@ -11,6 +11,7 @@ from textual.document._document import Selection
 from textual.strip import Strip
 from textual.widgets import TextArea
 
+from tests.sql._support.carets import CARET, assert_caret_bar, caret_cells, without_cells
 from tests.sql._support.explorer import FakeSession
 
 
@@ -61,12 +62,13 @@ def test_theme_absence_preserves_cells_carets_and_restores_state_on_failure(
             try:
                 editor._theme = None
                 rendered = editor.render_line(0)
-                assert rendered.text == source.text
+                cells = caret_cells(editor, 0)
+                assert cells == [editor.gutter_width, editor.gutter_width + 8]
+                assert without_cells(rendered, cells).text == source.text[: width - 2]
                 assert rendered.cell_length == width
-                for column in (0, 7):
-                    left = editor.gutter_width + column
-                    cell = rendered.crop(left, left + 1)
-                    assert all(segment.style.underline for segment in cell)
+                accent = app.get_css_variables()["accent"]
+                for x in cells:
+                    assert_caret_bar(rendered, x, accent)
                 assert editor._theme is None
 
                 def fail(_editor: TextArea, _row: int) -> Strip:
@@ -111,9 +113,12 @@ def test_wholly_clipped_search_match_leaves_visible_match_and_cell_width_intact(
             hidden = ((0, 0), (0, 5)) if side == "left" else ((0, 214), (0, 219))
             editor._search_matches = (hidden, ((0, 107), (0, 112)))
             rendered = editor.render_line(0)
-            assert rendered.text == source.text
+            assert caret_cells(editor, 0) == [gutter + 15]
+            assert rendered.crop(gutter + 15, gutter + 16).text == CARET
             assert rendered.cell_length == width
-            for x in range(gutter, gutter + len(visible)):
+            rendered = without_cells(rendered, [gutter + 15])
+            assert rendered.text == source.text[: width - 1]
+            for x in range(gutter, gutter + len(visible) - 1):
                 cell = rendered.crop(x, x + 1)
                 highlighted = 107 <= x - gutter + 100 < 112
                 assert all(
