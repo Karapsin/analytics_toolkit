@@ -16,6 +16,7 @@ from textual._tree_sitter import TREE_SITTER
 from textual.document._document import Selection
 from textual.widgets import Static, TextArea
 
+from tests.sql._support.carets import assert_caret_bar, caret_cells
 from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
@@ -173,9 +174,15 @@ def test_secondary_cursor_is_visible_on_an_empty_line() -> None:
 
             await pilot.press("shift+up", "shift+up")
 
-            rendered = editor.get_line(1)
-            assert rendered.plain == " "
-            assert any(span.start == 0 and span.end == 1 for span in rendered.spans)
+            await pilot.pause()
+            assert editor.get_line(1).plain == ""
+            row = 1 - int(editor.scroll_y)
+            assert caret_cells(editor, row) == [editor.gutter_width]
+            assert_caret_bar(
+                editor.render_line(row),
+                editor.gutter_width,
+                application.get_css_variables()["accent"],
+            )
 
     asyncio.run(exercise())
 

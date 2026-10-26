@@ -10,11 +10,12 @@ from textual.document._document import Selection
 from textual.strip import Strip
 from textual.widgets import TextArea
 
+from tests.sql._support.carets import assert_caret_bar, caret_cells, without_cells
 from tests.sql._support.explorer import FakeSession
 
 
 @pytest.mark.parametrize("background", [None, "#123456"])
-def test_occupied_caret_retains_original_foreground_and_background(
+def test_characters_beside_bars_retain_original_foreground_and_background(
     monkeypatch: pytest.MonkeyPatch, background: str | None
 ) -> None:
     async def exercise() -> None:
@@ -35,15 +36,20 @@ def test_occupied_caret_retains_original_foreground_and_background(
                     app.active_workspace.command_input.focus()
                     await pilot.pause()
                 rendered = editor.render_line(0)
-                assert rendered.crop(editor.gutter_width, editor.gutter_width + 3).text == "SQL"
+                cells = caret_cells(editor, 0)
+                assert cells == [editor.gutter_width, editor.gutter_width + 3]
+                assert rendered.crop(editor.gutter_width, editor.gutter_width + 5).text == "▌SQ▌L"
+                accent = app.get_css_variables()["accent"]
+                for x in cells:
+                    assert_caret_bar(rendered, x, accent, bgcolor=original.bgcolor)
+                plain = without_cells(rendered, cells)
                 for column in (0, 2):
-                    cell = rendered.crop(
+                    cell = plain.crop(
                         editor.gutter_width + column, editor.gutter_width + column + 1
                     )
                     assert all(segment.style.color == original.color for segment in cell)
                     assert all(segment.style.bgcolor == original.bgcolor for segment in cell)
-                    assert all(segment.style.underline for segment in cell)
-                    assert all(segment.style.bold is False for segment in cell)
+                    assert all(not segment.style.underline for segment in cell)
                 assert editor._theme is theme
             assert editor.text == "SQL"
 
