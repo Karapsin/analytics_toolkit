@@ -11,6 +11,7 @@ from textual.document._document import Selection
 from textual.strip import Strip
 from textual.widgets import TextArea
 
+from tests.sql._support.carets import CARET, caret_cells, without_cells
 from tests.sql._support.explorer import FakeSession
 
 
@@ -45,10 +46,12 @@ def test_multiline_highlight_clips_both_ends_and_preserves_occupied_carets(
 
             monkeypatch.setattr(TextArea, "render_line", native_line)
             for row in range(4):
-                strip = editor.render_line(row)
-                assert strip.text == native_line(editor, row).text
-                assert strip.cell_length == width
-                for x in range(gutter, width):
+                rendered = editor.render_line(row)
+                cells = caret_cells(editor, row)
+                strip = without_cells(rendered, cells)
+                assert strip.text == native_line(editor, row).text[: width - len(cells)]
+                assert rendered.cell_length == width
+                for x in range(gutter, width - len(cells)):
                     column = x - gutter + scroll_x
                     expected = row < 3 and (row != 0 or column >= 4)
                     expected = expected and (row != 2 or column < 16)
@@ -59,10 +62,17 @@ def test_multiline_highlight_clips_both_ends_and_preserves_occupied_carets(
                     )
             for row, column in ((2, 10), (3, 12)):
                 x = gutter + column - scroll_x
-                caret = editor.render_line(row - 1).crop(x, x + 1)
-                assert caret.text == lines[row][column]
-                assert all(segment.style.underline for segment in caret)
-                assert all(segment.style.bold is False for segment in caret)
+                rendered = editor.render_line(row - 1)
+                assert caret_cells(editor, row - 1) == [x]
+                caret = list(rendered.crop(x, x + 1))
+                assert [segment.text for segment in caret] == [CARET]
+                # Inside the find match, the bar keeps the yellow cell and turns black.
+                assert caret[0].style.bgcolor.get_truecolor().hex == "#ffff00"
+                assert caret[0].style.color.get_truecolor().hex == "#000000"
+                assert caret[0].style.bold is False
+                following = rendered.crop(x + 1, x + 2)
+                assert following.text == lines[row][column]
+                assert all(not segment.style.underline for segment in following)
             assert editor.text == "\n".join(lines)
 
     asyncio.run(exercise())

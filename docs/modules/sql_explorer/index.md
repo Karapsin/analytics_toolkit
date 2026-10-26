@@ -151,17 +151,17 @@ cursor or selection. Buttons, search fields, and completion choices still
 perform their actions. After executing a command,
 focus remains in the command pane. Secondary editor cursors remain visible on empty lines as well as lines containing text.
 
-The editor uses steady thin carets, including secondary cursors: underlines on
-all in-document cells, including spaces and expanded tabs, and vertical bars only
-on end-of-line or empty-line padding. SQL characters remain
-readable and terminal columns stay aligned, including tabs, wide characters,
-horizontal scrolling, and empty lines. Carets and selections remain visible when
-the command or find input has focus; search matches keep their yellow background
-through caret overlays. In-document carets preserve the original foreground and
-background, including selection and find colors, with no native block colors
-beneath the underline when the editor has focus. End-padding bars preserve the
-existing cell background, including inherited backgrounds. Presentation padding
-never changes the SQL buffer.
+The editor uses steady VS Code-style carets for the main and secondary cursors:
+a thick vertical bar (a left half block, `▌`) drawn between characters, before the character at the
+cursor, in every state (editing, line end, empty lines, selections, and multiple
+cursors). The bar occupies its own terminal cell, so text after a caret on the
+same row is shown one cell to the right and every SQL character stays readable;
+mouse clicks skip bar cells, so clicking a character still places the cursor on
+it. Carets and selections remain visible when the command or find input has
+focus. Each bar keeps the background of the cell it precedes, including the
+active-line, selection, and yellow find backgrounds (a bar inside a find match
+is black), and native block colors are never drawn beneath it. Carets never
+change the SQL buffer.
 Text inputs retain steady non-blinking carets. The compact active tab uses a dark surface with amber text and always includes its database key.
 The editor displays line numbers, keeps its vertical scrollbar on the right,
 shows the active one-based line and column in its lower-right corner without
@@ -583,9 +583,9 @@ their snapshots. Loading replacement text clears the edit history, secondary
 cursors, and remembered columns, leaving one cursor at the start of the new buffer.
 The active line gutter and row/column status values follow only the main cursor,
 using the focus accent.
-Carets underline in-document characters, spaces, and every visible cell of expanded
-tabs. Vertical bars appear only on end-of-line or empty-line padding, so SQL text
-and find highlights remain readable without shifting columns.
+Every caret is a thick vertical bar (`▌`) before the character at its position, never
+an underline or block over the character, so SQL text and find highlights remain
+readable.
 
 Up/Down in the command pane browses session history for that tab. Moving beyond
 the newest entry restores the draft and caret. When completion is open,
