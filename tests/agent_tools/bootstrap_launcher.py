@@ -57,15 +57,28 @@ def launcher(tmp_path, monkeypatch):
     monkeypatch.setattr(
         plan_terminal, "launch", lambda executable, root: launches.append(root) or 0
     )
+    monkeypatch.setattr(
+        plan_terminal,
+        "launch_claude",
+        lambda executable, root: launches.append(("claude", root)) or 0,
+    )
     return source, root, state, commands, launches, creates
 
 
+RUNTIMES = pytest.mark.parametrize("runtime", ["codex", "claude"])
+
+
+def invoke(runtime, source, *args):
+    return plan_terminal.main(["--runtime", runtime, str(source), "/" + runtime, *args])
+
+
+@RUNTIMES
 @pytest.mark.parametrize(
     "mode", [[], ["--refresh-bootstrap-cache"], ["--resume-bootstrap", "0123456789abcdef"]]
 )
-def test_launcher_prepares_once_before_entering_plan(launcher, mode):
+def test_launcher_prepares_once_before_entering_plan(launcher, mode, runtime):
     source, root, state, commands, launches, creates = launcher
-    assert plan_terminal.main([str(source), "/codex", *mode]) == 0
+    assert invoke(runtime, source, *mode) == 0
     assert len(commands) == 1
     args, options = commands[0]
     assert args[0] == str(root / "agent_tools/mcp_tool.sh")
@@ -77,7 +90,10 @@ def test_launcher_prepares_once_before_entering_plan(launcher, mode):
     )
     assert state["phase"] == "planning"
     assert state["base"] == "latest"
-    assert launches == [root]
+    assert state["runtime"] == state["reviewer"] == runtime
+    display = plan_terminal.agent_runtimes.RUNTIMES[runtime].display
+    assert args[args.index("--task") + 1] == f"New isolated {display} session"
+    assert launches == [root if runtime == "codex" else ("claude", root)]
     assert len(creates) == (0 if "--resume-bootstrap" in mode else 1)
     log = root / ".rag_index/bootstrap/launcher.log"
     assert json.loads(log.read_text())["ok"] is True
@@ -85,7 +101,7 @@ def test_launcher_prepares_once_before_entering_plan(launcher, mode):
 
 
 @pytest.mark.parametrize(
-    ("output", "code"),
+    "receipt",
     [
         ("{}", 0),
         ("[]", 0),
@@ -95,19 +111,22 @@ def test_launcher_prepares_once_before_entering_plan(launcher, mode):
         ('{"blockers":[3],"result":7}', 1),
     ],
 )
+@RUNTIMES
 def test_failed_receipt_never_launches_or_marks_planning(
-    launcher, monkeypatch, capsys, output, code
+    launcher, monkeypatch, capsys, receipt, runtime
 ):
+    output, code = receipt
     source, root, state, _, launches, _ = launcher
     monkeypatch.setattr(
         plan_terminal.subprocess,
         "run",
         lambda args, **kwargs: subprocess.CompletedProcess(args, code, stdout=output),
     )
-    assert plan_terminal.main([str(source), "/codex"]) == 1
+    assert invoke(runtime, source) == 1
     assert state["phase"] == "launching"
+    assert "runtime" not in state
     assert not launches
-    assert f"codex --resume-bootstrap {root.name}" in capsys.readouterr().err
+    assert f"{runtime} --resume-bootstrap {root.name}" in capsys.readouterr().err
     assert (root / ".rag_index/bootstrap/launcher.log").read_text() == output
 
 
@@ -249,3 +268,55 @@ def test_failed_preparation_reports_a_short_cause(launcher, monkeypatch, capsys,
     )
     assert plan_terminal.main([str(source), "/codex"]) == 1
     assert expected in capsys.readouterr().err
+
+
+@RUNTIMES
+def test_reviewer_override_is_recorded_and_unknown_reviewer_fails_closed(
+    launcher, monkeypatch, runtime
+):
+    source, _root, state, commands, launches, _ = launcher
+    other = "claude" if runtime == "codex" else "codex"
+    monkeypatch.setenv("ATK_LOCAL_REVIEWER", other)
+    assert invoke(runtime, source) == 0
+    assert (state["runtime"], state["reviewer"]) == (runtime, other)
+    monkeypatch.setenv("ATK_LOCAL_REVIEWER", "gemini")
+    with pytest.raises(RuntimeError, match="Unknown local reviewer"):
+        invoke(runtime, source)
+    assert len(commands) == len(launches) == 1
+
+
+def test_claude_launch_binds_absolute_clone_mcp_and_plan_mode(tmp_path, monkeypatch):
+    root = tmp_path / "0123456789abcdef"
+    root.mkdir()
+    calls = []
+    monkeypatch.setattr(plan_terminal.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(plan_terminal.sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(plan_terminal.os, "chdir", lambda path: calls.append(("chdir", path)))
+    monkeypatch.setattr(
+        plan_terminal.os, "execve", lambda exe, argv, env: calls.append((exe, argv, env))
+    )
+    monkeypatch.setenv("MCP_TOOL_TIMEOUT", "1")
+    plan_terminal.launch_claude("/bin/claude", root)
+    assert calls[0] == ("chdir", root)
+    executable, argv, environment = calls[1]
+    config = root / ".rag_index/bootstrap/claude-mcp.json"
+    assert executable == "/bin/claude"
+    assert argv[:7] == [
+        "/bin/claude",
+        "--permission-mode",
+        "plan",
+        "-n",
+        "atk-0123456789abcdef",
+        "--mcp-config",
+        str(config),
+    ]
+    assert environment["MCP_TOOL_TIMEOUT"] == "7200000"
+    assert environment["MCP_TIMEOUT"] == "30000"
+    server = json.loads(config.read_text())["mcpServers"]["analytics_toolkit_agent_tools"]
+    assert server["command"] == str(root.resolve() / "agent_tools/mcp_tool.sh")
+
+
+def test_claude_launch_requires_a_terminal(tmp_path, monkeypatch):
+    monkeypatch.setattr(plan_terminal.sys.stdin, "isatty", lambda: False, raising=False)
+    with pytest.raises(RuntimeError, match="claude -p"):
+        plan_terminal.launch_claude("/bin/claude", tmp_path)

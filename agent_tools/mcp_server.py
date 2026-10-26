@@ -26,8 +26,16 @@ sessions = importlib.import_module(f"{__package__}.sessions" if __package__ else
 
 try:  # pragma: no cover - exercised only when the agent-only MCP dependency exists.
     from mcp.server import MCPServer
+    from mcp.types import ToolAnnotations
 except ImportError:  # pragma: no cover - normal package test env has no MCP dependency.
     MCPServer = None  # type: ignore[assignment,misc]
+    ToolAnnotations = None  # type: ignore[assignment,misc]
+
+# Tools that never change the repository, Git state, task context, sessions or
+# remote services. They only append private telemetry/startup bookkeeping below the
+# ignored `.rag_index/`. Clients such as Claude Code Plan mode run read-only tools
+# without an approval prompt; every other tool keeps prompting for approval.
+READ_ONLY_TOOLS = frozenset({"docs", "workflow_status", "workflow_metrics", "change_impact"})
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -2169,18 +2177,27 @@ def create_mcp_server() -> Any:
         instructions=MCP_SERVER_INSTRUCTIONS,
     )
 
-    server.tool()(prepare_start)
-    server.tool()(task_context)
-    server.tool()(docs)
-    server.tool()(workflow_status)
-    server.tool()(workflow_metrics)
-    server.tool()(change_impact)
-    server.tool()(version_bump)
-    server.tool()(run_checks)
-    server.tool()(sql_explorer_visual.visual_workflow)
-    server.tool()(sql_explorer_visual.visual_review)
-    server.tool()(git_workflow)
-    server.tool()(release_workflow)
+    for function in (
+        prepare_start,
+        task_context,
+        docs,
+        workflow_status,
+        workflow_metrics,
+        change_impact,
+        version_bump,
+        run_checks,
+        sql_explorer_visual.visual_workflow,
+        sql_explorer_visual.visual_review,
+        git_workflow,
+        release_workflow,
+    ):
+        read_only = function.__name__ in READ_ONLY_TOOLS
+        annotations = ToolAnnotations(
+            read_only_hint=read_only,
+            destructive_hint=not read_only,
+            open_world_hint=not read_only,
+        )
+        server.tool(annotations=annotations)(function)
 
     server.resource("repo://AGENTS.md")(_resource_file("AGENTS.md"))
     server.resource("repo://agent_tools/README.md")(_resource_file("agent_tools/README.md"))

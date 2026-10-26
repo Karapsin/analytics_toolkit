@@ -12,5 +12,5 @@
 
 - [GitHub wiki synchronization](WIKI_SYNC.md)
 
-- [Isolated Codex feature sessions](FEATURE_SESSIONS.md)
+- [Isolated agent feature sessions](FEATURE_SESSIONS.md)
 - [Private GitHub agent operations](GITHUB_AGENT_OPERATIONS.md)
