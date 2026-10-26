@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sqlite3
 import stat
 import subprocess
@@ -17,6 +18,7 @@ from typing import Any
 MAX_ARCHIVE = 4 * 1024 * 1024
 MAX_FILE = 512 * 1024
 DIAGNOSTICS = {"startup.log", "build.log", "compose.log", "service-health.json"}
+TRUNCATED = b"[truncated: earlier diagnostic output omitted]\n"
 
 
 def inventory(gh: Any, runs: list[int]) -> list[dict[str, Any]]:
@@ -76,8 +78,8 @@ def extract(content: bytes, destination: Path, redact: Any) -> dict[str, str]:
                 raise ValueError("Integration artifact expansion limit exceeded")
             if entry.is_dir() or path.name not in DIAGNOSTICS:
                 continue
-            if entry.file_size > MAX_FILE:
-                raise ValueError("Integration diagnostic exceeds file limit")
+            # The expansion bound above caps this read; redact the whole file
+            # before keeping only its tail so no secret is split by the cut.
             text = archive.read(entry).decode("utf-8", errors="replace")
             text = re.sub(r"(?i)(Authorization\s*:\s*)([^\r\n]+)", r"\1[REDACTED]", text)
             text = re.sub(r"(https?://)[^\s/@]+:[^\s/@]+@", r"\1[REDACTED]@", text)
@@ -86,7 +88,9 @@ def extract(content: bytes, destination: Path, redact: Any) -> dict[str, str]:
                     text = text.replace(os.environ[name], "[REDACTED]")
             data = redact(text).encode()
             if len(data) > MAX_FILE:
-                raise ValueError("Redacted diagnostic exceeds file limit")
+                # Failures are reported at the end of service logs; keep the tail.
+                tail = data[-(MAX_FILE - len(TRUNCATED)):].decode("utf-8", errors="ignore")
+                data = TRUNCATED + tail.encode()
             relative = path.as_posix()
             if relative in files:
                 raise ValueError("Duplicate integration diagnostic path")
@@ -112,7 +116,15 @@ def prepare(gh: Any, task: dict[str, Any], destination: Path, redact: Any) -> No
                 missing.append(f"Artifact {item['id']}: exceeds download limit")
                 continue
             prefix = f"run-{run['run']}/artifact-{item['id']}"
-            extracted = extract(download(gh.repository, item["id"]), destination / prefix, redact)
+            try:
+                content = download(gh.repository, item["id"])
+                extracted = extract(content, destination / prefix, redact)
+            except (ValueError, zipfile.BadZipFile) as error:
+                # A limit or unsafe archive withholds only this artifact's files;
+                # the repair still starts from the remaining evidence and logs.
+                shutil.rmtree(destination / prefix, ignore_errors=True)
+                missing.append(f"Artifact {item['id']}: evidence unavailable: {error}")
+                continue
             files.update({prefix + "/" + name: digest for name, digest in extracted.items()})
             if not extracted:
                 missing.append(f"Artifact {item['id']}: startup/build diagnostics unavailable")
