@@ -35,16 +35,19 @@ agent_tools/mcp_tool.sh release-workflow --action status
 
 The agent-only MCP runtime requires Python 3.10 or newer and MCP SDK 2. The
 committed `.codex/config.toml` registers the server automatically for trusted
-project sessions. Bootstrap or refresh `.venv` with `requirements-mcp.txt`, then
-restart Codex or reopen the workspace after cloning or changing MCP
-configuration; MCP servers are loaded when a session starts. Running
+Codex project sessions, and the project `.mcp.json` registers the same server for
+Claude Code. Both files, the `CLAUDE.md` import of `AGENTS.md`, launcher arguments
+and reviewer isolation flags are rendered from `agent_tools/agent_runtimes.py`;
+`tests/repository/agent_runtime_parity.py` fails on any drift. Bootstrap or
+refresh `.venv` with `requirements-mcp.txt`, then restart the CLI or reopen the
+workspace after cloning or changing MCP configuration; MCP servers are loaded when a session starts. Running
 `agent_tools/mcp_tool.sh` without arguments starts the stdio server, while the
 commands above retain the manual JSON CLI.
 
 The project registration is optional (`required = false`) so a missing local
-environment does not prevent Codex from opening. The MCP stdio entrypoint does not install dependencies automatically; bootstrap
+environment does not prevent either CLI from opening. The MCP stdio entrypoint does not install dependencies automatically; bootstrap
 failures report the command needed to repair the environment. The interactive
-`codex` launcher prepares its isolated session before opening the CLI.
+`codex` and `claude` launchers prepare their isolated session before opening the CLI.
 
 MCP tools return compact receipts by default. Successful summary responses omit
 internal command records; failures return a structured blocker with one bounded
@@ -76,20 +79,27 @@ and certificate/authentication failures stop immediately. Progress goes to stder
 full output and preparation receipts remain private below `.rag_index/bootstrap/`.
 `ATK_BOOTSTRAP_CACHE_DIR` can override the wheelhouse location.
 
-Bare `codex` from the canonical repository creates a private clone on `dev`,
-pulls before launch, prepares the repository MCP, and selects native Plan mode
-before accepting task input. Install this launcher with
-`python -m agent_tools.install_sessions` from the prepared project environment.
-After updating the launcher, rerun the installer and source
-`~/.local/share/analytics-toolkit-agent/codex.zsh` in existing terminals.
-Other directories and Codex commands continue to use the existing CLI.
+Bare `codex` or bare `claude` from the canonical repository creates a private
+clone on `dev`, pulls before launch, prepares the repository MCP, and selects
+native Plan mode before accepting task input. Codex Plan mode is selected and
+verified through the terminal; Claude Code starts with `--permission-mode plan`,
+`-n atk-<session-id>` and an `--mcp-config` bound to the absolute clone, with
+`MCP_TOOL_TIMEOUT`/`MCP_TIMEOUT` matching the Codex server timeouts. Install both
+launchers with `python -m agent_tools.install_sessions` from the prepared project
+environment. Both wrappers live in `agent_tools/atk_sessions.zsh` and share one
+interception rule; `codex.zsh` is a compatibility shim. After updating the
+launcher, rerun the installer and source
+`~/.local/share/analytics-toolkit-agent/atk_sessions.zsh` in existing terminals.
+Other directories and other CLI commands continue to use the existing CLIs.
 
-From the canonical checkout, `codex --resume-bootstrap <session-id>` continues a
+From the canonical checkout, `codex --resume-bootstrap <session-id>` or
+`claude --resume-bootstrap <session-id>` continues a
 failed preparation in its original clone. It accepts only a clean `dev` clone in
 `launching` phase with no unfinished Git operation. It refreshes dev before loading
 the clone's preparation tools, and concurrent attempts are rejected. A failed
 preparation prints its session ID, receipt location, and resume command; it never
-enters Plan mode or deletes the clone. `codex --refresh-bootstrap-cache` creates a
+enters Plan mode or deletes the clone. `codex --refresh-bootstrap-cache` or
+`claude --refresh-bootstrap-cache` creates a
 new isolated session and refreshes dependency versions even when inputs match.
 The first preparation requires PyPI; Git synchronization still requires its remote.
 
@@ -931,8 +941,19 @@ extras. It does not use vector stores, hosted LLM SDKs, Ollama, or embedding
 models.
 
 Telegram feature intake and feature development are disabled. Develop features
-locally; publication starts a fresh read-only Codex reviewer with immutable Git
-reads and no shell. It must inspect every diff page and approve the complete task.
+locally; publication starts a fresh read-only reviewer with immutable Git reads
+and no shell. It is the only source review and fails closed. The reviewer runs the
+session's CLI unless `ATK_LOCAL_REVIEWER=codex|claude` overrides it; a missing CLI
+never falls back to the other. Codex runs `codex exec` read-only and ephemeral.
+Claude Code runs `claude -p --restricted --tools ""` with only the `source_files`
+MCP server and its six tools allowed in `dontAsk` mode, a pregenerated session ID,
+no session persistence and a minimal environment allowlist, from a temporary job
+directory outside the clone. The caller verifies the init event (session, tools,
+server, permission mode, subscription auth) and the structured result. The
+runtime adapter is loaded from the dev base like the source provider; a base
+without it supports only the built-in Codex reviewer. Receipts record
+`reviewer_runtime`, `reviewer_version`, `reviewer_model` and `reviewer_auth`.
+It must inspect every diff page and approve the complete task.
 Rejections remain local for correction and another fresh review. The signed
 receipt binds head, tree, dev base, task digest and separate reviewer identity.
 The orchestrator verifies it against host-owned enrollment before accepting it.

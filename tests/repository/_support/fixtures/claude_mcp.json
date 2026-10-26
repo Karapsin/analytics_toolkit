@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "analytics_toolkit_agent_tools": {
+      "type": "stdio",
+      "command": "sh",
+      "args": [
+        "-c",
+        "repo_root=\"$(git rev-parse --show-toplevel)\" && exec \"$repo_root/agent_tools/mcp_tool.sh\""
+      ],
+      "env": {}
+    }
+  }
+}

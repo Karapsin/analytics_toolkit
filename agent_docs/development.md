@@ -124,8 +124,9 @@ v1 task-context fields, retain the prior-head digest for publication verificatio
 and bind the restored context to a fresh independently reviewed correction head.
 Restoring context does not transfer owner approval from the source PR.
 
-1. Launch bare `codex` from the canonical repository. The launcher prepares a
-   separate clone on refreshed dev before entering native Plan mode.
+1. Launch bare `codex` or bare `claude` from the canonical repository. Either
+   launcher prepares a separate clone on refreshed dev before entering native
+   Plan mode; both runtimes are generated from `agent_tools/agent_runtimes.py`.
 2. Call `prepare_start(...)` for role-aware context and read its routed files.
    Pass the exact starting message as `user_prompt`; append subsequent user
    task corrections with `task_context(action="append", user_prompt=...)`.
@@ -138,7 +139,8 @@ Restoring context does not transfer owner approval from the source PR.
 5. Run focused checks and `version_bump(...)` (creates a unique fragment).
 6. Run mandatory `run_checks(level="precommit")`, then workflow status.
 7. Commit explicit paths with `git_workflow(action="commit", ...)`. Before any
-   publication this starts a fresh independent read-only local reviewer. Rejected
+   publication this starts a fresh independent read-only local reviewer of the
+   session's CLI (`ATK_LOCAL_REVIEWER=codex|claude` overrides it). Rejected
    candidates stay local for correction and another fresh review. `review` retries
    review of a committed candidate; `push` retries publication after approval.
 8. Publication verifies the signed head and task attachment, archives the task,
