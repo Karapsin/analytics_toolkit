@@ -11,31 +11,36 @@ permissions:
   contents: read
 
 jobs:
+  policy:
+    name: python-support-policy
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Require repository metadata to match the Python support policy
+        run: python -m release_routines.lib.python_support check
+      - name: Build the compatibility matrix from the Python support policy
+        id: matrix
+        run: echo "matrix=$(python -m release_routines.lib.python_support matrix)" >> "$GITHUB_OUTPUT"
+
   tests:
     name: ${{ matrix.env_name }}
+    needs: policy
     runs-on: ubuntu-latest
     env:
       RASTER_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
       RASTER_BASE: 4a17e91b20b2683aca365f486e6217a141ef8c5b
       RASTER_PROFILE: ${{ matrix.env_name }}
+      # Lagging extras are not installed; tests/_support/extras.py skips their test modules.
+      ATK_WITHOUT_EXTRAS: ${{ matrix.without_extras }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - python-version: "3.9"
-            env_name: py39-latest
-          - python-version: "3.10"
-            env_name: py310-latest
-          - python-version: "3.11"
-            env_name: py311-latest
-          - python-version: "3.12"
-            env_name: py312-latest
-          - python-version: "3.13"
-            env_name: py313-latest
-          - python-version: "3.14"
-            env_name: py314-latest
-          - python-version: "3.9"
-            env_name: py39-min
+      # Driven by release_routines/python_support.json; see docs/PYTHON_SUPPORT.md.
+      matrix: ${{ fromJSON(needs.policy.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -67,16 +72,16 @@ jobs:
 
       - name: Install latest test environment
         id: latest
-        if: ${{ !cancelled() && matrix.env_name != 'py39-min' }}
-        run: python -m pip install -e '.[tui,datalens]' pytest "Pillow>=10,<13" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
+        if: ${{ !cancelled() && matrix.profile == 'latest' }}
+        run: python -m pip install -e "${{ matrix.install_target }}" pytest "Pillow>=10,<13" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
 
-      - name: Install minimum Python 3.9 test environment
+      - name: Install minimum dependency test environment
         id: minimum
-        if: ${{ !cancelled() && matrix.env_name == 'py39-min' }}
-        run: python -m pip install -c constraints/py39-min.txt -e '.[tui,datalens]' pytest==8.3.5 "Pillow>=10,<13" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
+        if: ${{ !cancelled() && matrix.profile == 'min' }}
+        run: python -m pip install -c "${{ matrix.constraints }}" -e "${{ matrix.install_target }}" pytest==8.3.5 "Pillow>=10,<13" "resvg-py>=0.5,<0.6; python_version >= '3.10'"
 
       - name: Validate minimum dependency constraints
-        if: matrix.env_name == 'py39-min'
+        if: matrix.profile == 'min'
         run: |
           python -m release_routines.lib.check_minimum_constraints
           python -m pip check
@@ -85,17 +90,17 @@ jobs:
         run: PYTHONPYCACHEPREFIX=/tmp/utils_dev_pycache python -m compileall analytics_toolkit tests
 
       - name: Collect every causal raster case before strict assertions
-        if: ${{ !cancelled() && !startsWith(matrix.env_name, 'py39-') && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
+        if: ${{ !cancelled() && !startsWith(matrix.env_name, 'py39-') && !contains(matrix.without_extras, 'tui') && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
         run: >-
           python -m tests.agent_tools._support.renderer_probe
           --collect-current --output "raster-diagnostics/${{ matrix.env_name }}"
 
       - name: Require fast causal-diagnostic regressions
-        if: ${{ !cancelled() && !startsWith(matrix.env_name, 'py39-') && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
+        if: ${{ !cancelled() && !startsWith(matrix.env_name, 'py39-') && !contains(matrix.without_extras, 'tui') && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
         run: python -m pytest -q tests/agent_tools/raster_observations.py
 
       - name: Require actual renderer regression
-        if: ${{ !cancelled() && !startsWith(matrix.env_name, 'py39-') && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
+        if: ${{ !cancelled() && !startsWith(matrix.env_name, 'py39-') && !contains(matrix.without_extras, 'tui') && (steps.latest.outcome == 'success' || steps.minimum.outcome == 'success') }}
         run: python -m pytest -q tests/agent_tools/underline_rasterization.py
 
       - name: Run tests
@@ -129,9 +134,44 @@ jobs:
       - run: python -m pip install "tox>=4,<5"
       - run: tox -e ${{ matrix.env_name }}
 
+  python-support-drift:
+    name: python-support-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      # Exit status 3 / "RELEASE DATA UNAVAILABLE" means the window was not judged; rerun.
+      - name: Fetch stable CPython releases
+        id: released
+        run: python -m release_routines.lib.python_support_drift released --output "$RUNNER_TEMP/python-releases.json"
+      - name: Set up the newest stable CPython
+        id: newest
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ steps.released.outputs.newest }}
+      - name: Report an unavailable newest CPython interpreter
+        if: failure() && steps.newest.outcome == 'failure'
+        env:
+          NEWEST: ${{ steps.released.outputs.newest }}
+        run: |
+          echo "::error title=Python release data unavailable::CPython $NEWEST is not yet available from actions/setup-python; rerun later."
+          echo "RELEASE DATA UNAVAILABLE: the support window was not evaluated." >&2
+          exit 3
+      - name: Resolve core and every extra on the newest stable CPython
+        run: python -m release_routines.lib.python_support_drift probe --output "$RUNNER_TEMP/python-support-probe.json"
+      # Exit status 1 / "STALE PYTHON SUPPORT WINDOW" needs a reviewed policy update PR.
+      - name: Compare the Python support window with releases and extra support
+        run: >-
+          python -m release_routines.lib.python_support_drift evaluate
+          --released "$RUNNER_TEMP/python-releases.json"
+          --probe "$RUNNER_TEMP/python-support-probe.json"
+
   compatibility-checks:
     name: compatibility-checks
-    needs: [tests, sdk-conformance]
+    needs: [policy, tests, sdk-conformance, python-support-drift]
     if: always()
     runs-on: ubuntu-latest
     steps:

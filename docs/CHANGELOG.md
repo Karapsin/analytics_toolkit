@@ -147,6 +147,8 @@ Generated from package version bumps and recent commit history.
 - Retain complete failed GitHub visual capture diagnostics and both child output streams without granting visual approval
 - Reconcile resumable source review with signed local-review admission, preserving active assignments and current dev safeguards without incomplete-review correction loops.
 - Repaired dev CI after force merges: lint/format findings, MinIO guard environment, Python 3.9 renderer gating, time-independent monitor fixture, raster test fixtures, font-dependent raster quarantine, and restored branch coverage for stale search-match end carets.
+- Drive the post-merge compatibility Python matrix from a rolling seven-minor support policy (extended to eight while an extra lags the newest CPython), add a post-merge drift check against CPython releases and extra support (full installs in disposable environments on the newest CPython). While an extra lags, the newest-minor compatibility environment skips that extra's test modules. Everyday fast checks stay on Python 3.14.
+- Replace Pi source, plan and visual reviews with signed local review admission, a narrow Pi-fix fraud check and green fast CI; protect Claude/Codex runtime configuration and accept Claude Code review receipts.
 
 ## 1.3.12.5 - 2026-10-14
 
