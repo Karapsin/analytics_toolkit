@@ -25,6 +25,7 @@ OPERATIONS = (
     "BISECT_LOG",
 )
 SSH_PUBLIC_PARTS = 2
+REVALIDATION_CHANGES_LIMIT = 20_000
 
 
 def run(root: Path, *args: str) -> str:
@@ -164,6 +165,7 @@ def start(root: Path, acknowledged: str | None = None) -> dict[str, Any]:
     run(root, "git", "switch", "-c", branch)
     state.update(phase="feature", branch=branch, base=latest, feature_id=uuid.uuid4().hex)
     state.pop("pending_base", None)
+    state.pop("base_revalidations", None)
     state.pop("pr", None)
     save(root, state)
     return {"status": "feature", "branch": branch, "base": latest}
@@ -439,16 +441,82 @@ def refresh(root: Path) -> dict[str, Any]:
     if writable_state.get("phase") != "feature":
         msg = "Published PR ownership belongs to the Pi; refresh local dev instead."
         raise RuntimeError(msg)
-    pr = pr_info(root)
-    if any(x["name"] == "agent:writing" for x in pr["labels"]):
-        msg = "GitHub agent is writing; wait before refreshing."
-        raise RuntimeError(msg)
+    if writable_state.get("pr"):
+        pr = pr_info(root)
+        if any(x["name"] == "agent:writing" for x in pr["labels"]):
+            msg = "GitHub agent is writing; wait before refreshing."
+            raise RuntimeError(msg)
     clean(root)
     if run(root, "git", "branch", "--show-current") != writable_state["branch"]:
         msg = "Refresh requires the owned feature branch."
         raise RuntimeError(msg)
-    run(root, "git", "pull", "--ff-only", "origin", writable_state["branch"])
-    return {"status": "refreshed", "sha": run(root, "git", "rev-parse", "HEAD")}
+    if writable_state.get("pr"):
+        run(root, "git", "pull", "--ff-only", "origin", writable_state["branch"])
+    revalidation = advance_base(root)
+    return {
+        "status": "refreshed",
+        "sha": run(root, "git", "rev-parse", "HEAD"),
+        "base": load(root)["base"],
+        "base_revalidation": revalidation,
+    }
+
+
+def _contains(root: Path, ancestor: str, descendant: str) -> bool:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode not in {0, 1}:
+        msg = "git merge-base failed: " + result.stderr.decode(errors="replace").strip()[:2000]
+        raise RuntimeError(msg)
+    return result.returncode == 0
+
+
+def advance_base(root: Path) -> dict[str, Any] | None:
+    """Advance the feature's dev base to the newest origin/dev commit contained in HEAD.
+
+    After newer dev is merged into a feature branch, review must diff against that
+    dev commit rather than the branch-creation base. The base only moves forward:
+    the new base is contained in both HEAD and origin/dev, and descends from the
+    previous base. Every move records a revalidation receipt like ``start``.
+    """
+    state = load(root)
+    if state.get("phase") != "feature" or not state.get("base"):
+        return None
+    operation_free(root)
+    run(root, "git", "fetch", "origin", "dev")
+    head = run(root, "git", "rev-parse", "HEAD")
+    dev = run(root, "git", "rev-parse", "refs/remotes/origin/dev^{commit}")
+    before = state["base"]
+    candidate = run(root, "git", "merge-base", head, dev)
+    if candidate == before:
+        return None
+    if not (
+        _contains(root, candidate, head)
+        and _contains(root, candidate, dev)
+        and _contains(root, before, candidate)
+    ):
+        # Rewritten dev history or criss-cross merges: keep the proven base.
+        return None
+    changes = run(root, "git", "diff", "--name-status", before, candidate)
+    receipt = {
+        "status": "revalidated",
+        "before": before,
+        "after": candidate,
+        "head": head,
+        "origin_dev": dev,
+        "changes": changes[:REVALIDATION_CHANGES_LIMIT],
+        "changes_truncated": len(changes) > REVALIDATION_CHANGES_LIMIT,
+    }
+    if load(root) != state or run(root, "git", "rev-parse", "HEAD") != head:
+        msg = "Session or candidate changed during base revalidation."
+        raise RuntimeError(msg)
+    state["base"] = candidate
+    state.setdefault("base_revalidations", []).append(receipt)
+    save(root, state)
+    return receipt
 
 
 def synchronize(root: Path) -> dict[str, Any]:
@@ -479,6 +547,7 @@ def synchronize(root: Path) -> dict[str, Any]:
     state.pop("pr", None)
     state.pop("publication_sha", None)
     state.pop("feature_id", None)
+    state.pop("base_revalidations", None)
     save(root, state)
     maintenance = maintenance_tools.cleanup(root)
     return {
