@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from agent_tools import sessions, task_context
+from agent_tools import sessions, sql_explorer_visual, task_context
 
 RUNTIME_ADAPTER = "agent_tools/agent_runtimes.py"
 # Built-in Codex reviewer contract, used when the dev base predates the shared
@@ -57,6 +57,7 @@ REVIEW_PROMPT = (
     "from its acceptance criteria.\n"
 )
 AUTHOR_SESSION_ENV = ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID")
+VISUAL_EVIDENCE_KEY = "sql_explorer_visual_review"
 
 
 def protocol(root: Path) -> Any:
@@ -358,19 +359,28 @@ def review(root: Path) -> dict[str, Any]:
     """Leave rejected commits local; each new candidate needs another fresh reviewer."""
     sessions.writable(root)
     sessions.clean(root)
+    # Merged newer dev must not be attributed to this feature: advance the recorded
+    # base (forward only, contained in HEAD) before binding the review subject.
+    sessions.advance_base(root)
     head = sessions.run(root, "git", "rev-parse", "HEAD")
     subject = binding(root, head)
     checks = validation(root)
     target = directory(root) / (head + ".json")
     if target.exists():
-        return verified(root, head)
+        recorded = _receipt_base(target)
+        if recorded is None or recorded == subject["base"]:
+            return verified(root, head)
+        # The same head was reviewed against an older base; retain it and review again.
+        target.replace(target.with_name(head + ".superseded-" + uuid.uuid4().hex[:8] + ".json"))
+    supplied = review_evidence(root, subject)
     context = task_context.protocol().public_context(task_context.read(root))
     request = json.dumps(
         {
             "subject": subject,
             "user_task": context,
             "validation": checks,
-            "evidence": evidence(root, subject["task_digest"]),
+            "evidence": supplied,
+            "base_revalidations": sessions.load(root).get("base_revalidations", []),
         },
         ensure_ascii=False,
     )
@@ -513,3 +523,64 @@ def evidence(root: Path, digest: str) -> dict[str, Any]:
         msg = "Private review evidence belongs to a different task"
         raise ValueError(msg)
     return value
+
+
+def _receipt_base(path: Path) -> object:
+    if path.is_symlink() or not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text())["payload"]["base"]
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def review_evidence(root: Path, subject: dict[str, str]) -> dict[str, Any]:
+    """Private evidence plus the verified SQL Explorer visual receipt when required."""
+    supplied = evidence(root, subject["task_digest"])
+    # Only the verified attachment below may use the visual-review evidence name.
+    supplied.pop(VISUAL_EVIDENCE_KEY, None)
+    visual = visual_evidence(root, subject)
+    if visual is None:
+        return supplied
+    return {**supplied, "task_digest": subject["task_digest"], VISUAL_EVIDENCE_KEY: visual}
+
+
+def visual_evidence(root: Path, subject: dict[str, str]) -> dict[str, Any] | None:
+    """Attach the completed visual receipt only for changes that require it.
+
+    ``review`` requires a clean checkout, so the receipt's working-tree content
+    fingerprint is the exact candidate tree. Incomplete, stale or unreadable
+    receipts fail before the reviewer starts.
+    """
+    changed = sessions.run(
+        root, "git", "diff", "--name-only", "--no-renames", subject["base"], subject["head"]
+    ).splitlines()
+    visual_paths = sorted(
+        path for path in changed if sql_explorer_visual.visual_review_required([path])
+    )
+    if not visual_paths:
+        return None
+    sessions.clean(root)
+    path = root / sql_explorer_visual.RECEIPT
+    if path.is_symlink():
+        msg = "SQL Explorer visual-review receipt is unsafe"
+        raise ValueError(msg)
+    status = sql_explorer_visual.verify_visual_receipt(root, paths=visual_paths)
+    if not status["ok"]:
+        msg = "Completed SQL Explorer visual review is required before local review: "
+        raise RuntimeError(msg + status["message"])
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != status["receipt_sha256"]:
+        msg = "SQL Explorer visual-review receipt changed during verification"
+        raise RuntimeError(msg)
+    return {
+        "kind": "sql-explorer-visual-review",
+        "verified": True,
+        "task_digest": subject["task_digest"],
+        "head": subject["head"],
+        "tree": subject["tree"],
+        "base": subject["base"],
+        "changed_visual_paths": visual_paths,
+        "receipt_sha256": status["receipt_sha256"],
+        "receipt": json.loads(data),
+    }

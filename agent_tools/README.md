@@ -956,6 +956,18 @@ without it supports only the built-in Codex reviewer. Receipts record
 It must inspect every diff page and approve the complete task.
 Rejections remain local for correction and another fresh review. The signed
 receipt binds head, tree, dev base, task digest and separate reviewer identity.
+After newer dev is merged into a feature branch (`git fetch origin dev` and
+`git merge origin/dev`), `git-workflow refresh`, `review` and `commit` fetch dev
+and advance the session's recorded base to the newest `origin/dev` commit
+contained in HEAD. The base only moves forward from the previous base, never to
+a commit missing from HEAD; each move records a revalidation receipt (before,
+after, head and changed paths) in the session state and the reviewer request,
+and a receipt reviewed against an older base is superseded by a fresh review.
+When the candidate diff touches SQL Explorer or its visual harness, `review`
+attaches the completed `visual_workflow` receipt as verified evidence bound to
+the task digest, head and tree. Missing, stale, partial or non-pass receipts
+stop before the reviewer starts; no hand-written evidence is needed, and private
+evidence files cannot supply the visual-review entry.
 The orchestrator verifies it against host-owned enrollment before accepting it.
 `git-workflow review` reviews a committed candidate; `push` retries publication.
 
