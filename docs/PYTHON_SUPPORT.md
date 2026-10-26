@@ -45,10 +45,11 @@ The committed policy records the last validated window, ending at 3.14:
   Airflow (3.3.2) declares `requires-python !=3.15,>=3.10`.
 
 By owner decision the initial window starts at the last validated minor (3.14).
-The post-merge drift check is therefore expected to fail as soon as this policy
-lands, reporting the 3.15 release. The reviewed repair PR moves the window to 3.15
-with `airflow` lagging (eight minors, 3.8-3.15), or blocks on core dependencies
-that cannot yet install on 3.15.
+Core dependencies do not yet install on CPython 3.15 (SciPy has no OpenBLAS
+install path there and `numpy<2` publishes no 3.15 wheels), so the drift check
+reports `WAITING FOR UPSTREAM SUPPORT` for 3.15 instead of failing. Once core
+installs on 3.15, the check reports a stale window and the reviewed repair PR
+moves it to 3.15, with eight minors while any extra (such as `airflow`) lags.
 
 ## Single Policy File
 
@@ -90,13 +91,24 @@ The `python-support-drift` job runs after merges to `dev` and `main`:
 
 The check fails with `STALE PYTHON SUPPORT WINDOW` when:
 
-- a new CPython minor has been released and the window has not moved;
+- a new CPython minor has been released, the core dependencies install on it,
+  and the window has not moved (lagging extras extend the expected window to
+  eight minors);
 - a lagging extra now installs on the newest minor, so the window can shrink;
 - an extra no longer installs on the newest minor, so the window must extend;
-- the policy names a minor that has no stable release.
+- the policy names a minor that has no stable release;
+- the core dependencies no longer install on the policy's newest minor.
 
 The message includes the expected newest minor, floor, lagging extras and
 `requires-python` range.
+
+A new CPython minor is only a policy obligation once the package can support
+it. When a newer minor is released but the core dependencies cannot install on
+it yet, the check passes (exit status 0) and reports
+`WAITING FOR UPSTREAM SUPPORT: CPython 3.X released; core dependencies do not
+install yet (<pip failure>)`. No policy PR could pass in that state, so no
+repair is requested; the window stays unchanged until upstream packages ship
+support and the check turns stale.
 
 When release or package data cannot be fetched, the check fails separately with
 `RELEASE DATA UNAVAILABLE` (exit status 3). The policy was not judged, so rerun
