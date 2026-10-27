@@ -445,6 +445,13 @@ rows = sql.transfer(
   query output columns when possible, and otherwise show an explicit
   source-column placeholder without opening database connections.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
+  If final row-count validation fails while replacing an existing target, transfer
+  finalization propagates the error after rollback restores the original tables.
+  A failed rollback raises `AmbiguousSqlReplaceError` and retains recovery tables,
+  including local fallback schema copies. A subsequent replacement refuses to
+  proceed when it finds unresolved artifacts; recover the previous operation
+  before trying again. Existing targets are never treated as newly created targets
+  for failure cleanup.
 - `target_rows_per_second`, `target_batch_seconds`, and `target_batch_memory_mb`
   are mutually exclusive adaptation controls: set at most one per call.
 - By default, transfer validates row counts before finalizing the target.
