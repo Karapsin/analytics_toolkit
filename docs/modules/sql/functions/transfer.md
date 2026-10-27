@@ -106,6 +106,14 @@ schema. Pass `write_mode="append"` explicitly for incremental loads. A zero-row
 source follows `empty_source_policy`: replace/truncate modes produce an empty
 target by default, while append/upsert keep the target.
 
+For an existing ClickHouse target, replacement data is loaded and counted on
+the configured physical storage cluster, even when the connection host is
+outside that cluster. A local stage remains local; cluster-routed private
+stages retain their all-replica reads. The staged and replacement row counts
+must match before cutover, and the final storage row count is checked afterward.
+A failed final check rolls back the cutover. If rollback also fails, replacement
+artifacts are preserved for recovery.
+
 Single-key slices require one or more predicate placeholder occurrences in
 `from_sql`. Every occurrence is replaced with the full predicate, not just the
 literal value:

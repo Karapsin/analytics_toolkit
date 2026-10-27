@@ -174,7 +174,10 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         command.startswith(f"CREATE TABLE {TEST_CH_TABLE}__replace_") for command in client.commands
     )
     assert any(
-        command.startswith(f"INSERT INTO {TEST_CH_SHARD_TABLE}__replace_")
+        command.startswith(
+            "INSERT INTO FUNCTION cluster('{cluster}', currentDatabase(), "
+            f"'{TEST_CH_SHARD_TABLE}__replace_"
+        )
         and f"FROM {TEST_CH_STAGE_TABLE}" in command
         for command in client.commands
     )
@@ -219,13 +222,19 @@ def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() 
     assert "`month_date` Nullable(Date)" in create_sql
     assert "`users` Nullable(Int64)" in create_sql
     insert_sql = next(command for command in client.commands if command.startswith("INSERT INTO"))
-    assert insert_sql.startswith(f"INSERT INTO {TEST_CH_SHARD_TABLE}__replace_")
+    assert insert_sql.startswith(
+        "INSERT INTO FUNCTION cluster('{cluster}', currentDatabase(), "
+        f"'{TEST_CH_SHARD_TABLE}__replace_"
+    )
     assert insert_sql.endswith(
         " (`month_date`, `users`) "
         f"SELECT CAST(`month_date` AS Nullable(Date)) AS `month_date`, "
         f"CAST(`users` AS Nullable(Int64)) AS `users` "
-        f"FROM {TEST_CH_STAGE_TABLE}"
+        f"FROM (SELECT * FROM {TEST_CH_STAGE_TABLE}) AS replacement_stage"
     )
+    assert client.command_settings[client.commands.index(insert_sql)] == {
+        "distributed_foreground_insert": 1
+    }
 
 
 def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:
