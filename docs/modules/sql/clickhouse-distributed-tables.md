@@ -156,7 +156,11 @@ For `core` with two independent shards and one unavailable shard:
 A missing replica is different from a missing shard. For replicated tables,
 one usable replica per shard can preserve logical coverage. For independent
 non-replicated replicas, every host owns separate data and losing one means
-incomplete coverage. Destructive cluster DDL still requires all participating
+incomplete coverage. A reachable replica with expired coordination metadata
+blocks reads and writes under both policies; a read-only replica blocks writes.
+Cluster routing cannot safely exclude those reachable replicas. Partial-source
+INSERT SELECT uses separate streaming and delivery connections, including for
+native transport. Destructive cluster DDL still requires all participating
 hosts. Preflight is a snapshot: a later failure can still interrupt an operation.
 The configured entry server must be reachable; this policy does not select an
 alternate entry server when the initial connection fails.

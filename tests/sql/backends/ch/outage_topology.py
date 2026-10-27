@@ -161,6 +161,16 @@ def test_outage_no_table_ready_or_active_replica_is_an_error(outage: Any) -> Non
         scope.usable(scope.objects("db", "events_shard"), "db.events_shard")
 
 
+def test_outage_table_objects_do_not_make_an_unreachable_host_usable(outage: Any) -> None:
+    cluster, _ = outage
+    scope = _scope(sql.get_sql_connection("ch"), "healthy_shards")
+    objects = scope.objects("db", "events_shard")
+    scope.reachable.clear()
+    with pytest.raises(sql.ClickHouseClusterUnavailableError, match="No usable hosts"):
+        scope.usable(objects, "db.events_shard")
+    assert not cluster.commands
+
+
 def test_outage_shared_table_uses_one_replica_per_shard(outage: Any) -> None:
     scope = _scope(sql.get_sql_connection("ch"))
     objects = [

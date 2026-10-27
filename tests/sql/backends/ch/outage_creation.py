@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Any
 
 import pandas as pd
@@ -173,6 +173,57 @@ def test_outage_relay_rejects_non_named_target(outage: Any) -> None:
     client = sql.get_sql_connection("ch")
     with pytest.raises(sql.ClickHouseClusterTopologyError, match="named"):
         client._relay_insert(exp.Insert(this=exp.Anonymous(this="remote")), BackendOperationState())
+
+
+def test_outage_native_relay_does_not_query_occupied_stream_connection(
+    outage: Any, monkeypatch: Any
+) -> None:
+    cluster, configure = outage
+    configure(driver="native")
+    cluster.alive.remove("h2")
+    active: set[Client] = set()
+    readers: list[Client] = []
+    writers: list[Client] = []
+    closed: list[Client] = []
+    query, insert, close = Client.query, Client.insert_df, Client.close
+
+    def checked_query(client: Client, *args: Any, **kwargs: Any) -> Any:
+        assert client not in active, "native stream connection is occupied"
+        return query(client, *args, **kwargs)
+
+    def checked_insert(client: Client, *args: Any, **kwargs: Any) -> Any:
+        assert client not in active, "native stream connection is occupied"
+        writers.append(client)
+        return insert(client, *args, **kwargs)
+
+    @contextmanager
+    def stream(client: Client, *args: Any, **kwargs: Any) -> Any:
+        frame = client.query_df(*args, **kwargs)
+        readers.append(client)
+        active.add(client)
+        try:
+            yield iter([frame, frame])
+        finally:
+            active.remove(client)
+
+    def checked_close(client: Client) -> None:
+        closed.append(client)
+        close(client)
+
+    monkeypatch.setattr(Client, "query", checked_query)
+    monkeypatch.setattr(Client, "insert_df", checked_insert)
+    monkeypatch.setattr(Client, "query_df_stream", stream)
+    monkeypatch.setattr(Client, "close", checked_close)
+    with pytest.warns(sql.ClickHouseDegradedClusterWarning):
+        sql.execute(
+            "ch",
+            "INSERT INTO db.events SELECT id FROM db.events",
+            ch_unavailable_shards="healthy_shards",
+        )
+    assert len(writers) == 2
+    assert all(writer is not readers[0] for writer in writers)
+    assert writers[0] in closed
+    assert cluster.tables[("h1", "db.events_shard")].rows == [(1,), (1,), (1,)]
 
 
 def test_outage_existing_indexes_are_preserved_and_not_mistaken_for_columns(outage: Any) -> None:

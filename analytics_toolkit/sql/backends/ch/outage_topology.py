@@ -309,7 +309,7 @@ class ClusterScope:
                     paths[path] = host.shard
                     shard_paths[host.shard] = path
                     names.add((path, replica))
-                selected = [
+                usable = [
                     host
                     for host in selected
                     if not (
@@ -317,6 +317,12 @@ class ClusterScope:
                         or (write and bool(by_position[host.position][3]))
                     )
                 ]
+                if usable != selected:
+                    msg = (
+                        f"No usable route for {table}: a reachable replica has unhealthy "
+                        "replication metadata; cluster routing cannot exclude it safely."
+                    )
+                    raise ClickHouseClusterUnavailableError(msg)
         if not selected:
             msg = f"No usable hosts for {table}."
             raise ClickHouseClusterUnavailableError(msg)

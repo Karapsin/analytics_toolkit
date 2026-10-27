@@ -19,7 +19,7 @@ from analytics_toolkit.sql.execution.backend_options import (
 )
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
-from .outage_context import INSERT_KEY, INTERNAL_IO, WRITING
+from .outage_context import INSERT_KEY, INTERNAL_IO, WRITING, internal_io
 from .outage_ddl import _execute_local, create_on_healthy_hosts, create_target
 from .outage_session import OutageSession, configured_cluster, private_table
 from .outage_statements import exchange_or_rename
@@ -501,6 +501,14 @@ class OutageClient:
                 for row in description.result_rows
                 if len(row) < _DESCRIBE_DEFAULT_FIELDS or row[2] not in {"MATERIALIZED", "ALIAS"}
             ]
+        from analytics_toolkit.sql.connection.get_sql_connection import (  # noqa: PLC0415 - factory imports backend
+            get_sql_connection,
+        )
+
+        with internal_io():
+            delivery_connection = get_sql_connection(self._config.connection_key)
+        writer = OutageClient(delivery_connection, self._config)
+        writer._connection_policy = self._get_session(state).policy
         try:
             with self.query_df_stream(statement.expression.sql(dialect="clickhouse")) as frames:
                 for frame in frames:
@@ -509,12 +517,14 @@ class OutageClient:
                         raise ClickHouseClusterTopologyError(msg)  # noqa: TRY301 - preserve relay artifacts
                     insert_frame = frame.copy()
                     insert_frame.columns = columns
-                    self.insert_df(table_sql, insert_frame, column_names=columns)
+                    writer.insert_df(table_sql, insert_frame, column_names=columns)
         except BaseException as exc:
             if state.live_submitted:
                 state.preserve_recovery = True
                 exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
             raise
+        finally:
+            delivery_connection.close()
 
     def outage_after_create(
         self, table_name: str, *, policy: Any, pair: bool, expected_columns: Any = None

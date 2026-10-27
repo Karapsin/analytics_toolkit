@@ -39,6 +39,35 @@ def test_outage_readonly_replica_is_readable_but_not_writable(outage: Any) -> No
     assert not cluster.commands
 
 
+@pytest.mark.parametrize("policy", ["stop", "healthy_shards"])
+@pytest.mark.parametrize("expired", [False, True])
+def test_outage_rejects_reachable_unhealthy_replica_before_data_execution(
+    outage: Any, monkeypatch: Any, policy: str, expired: bool
+) -> None:
+    from tests.sql._support.outage import Client  # noqa: PLC0415 - focused transport assertion
+
+    cluster, _ = outage
+    cluster.members = [(1, 1, "h1", 9000), (1, 2, "h2", 9000)]
+    cluster.tables.clear()
+    cluster.seed(replicated=True)
+    (cluster.replica_expired if expired else cluster.replica_readonly).add("h2")
+    operations: list[str] = []
+    original = Client.query
+
+    def query(client: Any, statement: str, **kwargs: Any) -> Any:
+        if "events_shard" in statement and "system" not in statement.lower():
+            operations.append(client.host)
+        return original(client, statement, **kwargs)
+
+    monkeypatch.setattr(Client, "query", query)
+    operation = sql.read if expired else sql.execute
+    statement = "SELECT id FROM db.events" if expired else "INSERT INTO db.events VALUES (9)"
+    with pytest.raises(sql.ClickHouseClusterUnavailableError, match="cannot exclude"):
+        operation("ch", statement, ch_unavailable_shards=policy)
+    assert operations == []
+    assert cluster.commands == []
+
+
 @pytest.mark.parametrize("setting", ["skip_unavailable_shards", "async_insert"])
 def test_outage_alias_settings_cannot_weaken_production_policy(outage: Any, setting: str) -> None:
     cluster, configure = outage
