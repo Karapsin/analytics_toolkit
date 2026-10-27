@@ -81,6 +81,18 @@ def test_outage_public_append_transfer_validates_observed_rows_in_both_direction
     cluster.alive.remove("h2")
     greenplum = MemoryGreenplum()
     greenplum.install(monkeypatch)
+    source_changed = False
+    original_query = Client.query
+
+    def query(client: Any, statement: str, **kwargs: Any) -> Any:
+        nonlocal source_changed
+        result = original_query(client, statement, **kwargs)
+        if direction == "from_ch" and "GROUP BY" in statement and "__source" in statement:
+            cluster.tables[("h1", "db.events_shard")].rows = [(7,)]
+            source_changed = True
+        return result
+
+    monkeypatch.setattr(Client, "query", query)
     from_db, to_db = ("ch", "gp") if direction == "from_ch" else ("gp", "ch")
     source = "SELECT id FROM db.events" if direction == "from_ch" else "SELECT id FROM db.source"
     target = "db.target" if direction == "from_ch" else "db.events"
@@ -91,7 +103,7 @@ def test_outage_public_append_transfer_validates_observed_rows_in_both_direction
             from_sql=source,
             to_table=target,
             write_mode="append",
-            ignore_source_staging=True,
+            ignore_source_staging=direction != "from_ch",
             return_metadata=True,
             table_schema={"id": "bigint" if direction == "from_ch" else "UInt64"},
             retry_cnt=1,
@@ -107,6 +119,7 @@ def test_outage_public_append_transfer_validates_observed_rows_in_both_direction
     assert result.metadata.source_data_complete is (direction != "from_ch")
     assert result.metadata.target_data_complete is (direction != "to_ch")
     if direction == "from_ch":
+        assert source_changed
         assert greenplum.tables["db.target"].id.tolist() == [99, 1]
     else:
         assert cluster.tables[("h1", "db.events_shard")].rows == [(1,), (10,), (11,)]
@@ -175,7 +188,7 @@ def test_outage_transfer_keeps_independent_alias_defaults_and_completeness(outag
     assert cluster.commands == before
 
 
-def test_outage_observed_source_count_mismatch_prevents_final_target_append(
+def test_outage_unstaged_source_same_count_change_cannot_validate_a_live_transfer(
     outage: Any, monkeypatch: Any
 ) -> None:
     cluster, configure = outage
@@ -194,20 +207,19 @@ def test_outage_observed_source_count_mismatch_prevents_final_target_append(
     cluster.alive.remove("h2")
     greenplum = MemoryGreenplum()
     greenplum.install(monkeypatch)
-    original = Client.query
+    original = row_counts._require_partial_source_snapshot
     changed = False
 
-    def query(client: Any, sql_text: str, **kwargs: Any) -> Any:
+    def require_snapshot(options: Any) -> None:
         nonlocal changed
-        result = original(client, sql_text, **kwargs)
-        if "source_count_probe" in sql_text and not changed:
-            cluster.tables[("h1", "db.events_shard")].rows.clear()
+        if not changed:
+            cluster.tables[("h1", "db.events_shard")].rows = [(7,)]
             changed = True
-        return result
+        original(options)
 
-    monkeypatch.setattr(Client, "query", query)
+    monkeypatch.setattr(row_counts, "_require_partial_source_snapshot", require_snapshot)
     with pytest.warns(sql.ClickHouseDegradedClusterWarning), pytest.raises(
-        ValueError, match=r"count|rows"
+        sql.ClickHouseClusterUnavailableError, match="snapshot"
     ):
         sql.transfer(
             from_db="ch",
@@ -223,5 +235,61 @@ def test_outage_observed_source_count_mismatch_prevents_final_target_append(
             timeout_increment=0,
             full_timeout_increment=0,
         )
+    assert greenplum.tables["db.target"].id.tolist() == [99]
     assert changed
+
+
+@pytest.mark.parametrize("staging", [None, "db"])
+def test_outage_partial_source_cannot_disable_snapshot_validation(staging: Any) -> None:
+    options = SimpleNamespace(
+        from_db_key="ch",
+        source_transfer_staging_schema=staging,
+        validate_row_count=False,
+    )
+    with backend_operation() as state:
+        state.incomplete_aliases.add("ch")
+        with pytest.raises(sql.ClickHouseClusterUnavailableError, match="snapshot"):
+            row_counts.prepare_row_count_validated_options(
+                options=options,
+                connection_refs=None,
+                stage_state=None,
+            )
+
+
+def test_outage_late_partial_source_is_blocked_even_when_counting_is_disabled(
+    outage: Any, monkeypatch: Any
+) -> None:
+    cluster, configure = outage
+    configure(
+        aliases=("ch", "gp"),
+        transfer_staging_schema="db",
+        ch_unavailable_shards="healthy_shards",
+        per_alias={"gp": {"type": "gp", "ddl_defaults": None, "cluster_routing": None}},
+    )
+    greenplum = MemoryGreenplum()
+    greenplum.install(monkeypatch)
+    original = row_counts._require_partial_source_snapshot
+
+    def require_snapshot(options: Any) -> None:
+        original(options)
+        cluster.alive.discard("h2")
+
+    monkeypatch.setattr(row_counts, "_require_partial_source_snapshot", require_snapshot)
+    with pytest.warns(sql.ClickHouseDegradedClusterWarning), pytest.raises(
+        sql.ClickHouseClusterUnavailableError, match="snapshot"
+    ):
+        sql.transfer(
+            from_db="ch",
+            to_db="gp",
+            from_sql="SELECT id FROM db.events",
+            to_table="db.target",
+            write_mode="append",
+            ignore_source_staging=True,
+            validate_row_count=False,
+            table_schema={"id": "bigint"},
+            retry_cnt=1,
+            full_retry_cnt=1,
+            timeout_increment=0,
+            full_timeout_increment=0,
+        )
     assert greenplum.tables["db.target"].id.tolist() == [99]

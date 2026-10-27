@@ -86,6 +86,16 @@ class BackendOperationState:
             if item.get("table") or item["cluster"] not in table_scopes
         )
 
+    def require_source_snapshot(self, alias: str) -> None:
+        if self.resources.get(
+            ("require_materialized_source", alias.lower())
+        ) and not self.alias_complete(alias):
+            msg = (
+                "Partial-source transfers require a materialized source snapshot and row-count "
+                "validation. Configure source transfer staging and disable ignore_source_staging."
+            )
+            raise ClickHouseClusterUnavailableError(msg)
+
     def attach(self, result: Any, *, source_alias: Any = None, target_alias: Any = None) -> None:
         metadata = getattr(result, "metadata", None)
         if metadata is not None and self.statuses:

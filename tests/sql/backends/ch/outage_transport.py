@@ -189,13 +189,15 @@ def test_outage_dynamic_cluster_function_scope_is_rejected(outage: Any, query: s
         client.query(query)
 
 
-def test_outage_strict_creation_uses_ddl_scope_without_routing_override(outage: Any) -> None:
+def test_outage_strict_creation_stays_local_without_routing_override(outage: Any) -> None:
     cluster, configure = outage
     configure(cluster_routing=None)
     client = sql.get_sql_connection("ch")
     client.command("CREATE TABLE db.strict_created (id UInt64) ENGINE=MergeTree ORDER BY id")
-    assert "ON CLUSTER" in cluster.commands[-1][1]
-    assert cluster.commands[-1][2]["distributed_ddl_output_mode"] == "throw"
+    assert "ON CLUSTER" not in cluster.commands[-1][1]
+    assert "distributed_ddl_output_mode" not in cluster.commands[-1][2]
+    assert ("h1", "db.strict_created") in cluster.tables
+    assert ("h2", "db.strict_created") not in cluster.tables
 
 
 @pytest.mark.parametrize("failure", [False, True])

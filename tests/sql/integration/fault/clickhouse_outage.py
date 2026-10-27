@@ -78,7 +78,7 @@ def _exercise(alias: str, controller: Any, registry: Any) -> None:
                 from_sql=f"SELECT id FROM {table}",
                 to_table=gp_target,
                 write_mode="append",
-                ignore_source_staging=True,
+                ignore_source_staging=False,
                 ch_unavailable_shards="healthy_shards",
                 return_metadata=True,
                 table_schema={"id": "bigint"},

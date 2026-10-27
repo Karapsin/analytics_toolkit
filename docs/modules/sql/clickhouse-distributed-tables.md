@@ -176,10 +176,21 @@ selected, and excluded hosts and shards) and `metadata.data_complete`.
 Transfers additionally report `source_data_complete` and `target_data_complete`.
 Row-count validation in ad hoc mode validates the observed source rows; it does
 not establish that an unavailable shard had no additional data.
+Partial-source transfers require a materialized source snapshot and row-count
+validation. Configure source transfer staging and leave `ignore_source_staging=False`;
+unstaged partial sources are refused, including when validation is disabled.
+Counts and delivery then use the same snapshot even if live values change while
+preserving the row count.
 `ClickHouseClusterUnavailableError` identifies a rejected coverage requirement;
 `ClickHouseClusterTopologyError` identifies unsafe or inconsistent topology.
 
 ### How healthy-only table creation works
+
+DDL defaults do not enable automatic SQL routing. With `cluster_routing=None`,
+plain physical-table reads, inserts, CREATE and DROP stay local. Explicit
+`ON CLUSTER` and Distributed source tables retain their cluster semantics.
+For a local target with a partial cluster source, use separate CREATE and
+INSERT SELECT statements; a partial-source local CTAS is refused before creation.
 
 The toolkit probes configured membership and reachable hosts, then inspects
 database engines and existing table definitions. It does not change `core` or

@@ -221,7 +221,7 @@ class Client:
         if "FROM SYSTEM.COLUMNS" in upper or "SYSTEM, COLUMNS" in upper:
             return Result([("id", "UInt64")], ("name", "type"), ("String", "String"))
         if isinstance(statement, exp.Describe):
-            return Result([("id", "UInt64")], ("name", "type"), ("String", "String"))
+            return self._describe(statement)
         function = next(
             (
                 item
@@ -240,13 +240,97 @@ class Client:
                 for row in self.cluster.tables.get((host, name), Table("", "", "", "")).rows
             ]
             if statement.find(exp.Count):
+                if statement.args.get("group") is not None:
+                    return Result(
+                        [(0, len(rows))] if rows else [],
+                        ("slice_id", "count"),
+                        ("UInt64", "UInt64"),
+                    )
                 return Result([(len(rows),)])
-            return Result(rows)
+            obj = next(
+                (
+                    self.cluster.tables[(host, name)]
+                    for host in hosts
+                    if (host, name) in self.cluster.tables
+                ),
+                None,
+            )
+            return self._project(statement, rows, obj)
         if statement.find(exp.Count):
             return Result([(1,)])
         if "LIMIT 0" in upper:
             return Result([])
         return Result([(1,)])
+
+    def _describe(self, statement: Any) -> Result:
+        target = statement.this
+        if isinstance(target, exp.Schema):
+            target = (
+                exp.Anonymous(this=target.this.name, expressions=target.expressions)
+                if target.this.name.lower() in {"cluster", "clusterallreplicas"}
+                else target.this
+            )
+        if not isinstance(target, (exp.Table, exp.Anonymous)):
+            target = next(statement.find_all(exp.Table), None)
+        if not isinstance(target, (exp.Table, exp.Anonymous)):
+            return Result([("id", "UInt64")], ("name", "type"), ("String", "String"))
+        function = target if isinstance(target, exp.Anonymous) else target.this
+        name = (
+            f"{function.expressions[1].this}.{function.expressions[2].this}"
+            if isinstance(function, exp.Anonymous)
+            else f"{target.db or 'db'}.{target.name}"
+        )
+        obj = self.cluster.tables.get((self.host, name))
+        if obj:
+            columns = parse_one(obj.ddl, read=_RoutingClickHouse).find_all(exp.ColumnDef)
+            return Result(
+                [(item.name, item.args["kind"].sql(dialect="clickhouse")) for item in columns],
+                ("name", "type"),
+                ("String", "String"),
+            )
+        return Result([("id", "UInt64")], ("name", "type"), ("String", "String"))
+
+    @staticmethod
+    def _project(statement: Any, rows: Any, obj: Any) -> Result:
+        fields = (
+            [
+                item.name
+                for item in parse_one(obj.ddl, read=_RoutingClickHouse).find_all(exp.ColumnDef)
+            ]
+            if obj
+            else ["id"]
+        )
+        selected = statement
+        if any(isinstance(item, exp.Star) for item in selected.expressions):
+            selected = next(
+                (
+                    item
+                    for item in statement.find_all(exp.Select)
+                    if any(isinstance(value, exp.Alias) for value in item.expressions)
+                ),
+                selected,
+            )
+        expressions = selected.expressions
+        if any(isinstance(item, exp.Star) for item in expressions):
+            return Result(rows, fields, ["UInt64"] * len(fields))
+        names = [item.alias_or_name for item in expressions]
+        projected = []
+        for ordinal, row in enumerate(rows, 1):
+            record = dict(zip(fields, row))
+            values = []
+            for item in expressions:
+                expression = item.this if isinstance(item, exp.Alias) else item
+                while isinstance(expression, exp.Cast):
+                    expression = expression.this
+                if isinstance(expression, exp.Column):
+                    values.append(record[expression.name])
+                elif isinstance(expression, exp.Literal):
+                    values.append(int(expression.this))
+                else:
+                    assert isinstance(expression, exp.Window)
+                    values.append(ordinal)
+            projected.append(tuple(values))
+        return Result(projected, names, ["UInt64"] * len(names))
 
     def query_df(self, sql: str, **kwargs: Any) -> pd.DataFrame:
         result = self.query(sql, **kwargs)

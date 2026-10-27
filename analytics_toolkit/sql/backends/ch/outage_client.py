@@ -173,9 +173,9 @@ class OutageClient:
                         msg = "Cannot verify the Distributed routing cluster before creation."
                         raise ClickHouseClusterTopologyError(msg)
                     clusters.append(cluster)
-            configured = configured_cluster(self._config)
-            if not clusters and configured is not None:
-                clusters.append(configured)
+            configured = self._config.cluster_routing
+            if not clusters and configured is not None and not _LOCAL_SQL_EXECUTION.get():
+                clusters.append(configured.cluster)
             clusters = list(dict.fromkeys(clusters))
             destructive = [item for item in parsed if _destructive(item)]
             for cluster in clusters:
@@ -225,13 +225,13 @@ class OutageClient:
             target = _named_target(statement, self._config.database)
             try:
                 routing = session.infer_routing(statement)
-                if routing is None and configured_cluster(self._config) is not None:
-                    routing = ChClusterRouting(configured_cluster(self._config) or "")
+                session.insert_scope = None
                 delegate = self._delegate(session, routing)
                 if routing is not None and target is not None:
                     session.resolve(cluster=routing.cluster, database=target[0], table=target[1])
                 settings = session.insertion_settings()
                 self._settings(session, kwargs, settings)
+                state.require_source_snapshot(self._config.connection_key)
                 is_private = target is not None and self._owned_private(session, target)
                 if not is_private:
                     state.live_submitted = True
@@ -262,6 +262,28 @@ class OutageClient:
             submitted = False
             try:
                 routing: ChClusterRouting | None
+                if writing:
+                    session.insert_scope = None
+                source = statement.args.get("expression")
+                if isinstance(source, exp.Query) and (writing or isinstance(statement, exp.Create)):
+                    source_routing = session.infer_routing(source)
+                    explicit_sources = _cluster_names(source)
+                    if source_routing is None and explicit_sources:
+                        source_routing = ChClusterRouting(explicit_sources[0])
+                    source_token = WRITING.set(False)
+                    source_local_token = _LOCAL_SQL_EXECUTION.set(False)
+                    try:
+                        source_delegate = self._delegate(session, source_routing)
+                        if isinstance(source_delegate, ClusterRoutingClient):
+                            source = parse_one(
+                                source_delegate.route(source.sql(dialect="clickhouse")),
+                                read=_RoutingClickHouse,
+                            )
+                            statement.set("expression", source)
+                            sql = statement.sql(dialect="clickhouse")
+                    finally:
+                        _LOCAL_SQL_EXECUTION.reset(source_local_token)
+                        WRITING.reset(source_token)
                 function_target = self._function_target(statement) if writing else None
                 if function_target is not None:
                     cluster, db, name, function_key = function_target
@@ -279,13 +301,18 @@ class OutageClient:
                     routing = (
                         None if _LOCAL_SQL_EXECUTION.get() else session.infer_routing(statement)
                     )
-                clusters = special[1] if special is not None else _cluster_names(statement)
+                mutation = writing or destructive or isinstance(statement, exp.Create)
+                clusters = (
+                    special[1]
+                    if special is not None
+                    else (
+                        [str(node.this.this) for node in statement.find_all(exp.OnCluster)]
+                        if mutation
+                        else _cluster_names(statement)
+                    )
+                )
                 if not clusters and routing is not None:
                     clusters = [routing.cluster]
-                if not clusters and (writing or destructive or isinstance(statement, exp.Create)):
-                    default_cluster = configured_cluster(self._config)
-                    if default_cluster is not None and not _LOCAL_SQL_EXECUTION.get():
-                        clusters = [default_cluster]
                 for cluster in clusters:
                     scope = session.scope(cluster)
                     if (
@@ -319,9 +346,9 @@ class OutageClient:
                     ):
                         return None
                 if destructive:
-                    configured = configured_cluster(self._config)
+                    configured = self._config.cluster_routing
                     preflight_clusters = clusters or (
-                        [configured] if configured is not None else []
+                        [configured.cluster] if configured is not None else []
                     )
                     for cluster in preflight_clusters:
                         scope = session.scope(cluster)
@@ -347,8 +374,19 @@ class OutageClient:
                                     scope, host, local_statement.sql(dialect="clickhouse")
                                 )
                         return None
-                if clusters and routing is None and not _LOCAL_SQL_EXECUTION.get():
+                if clusters and routing is None and not mutation and not _LOCAL_SQL_EXECUTION.get():
                     routing = ChClusterRouting(clusters[0])
+                if (
+                    _creates_data(statement)
+                    and not clusters
+                    and session.policy == "healthy_shards"
+                    and state.partial
+                ):
+                    msg = (
+                        "Partial-source local CTAS requires separate CREATE and INSERT SELECT "
+                        "statements, or an explicit target ON CLUSTER."
+                    )
+                    raise ClickHouseClusterTopologyError(msg)  # noqa: TRY301 - guard CTAS submission
                 delegate = self._delegate(session, routing)
                 execution_sql = (
                     delegate.route(sql)
@@ -400,6 +438,7 @@ class OutageClient:
                         if session.policy == "stop":
                             scope.require_all(scope.reachable, "Cluster metadata")
                 private = target is not None and self._owned_private(session, target)
+                state.require_source_snapshot(self._config.connection_key)
                 if (writing or destructive or _creates_data(statement)) and not private:
                     state.live_submitted = True
                 submitted = True

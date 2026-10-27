@@ -238,7 +238,16 @@ class OutageSession:
         configured = getattr(self.config, "cluster_routing", None)
         if configured is not None:
             return cast("ChClusterRouting", configured)
-        for table in statement.find_all(exp.Table):
+        if isinstance(statement, exp.Insert):
+            target = (
+                statement.this.this if isinstance(statement.this, exp.Schema) else statement.this
+            )
+            tables = [target] if isinstance(target, exp.Table) else []
+        elif isinstance(statement, (exp.Query, exp.Describe)):
+            tables = list(statement.find_all(exp.Table))
+        else:
+            return None
+        for table in tables:
             if not isinstance(table.this, exp.Identifier) or table.db.lower() == "system":
                 continue
             database = table.db or self.config.database
