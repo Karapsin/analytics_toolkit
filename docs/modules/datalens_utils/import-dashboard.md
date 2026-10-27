@@ -42,7 +42,10 @@ backups. SQL/JS assets preserve exact authored text independently of editable
 recipe assets.
 
 SDK 3.1/3.2 do not expose typed selector pinning or authored HTML retrieval.
-Selector source can be preserved while dashboard writing is blocked; HTML
+Pinned local, shared and Editor selectors are captured with their authored state,
+but make the dashboard captured-only. Supported chart-widget pinning remains
+editable. A pull that encounters newly pinned selectors preserves the previous
+local files and baseline. HTML
 source cannot be claimed as captured. General multi-dataset chart writing also
 depends on public adapter support. These limitations do not permit private HTTP
 or payload workarounds.

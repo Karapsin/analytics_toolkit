@@ -128,6 +128,13 @@ def import_control_member(
     senders.add(member.id)
 
 
+def check_control_source(control: Any) -> None:
+    if control.item.data.get("pinned"):
+        raise DataLensUtilsError(
+            "Selector pinning cannot be faithfully written through the public SDK: " + control.id
+        )
+
+
 def import_controls(tab: Any, endpoints: dict[str, str], context: Any) -> None:
     files, managed_items, occurrences, selected, senders = (
         context.files,
@@ -140,6 +147,7 @@ def import_controls(tab: Any, endpoints: dict[str, str], context: Any) -> None:
         wrapper = control.id
         if managed_items is not None and wrapper not in managed_items:
             continue
+        check_control_source(control)
         shared = occurrences[wrapper]
         if shared[0] != tab.id:
             endpoints.update({member.id: member.id for member in control.members})

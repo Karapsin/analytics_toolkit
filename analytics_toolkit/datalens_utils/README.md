@@ -210,6 +210,11 @@ existing references, without exported credentials. Malformed or dynamic Editor
 Meta retains its authored tabs and reports an unresolved dependency closure;
 other readable resources remain importable.
 
+Pinned selectors are preserved in source but make the dashboard captured-only
+because the public SDK cannot faithfully recreate their pinning. This applies
+to local, shared and Editor selectors; supported chart-widget pinning remains
+editable. Pull rejects newly pinned selectors before replacing a writable baseline.
+
 Pull rechecks imported Wizard fidelity before replacing its baseline, including
 per-occurrence formats and unmodeled settings. Newly authored Editor tabs also
 require a fresh import. An unsafe refresh preserves local source, configuration
