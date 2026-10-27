@@ -2,16 +2,13 @@ from __future__ import annotations
 
 # ruff: noqa: EM101, PYI034, PYI036, TRY003
 import importlib
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from analytics_toolkit.sql.connection.errors import SqlOperationContext
 from analytics_toolkit.sql.dml.io.execute_safety import (
-    ExecuteAttemptState,
     SqlBatchExecutionError,
     SqlBatchItemResult,
-    TrackingConnection,
-    is_read_only_sql,
 )
 
 execute_sql_module = importlib.import_module("analytics_toolkit.sql.dml.io.execute_sql")
@@ -55,33 +52,34 @@ class _Cursor:
         self.connection.executed.append(query)
 
 
-def test_safe_mutation_does_not_replay_ambiguous_nontransactional_error(
+@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+def test_default_mutation_exhausts_retry_budget(
     monkeypatch: pytest.MonkeyPatch,
+    backend: str,
 ) -> None:
-    connection = _Connection()
+    connections = [_Connection() for _ in range(3)]
     attempts: list[str] = []
-    monkeypatch.setattr(execute_sql_module, "get_sql_connection", lambda _key: connection)
-    adapter = execute_sql_module.get_backend_adapter("trino")
+    monkeypatch.setattr(
+        execute_sql_module, "get_sql_connection", lambda _key: connections[len(attempts)]
+    )
+    adapter = execute_sql_module.get_backend_adapter(backend)
 
     def fail(_connection: Any, query: str, **_kwargs: Any) -> None:
         attempts.append(query)
         raise OSError("connection reset after submission")
 
     monkeypatch.setattr(adapter, "execute_sql", fail)
-
-    with pytest.raises(sql_module.AmbiguousSqlMutationError) as caught:
+    with pytest.raises(OSError, match="connection reset"):
         sql_module.execute(
-            "trino",
-            "INSERT INTO sandbox.events VALUES (1)",
-            retry_cnt=3,
-            timeout_increment=0,
+            backend, "INSERT INTO sandbox.events VALUES (1)", retry_cnt=3, timeout_increment=0
         )
+    assert len(attempts) == 3
+    assert all(connection.close_calls == 1 for connection in connections)
+    if backend == "gp":
+        assert all(connection.rollback_calls == 1 for connection in connections)
 
-    assert len(attempts) == 1
-    assert isinstance(caught.value.original_error, OSError)
 
-
-def test_safe_read_retries_transient_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_retries_transient_error(monkeypatch: pytest.MonkeyPatch) -> None:
     connections = [_Connection(), _Connection()]
     attempts: list[str] = []
     monkeypatch.setattr(
@@ -103,26 +101,34 @@ def test_safe_read_retries_transient_error(monkeypatch: pytest.MonkeyPatch) -> N
     assert attempts == ["SELECT 1", "SELECT 1"]
 
 
-def test_safe_greenplum_commit_failure_is_ambiguous(
+def test_greenplum_commit_failure_retries_with_fresh_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    connection = _Connection(commit_error=OSError("commit acknowledgement lost"))
-    monkeypatch.setattr(execute_sql_module, "get_sql_connection", lambda _key: connection)
+    connections = [_Connection(commit_error=OSError("commit acknowledgement lost")), _Connection()]
+    opened: list[_Connection] = []
 
-    with pytest.raises(sql_module.AmbiguousSqlMutationError):
-        sql_module.execute(
-            "gp",
-            "INSERT INTO sandbox.events VALUES (1)",
-            retry_cnt=3,
-            timeout_increment=0,
-        )
+    def connect(_key: str) -> _Connection:
+        connection = connections[len(opened)]
+        opened.append(connection)
+        return connection
 
-    assert len(connection.executed) == 1
-    assert connection.commit_calls == 1
+    monkeypatch.setattr(execute_sql_module, "get_sql_connection", connect)
+    sql_module.execute(
+        "gp", "INSERT INTO sandbox.events VALUES (1)", retry_cnt=2, timeout_increment=0
+    )
+    assert len(opened) == 2
+    assert all(len(connection.executed) == 1 for connection in connections)
+    assert all(connection.commit_calls == 1 for connection in connections)
+    assert all(connection.close_calls == 1 for connection in connections)
+    assert connections[0].rollback_calls == 1
 
 
-def test_always_policy_retains_explicit_legacy_mutation_replay(
+@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+@pytest.mark.parametrize("name", ["execute", "insert", "execute_insert"])
+def test_default_mutation_retries_transient_failure(
     monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+    name: str,
 ) -> None:
     connections = [_Connection(), _Connection()]
     attempts: list[str] = []
@@ -131,7 +137,7 @@ def test_always_policy_retains_explicit_legacy_mutation_replay(
         "get_sql_connection",
         lambda _key: connections[len(attempts)],
     )
-    adapter = execute_sql_module.get_backend_adapter("trino")
+    adapter = execute_sql_module.get_backend_adapter(backend)
 
     def execute(_connection: Any, query: str, **_kwargs: Any) -> None:
         attempts.append(query)
@@ -140,28 +146,59 @@ def test_always_policy_retains_explicit_legacy_mutation_replay(
 
     monkeypatch.setattr(adapter, "execute_sql", execute)
 
-    sql_module.execute(
-        "trino",
-        "INSERT INTO sandbox.events VALUES (1)",
-        retry_policy="always",
-        retry_cnt=2,
-        timeout_increment=0,
+    args = (
+        (backend, "INSERT INTO sandbox.events VALUES (1)")
+        if name == "execute"
+        else (backend, "sandbox.events", "SELECT 1")
     )
+    getattr(sql_module, name)(*args, retry_cnt=2, timeout_increment=0)
 
     assert len(attempts) == 2
 
 
-def test_retry_policy_is_validated_before_connection_lookup(
+@pytest.mark.parametrize(
+    "name", ["execute", "execute_sql", "insert", "execute_insert", "execute_create"]
+)
+@pytest.mark.parametrize("policy", ["safe", "always", "never", "sometimes", None])
+def test_removed_retry_policy_is_rejected_before_connection_lookup(
     monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    policy: Any,
 ) -> None:
-    monkeypatch.setattr(
+    for module in [
         execute_sql_module,
-        "get_connection_config",
-        lambda _key: pytest.fail("connection config should not be read"),
+        importlib.import_module("analytics_toolkit.sql.dml.io.execute_create"),
+    ]:
+        monkeypatch.setattr(
+            module,
+            "get_connection_config",
+            lambda *_args: pytest.fail("connection config should not be read"),
+        )
+    args = (
+        ("gp", "SELECT 1")
+        if name in {"execute", "execute_sql"}
+        else ("gp", "sandbox.events", "SELECT 1")
     )
+    function = (
+        execute_sql_module.execute_sql if name == "execute_sql" else getattr(sql_module, name)
+    )
+    with pytest.raises(TypeError, match="retry_policy"):
+        function(*args, retry_policy=policy)
 
-    with pytest.raises(ValueError, match="retry_policy"):
-        sql_module.execute("gp", "SELECT 1", retry_policy="sometimes")
+
+def test_ambiguous_mutation_error_preserves_public_context() -> None:
+    context = SqlOperationContext(operation="execute_sql", alias="gp", backend="gp")
+    original = OSError("commit acknowledgement lost")
+    error = sql_module.AmbiguousSqlMutationError(
+        "mutation outcome unknown",
+        context=context,
+        original_error=original,
+    )
+    assert str(error) == "mutation outcome unknown"
+    assert error.original_error is original
+    assert error.context is context
+    assert error.sql_context is context
+    assert error.analytics_toolkit_sql_retry_safe is False
 
 
 def test_batch_error_exposes_every_outcome_group() -> None:
@@ -183,57 +220,6 @@ def test_batch_error_exposes_every_outcome_group() -> None:
     assert "0=success" in str(error)
 
 
-def test_tracking_connection_delegates_and_tracks_cursor_lifecycle() -> None:
-    connection = _Connection()
-    connection.marker = "delegated"
-    state = ExecuteAttemptState()
-    tracked = TrackingConnection(connection, state)
-
-    assert tracked.marker == "delegated"
-    with tracked.cursor() as cursor:
-        cursor.execute("INSERT INTO events VALUES (1)")
-    tracked.commit()
-
-    assert state.submitted is True
-    assert state.commit_started is True
-    assert state.committed is True
-    assert connection.executed == ["INSERT INTO events VALUES (1)"]
-
-
-def test_tracking_cursor_closes_cursor_without_context_protocol() -> None:
-    class PlainCursor:
-        def __init__(self) -> None:
-            self.closed = False
-            self.marker = "cursor"
-
-        def execute(self, _query: str) -> None:
-            return None
-
-        def close(self) -> None:
-            self.closed = True
-
-    cursor = PlainCursor()
-    connection = SimpleNamespace(cursor=lambda: cursor)
-    tracked = TrackingConnection(connection, ExecuteAttemptState()).cursor()
-
-    assert tracked.marker == "cursor"
-    with tracked:
-        pass
-    assert cursor.closed is True
-
-
-@pytest.mark.parametrize(
-    ("query", "expected"),
-    [
-        ("SELECT 1; SELECT 2", True),
-        ("", False),
-        ("SELECT 1; INSERT INTO t VALUES (1)", False),
-    ],
-)
-def test_read_only_classification(query: str, expected: bool) -> None:
-    assert is_read_only_sql(query) is expected
-
-
 def test_connection_open_and_nonretryable_mutation_errors_are_not_wrapped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -247,15 +233,14 @@ def test_connection_open_and_nonretryable_mutation_errors_are_not_wrapped(
 
     connection = _Connection()
     monkeypatch.setattr(execute_sql_module, "get_sql_connection", lambda _key: connection)
-    monkeypatch.setattr(execute_sql_module, "is_non_retryable_sql_error", lambda _exc: True)
     adapter = execute_sql_module.get_backend_adapter("gp")
     monkeypatch.setattr(
         adapter,
         "execute_sql",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("invalid SQL")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(SyntaxError("invalid SQL")),
     )
-    with pytest.raises(ValueError, match="invalid SQL"):
-        sql_module.execute("gp", "INSERT INTO t VALUES (1)", retry_cnt=1)
+    with pytest.raises(SyntaxError, match="invalid SQL"):
+        sql_module.execute("gp", "INSERT INTO t VALUES (1)", retry_cnt=3, timeout_increment=0)
     assert connection.rollback_calls == 1
 
 
@@ -272,8 +257,8 @@ def test_transactional_presubmission_failure_is_safe_to_retry(
     )
 
     with pytest.raises(OSError, match="before execute"):
-        sql_module.execute("gp", "INSERT INTO t VALUES (1)", retry_cnt=1)
-    assert connection.rollback_calls == 1
+        sql_module.execute("gp", "INSERT INTO t VALUES (1)", retry_cnt=3, timeout_increment=0)
+    assert connection.rollback_calls == 3
 
 
 def test_failed_rollback_and_close_helpers_return_safe_outcomes() -> None:
@@ -285,5 +270,4 @@ def test_failed_rollback_and_close_helpers_return_safe_outcomes() -> None:
             raise OSError("close failed")
 
     options = execute_sql_module.ExecuteSqlOptions("gp", "gp", "SELECT 1")
-    assert execute_sql_module._rollback_confirmed(BrokenConnection()) is False
     execute_sql_module._close_execute_connection(BrokenConnection(), options)

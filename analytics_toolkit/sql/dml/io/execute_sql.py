@@ -12,16 +12,10 @@ from analytics_toolkit._sql_statements import split_statements
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.dml.io.execute_safety import (
     AmbiguousSqlMutationError,
-    ExecuteAttemptState,
-    ExecuteRetryPolicy,
     SqlBatchExecutionError,
     SqlBatchItemResult,
-    TrackingConnection,
-    is_read_only_sql,
-    validate_execute_retry_policy,
 )
 from analytics_toolkit.sql.dml.transfer.runtime.retry import (
-    is_non_retryable_sql_error,
     run_with_retry,
 )
 from analytics_toolkit.sql.execution.cancellation import (
@@ -68,7 +62,6 @@ def execute_sql(
     concurrency: int = 1,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = _DEFAULT_HARD_CONCURRENCY_CAP,
-    retry_policy: ExecuteRetryPolicy = "safe",
 ) -> Any:
     _validate_execute_concurrency_options(
         concurrency=concurrency,
@@ -76,7 +69,6 @@ def execute_sql(
         hard_concurrency_cap=hard_concurrency_cap,
     )
     queries, is_batch = _normalize_execute_queries(query)
-    resolved_retry_policy = validate_execute_retry_policy(retry_policy)
     batch_id = uuid4().hex if is_batch else None
     options_list = [
         _build_execute_sql_options(
@@ -87,7 +79,6 @@ def execute_sql(
             gp_commit_each_statement=gp_commit_each_statement,
             retry_cnt=retry_cnt,
             timeout_increment=timeout_increment,
-            retry_policy=resolved_retry_policy,
             query_label=query_label,
             dry_run=dry_run,
             return_sql=return_sql,
@@ -122,13 +113,11 @@ def _execute_sql_options(options: ExecuteSqlOptions) -> Any:
     )
 
     execution_sql = _execution_sql(options)
-    read_only = is_read_only_sql(execution_sql)
     adapter = get_backend_adapter(options.backend)
 
     def operation(attempt: int) -> Any:
         options.attempt_numbers.append(attempt)
         connection: Any | None = None
-        state = ExecuteAttemptState()
         with tracked_sql_operation(
             metadata=metadata,
             operation_name="execute_sql",
@@ -141,14 +130,9 @@ def _execute_sql_options(options: ExecuteSqlOptions) -> Any:
         ):
             try:
                 connection = get_sql_connection(options.connection_key)
-                execution_connection = connection
-                if not read_only and bool(getattr(adapter, "supports_transactions", False)):
-                    execution_connection = TrackingConnection(connection, state)
-                elif not read_only:
-                    state.submitted = True
                 result = _execute_backend(
                     options.backend,
-                    execution_connection,
+                    connection,
                     execution_sql,
                     print_queries=options.print_queries,
                     gp_break_query=options.gp_break_query,
@@ -160,28 +144,9 @@ def _execute_sql_options(options: ExecuteSqlOptions) -> Any:
             except Exception as exc:
                 current_context = context(attempt)
                 annotate_sql_exception(exc, current_context)
-                if connection is None:
-                    raise
-                if read_only or options.retry_policy == "always":
+                if connection is not None:
                     adapter.rollback_quietly(connection)
-                    raise
-                if is_non_retryable_sql_error(exc):
-                    adapter.rollback_quietly(connection)
-                    raise
-                if (
-                    bool(getattr(adapter, "supports_transactions", False))
-                    and not state.commit_started
-                    and not state.committed
-                    and _rollback_confirmed(connection)
-                ):
-                    raise
-                ambiguous = AmbiguousSqlMutationError(
-                    "Mutating SQL may have completed before the connection failed; "
-                    "the toolkit will not replay it automatically.",
-                    context=current_context,
-                    original_error=exc,
-                )
-                raise ambiguous from exc
+                raise
             finally:
                 if connection is not None:
                     _close_execute_connection(connection, options)
@@ -198,7 +163,7 @@ def _execute_sql_options(options: ExecuteSqlOptions) -> Any:
 
     result = run_with_retry(
         operation_name=f"executing SQL on {options.connection_key} ({options.backend})",
-        retry_cnt=(1 if options.retry_policy == "never" else options.retry_cnt),
+        retry_cnt=options.retry_cnt,
         timeout_increment=options.timeout_increment,
         operation=operation,
     )
@@ -362,14 +327,6 @@ def _execution_sql(options: ExecuteSqlOptions) -> str:
     )
 
 
-def _rollback_confirmed(connection: Any) -> bool:
-    try:
-        connection.rollback()
-    except Exception:
-        return False
-    return True
-
-
 def _close_execute_connection(connection: Any, options: ExecuteSqlOptions) -> None:
     time_print(
         "Closing connection",
@@ -461,7 +418,6 @@ def _build_execute_sql_options(
     return_sql: bool,
     return_metadata: bool,
     progress: bool,
-    retry_policy: ExecuteRetryPolicy = "safe",
     batch_id: str | None = None,
     batch_index: int | None = None,
 ) -> ExecuteSqlOptions:
@@ -490,7 +446,6 @@ def _build_execute_sql_options(
         return_sql=return_sql,
         return_metadata=return_metadata,
         progress=progress,
-        retry_policy=retry_policy,
         source_sql=query.strip(),
         batch_id=batch_id,
         batch_index=batch_index,
@@ -507,7 +462,6 @@ def build_execute_sql_plan(options: ExecuteSqlOptions) -> SqlPlan:
             "print_queries": options.print_queries,
             "gp_break_query": options.gp_break_query,
             "gp_commit_each_statement": options.gp_commit_each_statement,
-            "retry_policy": options.retry_policy,
         },
         metadata=SqlOperationMetadata(
             statement_count=len(statements),

@@ -130,7 +130,7 @@ def test_parallel_helpers_preserve_order_connections_and_context(
     monkeypatch.setattr(
         create_module,
         "_execute_create_attempt",
-        lambda options, _adapter, connection, _state: (
+        lambda options, _adapter, connection: (
             execute(options.backend, connection, options.source_sql).rowcount
         ),
     )
