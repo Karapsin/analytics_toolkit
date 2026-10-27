@@ -375,7 +375,7 @@ def _best_effort_drop(
         try:
             with local_sql(connection):
                 adapter.execute_command(connection, drop_table_sql(table, cluster))
-        except Exception as exc:  # cleanup is recoverable on the next replacement.
+        except Exception as exc:  # Unremoved artifacts require explicit reconciliation.
             time_print(
                 f"Could not remove ClickHouse replacement artifact {table}: {type(exc).__name__}",
                 level="warning",
@@ -387,6 +387,8 @@ def _cleanup_orphan_replacements(
     connection: Any,
     targets: list[tuple[str, str | None]],
 ) -> None:
+    del adapter
+    unresolved: list[str] = []
     for target, cluster in targets:
         database, relation = distributed_table_parts(target)
         prefix = f"{relation}__replace_"
@@ -407,16 +409,26 @@ def _cleanup_orphan_replacements(
                 if not name.startswith(prefix):
                     continue
                 orphan = f"{database}.{name}"
-                if _replacement_is_active(connection, orphan, cluster):
-                    continue
-                with local_sql(connection):
-                    adapter.execute_command(connection, drop_table_sql(orphan, cluster))
+                active = _replacement_is_active(connection, orphan, cluster)
+                unresolved.append(orphan + (" (active)" if active else ""))
+                time_print(
+                    f"Retaining ClickHouse recovery artifact {orphan}; "
+                    "verify its contents and reconcile the target before explicitly removing it.",
+                    level="warning",
+                )
         except Exception as exc:
-            time_print(
-                f"Could not inspect ClickHouse replacement artifacts for {target}: "
-                f"{type(exc).__name__}",
-                level="warning",
+            msg = (
+                f"Cannot verify recovery artifacts for {target}; "
+                "reconcile the previous replacement before another destructive operation."
             )
+            raise AmbiguousSqlReplaceError(msg) from exc
+    if unresolved:
+        raise AmbiguousSqlReplaceError(
+            "Unreconciled ClickHouse replacement artifacts remain: "
+            + ", ".join(sorted(set(unresolved)))
+            + ". Inspect and reconcile all shards before explicitly removing them "
+            "or replacing again."
+        )
 
 
 def _replacement_is_active(

@@ -55,6 +55,56 @@ def _exercise(alias: str, controller: Any, registry: Any) -> None:
                 query_label=label,
             )
         assert rows.id.tolist() == [1, 2]
+        gp_source = registry.table("gp", "public." + resource_name(run_id, test_id, alias + "_src"))
+        gp_target = registry.table("gp", "public." + resource_name(run_id, test_id, alias + "_dst"))
+        sql.load_df(
+            "gp",
+            gp_source,
+            pd.DataFrame({"id": [10, 11]}),
+            table_schema={"id": "bigint"},
+            query_label=label,
+        )
+        sql.load_df(
+            "gp",
+            gp_target,
+            pd.DataFrame({"id": [99]}),
+            table_schema={"id": "bigint"},
+            query_label=label,
+        )
+        with pytest.warns(sql.ClickHouseDegradedClusterWarning):
+            from_ch = sql.transfer(
+                from_db=alias,
+                to_db="gp",
+                from_sql=f"SELECT id FROM {table}",
+                to_table=gp_target,
+                write_mode="append",
+                ignore_source_staging=True,
+                ch_unavailable_shards="healthy_shards",
+                return_metadata=True,
+                table_schema={"id": "bigint"},
+                query_label=label,
+            )
+        assert from_ch.inserted_rows == 2
+        assert from_ch.metadata.row_count_validated is True
+        assert from_ch.metadata.source_data_complete is False
+        assert from_ch.metadata.target_data_complete is True
+        with pytest.warns(sql.ClickHouseDegradedClusterWarning):
+            to_ch = sql.transfer(
+                from_db="gp",
+                to_db=alias,
+                from_sql=f"SELECT id FROM {gp_source}",
+                to_table=table,
+                write_mode="append",
+                ignore_source_staging=True,
+                ch_unavailable_shards="healthy_shards",
+                return_metadata=True,
+                table_schema={"id": "Int64"},
+                query_label=label,
+            )
+        assert to_ch.inserted_rows == 2
+        assert to_ch.metadata.row_count_validated is True
+        assert to_ch.metadata.source_data_complete is True
+        assert to_ch.metadata.target_data_complete is False
     finally:
         controller.restart("clickhouse-replica")
         controller.wait_healthy("clickhouse-replica")
@@ -66,7 +116,7 @@ def _exercise(alias: str, controller: Any, registry: Any) -> None:
             ch_unavailable_shards="healthy_shards",
             query_label=label,
         )
-    assert rows.id.tolist() == [1, 2]
+    assert rows.id.tolist() == [1, 2, 10, 11]
     database, relation = table.split(".", 1)
     count = sql.read(
         "ch",

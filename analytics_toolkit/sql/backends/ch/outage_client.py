@@ -23,6 +23,7 @@ from .outage_context import INSERT_KEY, INTERNAL_IO, WRITING
 from .outage_ddl import _execute_local, create_on_healthy_hosts, create_target
 from .outage_session import OutageSession, configured_cluster, private_table
 from .outage_statements import exchange_or_rename
+from .outage_topology import warn_degraded
 from .routing import (
     _LOCAL_SQL_EXECUTION,
     ChClusterRouting,
@@ -34,8 +35,22 @@ from .routing import (
 _CLUSTER_REQUIRED_ARGS = 3
 _DESCRIBE_DEFAULT_FIELDS = 3
 
-_DESTRUCTIVE = (exp.Alter, exp.Drop, exp.Delete, exp.Update, exp.TruncateTable)
+_DESTRUCTIVE = (exp.Alter, exp.Drop, exp.Detach, exp.Delete, exp.Update, exp.TruncateTable)
 _READ_ONLY = (exp.Query, exp.Describe, exp.Show)
+
+
+def _destructive(statement: exp.Expr) -> bool:
+    return isinstance(statement, (*_DESTRUCTIVE, exp.Command)) or (
+        isinstance(statement, exp.Create) and bool(statement.args.get("replace"))
+    )
+
+
+def _creates_data(statement: exp.Expr) -> bool:
+    return (
+        isinstance(statement, exp.Create)
+        and isinstance(statement.args.get("expression"), exp.Query)
+        and statement.find(exp.EmptyProperty) is None
+    )
 
 
 def _named_target(statement: exp.Expr, database: str | None) -> tuple[str, str] | None:
@@ -135,6 +150,48 @@ class OutageClient:
                 session.resolve(cluster=cluster, database=database, table=table.name)
             return bool(objects)
 
+    def sql_preflight_statements(self, sqls: Any) -> None:
+        """Validate every required DDL host before a batch's local or remote mutation."""
+        with backend_operation() as state:
+            session = self._get_session(state)
+            parsed = []
+            clusters: list[str] = []
+            for sql in sqls:
+                special = exchange_or_rename(sql)
+                statement = special[0] if special else parse_one(sql, read=_RoutingClickHouse)
+                parsed.append(statement)
+                clusters.extend(special[1] if special else _cluster_names(statement))
+                engine = (
+                    statement.find(exp.EngineProperty)
+                    if isinstance(statement, exp.Create)
+                    else None
+                )
+                function = engine.this if engine is not None else None
+                if isinstance(function, exp.Anonymous) and function.name.lower() == "distributed":
+                    cluster = _identifier_value(function.expressions[0])
+                    if not cluster:
+                        msg = "Cannot verify the Distributed routing cluster before creation."
+                        raise ClickHouseClusterTopologyError(msg)
+                    clusters.append(cluster)
+            configured = configured_cluster(self._config)
+            if not clusters and configured is not None:
+                clusters.append(configured)
+            clusters = list(dict.fromkeys(clusters))
+            destructive = [item for item in parsed if _destructive(item)]
+            for cluster in clusters:
+                scope = session.scope(cluster)
+                requires_full = any(
+                    not (target is not None and self._owned_private(session, target))
+                    for item in destructive
+                    for target in [_named_target(item, self._config.database)]
+                )
+                if session.policy == "stop" or requires_full:
+                    self._require_execution_hosts(session, scope, "Operation execution hosts")
+                for statement in destructive:
+                    self._preflight_destructive_tables(session, statement, cluster)
+            for statement in destructive:
+                self._check_destructive(session, _named_target(statement, self._config.database))
+
     def query(self, sql: str, **kwargs: Any) -> Any:
         return self._run("query", sql, kwargs)
 
@@ -198,7 +255,7 @@ class OutageClient:
                 special[0] if special is not None else parse_one(sql, read=_RoutingClickHouse)
             )
             writing = isinstance(statement, exp.Insert)
-            destructive = isinstance(statement, _DESTRUCTIVE) or special is not None
+            destructive = _destructive(statement) or special is not None
             token = WRITING.set(writing)
             key_token = INSERT_KEY.set(None)
             target = _named_target(statement, self._config.database)
@@ -262,7 +319,18 @@ class OutageClient:
                     ):
                         return None
                 if destructive:
-                    for cluster in clusters:
+                    configured = configured_cluster(self._config)
+                    preflight_clusters = clusters or (
+                        [configured] if configured is not None else []
+                    )
+                    for cluster in preflight_clusters:
+                        scope = session.scope(cluster)
+                        owned = target is not None and self._owned_private(session, target)
+                        if not owned:
+                            self._require_execution_hosts(
+                                session, scope, "Destructive execution hosts"
+                            )
+                    for cluster in preflight_clusters:
                         self._preflight_destructive_tables(session, statement, cluster)
                     self._check_destructive(session, target)
                     if (
@@ -332,7 +400,7 @@ class OutageClient:
                         if session.policy == "stop":
                             scope.require_all(scope.reachable, "Cluster metadata")
                 private = target is not None and self._owned_private(session, target)
-                if (writing or destructive) and not private:
+                if (writing or destructive or _creates_data(statement)) and not private:
                     state.live_submitted = True
                 submitted = True
                 result = getattr(self._client, method)(execution_sql, **kwargs)
@@ -511,6 +579,16 @@ class OutageClient:
             session.state.resources.get(("ch_owned", self._config.connection_key, target))
         )
 
+    def _require_execution_hosts(self, session: OutageSession, scope: Any, reason: str) -> None:
+        if session.policy == "healthy_shards" and len(scope.reachable) != len(scope.hosts):
+            warn_degraded(
+                session.state,
+                self._config,
+                scope.record(scope.reachable),
+                "blocked destructive operation",
+            )
+        scope.require_all(scope.reachable, reason)
+
     def _preflight_destructive_tables(
         self, session: OutageSession, statement: exp.Expr, cluster: str
     ) -> None:
@@ -520,7 +598,14 @@ class OutageClient:
                 msg = "Destructive table operations require static table names."
                 raise ClickHouseClusterTopologyError(msg)
             database = table.db or self._config.database
-            if database and scope.objects(database, table.name):
+            objects = scope.objects(database, table.name) if database else []
+            if objects and database:
+                if objects[0].engine.lower().startswith(
+                    ("replicated", "shared")
+                ) and not self._owned_private(session, (database, table.name)):
+                    scope.require_all(
+                        [item.host for item in objects], "Destructive table readiness"
+                    )
                 token = WRITING.set(False)
                 try:
                     session.resolve(cluster=cluster, database=database, table=table.name)

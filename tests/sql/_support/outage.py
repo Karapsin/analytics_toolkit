@@ -45,6 +45,12 @@ class Cluster:
         self.queries: list[str] = []
         self.connections: list[tuple[str, int]] = []
         self.database_engine = "Atomic"
+        self.members_by_cluster: dict[str, list[Any]] = {}
+        self.replica_defaults = {
+            "default_replica_path": "/tables/{uuid}/{shard}",
+            "default_replica_name": "{replica}",
+        }
+        self.host_macros: dict[str, dict[str, str]] = {}
         self.failure: Exception | None = None
         self.replica_readonly: set[str] = set()
         self.replica_expired: set[str] = set()
@@ -128,7 +134,26 @@ class Client:
         if "GETMACRO(" in upper:
             return Result([("core",)])
         if "FROM SYSTEM.CLUSTERS" in upper:
-            return Result(self.cluster.members)
+            return Result(
+                self.cluster.members_by_cluster.get(
+                    filters.get("cluster", "core"), self.cluster.members
+                )
+            )
+        if "FROM SYSTEM.SERVER_SETTINGS" in upper:
+            return Result(list(self.cluster.replica_defaults.items()))
+        if "FROM SYSTEM.MACROS" in upper:
+            index = self.cluster.hosts.index(self.host)
+            return Result(
+                list(
+                    self.cluster.host_macros.get(
+                        self.host,
+                        {
+                            "shard": str(self.cluster.members[index][0]),
+                            "replica": self.host,
+                        },
+                    ).items()
+                )
+            )
         if "FROM SYSTEM.TABLES" in upper:
             name = f"{filters.get('database', 'db')}.{filters.get('name', '')}"
             table = self.cluster.tables.get((self.host, name))
@@ -139,21 +164,28 @@ class Client:
             return Result([(table.engine, table.engine_full, table.ddl, table.uuid)])
         if "FROM SYSTEM.SETTINGS" in upper:
             return Result([])
+        function = next(
+            (
+                item
+                for item in statement.find_all(exp.Anonymous)
+                if item.name.lower() in {"cluster", "clusterallreplicas"}
+            ),
+            None,
+        )
+        cluster_name = str(function.expressions[0].this) if function is not None else "core"
+        members = self.cluster.members_by_cluster.get(cluster_name, self.cluster.members)
+        hosts = [item[2] for item in members]
         if "SYSTEM, ONE" in upper:
             if self.cluster.probe_failure:
                 raise self.cluster.probe_failure
             return Result(
-                [
-                    (i + 1, host)
-                    for i, host in enumerate(self.cluster.hosts)
-                    if host in self.cluster.alive
-                ]
+                [(i + 1, host) for i, host in enumerate(hosts) if host in self.cluster.alive]
             )
         if "SYSTEM, DATABASES" in upper:
             return Result(
                 [
                     (i + 1, self.cluster.database_engine)
-                    for i, host in enumerate(self.cluster.hosts)
+                    for i, host in enumerate(hosts)
                     if host in self.cluster.alive
                 ]
             )
@@ -163,13 +195,12 @@ class Client:
                 [
                     (
                         i + 1,
-                        f"/tables/{self.cluster.tables[(host, name)].uuid}/"
-                        f"{self.cluster.members[i][0]}",
+                        f"/tables/{self.cluster.tables[(host, name)].uuid}/{members[i][0]}",
                         host,
                         int(host in self.cluster.replica_readonly),
                         int(host in self.cluster.replica_expired),
                     )
-                    for i, host in enumerate(self.cluster.hosts)
+                    for i, host in enumerate(hosts)
                     if host in self.cluster.alive and (host, name) in self.cluster.tables
                 ]
             )
@@ -178,7 +209,7 @@ class Client:
             return Result(
                 [
                     (i + 1, obj.engine, obj.engine_full, obj.ddl, obj.uuid)
-                    for i, host in enumerate(self.cluster.hosts)
+                    for i, host in enumerate(hosts)
                     if host in self.cluster.alive
                     and (obj := self.cluster.tables.get((host, name))) is not None
                 ]
@@ -204,7 +235,7 @@ class Client:
             name = f"{args[1].this}.{args[2].this}"
             rows = [
                 row
-                for host in self.cluster.hosts
+                for host in hosts
                 if host in self.cluster.alive
                 for row in self.cluster.tables.get((host, name), Table("", "", "", "")).rows
             ]

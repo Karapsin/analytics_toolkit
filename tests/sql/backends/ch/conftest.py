@@ -14,7 +14,9 @@ def outage(monkeypatch: pytest.MonkeyPatch, write_sql_connections: Any) -> Any:
     cluster = Cluster()
     cluster.seed()
 
-    def configure(*, aliases: tuple[str, ...] = ("ch",), **values: Any) -> Cluster:
+    def configure(
+        *, aliases: tuple[str, ...] = ("ch",), per_alias: Any = None, **values: Any
+    ) -> Cluster:
         config = {
             "type": "ch",
             "host": "h1",
@@ -42,7 +44,9 @@ def outage(monkeypatch: pytest.MonkeyPatch, write_sql_connections: Any) -> Any:
             },
         }
         config.update(values)
-        write_sql_connections(dict.fromkeys(aliases, config))
+        write_sql_connections(
+            {alias: {**config, **(per_alias or {}).get(alias, {})} for alias in aliases}
+        )
         general.set_connections_path(None)
         return cluster
 

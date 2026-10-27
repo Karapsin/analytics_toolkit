@@ -86,6 +86,7 @@ def warn_degraded(
             return
         state.warned.add(key)
         state.observed_partial = True
+        state.incomplete_aliases.add(config.connection_key)
         state.resources.setdefault("completion_callbacks", {})[config.connection_key] = (
             lambda success: _completion_banner(state, config.connection_key, succeeded=success)
         )

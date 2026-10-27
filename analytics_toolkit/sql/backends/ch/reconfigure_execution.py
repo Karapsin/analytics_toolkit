@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from analytics_toolkit.sql.execution.backend_options import preflight_sql_statements
+
 from .ddl import _format_ch_cluster_name
 
 if TYPE_CHECKING:
@@ -25,6 +27,7 @@ def execute_reconfiguration_sqls(
     connection: Any,
     sqls: Sequence[str],
 ) -> None:
+    preflight_sql_statements(connection, sqls)
     for sql in sqls:
         if "ON CLUSTER" not in sql:
             adapter.execute_command(connection, sql)

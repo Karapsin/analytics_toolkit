@@ -19,6 +19,7 @@ from analytics_toolkit.sql.connection.errors import (
     SqlConfigError,
     UnsupportedConnectionTypeError,
 )
+from analytics_toolkit.sql.execution.backend_options import preflight_sql_statements
 
 from .managed_routing import ManagedPairResolver, ManagedTableRoute
 from .outage_context import WRITING
@@ -244,6 +245,7 @@ def prepare_plan_sql(
 
 
 def execute_commands(adapter: Any, connection: Any, sqls: list[str]) -> None:
+    preflight_sql_statements(connection, sqls)
     clustered_create_targets: set[str] = set()
     for sql in sqls:
         create_target, has_cluster = _create_target(sql)

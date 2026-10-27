@@ -169,6 +169,9 @@ earlier remains visible even if schema provisioning later completes. `print_quer
 does not suppress these warnings. With `return_metadata=True`, supported read,
 load, and transfer results expose `metadata.ch_cluster_status` (expected,
 selected, and excluded hosts and shards) and `metadata.data_complete`.
+Transfers additionally report `source_data_complete` and `target_data_complete`.
+Row-count validation in ad hoc mode validates the observed source rows; it does
+not establish that an unavailable shard had no additional data.
 `ClickHouseClusterUnavailableError` identifies a rejected coverage requirement;
 `ClickHouseClusterTopologyError` identifies unsafe or inconsistent topology.
 
@@ -187,6 +190,17 @@ All selected hosts must confirm the expected schema before loading. Atomic
 physical tables share a stable UUID so default replicated-engine identities
 remain consistent. Later provisioning copies the authoritative existing
 schema and UUID; conflicting definitions are rejected rather than overwritten.
+For replicated engines, every selected host's macros, effective Keeper path,
+and replica name are validated **before any CREATE**. Independent shards must
+have different paths and replicas within a shard must have distinct names.
+Healthy-only new replicated tables require UUID-isolated paths; multi-shard
+paths must contain `{shard}`. New replicated tables therefore require an Atomic
+database; Ordinary remains supported for non-replicated tables. Explicit server
+macro overrides follow [ClickHouse replicated-engine rules](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/replication).
+Nested or escaped identity templates and unverified UUID overrides are refused.
+Server-default engine arguments require readable
+`system.server_settings`; otherwise specify explicit macro-based arguments.
+Unverifiable or colliding identities are refused before mutation.
 Replicated or Shared database engines are refused for healthy-only creation:
 local DDL there could propagate beyond the selected hosts. Atomic and Ordinary
 databases are supported. The client must be able to connect directly to selected
@@ -198,7 +212,9 @@ Reads do not provision schemas. If shard 2 returns without the new table, an
 ad hoc read continues using table-ready hosts and warns. A later
 `healthy_shards` write creates matching **empty** tables on the recovered healthy
 hosts, verifies them, and can use both shards for future random writes.
-Historical data stays where it was written. `stop` does not implicitly repair
+Historical data stays on its original shard. Native replication can refill a
+recovered replica of that same shard; the toolkit does not copy historical rows
+or join independent shards to one Keeper group. `stop` does not implicitly repair
 missing tables. For example, 100 rows written to shard 1 during the outage stay
 on shard 1 after shard 2 returns; recovery does not redistribute those 100 rows.
 
@@ -230,8 +246,11 @@ validate row counts and a destination fingerprint, then exchange names in an
 Atomic/Shared database or use a reversible rename sequence. The old target is
 not dropped before the replacement is ready. A failed rollback raises
 `AmbiguousSqlReplaceError` and preserves recovery artifacts. Later replacements
-remove inactive orphan `__replace_...` tables conservatively; artifacts used by
-a live query and backups whose safety is not proven remain untouched.
+retain orphan `__replace_...` tables and backups across operations, and refuse
+another replacement until that namespace is reconciled. An inactive query is
+insufficient evidence for deletion: inspect all shards and reconcile both the
+current target and recovery tables before explicitly removing the artifacts.
+Failure to inspect recovery metadata also stops a replacement before mutation.
 
 [sql.drop_tables](functions/drop_tables.md) removes managed table pairs.
 

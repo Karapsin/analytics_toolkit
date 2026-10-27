@@ -14,7 +14,8 @@ from analytics_toolkit.sql.connection.errors import (
 from analytics_toolkit.sql.execution.backend_options import current_backend_query_label
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
-from .outage_context import internal_io
+from .outage_hosts import host_connection
+from .outage_replication import validate_replica_creation
 from .outage_topology import ClusterScope, Host, TableObject, query_rows, warn_degraded
 from .routing import _RoutingClickHouse
 
@@ -81,23 +82,8 @@ def _database_engines(scope: ClusterScope, database: str) -> dict[int, str]:
 
 def _execute_local(scope: ClusterScope, host: Host, sql: str) -> None:
     sql = apply_query_label(sql, current_backend_query_label())
-    if host.is_local:
-        scope.client.command(sql)
-        return
-    from analytics_toolkit.sql.connection.get_sql_connection import (  # noqa: PLC0415 - connection factory imports this backend
-        get_ch_connection_for_host,
-    )
-
-    with internal_io():
-        connection = get_ch_connection_for_host(
-            scope.config.connection_key,
-            host.name,
-            port=host.port if scope.config.driver == "native" else None,
-        )
-        try:
-            connection.command(sql)
-        finally:
-            connection.close()
+    with host_connection(scope, host) as connection:
+        connection.command(sql)
 
 
 def create_on_healthy_hosts(scope: ClusterScope, statement: exp.Create) -> bool:  # noqa: C901, PLR0912 - keep the safety decision and submission in one boundary
@@ -147,6 +133,7 @@ def create_on_healthy_hosts(scope: ClusterScope, statement: exp.Create) -> bool:
             else None
         )
         canonical = local_create(statement, uuid=common_uuid)
+    validate_replica_creation(scope, canonical, database, table, existing)
     sql = canonical.sql(dialect="clickhouse")
     scope.state.resources[key] = sql
     if len(scope.reachable) != len(scope.hosts):

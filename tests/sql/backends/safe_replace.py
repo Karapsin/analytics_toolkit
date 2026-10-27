@@ -17,6 +17,10 @@ from analytics_toolkit.sql.backends.safe_replace import (
     finalize_existing_stage_replace,
 )
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
+from analytics_toolkit.sql.execution.backend_options import (
+    backend_operation,
+    current_backend_operation,
+)
 from sqlglot import exp, parse_one
 
 ch_safe_replace = importlib.import_module("analytics_toolkit.sql.backends.ch.safe_replace")
@@ -327,17 +331,18 @@ class _ReplaceChAdapter(_ChAdapter):
         return self.counts.pop(0)
 
 
-def test_clickhouse_orphan_cleanup_drops_only_inactive_replacement_tables() -> None:
+def test_clickhouse_orphan_cleanup_retains_inactive_recovery_tables() -> None:
     connection = _ChConnection()
     adapter = _ChAdapter()
 
-    _cleanup_orphan_replacements(
-        adapter,
-        connection,
-        [("sandbox.target", "core")],
-    )
+    with pytest.raises(AmbiguousSqlReplaceError, match="Unreconciled"):
+        _cleanup_orphan_replacements(
+            adapter,
+            connection,
+            [("sandbox.target", "core")],
+        )
 
-    assert adapter.commands == ["DROP TABLE IF EXISTS sandbox.target__replace_abcd ON CLUSTER core"]
+    assert adapter.commands == []
 
 
 def test_clickhouse_orphan_cleanup_keeps_active_and_ignores_bad_or_failed_metadata() -> None:
@@ -351,22 +356,24 @@ def test_clickhouse_orphan_cleanup_keeps_active_and_ignores_bad_or_failed_metada
                 result_rows=[(), ("not-a-replacement",), ("target__replace_live",)]
             )
 
-    _cleanup_orphan_replacements(
-        adapter,
-        ActiveConnection(),
-        [("sandbox.target", None)],
-    )
+    with pytest.raises(AmbiguousSqlReplaceError):
+        _cleanup_orphan_replacements(
+            adapter,
+            ActiveConnection(),
+            [("sandbox.target", None)],
+        )
     assert adapter.commands == []
 
     class BrokenConnection:
         def query(self, _sql: str) -> Any:
             raise OSError("metadata unavailable")
 
-    _cleanup_orphan_replacements(
-        adapter,
-        BrokenConnection(),
-        [("sandbox.target", None)],
-    )
+    with pytest.raises(AmbiguousSqlReplaceError):
+        _cleanup_orphan_replacements(
+            adapter,
+            BrokenConnection(),
+            [("sandbox.target", None)],
+        )
 
 
 def test_clickhouse_replace_builds_and_swaps_complete_distributed_pair(
@@ -506,3 +513,60 @@ def test_clickhouse_replace_helpers_cover_local_clusters_and_cleanup_failures() 
         _ChConnection(),
         [(None, None), ("sandbox.target", None)],
     )
+
+
+def test_clickhouse_second_replace_retains_original_rows_after_uncertain_cutover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class PartialCutover(_ChConnection):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_exchange = True
+            self.recovery: dict[str, list[int]] = {}
+            self.current_rows = {"h1": [1], "h2": [2]}
+
+        def command(self, sql: str, **kwargs: Any) -> None:
+            if self.fail_exchange and sql.startswith("EXCHANGE TABLES"):
+                replacement = sql.split(" AND ")[1].split(" ON CLUSTER", maxsplit=1)[0]
+                self.recovery[replacement] = list(self.current_rows["h1"])
+                self.current_rows["h1"] = [9]
+                current_backend_operation().preserve_recovery = True
+                raise AmbiguousSqlReplaceError(
+                    "first shard exchanged; second shard acknowledgement lost"
+                )
+            super().command(sql, **kwargs)
+
+        def query(self, sql: str) -> Any:
+            if "startsWith" in sql:
+                return SimpleNamespace(
+                    result_rows=[(table.split(".", 1)[1],) for table in self.recovery]
+                )
+            return super().query(sql)
+
+    class ReconciliationAdapter(_ReplaceChAdapter):
+        def execute_command(self, connection: Any, sql: str) -> None:
+            super().execute_command(connection, sql)
+            if sql.startswith("DROP TABLE"):
+                for table in list(connection.recovery):
+                    if table in sql:
+                        del connection.recovery[table]
+
+    connection = PartialCutover()
+    adapter = ReconciliationAdapter([2, 2])
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    with backend_operation(), pytest.raises(AmbiguousSqlReplaceError):
+        ch_safe_replace._replace_from_stage(adapter, _request(connection))
+    saved = dict(connection.recovery)
+    current_before_retry = dict(connection.current_rows)
+    commands_before_retry = list(adapter.commands)
+    assert saved
+    connection.fail_exchange = False
+    adapter.counts = [2, 2, 2]
+    with backend_operation() as fresh:
+        assert fresh.preserve_recovery is False
+        with pytest.raises(AmbiguousSqlReplaceError, match="Unreconciled"):
+            ch_safe_replace._replace_from_stage(adapter, _request(connection))
+    assert connection.recovery == saved
+    assert connection.current_rows == current_before_retry
+    assert connection.current_rows["h2"] == [2]
+    assert adapter.commands == commands_before_retry

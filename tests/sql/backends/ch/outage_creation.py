@@ -21,6 +21,8 @@ from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.execution.backend_options import BackendOperationState, backend_operation
 from sqlglot import exp, parse_one
 
+from tests.sql._support.outage import Client
+
 
 def _scope(client: Any) -> ClusterScope:
     return ClusterScope(
@@ -202,3 +204,43 @@ def test_outage_schema_inference_preserves_server_default_engine(outage: Any) ->
     assert isinstance(converted.this, exp.Schema)
     assert converted.args.get("properties") is None
     assert query == "SELECT id FROM db.events"
+
+
+def test_outage_ctas_lost_acknowledgement_is_never_replayed_as_if_not_exists(
+    outage: Any, monkeypatch: Any
+) -> None:
+    cluster, _ = outage
+    original = Client.command
+
+    def command(client: Any, query: str, **kwargs: Any) -> Any:
+        result = original(client, query, **kwargs)
+        statement = parse_one(query, read=_RoutingClickHouse)
+        if isinstance(statement, exp.Create) and isinstance(statement.expression, exp.Query):
+            cluster.tables[(client.host, "db.ctas_accepted")].rows = [(9,)]
+            msg = "CTAS populated rows; acknowledgement lost"
+            raise ConnectionError(msg)
+        return result
+
+    monkeypatch.setattr(Client, "command", command)
+    with pytest.raises(ConnectionError, match="populated"):
+        sql.execute(
+            "ch",
+            "CREATE TABLE IF NOT EXISTS db.ctas_accepted ON CLUSTER core "
+            "ENGINE=MergeTree ORDER BY id AS SELECT id FROM db.events",
+            retry_cnt=3,
+            timeout_increment=0,
+        )
+    assert len(cluster.commands) == 1
+    assert cluster.tables[("h1", "db.ctas_accepted")].rows == [(9,)]
+
+
+def test_outage_create_or_replace_requires_complete_execution_hosts(outage: Any) -> None:
+    cluster, _ = outage
+    cluster.alive.remove("h2")
+    with pytest.raises(sql.ClickHouseClusterUnavailableError):
+        sql.execute(
+            "ch",
+            "CREATE OR REPLACE TABLE db.events_shard ON CLUSTER core (id UInt64) "
+            "ENGINE=MergeTree ORDER BY id",
+        )
+    assert not cluster.commands
