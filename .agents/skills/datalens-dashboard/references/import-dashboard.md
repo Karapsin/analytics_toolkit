@@ -94,11 +94,16 @@ capture. Preserve unused attached datasets and repeated chart placements.
 The SDK 3.1/3.2 public selector builder does not support selector pinning; the
 native readable dashboard source remains capturable, while its writer may be
 blocked. Authored HTML source is not exposed by those SDK versions. Dynamic
-Editor dependency declarations cannot be evaluated during import; retain their
+Editor dependency declarations and malformed Meta cannot establish closure; retain their
 tabs and report the incomplete dependency closure. These are SDK/capture limits,
 not a reason to read toolkit scripts or write project-specific Python.
 
 For later edits use `plan` and scoped `apply` through the generated launcher.
+Published verification can pass with a newer saved draft; this does not authorize
+overwriting that draft. If pull rejects changed Editor tabs or unsupported Wizard
+fidelity, keep the previous files and baseline. Import into another empty
+destination to capture the changed source and inspect its current restrictions
+before merging; do not weaken fidelity checks to make pull succeed.
 Imported resources retain their individual folder/workbook locations; a source
 dashboard's folder does not relocate dependencies. Moving or copying cloud
 resources is a separate explicitly requested workflow. Existing recipes use

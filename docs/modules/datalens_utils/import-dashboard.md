@@ -82,5 +82,12 @@ Run `python dashboard.py validate --json` for offline integrity,
 `status --json` for current metadata, and `verify --full --json` for published
 content. These checks do not establish numerical or rendering equivalence.
 Use `plan` before scoped writes; saved-draft and revision protections still apply.
+Published-source verification accepts a newer saved draft, while writes still
+require explicit draft reconciliation. Malformed Editor Meta is preserved with
+an incomplete dependency-closure report rather than aborting unrelated capture.
+
+If pull reports changed Editor tabs or unsupported Wizard fidelity, the previous
+local files and baseline remain intact. Import into another empty destination to
+capture the changed source and reassess writer restrictions before merging.
 
 [Module index](index.md)

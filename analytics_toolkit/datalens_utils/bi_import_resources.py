@@ -123,6 +123,26 @@ def dataset_cache(
         definition["cache_invalidation"] = value
 
 
+def editor_links(entity: Any) -> dict[str, str]:
+    """Read static dependency identities without assuming authored JSON has a valid shape."""
+    try:
+        meta = json.loads(entity.data.get("meta", "{}"))
+    except (ValueError, TypeError):
+        message = "Dynamic Editor Meta cannot establish dependency closure."
+        raise DataLensUtilsError(message) from None
+    links = meta.get("links", {}) if isinstance(meta, dict) else None
+    if not isinstance(links, dict) or any(
+        not isinstance(alias, str) or not alias or not isinstance(identifier, str) or not identifier
+        for alias, identifier in links.items()
+    ):
+        message = (
+            "Editor Meta must be an object with links mapping aliases to nonempty dataset IDs; "
+            "dependency closure cannot be established."
+        )
+        raise DataLensUtilsError(message)
+    return links
+
+
 def editor_definition(
     entity: Any, definition: dict[str, Any], datasets: dict[str, Any]
 ) -> tuple[dict[str, Any], dict[str, str]]:
@@ -145,9 +165,8 @@ def editor_definition(
         relative = "assets/js/imported/" + key + "/" + name + (".json" if name == "meta" else ".js")
         definition["scripts"][name] = relative
         assets[relative] = source
-    meta = json.loads(entity.data.get("meta", "{}"))
     definition["links"] = {}
-    for alias, identifier in meta.get("links", {}).items():
+    for alias, identifier in editor_links(entity).items():
         if identifier not in {value.id for value in datasets.values()}:
             message = "Unresolved Editor dataset dependency: " + identifier
             raise DataLensUtilsError(message)

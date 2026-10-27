@@ -15,6 +15,7 @@ from .dataset_identity import resolved_definition
 from .editing.pull import pull_chart
 from .editing.state import fingerprint, merge
 from .errors import DataLensUtilsError
+from .import_fidelity import wizard_source_issues
 from .import_manifest import MANIFEST, is_reference, load_manifest
 from .recipe_io import replace_files, stage_and_validate
 from .resources.bi_store import safe_metadata
@@ -116,7 +117,16 @@ def extract_resource(  # noqa: PLR0913 - One baseline and its dependency snapsho
             incoming[cache["sql_file"]] = entity.raw["dataset"]["cache_invalidation_source"]["sql"]
     elif resource.kind == "chart":
         context = type("PullContext", (), {"client": client, "connection": None})()
-        incoming["definition"], assets = pull_chart(entity, base["definition"], datasets, context)
+        incoming["definition"], assets = pull_chart(
+            entity, base["definition"], datasets, context, strict_fidelity=bool(resource.capture)
+        )
+        if resource.capture and entity.category == "wizard":
+            issues = wizard_source_issues(client, entity, datasets, incoming["definition"])
+            if issues:
+                raise DataLensUtilsError(
+                    "Refreshed Wizard source cannot be faithfully edited; reimport before "
+                    "merging: " + ", ".join(issues)
+                )
         incoming.update(assets)
     elif resource.kind in {"connection", "collection", "workbook"}:
         incoming["definition"].update(

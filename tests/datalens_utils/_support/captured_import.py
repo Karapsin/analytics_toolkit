@@ -86,6 +86,7 @@ def import_source():
         api=api,
         client=client,
         entities=entities,
+        kinds=kinds,
         dashboard=dashboard,
         chart=chart,
         dataset=dataset,

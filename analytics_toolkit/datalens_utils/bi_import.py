@@ -15,6 +15,7 @@ from .bi_import_resources import (
     chart_definition,
     connection_definition,
     dataset_definition,
+    editor_links,
     retain_dataset_keys,
     semantic_key,
 )
@@ -86,16 +87,16 @@ def chart_dependencies(
         dataset_ids.update(explicit_dataset_ids(entity.data))
     elif entity.category == "editor":
         try:
-            meta = json.loads(entity.data.get("meta", "{}"))
-        except (ValueError, TypeError):
+            links = editor_links(entity)
+        except DataLensUtilsError as error:
             report["blockers"].append(
                 {
                     "resource": "chart:" + identifier,
-                    "reason": "Dynamic Editor Meta cannot establish dependency closure.",
+                    "reason": str(error),
                 }
             )
             return
-        dataset_ids.update(meta.get("links", {}).values())
+        dataset_ids.update(links.values())
     elif entity.category == "ql":
         connection_id = (entity.connection or {}).get("entryId")
         if connection_id:

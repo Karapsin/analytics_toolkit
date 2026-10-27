@@ -197,14 +197,22 @@ The destination must be empty or absent. The matching public API is
 with `DataLensAuthConfig`.
 
 Published reads, batched inventories and exact-revision caches capture one
-verified source snapshot. A newer saved draft does not prevent capture; write
-protection remains in effect. Original IDs and each resource's folder/workbook
+verified source snapshot. A newer saved draft does not prevent capture or
+published-source verification; write protection remains in effect. Original IDs and each resource's folder/workbook
 are retained. The generated launcher and object/UI configuration use the ordinary
 project engine. Original authored JSON, SQL and complete Editor tabs remain
 available even when a faithful writer is unsupported. `configs/import.json`
 separates capture completeness, editing capability, restrictions and binding
 analysis. Inaccessible source is reported explicitly. Connections are safe
-existing references, without exported credentials.
+existing references, without exported credentials. Malformed or dynamic Editor
+Meta retains its authored tabs and reports an unresolved dependency closure;
+other readable resources remain importable.
+
+Pull rechecks imported Wizard fidelity before replacing its baseline, including
+per-occurrence formats and unmodeled settings. Newly authored Editor tabs also
+require a fresh import. An unsafe refresh preserves local source, configuration
+and baselines; import into another empty destination to inspect the new source
+and its current writer restrictions before merging.
 
 Run the generated `dashboard.py validate --json`, `status --json`, and
 `verify --full --json` to check offline integrity, metadata and authored content.

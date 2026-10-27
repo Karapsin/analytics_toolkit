@@ -35,8 +35,12 @@ def common_resource_issues(
     if "description" in definition and entry_description(entity) != definition["description"]:
         issues.append("description")
     revisioned = resource.kind in {"chart", "dataset", "dashboard", "html_page"}
-    if revisioned and (not entity.published_id or entity.saved_id != entity.published_id):
-        issues.append("revisions")
+    if revisioned:
+        # Imported source is verified against the published branch. Draft safety
+        # remains a separate write-time check in BIResourceStore.check_write.
+        observed = entity.rev_id if resource.capture else entity.saved_id
+        if not entity.published_id or observed != entity.published_id:
+            issues.append("revisions")
     if resource.kind not in {"connection", "collection", "workbook"} or (
         resource.kind == "connection" and definition["mode"] == "managed"
     ):
@@ -90,7 +94,6 @@ def captured_issues(resource: Any, entity: Any, issues: list[str]) -> list[str]:
     # Revision pointers, including a newer saved draft, are not authored content.
     original = {name: value for name, value in original.items() if name != "metadata"}
     actual = {name: value for name, value in actual.items() if name != "metadata"}
-    issues = [issue for issue in issues if issue != "revisions"]
     if digest(actual) != digest(original):
         issues.append("captured_source")
     return issues

@@ -53,6 +53,9 @@ def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
         result["description"] = chart.description or ""
     family = definition["family"]
     if family == "editor":
+        if strict_fidelity and set(chart.data) != set(definition["scripts"]):
+            message = "Authored Editor tabs changed; reimport before refreshing the baseline."
+            raise DataLensUtilsError(message)
         editor.validate_change(chart, definition)
         for tab, relative in definition["scripts"].items():
             if tab not in chart.data:
