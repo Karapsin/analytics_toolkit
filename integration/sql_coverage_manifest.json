@@ -8772,6 +8772,13 @@
         "trino"
       ]
     },
+    "clickhouse.completion.literal_prefixes": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/completion.py::test_clickhouse_completion_prefixes_are_literal",
+      "backends": [
+        "ch"
+      ]
+    },
     "clickhouse.native.transport": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/clickhouse_native.py::test_native_clickhouse_public_operations_and_transfers",
