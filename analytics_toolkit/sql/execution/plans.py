@@ -52,9 +52,13 @@ class SqlOperationMetadata:
     soft_concurrency_cap: int | None = None
     hard_concurrency_cap: int | None = None
     live_source_stage_limit: int | None = None
+    ch_cluster_status: list[dict[str, Any]] | None = None
+    data_complete: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "ch_cluster_status": self.ch_cluster_status,
+            "data_complete": self.data_complete,
             "transfer_id": self.transfer_id,
             "source_rows": self.source_rows,
             "expected_source_rows": self.expected_source_rows,

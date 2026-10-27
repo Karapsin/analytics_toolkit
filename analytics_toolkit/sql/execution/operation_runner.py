@@ -11,8 +11,9 @@ from analytics_toolkit.sql.connection.config_diagnostics import (
     annotate_connections_exception,
     sql_error_source_scope,
 )
+from analytics_toolkit.sql.connection.errors import SqlOperationContext, annotate_sql_exception
 
-from ..connection.errors import SqlOperationContext, annotate_sql_exception
+from .backend_options import public_backend_options
 from .cancellation import raise_if_cancelled
 from .plans import SqlOperationMetadata
 from .validation import validate_non_negative_number, validate_positive_int
@@ -25,6 +26,7 @@ def timed_public_sql_function(function: Callable[..., T]) -> Callable[..., T]:
     """Print total elapsed time for a public SQL API function."""
     if getattr(function, "__sql_public_timing__", False):
         return function
+    function = public_backend_options(function)
 
     @wraps(function)
     def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -202,7 +204,7 @@ def run_connection_operation(
             return operation(connection_ref, attempt)
         except Exception as exc:
             annotate_sql_exception(exc, context_factory(attempt))
-            from ..backends import get_backend_adapter
+            from analytics_toolkit.sql.backends import get_backend_adapter
 
             get_backend_adapter(backend).rollback_quietly(connection_ref["connection"])
             raise
@@ -285,12 +287,12 @@ def _first_non_empty_sql_line(sql: str | None) -> str | None:
 
 
 def _run_with_retry(**kwargs: Any) -> Any:
-    from ..dml.transfer.runtime.retry import run_with_retry
+    from analytics_toolkit.sql.dml.transfer.runtime.retry import run_with_retry
 
     return run_with_retry(**kwargs)
 
 
 def _rollback_quietly(connection: Any) -> None:
-    from ..dml.transfer.runtime.retry import rollback_quietly
+    from analytics_toolkit.sql.dml.transfer.runtime.retry import rollback_quietly
 
     rollback_quietly(connection)

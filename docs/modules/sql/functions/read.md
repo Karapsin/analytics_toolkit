@@ -7,10 +7,12 @@ Trailing `--` or `/* ... */` comments do not count as additional statements,
 including when they follow a semicolon.
 
 ```python
-read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, output_type: 'ReadOutputType' = 'df', to_excel: 'str | None' = None, to_csv: 'str | None' = None, row_limit: 'int | None' = None) -> 'Any | SqlOperationResult'
+read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, output_type: 'ReadOutputType' = 'df', to_excel: 'str | None' = None, to_csv: 'str | None' = None, row_limit: 'int | None' = None, *, ch_unavailable_shards: 'str | None' = None) -> 'Any | SqlOperationResult'
 ```
 
 ## Inputs
+
+### General Inputs
 
 - `db_key` - connection key or alias from `.connections`; backend dispatch is selected from that entry
 - `row_limit` - optional positive integer cap on supported outer result queries; defaults to `None`; unsupported statements run unchanged
@@ -23,6 +25,10 @@ read(db_key: 'str', query: 'str', print_queries: 'bool' = False, retry_cnt: 'int
 - `return_metadata` - when `True`, return `SqlOperationResult` instead of the historical bare value
 - `print_queries` - whether to print SQL text before execution
 - `query_label` - safe label added to generated SQL comments, plans, metadata, and logs
+
+### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 ## Usage
 

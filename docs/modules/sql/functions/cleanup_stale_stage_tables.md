@@ -5,10 +5,12 @@
 Drop stale transfer staging tables on the configured backend.
 
 ```python
-cleanup_stale_stage_tables(db_key: 'str', target_table: 'str | None' = None, *, stage_tables: 'Sequence[str] | None' = None, clean_all: 'bool' = False, read_retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None) -> 'None'
+cleanup_stale_stage_tables(db_key: 'str', target_table: 'str | None' = None, *, stage_tables: 'Sequence[str] | None' = None, clean_all: 'bool' = False, read_retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, ch_unavailable_shards: 'str | None' = None) -> 'None'
 ```
 
 ## Inputs
+
+### General Inputs
 
 ### General Inputs
 
@@ -19,6 +21,10 @@ cleanup_stale_stage_tables(db_key: 'str', target_table: 'str | None' = None, *, 
 - `read_retry_cnt` - number of retries for staging-table discovery and drops
 - `timeout_increment` - delay increment used between cleanup retries
 - `query_label` - safe label added to generated SQL comments and logs
+
+### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 ## Usage
 

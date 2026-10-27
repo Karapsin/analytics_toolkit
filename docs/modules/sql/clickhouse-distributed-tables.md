@@ -49,8 +49,10 @@ statement remains unchanged.
 For an alias whose reads, writes, and generated SQL should always fan out over
 a cluster, configure the optional `cluster_routing` object in `.connections`.
 It rewrites named read sources through the ClickHouse `cluster(...)` table
-function, sends inserts to the corresponding cluster function with the
-configured sharding key, and adds `ON CLUSTER` to supported DDL.
+function, sends inserts to the corresponding cluster function, and adds
+`ON CLUSTER` to supported DDL. Managed-pair inserts use the verified facade
+sharding key; direct physical-table inserts use the configured key. Explicit
+insertion functions retain their specified key.
 
 ```json
 {
@@ -75,10 +77,11 @@ Probe errors, missing expected metadata, or inconsistent engines raise
 For a toolkit-standard managed pair, routing verifies that the local
 Distributed facade points to the same-database `<table>_shard` relation. If
 that shard exists at every expected routing-cluster position, named reads and
-all insert paths route the physical shard directly. A confirmed incomplete
-physical table falls back to the local Distributed facade, and inserts use
-foreground Distributed delivery so success does not mean "still queued".
-Metadata uncertainty is an error rather than a fallback.
+all insert paths route the physical shard directly. The availability policy
+below runs before submission: `stop` rejects incomplete physical coverage, while
+`healthy_shards` explicitly selects the usable subset. Inserts use foreground
+Distributed delivery so success means acknowledged delivery. Metadata errors
+remain errors under either policy.
 
 Replicated and shared engines use `cluster(...)`, which selects one replica per
 shard. Consistent non-replicated tables on a multi-replica cluster use
@@ -126,6 +129,99 @@ topology to the connection's regular `ddl_defaults` policy.
 Structural changes create and validate a replacement before cutover. Writers
 must be paused during that window. Atomic and Shared databases use an atomic
 name exchange; other database engines use a reversible rename sequence.
+
+## Unavailable Shards
+
+`ch_unavailable_shards="stop"` is the default for production processes.
+`ch_unavailable_shards="healthy_shards"` is an explicit ad hoc mode: work with
+what is currently available. The keyword applies to [sql.read](functions/read.md),
+[sql.execute](functions/execute.md), [sql.load_df](functions/load_df.md),
+[sql.transfer](functions/transfer.md), table helpers, and parallel execution.
+An explicit argument overrides the alias default in `.connections`; `None`
+uses that default, which is `stop` when the field is absent. See
+[connection configuration](configuration.md#clickhouse-outage-default).
+
+For `core` with two independent shards and one unavailable shard:
+
+| Operation | `stop` | `healthy_shards` |
+| --- | --- | --- |
+| Read existing data | raise before the user query | read usable shards; result may be incomplete |
+| Create a new table | raise before DDL | create only on selected healthy hosts |
+| Append rows | raise before insertion | deliver every supplied row to selected healthy shards; exact `rand()` required |
+| Insert from a query | raise | stream the partial source through acknowledged destination batches |
+| Replace, upsert, truncate, drop, reconfigure an existing target | raise | raise while any participating scope is incomplete |
+| Check target key overlap globally | raise | raise when the target is incomplete |
+| No usable shard, conflicting schema, permission or SQL errors | raise | raise |
+
+A missing replica is different from a missing shard. For replicated tables,
+one usable replica per shard can preserve logical coverage. For independent
+non-replicated replicas, every host owns separate data and losing one means
+incomplete coverage. Destructive cluster DDL still requires all participating
+hosts. Preflight is a snapshot: a later failure can still interrupt an operation.
+The configured entry server must be reachable; this policy does not select an
+alternate entry server when the initial connection fails.
+
+Ad hoc operations emit a prominent stderr banner, bold red on terminals that
+support color, a red notebook banner when IPython is active, and
+`ClickHouseDegradedClusterWarning`. A completion banner records the observed
+coverage and whether recovery artifacts were retained. Partial coverage observed
+earlier remains visible even if schema provisioning later completes. `print_queries=False`
+does not suppress these warnings. With `return_metadata=True`, supported read,
+load, and transfer results expose `metadata.ch_cluster_status` (expected,
+selected, and excluded hosts and shards) and `metadata.data_complete`.
+`ClickHouseClusterUnavailableError` identifies a rejected coverage requirement;
+`ClickHouseClusterTopologyError` identifies unsafe or inconsistent topology.
+
+### How healthy-only table creation works
+
+The toolkit probes configured membership and reachable hosts, then inspects
+database engines and existing table definitions. It does not change `core` or
+create a temporary cluster definition. For a new managed pair, it creates the
+physical `<table>_shard` relation and the Distributed facade separately, honoring
+each configured DDL scope. Each selected host receives local `CREATE TABLE`
+without `ON CLUSTER`. Offline hosts receive no queued DDL. This matters because
+[ClickHouse distributed DDL](https://clickhouse.com/docs/reference/statements/distributed-ddl)
+can execute queued statements when a host returns after a timeout.
+
+All selected hosts must confirm the expected schema before loading. Atomic
+physical tables share a stable UUID so default replicated-engine identities
+remain consistent. Later provisioning copies the authoritative existing
+schema and UUID; conflicting definitions are rejected rather than overwritten.
+Replicated or Shared database engines are refused for healthy-only creation:
+local DDL there could propagate beyond the selected hosts. Atomic and Ordinary
+databases are supported. The client must be able to connect directly to selected
+remote hosts; native connections use their configured cluster ports, while HTTP
+connections use the alias HTTP port. Credentials and TLS settings come from
+the alias.
+
+Reads do not provision schemas. If shard 2 returns without the new table, an
+ad hoc read continues using table-ready hosts and warns. A later
+`healthy_shards` write creates matching **empty** tables on the recovered healthy
+hosts, verifies them, and can use both shards for future random writes.
+Historical data stays where it was written. `stop` does not implicitly repair
+missing tables. For example, 100 rows written to shard 1 during the outage stay
+on shard 1 after shard 2 returns; recovery does not redistribute those 100 rows.
+
+### Write delivery and recovery
+
+Degraded writes require the effective sharding key to be exactly `rand()`.
+Deterministic keys, parameterized random expressions, unknown dependencies, and
+nonstandard managed pairs are rejected when safe routing cannot be established.
+Cross-cluster facade/data routing remains supported in strict mode; ad hoc
+routing requires their routing clusters to agree. Batch selection uses original
+shard identities and synchronous delivery with skipping disabled on the insert.
+This prevents missing destinations from silently dropping supplied rows. Read
+skipping is kept separate: ad hoc `INSERT SELECT` uses a client dataframe stream
+and therefore has additional network and memory cost per batch.
+
+A successful acknowledgement cannot make an operation atomic across shards.
+If a connection fails after submission, some rows or DDL may already have been
+accepted. Such mutations are not automatically replayed, including driver
+`TypeError` failures after submission. Stages and backups are retained when the
+outcome is uncertain. Destructive DDL uncertainty raises
+`AmbiguousSqlReplaceError`; inspect the retained state before manual recovery.
+Raw settings that contradict the selected policy are rejected. Neither mode
+turns authentication, schema, or query errors into an empty successful result.
 
 ## Replace and Drop
 

@@ -4,27 +4,27 @@ from typing import TYPE_CHECKING, Any, cast
 
 from analytics_toolkit._sql_statements import split_statements
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.models import ReadColumnResult
 from analytics_toolkit.sql.backends.row_limits import apply_row_limit
-
-from ...backends import get_backend_adapter
-from ...connection.config import get_connection_config
-from ...connection.errors import (
+from analytics_toolkit.sql.connection.config import get_connection_config
+from analytics_toolkit.sql.connection.errors import (
     InvalidSqlInputError,
     SqlOperationContext,
     sql_preview,
 )
-from ...connection.get_sql_connection import get_sql_connection
-from ...connection.protocols import DbApiConnection
-from ...execution.labels import apply_query_label
-from ...execution.operation_runner import (
+from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
+from analytics_toolkit.sql.connection.protocols import DbApiConnection
+from analytics_toolkit.sql.execution.labels import apply_query_label
+from analytics_toolkit.sql.execution.operation_runner import (
     run_connection_operation,
     timed_public_sql_function,
     tracked_sql_operation,
     validate_retry_options,
 )
-from ...execution.plans import SqlOperationMetadata, SqlOperationResult
-from ...execution.query_timing import run_timed_query
+from analytics_toolkit.sql.execution.plans import SqlOperationMetadata, SqlOperationResult
+from analytics_toolkit.sql.execution.query_timing import run_timed_query
+
 from .dataframes import column_result_from_rows, dataframe_from_column_result
 from .models import ReadOutputType, ReadSqlOptions
 
@@ -85,6 +85,7 @@ def read_sql(
     )
 
 
+@timed_public_sql_function
 def read_sql_with_metadata(
     db_key: str,
     query: str,

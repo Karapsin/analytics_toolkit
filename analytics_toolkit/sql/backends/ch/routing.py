@@ -21,6 +21,7 @@ from analytics_toolkit.sql.connection.errors import (
 )
 
 from .managed_routing import ManagedPairResolver, ManagedTableRoute
+from .outage_context import WRITING
 
 
 class _RoutingClickHouse(ClickHouse):
@@ -58,7 +59,7 @@ _ON_CLUSTER_ARG_STATEMENTS = (
     exp.TruncateTable,
 )
 _PLAN_PLACEHOLDER_RE = re.compile(
-    r"<(?:source|stage|runtime|lazy|dynamically|shared|writer|external|\d+\s+dataframe)\b",
+    r"<(?:source|stage|runtime|lazy|dynamically|shared|writer|external|affected|\d+\s+dataframe)\b",
     re.IGNORECASE,
 )
 
@@ -154,12 +155,16 @@ def route_sql(
             managed_pair_resolver.invalidate()
         explicit_cluster = _explicit_cluster(statement)
         effective_cluster = explicit_cluster or cluster_override or routing.cluster
-        _rewrite_query_sources(
-            statement,
-            effective_cluster,
-            database,
-            managed_pair_resolver=managed_pair_resolver,
-        )
+        source_token = WRITING.set(False)
+        try:
+            _rewrite_query_sources(
+                statement,
+                effective_cluster,
+                database,
+                managed_pair_resolver=managed_pair_resolver,
+            )
+        finally:
+            WRITING.reset(source_token)
         _route_statement_target(
             statement,
             _StatementRoute(
@@ -181,11 +186,7 @@ def wrap_client(client: Any, config: Any) -> Any:
     routing = getattr(config, "cluster_routing", None)
     if routing is None:
         return client
-    return ClusterRoutingClient(
-        client,
-        routing=routing,
-        database=getattr(config, "database", None),
-    )
+    return ClusterRoutingClient(client, routing=routing, database=getattr(config, "database", None))
 
 
 @contextmanager
@@ -215,9 +216,8 @@ def routed_connection_sql(connection: Any, sql: str) -> str:
 
 
 def connection_cluster_routing(connection: Any) -> ChClusterRouting | None:
-    if not isinstance(connection, ClusterRoutingClient):
-        return None
-    return connection.cluster_routing
+    routing = getattr(connection, "cluster_routing", None)
+    return routing if isinstance(routing, ChClusterRouting) else None
 
 
 def prepare_plan_sql(
@@ -305,18 +305,19 @@ class ClusterRoutingClient:
 
     def command(self, sql: str, **kwargs: Any) -> Any:
         routed_sql = self.route(sql)
-        routed_upper = routed_sql.upper()
-        if "ON CLUSTER" in routed_upper or routed_upper.lstrip().startswith("INSERT "):
-            settings = dict(ON_CLUSTER_COMMAND_SETTINGS) if "ON CLUSTER" in routed_upper else {}
-            if routed_upper.lstrip().startswith("INSERT "):
+        parsed = sqlglot.parse_one(sql, read=_RoutingClickHouse)
+        clustered = parsed.find(exp.OnCluster) is not None or (
+            not _LOCAL_SQL_EXECUTION.get()
+            and isinstance(parsed, (exp.Create, *_ON_CLUSTER_ARG_STATEMENTS))
+        )
+        inserting = isinstance(parsed, exp.Insert)
+        if clustered or inserting:
+            settings = dict(ON_CLUSTER_COMMAND_SETTINGS) if clustered else {}
+            if inserting:
                 settings["distributed_foreground_insert"] = 1
             settings.update(kwargs.get("settings") or {})
             kwargs["settings"] = settings
-        try:
-            return self._client.command(routed_sql, **kwargs)
-        except TypeError:
-            kwargs.pop("settings", None)
-            return self._client.command(routed_sql, **kwargs)
+        return self._client.command(routed_sql, **kwargs)
 
     def query(self, sql: str, **kwargs: Any) -> Any:
         return self._client.query(self.route(sql), **kwargs)
@@ -430,7 +431,9 @@ class ClusterRoutingClient:
             self._routing.cluster,
             routed_database,
             routed_relation,
-            sharding_key=self._routing.sharding_key,
+            sharding_key=(
+                getattr(managed_route, "sharding_key", None) or self._routing.sharding_key
+            ),
             function_name=_route_function_name(
                 managed_route,
                 routed_relation,
@@ -560,9 +563,10 @@ def _normalize_explicit_cluster_tables(
         relation = _identifier_value(arguments[2])
         if database is None or relation is None:
             continue
+        explicit_function_cluster = _identifier_value(arguments[0]) or cluster
         managed_route = _resolve_managed_route(
             managed_pair_resolver,
-            cluster=cluster,
+            cluster=explicit_function_cluster,
             database=database,
             relation=relation,
         )
@@ -580,7 +584,7 @@ def _normalize_explicit_cluster_tables(
                 else None
             )
             replacement = _cluster_table(
-                cluster,
+                explicit_function_cluster,
                 managed_route.database,
                 managed_route.table,
                 sharding_key=sharding_key,
@@ -706,7 +710,7 @@ def _routed_table_from_table(
             route.cluster,
             database,
             relation,
-            sharding_key=route.sharding_key,
+            sharding_key=getattr(managed_route, "sharding_key", None) or route.sharding_key,
             function_name=_route_function_name(managed_route, relation, database),
         ),
         True,
@@ -820,6 +824,8 @@ def _is_temporary_create(statement: exp.Create) -> bool:
 
 
 def _identifier_value(value: Any) -> str | None:
+    if isinstance(value, exp.Column) and not value.table and not value.db:
+        value = value.this
     if isinstance(value, (exp.Identifier, exp.Literal)):
         normalized = str(value.this).strip()
         return normalized or None

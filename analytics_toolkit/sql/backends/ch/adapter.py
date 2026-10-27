@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
-from .. import dataframe_types as _dataframe_types
-from ..base import (
+from analytics_toolkit.sql.backends import dataframe_types as _dataframe_types
+from analytics_toolkit.sql.backends.base import (
     BackendAdapter,
     BackendName,
     StageFinalizationRequest,
@@ -12,8 +12,9 @@ from ..base import (
     TargetWriteModeRequest,
     _apply_query_label,
 )
-from . import create_table_from_sql as _create_from_sql
+
 from . import column_names as _column_names
+from . import create_table_from_sql as _create_from_sql
 from . import insert as _insert
 from . import operations as _operations
 from . import queries as _queries
@@ -135,7 +136,9 @@ class ClickHouseAdapter(BackendAdapter):
                 sql,
                 settings=_routing.ON_CLUSTER_COMMAND_SETTINGS,
             )
-        except TypeError:
+        except TypeError as exc:
+            if getattr(exc, "analytics_toolkit_sql_retry_safe", None) is False:
+                raise
             return connection.command(sql)
 
     plan_table_reconfiguration = _reconfigure.plan
@@ -170,6 +173,8 @@ class ClickHouseAdapter(BackendAdapter):
         connection_key: str,
     ) -> bool:
         del connection_key
+        if getattr(connection, "_ch_outage_client", False) is True:
+            return bool(connection.outage_table_exists(table_name))
         result = _routing.query_local(connection, f"EXISTS TABLE {table_name}")
         return bool(result.result_rows and result.result_rows[0][0])
 
@@ -288,7 +293,7 @@ class ClickHouseAdapter(BackendAdapter):
         query_label: str | None = None,
     ) -> str:
         del table_name, query_label
-        from ...connection.errors import UnsupportedConnectionTypeError
+        from analytics_toolkit.sql.connection.errors import UnsupportedConnectionTypeError
 
         raise UnsupportedConnectionTypeError("ClickHouse does not support ANALYZE here.")
 
@@ -393,13 +398,12 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
         from analytics_toolkit.general import time_print
-
-        from ...dml.io.execute_sql import (
+        from analytics_toolkit.sql.dml.io.execute_sql import (
             _iterate_statements_with_progress,
             _maybe_print_query,
             _split_sql_statements,
         )
-        from ...execution.query_timing import run_timed_query
+        from analytics_toolkit.sql.execution.query_timing import run_timed_query
 
         statements = _split_sql_statements(sql)
         time_print(f"Executing {len(statements)} statement(s)", backend=self.backend)
@@ -451,10 +455,9 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
         from analytics_toolkit.general import time_print
-
-        from ...dml.io.execute_read import _execute_setup_statements
-        from ...dml.io.execute_sql import _maybe_print_query
-        from ...execution.query_timing import run_timed_query
+        from analytics_toolkit.sql.dml.io.execute_read import _execute_setup_statements
+        from analytics_toolkit.sql.dml.io.execute_sql import _maybe_print_query
+        from analytics_toolkit.sql.execution.query_timing import run_timed_query
 
         time_print(
             f"Executing {max(len(statements) - 1, 0)} setup statement(s) and reading final query",
@@ -490,7 +493,7 @@ class ClickHouseAdapter(BackendAdapter):
         timeout_increment: float,
         disable_query_limit: bool = False,
     ) -> Iterator[Any]:
-        from ...dml.transfer.io.source import _iter_clickhouse_batches
+        from analytics_toolkit.sql.dml.transfer.io.source import _iter_clickhouse_batches
 
         yield from _iter_clickhouse_batches(
             connection_key,
@@ -591,8 +594,8 @@ class ClickHouseAdapter(BackendAdapter):
 
     def apply_target_write_mode(self, request: TargetWriteModeRequest) -> bool:
         from analytics_toolkit.general import time_print
+        from analytics_toolkit.sql.connection.get_sql_connection import get_ch_connection_for_host
 
-        from ...connection.get_sql_connection import get_ch_connection_for_host
         from .lifecycle import (
             drop_ch_distributed_table_pair,
             truncate_ch_distributed_table_pair,
@@ -702,7 +705,7 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> None:
         import pandas as pd
 
-        from ...ddl.api import _create_sql_table_with_connection
+        from analytics_toolkit.sql.ddl.api import _create_sql_table_with_connection
 
         create_batch = sample_batch
         create_column_types = target_column_types or insert_column_types

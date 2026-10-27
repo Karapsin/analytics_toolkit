@@ -3,6 +3,20 @@
          clients and Trino reach this service through the Compose network. -->
     <listen_host>0.0.0.0</listen_host>
     <remote_servers>
+        <integration_two_shards>
+            <shard>
+                <replica>
+                    <host>clickhouse</host><port>9000</port>
+                    <user>integration</user><password>integration</password>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>clickhouse-replica</host><port>9000</port>
+                    <user>integration</user><password>integration</password>
+                </replica>
+            </shard>
+        </integration_two_shards>
         <integration_cluster>
             <shard>
                 <internal_replication>true</internal_replication>

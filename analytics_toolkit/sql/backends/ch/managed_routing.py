@@ -28,6 +28,7 @@ class ManagedTableRoute:
     table: str
     mode: RouteMode
     engine: str | None = None
+    sharding_key: str | None = None
 
 
 @dataclass(frozen=True)

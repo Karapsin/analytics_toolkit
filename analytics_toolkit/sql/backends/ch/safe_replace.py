@@ -7,6 +7,7 @@ from uuid import uuid4
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends.models import StageFinalizationRequest, StageTargetTableRequest
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
+from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
 
 from .ddl import _sql_string_literal, split_ch_table_name_for_distributed_engine
 from .reconfigure_ddl import distributed_table_parts
@@ -137,7 +138,9 @@ def _finalize_upsert(adapter: Any, request: StageFinalizationRequest) -> None:
         adapter.execute_command(request.connection, sql)
 
 
-def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None:
+def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share one rollback boundary
+    adapter: Any, request: StageFinalizationRequest
+) -> None:
     token = uuid4().hex[:12]
     physical_target = (
         request.target_table
@@ -244,6 +247,8 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
                 "ClickHouse final target row count does not match the staged row count."
             )
     except Exception:
+        if preserve_recovery_artifacts():
+            raise
         if cutover_started:
             try:
                 with local_sql(request.connection):

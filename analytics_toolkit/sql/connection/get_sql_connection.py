@@ -5,14 +5,14 @@ from pathlib import Path
 from typing import Any
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends import get_backend
 from analytics_toolkit.sql.execution.cancellation import (
     raise_if_cancelled,
     register_connection_alias,
 )
 from analytics_toolkit.sql.execution.observation import observed_connection
+from analytics_toolkit.sql.execution.operation_runner import timed_public_sql_function
 
-from ..backends import get_backend
-from ..execution.operation_runner import timed_public_sql_function
 from .airflow_compat import variable_getter
 from .config import ChConfig, get_connection_config, get_connections_file_path
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
@@ -45,7 +45,7 @@ def get_sql_connection(db_key: str) -> Any:
     return observed_connection(connection)
 
 
-def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
+def get_ch_connection_for_host(connection_key: str, host: str, *, port: int | None = None) -> Any:
     config = get_connection_config(connection_key)
     if not isinstance(config, ChConfig):
         raise UnsupportedConnectionTypeError(
@@ -63,7 +63,7 @@ def get_ch_connection_for_host(connection_key: str, host: str) -> Any:
         phase="connect",
     )
     connection = get_backend("ch").open_connection(
-        replace(config, host=host_name),
+        replace(config, host=host_name, port=config.port if port is None else port),
         parse_verify_value=_parse_verify_value,
         resolve_ca_certs=_resolve_ca_certs,
         resolve_single_cert_path=_resolve_single_cert_path_by_name,

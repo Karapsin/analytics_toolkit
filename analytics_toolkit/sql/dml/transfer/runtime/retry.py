@@ -6,14 +6,14 @@ from typing import Any, TypeVar
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.connection.errors import SqlConfigError
+from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
+from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
 from analytics_toolkit.sql.execution.cancellation import (
     current_cancellation_scope,
     raise_if_cancelled,
     wait_or_raise_if_cancelled,
 )
-
-from ....connection.get_sql_connection import get_sql_connection
-from ....execution.operation_runner import _format_duration
+from analytics_toolkit.sql.execution.operation_runner import _format_duration
 
 T = TypeVar("T")
 _MAX_SAFE_EXCEPTION_TYPE_CHARS = 80
@@ -117,8 +117,11 @@ def _logged_exception(exc: Exception, *, safe: bool) -> str:
 
 def is_non_retryable_sql_error(exc: Exception) -> bool:
     """Return True for deterministic SQL errors that another attempt won't fix."""
-    if getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False or isinstance(
-        exc, SqlConfigError
+
+    if (
+        preserve_recovery_artifacts(failed=True)
+        or getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False
+        or isinstance(exc, SqlConfigError)
     ):
         return True
     class_names = _exception_class_names(exc)

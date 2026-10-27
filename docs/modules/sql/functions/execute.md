@@ -5,7 +5,7 @@
 Run one SQL string or a list of independent SQL queries through a configured connection without returning a dataframe.
 
 ```python
-execute(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, retry_policy: 'ExecuteRetryPolicy' = 'safe') -> 'Any'
+execute(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, retry_policy: 'ExecuteRetryPolicy' = 'safe', *, ch_unavailable_shards: 'str | None' = None) -> 'Any'
 ```
 
 ## Inputs
@@ -28,6 +28,8 @@ execute(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, 
 - `retry_policy` - `safe` retries reads, pre-submission failures, and mutations whose transaction rollback is confirmed; `never` disables retries; `always` retains legacy replay behavior for transient failures
 
 ### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 - `gp_break_query` - for Greenplum, whether to split and execute multi-statement SQL statement by statement
 - `gp_commit_each_statement` - for Greenplum split execution, whether to commit after each statement

@@ -67,9 +67,10 @@ class NativeQueryResult:
 
 
 class _NativeDataFrameStream(_NativeStreamContext):
-    def __init__(self, client: Any, sql: str) -> None:
+    def __init__(self, client: Any, sql: str, settings: Any = None) -> None:
         self._client = client
         self._sql = sql
+        self._settings = settings
         self._iterator: Iterator[Any] | None = None
         self._exhausted = False
 
@@ -79,6 +80,7 @@ class _NativeDataFrameStream(_NativeStreamContext):
                 self._sql,
                 with_column_types=True,
                 chunk_size=65_536,
+                **({"settings": dict(self._settings)} if self._settings is not None else {}),
             )
         )
         return self._dataframes()
@@ -160,11 +162,15 @@ class NativeClickHouseClient:
             column_oriented=column_oriented,
         )
 
-    def query_df(self, sql: str) -> pd.DataFrame:
-        return self._client.query_dataframe(sql)
+    def query_df(self, sql: str, *, settings: Any = None) -> pd.DataFrame:
+        return self._client.query_dataframe(
+            sql, **({"settings": dict(settings)} if settings is not None else {})
+        )
 
-    def query_df_stream(self, sql: str) -> AbstractContextManager[Iterator[pd.DataFrame]]:
-        return _NativeDataFrameStream(self._client, sql)
+    def query_df_stream(
+        self, sql: str, *, settings: Any = None
+    ) -> AbstractContextManager[Iterator[pd.DataFrame]]:
+        return _NativeDataFrameStream(self._client, sql, settings)
 
     def insert_df(
         self,

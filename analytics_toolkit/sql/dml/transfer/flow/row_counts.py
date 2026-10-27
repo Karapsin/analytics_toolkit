@@ -28,6 +28,7 @@ from analytics_toolkit.sql.dml.transfer.runtime.retry import (
     run_with_fresh_connection,
     run_with_retry,
 )
+from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
 
 
 class TransferRowCountMismatchError(ValueError):
@@ -158,6 +159,8 @@ def cleanup_materialized_sources(
     connection_ref: dict[str, Any],
     stage_state: TransferStageState,
 ) -> None:
+    if preserve_recovery_artifacts():
+        return
     adapter = get_backend_adapter(options.from_db_backend)
     while stage_state.source_stage_tables:
         stage_table = stage_state.source_stage_tables[-1]

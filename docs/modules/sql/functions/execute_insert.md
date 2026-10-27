@@ -6,7 +6,7 @@ Execute zero or more setup statements and insert the final `SELECT` result into
 an existing table. Every statement uses the connection selected by `db_key`.
 
 ```python
-execute_insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *, print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False, retry_policy: 'ExecuteRetryPolicy' = 'safe', concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5) -> 'int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]'
+execute_insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *, print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False, retry_policy: 'ExecuteRetryPolicy' = 'safe', concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, ch_unavailable_shards: 'str | None' = None) -> 'int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]'
 ```
 
 ## Inputs
@@ -30,6 +30,8 @@ execute_insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[
 - `retry_policy` - `safe`, `always`, or `never` mutation replay policy
 
 ### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 - `gp_break_query` - whether Greenplum should split and execute statements separately
 - `gp_commit_each_statement` - whether Greenplum should commit each split statement

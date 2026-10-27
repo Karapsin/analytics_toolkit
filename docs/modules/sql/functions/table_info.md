@@ -5,14 +5,20 @@
 Inspect whether a table exists and return resolved table and column metadata.
 
 ```python
-table_info(db_key: 'str', table: 'str', include_row_count: 'bool' = False) -> 'SqlTableInfo'
+table_info(db_key: 'str', table: 'str', include_row_count: 'bool' = False, *, ch_unavailable_shards: 'str | None' = None) -> 'SqlTableInfo'
 ```
 
 ## Inputs
 
+### General Inputs
+
 - `db_key` - connection key or alias from `.connections`
 - `table` - table name to inspect, modify, or use for partition operations
 - `include_row_count` - whether table inspection should run a row-count query
+
+### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 ## Usage
 

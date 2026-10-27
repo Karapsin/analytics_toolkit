@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from sqlglot import exp
 
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
+from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
 
 if TYPE_CHECKING:
     from analytics_toolkit.sql.execution.plans import SqlPlan
@@ -468,6 +469,8 @@ def execute_ch_table_reconfiguration(
             )
         metadata.row_count_validated = validate_row_count
     except Exception:
+        if preserve_recovery_artifacts():
+            raise
         if cutover_started and reconfiguration.rollback_sqls:
             try:
                 _execute_sqls(adapter, connection, reconfiguration.rollback_sqls)

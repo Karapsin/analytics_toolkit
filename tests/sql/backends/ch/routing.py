@@ -403,13 +403,13 @@ def test_cluster_routing_client_routes_text_methods_and_delegates_attributes() -
     assert raw.closed is True
 
 
-def test_cluster_routing_client_retries_command_without_unsupported_settings() -> None:
+def test_cluster_routing_client_does_not_resubmit_after_settings_type_error() -> None:
     raw = _SettingsRejectingClient()
     client = wrap_client(raw, _config())
 
-    client.command("DROP TABLE db.events")
-
-    assert raw.commands == [("DROP TABLE db.events ON CLUSTER 'core'", {})]
+    with pytest.raises(TypeError, match="settings are not supported"):
+        client.command("DROP TABLE db.events")
+    assert raw.commands == []
 
 
 def test_local_sql_bypasses_routing_for_control_queries() -> None:
