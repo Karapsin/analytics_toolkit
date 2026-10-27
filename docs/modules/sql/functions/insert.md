@@ -7,7 +7,7 @@ are matched by position; the helper does not add a target column list or remap
 columns by name.
 
 ```python
-insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *, print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, retry_policy: 'ExecuteRetryPolicy' = 'safe', concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5) -> 'int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]'
+insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *, print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5) -> 'int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]'
 ```
 
 ## Inputs
@@ -25,7 +25,6 @@ insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *
 - `dry_run` - whether to return a plan without executing SQL
 - `return_sql` - whether to return the same ordered plan instead of executing SQL
 - `return_metadata` - whether to wrap the affected-row count and plan in `SqlOperationResult`
-- `retry_policy` - `safe`, `always`, or `never` mutation replay policy
 
 ## Usage
 

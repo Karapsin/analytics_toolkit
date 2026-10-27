@@ -225,7 +225,7 @@
       "reason": "This export describes a local execution safety outcome.",
       "tests": [
         "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts",
-        "tests/sql/dml/io/execute/safety.py::test_safe_mutation_does_not_replay_ambiguous_nontransactional_error"
+        "tests/sql/dml/io/execute/safety.py::test_ambiguous_mutation_error_preserves_public_context"
       ],
       "parameters": {}
     },
@@ -289,14 +289,6 @@
       "parameters": {}
     },
     "EmptySourcePolicy": {
-      "classification": "unit_only",
-      "reason": "This export is a public policy type alias.",
-      "tests": [
-        "tests/sql/architecture/contracts.py::test_public_sql_facade_exports_safety_contracts"
-      ],
-      "parameters": {}
-    },
-    "ExecuteRetryPolicy": {
       "classification": "unit_only",
       "reason": "This export is a public policy type alias.",
       "tests": [
@@ -2495,6 +2487,9 @@
               "status": "covered",
               "scenarios": [
                 "query.read.trino"
+              ],
+              "tests": [
+                "tests/sql/dml/io/execute/safety.py::test_default_mutation_retries_transient_failure"
               ]
             },
             {
@@ -2502,6 +2497,9 @@
               "status": "covered",
               "scenarios": [
                 "query.read.trino"
+              ],
+              "tests": [
+                "tests/sql/dml/io/execute/safety.py::test_default_mutation_retries_transient_failure"
               ]
             }
           ]
@@ -2691,35 +2689,6 @@
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/execute/concurrency.py::test_execute_sql_hard_cap_rejects_effective_batch_concurrency"
-              ]
-            }
-          ]
-        },
-        "retry_policy": {
-          "kind": "POSITIONAL_OR_KEYWORD",
-          "signature_default": "'safe'",
-          "states": [
-            {
-              "state": "default",
-              "value": "'safe'",
-              "status": "covered",
-              "tests": [
-                "tests/sql/dml/io/execute/safety.py::test_safe_read_retries_transient_error",
-                "tests/sql/dml/io/execute/safety.py::test_safe_mutation_does_not_replay_ambiguous_nontransactional_error"
-              ]
-            },
-            {
-              "state": "supported-non-default",
-              "status": "covered",
-              "tests": [
-                "tests/sql/dml/io/execute/safety.py::test_always_policy_retains_explicit_legacy_mutation_replay"
-              ]
-            },
-            {
-              "state": "invalid",
-              "status": "covered",
-              "tests": [
-                "tests/sql/dml/io/execute/safety.py::test_retry_policy_is_validated_before_connection_lookup"
               ]
             }
           ]
@@ -7504,14 +7473,16 @@
               "value": "5",
               "status": "covered",
               "tests": [
-                "tests/sql/dml/io/query_writes.py::test_insert_builds_positional_insert_plan"
+                "tests/sql/dml/io/query_writes.py::test_insert_builds_positional_insert_plan",
+                "tests/sql/dml/io/execute/safety.py::test_default_mutation_retries_transient_failure"
               ]
             },
             {
               "state": "supported-non-default",
               "status": "covered",
               "tests": [
-                "tests/sql/dml/io/query_writes.py::test_insert_builds_positional_insert_plan"
+                "tests/sql/dml/io/query_writes.py::test_insert_builds_positional_insert_plan",
+                "tests/sql/dml/io/execute/safety.py::test_default_mutation_retries_transient_failure"
               ]
             }
           ]
@@ -7607,27 +7578,6 @@
             {
               "state": "default",
               "value": "False",
-              "status": "covered",
-              "tests": [
-                "tests/sql/dml/io/query_writes.py::test_insert_builds_positional_insert_plan"
-              ]
-            },
-            {
-              "state": "supported-non-default",
-              "status": "covered",
-              "tests": [
-                "tests/sql/dml/io/query_writes.py::test_insert_builds_positional_insert_plan"
-              ]
-            }
-          ]
-        },
-        "retry_policy": {
-          "kind": "KEYWORD_ONLY",
-          "signature_default": "'safe'",
-          "states": [
-            {
-              "state": "default",
-              "value": "'safe'",
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/query_writes.py::test_insert_builds_positional_insert_plan"
@@ -7821,14 +7771,16 @@
               "value": "5",
               "status": "covered",
               "tests": [
-                "tests/sql/dml/io/query_writes.py::test_execute_insert_rewrites_only_final_statement"
+                "tests/sql/dml/io/query_writes.py::test_execute_insert_rewrites_only_final_statement",
+                "tests/sql/dml/io/execute/safety.py::test_default_mutation_retries_transient_failure"
               ]
             },
             {
               "state": "supported-non-default",
               "status": "covered",
               "tests": [
-                "tests/sql/dml/io/query_writes.py::test_execute_insert_rewrites_only_final_statement"
+                "tests/sql/dml/io/query_writes.py::test_execute_insert_rewrites_only_final_statement",
+                "tests/sql/dml/io/execute/safety.py::test_default_mutation_retries_transient_failure"
               ]
             }
           ]
@@ -7945,27 +7897,6 @@
             {
               "state": "default",
               "value": "False",
-              "status": "covered",
-              "tests": [
-                "tests/sql/dml/io/query_writes.py::test_execute_insert_rewrites_only_final_statement"
-              ]
-            },
-            {
-              "state": "supported-non-default",
-              "status": "covered",
-              "tests": [
-                "tests/sql/dml/io/query_writes.py::test_execute_insert_rewrites_only_final_statement"
-              ]
-            }
-          ]
-        },
-        "retry_policy": {
-          "kind": "KEYWORD_ONLY",
-          "signature_default": "'safe'",
-          "states": [
-            {
-              "state": "default",
-              "value": "'safe'",
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/query_writes.py::test_execute_insert_rewrites_only_final_statement"
@@ -8516,14 +8447,16 @@
               "value": "5",
               "status": "covered",
               "tests": [
-                "tests/sql/dml/io/query_writes.py::test_execute_create_uses_backend_ddl_defaults_in_dry_run"
+                "tests/sql/dml/io/query_writes.py::test_execute_create_uses_backend_ddl_defaults_in_dry_run",
+                "tests/sql/dml/io/query_writes.py::test_execute_create_retries_with_fresh_connection"
               ]
             },
             {
               "state": "supported-non-default",
               "status": "covered",
               "tests": [
-                "tests/sql/dml/io/query_writes.py::test_execute_create_uses_backend_ddl_defaults_in_dry_run"
+                "tests/sql/dml/io/query_writes.py::test_execute_create_uses_backend_ddl_defaults_in_dry_run",
+                "tests/sql/dml/io/query_writes.py::test_execute_create_retries_with_fresh_connection"
               ]
             }
           ]
@@ -8640,27 +8573,6 @@
             {
               "state": "default",
               "value": "False",
-              "status": "covered",
-              "tests": [
-                "tests/sql/dml/io/query_writes.py::test_execute_create_uses_backend_ddl_defaults_in_dry_run"
-              ]
-            },
-            {
-              "state": "supported-non-default",
-              "status": "covered",
-              "tests": [
-                "tests/sql/dml/io/query_writes.py::test_execute_create_uses_backend_ddl_defaults_in_dry_run"
-              ]
-            }
-          ]
-        },
-        "retry_policy": {
-          "kind": "KEYWORD_ONLY",
-          "signature_default": "'safe'",
-          "states": [
-            {
-              "state": "default",
-              "value": "'safe'",
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/query_writes.py::test_execute_create_uses_backend_ddl_defaults_in_dry_run"
