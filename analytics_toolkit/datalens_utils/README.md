@@ -222,7 +222,13 @@ preview = project.import_tab(dashboard_id="source-dashboard", tab_id="business-t
 result = project.import_dashboard(dashboard_id="source-dashboard", dry_run=False)
 ```
 
-Imports merge into the current project and change no cloud resources.
+Imports merge into the current project and change no cloud resources. Both import
+paths share published getters, bulk starting/ending inventories, returned-revision
+checks and the external exact-revision cache. Existing-project imports resume
+automatically. Their reports expose capture completeness separately from strict
+merge fidelity. `configs/imports/<capture-id>/manifest.json` records immutable
+source provenance and exact source/SQL/Editor assets; it does not rebind the
+destination dashboard to the source dashboard.
 `mode="adopt"` (default) retains IDs and individual resource locations. Explicit `mode="copy"`
 accepts dependencies across folders, omits copied persistent IDs, reuses existing
 connections and uses a separate unused runtime. `copy_from` records provenance
@@ -244,7 +250,12 @@ Chart defaults become defaults on every placement;
 explicit placement values win. `chart_title: null` retains an absent internal title.
 Copied Editor definitions use `meta_links_mode: "managed"` to rewrite declared
 aliases only; authored Meta is the default for existing definitions. Local writing requires a blocker-free staged recipe; failed
-replacements roll back. Version-1 projects need explicit `upgrade_recipe=True`.
+replacements roll back. An external `local-transactions/` journal durably records
+both versions before replacing any file. The next project operation recovers an
+interrupted merge before loading recipe configuration. Destination fingerprints
+reject edits made during capture; recovery preserves conflicting edits and its
+journal for resolution instead of overwriting them. Keep the same runtime for
+recovery and never delete an unresolved journal. Version-1 projects need explicit `upgrade_recipe=True`.
 Unresolved dynamic Editor dependencies, unknown item
 forms and unavailable authored source retrieval block writes.
 

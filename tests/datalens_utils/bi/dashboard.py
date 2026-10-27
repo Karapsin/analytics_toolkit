@@ -173,18 +173,19 @@ def test_pull_keeps_changed_direct_widget_metadata_and_unchanged_omissions(bi_pr
     assert "trend" in incoming["configs/UI/links/connections.json"]
     store.remember("dashboard:main", dashboard)
     store.remember("chart:trend", charts["trend"])
-    pull_resources(
-        api.client,
-        store,
-        registry,
-        {"dashboard:main"},
-        {
-            "dashboard:main": dashboard,
-            "chart:trend": charts["trend"],
-            "dataset:sales": datasets["sales"],
-        },
-        branch="published",
-    )
+    with bi_project.session():
+        pull_resources(
+            api.client,
+            store,
+            registry,
+            {"dashboard:main"},
+            {
+                "dashboard:main": dashboard,
+                "chart:trend": charts["trend"],
+                "dataset:sales": datasets["sales"],
+            },
+            branch="published",
+        )
     assert bi_project.validate()["coverage"]["schema_version"] == 2
     assert (
         json.loads((bi_project.paths.project_root / "configs/UI/widgets.json").read_text())[

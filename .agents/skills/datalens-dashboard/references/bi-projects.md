@@ -16,7 +16,11 @@ managed content, including formulas and selector defaults, as well as revisions.
 
 For a new local project, use the [package import command](import-dashboard.md).
 For a merge into an existing project, use its `import_dashboard` for every tab or `import_tab` for one
-selected tab. Preview is the default; merge into the current project only after
+selected tab. These methods share the new-project capture pipeline, automatically
+resume exact-revision cached reads, and check returned and final published
+revisions. Preview preserves immutable source provenance under the proposed
+`configs/imports/<capture-id>/` files; writing commits it with the merged recipe
+without changing the destination dashboard identity. Preview is the default; merge into the current project only after
 reviewing blockers, collisions and the fidelity report. Import changes no cloud
 resources. SQL/JS extraction is restricted to source exposed by public getters;
 dynamic dependency discovery must not execute scripts. HTML authored source is

@@ -124,7 +124,7 @@ def import_dashboard(  # noqa: PLR0913 - Public import contract.
     started = time.perf_counter()
     with bind_session(state), datalens_client() as client:
         capture = Capture(client, resume=resume)
-        try:
+        with capture.failures():
             selected = capture.discover(identifier, tab_ids)
             dashboard = capture.entities[identifier]
             target = location(dashboard)
@@ -132,28 +132,10 @@ def import_dashboard(  # noqa: PLR0913 - Public import contract.
                 msg = "Source dashboard location is unavailable."
                 failure = DataLensConfigurationError(msg)
                 failure.resource_key = "dashboard:" + identifier
-                raise failure  # noqa: TRY301 - Retain failure evidence.
+                raise failure
             state.deployment = auth.deployment(dashboard.name, TargetLocation(**target))
             capture.finish()
             report = materialize(capture, identifier, selected, auth, dry_run=dry_run)
-        except Exception as error:
-            context = getattr(error, "context", None)
-            atomic_json(
-                paths.runtime_root / "import-failure.json",
-                {
-                    "error": type(error).__name__,
-                    "message": str(error),
-                    "stage": capture.stage,
-                    "resource": getattr(error, "resource_key", None) or capture.active_resource,
-                    "request_id": getattr(context, "request_id", None),
-                    "capture_issues": capture.issues,
-                    "completed": len(capture.records),
-                    "discovered": len(capture.kinds),
-                    "cache_root": str(capture.root),
-                    "resume": "Rerun the same import with resume=True / --resume.",
-                },
-            )
-            raise
         report.update(
             operation="import-dashboard",
             dry_run=dry_run,

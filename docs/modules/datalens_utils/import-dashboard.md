@@ -57,6 +57,21 @@ publication; rerun to refresh changed resources. Shared organization pacing
 applies to individual SDK calls. Local output is staged and validated before
 the new directory is published by rename.
 
+Existing-project `import_dashboard` and `import_tab` use this same capture and
+revision verification. They automatically reuse exact-revision caches and keep
+their strict collision/copy contracts. Their source archive lives under
+`configs/imports/<capture-id>/`, with a manifest describing captured resources,
+dependencies, assets and fidelity. The archive records provenance without
+changing the destination dashboard identity.
+
+Existing-project merges and pulls compare destination fingerprints before writing
+and journal both file versions under the external runtime's `local-transactions/`.
+After a crash, the next project operation recovers before parsing configuration.
+Committed transactions remain committed; incomplete transactions roll back.
+Intervening edits produce a recovery conflict and preserve both files and journal.
+Keep the same runtime, inspect the reported file and resolve the conflict before
+retrying; deleting the journal bypasses recovery and can leave a partial recipe.
+
 Progress goes to stderr. JSON stdout includes object counts, request count,
 cache hits, capture issues, restrictions and `written`. Exit codes are 0 for
 complete capture, 2 for a partial capture report/project, and 1 for failure.

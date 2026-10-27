@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -71,36 +70,7 @@ def stage_and_validate(files: dict[str, Any]) -> None:
 
 
 def replace_files(files: dict[str, Any]) -> None:
-    """Prevalidate paths and roll back all successful writes if a replacement fails."""
-    root = current_session().paths.project_root.resolve()
-    backups, pending = {}, {}
-    for relative, value in files.items():
-        path = (root / relative).resolve()
-        if root not in path.parents or relative == ".connections":
-            raise DataLensConfigurationError("Import asset escapes the recipe: " + relative)
-        backups[path] = path.read_bytes() if path.is_file() else None
-        pending[path] = serialized(relative, value)
-    replaced = []
-    try:
-        for path, content in pending.items():
-            if backups[path] == content:
-                continue
-            path.parent.mkdir(parents=True, exist_ok=True)
-            descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
-            try:
-                with os.fdopen(descriptor, "wb") as stream:
-                    stream.write(content)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                Path(temporary).replace(path)
-                replaced.append(path)
-            finally:
-                Path(temporary).unlink(missing_ok=True)
-    except BaseException:
-        for path in reversed(replaced):
-            backup = backups[path]
-            if backup is None:
-                path.unlink(missing_ok=True)
-            else:
-                path.write_bytes(backup)
-        raise
+    """Replace recipe files with a durable, conflict-aware recovery journal."""
+    from .local_transactions import replace  # noqa: PLC0415 - Local filesystem boundary.
+
+    replace({name: serialized(name, value) for name, value in files.items()}, current_session())

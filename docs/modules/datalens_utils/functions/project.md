@@ -40,9 +40,15 @@ returns actions, read/write scopes, conflicts and capability blockers.
 `import_tab(*, dashboard_id, tab_id, dry_run=True, upgrade_recipe=False, mode="adopt")` and
 `import_dashboard(*, dashboard_id, dry_run=True, upgrade_recipe=False, mode="adopt")` preview or
 merge published content. Reports include proposed_files, fidelity, blockers and
-written, mode and provenance. `mode="copy"` creates a recipe for new resources
+written, mode and provenance, plus capture_complete, revision_inventory_stable,
+capture_issues, capture_manifest and cache_hits. Both methods use the shared
+published capture pipeline and automatically resume verified cached reads.
+`mode="copy"` creates a recipe for new resources
 across folders while reusing connections; `mode="adopt"` retains IDs and location
-checks. Preview makes no local writes; both make no cloud mutations. See the
+checks. Preview leaves recipe files unchanged; private capture caches and failure
+diagnostics stay in the external runtime. Successful merges retain source
+provenance under `configs/imports/<capture-id>/` and use a durable local recovery
+journal. Both make no cloud mutations. See the
 [copy walkthrough](../copy-tab.md) and [recipe contract](../recipe-contract.md).
 
 [Functions index](index.md)

@@ -13,7 +13,7 @@ from typing import Any
 
 from .errors import DataLensConfigurationError, DataLensUtilsError
 
-CAPTURE_VERSION = 2
+CAPTURE_VERSION = 3
 
 
 def digest(value: Any) -> str:
@@ -70,7 +70,7 @@ def model_record(entity: Any) -> dict[str, Any]:
     if type(entity).__name__ == "Connection":
         from .resources.bi_store import safe_metadata  # noqa: PLC0415 - Optional SDK boundary.
 
-        result["raw"] = safe_metadata(entity, "connection")["parameters"]
+        result["raw"] = {**safe_metadata(entity, "connection")["parameters"], **metadata(entity)}
         result["response_snapshot"] = {}
     return {"type": type(entity).__name__, "values": result}
 

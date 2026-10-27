@@ -29,13 +29,15 @@ def test_connection_cache_retains_location_without_credentials(workbook):
         type="clickhouse",
         installation="yacloud",
         location=EntryLocation.workbook(workbook) if workbook else None,
-        raw={"password": "not-cacheable"},
+        raw={"password": "not-cacheable", "saved_id": "connection-r", "rev_id": "connection-r"},
     )
     record = model_record(entity)
     assert "not-cacheable" not in repr(record)
     restored = restore_model(record)
     assert restored.id == entity.id
     assert restored.workbook_id == workbook
+    assert restored.saved_id == "connection-r"
+    assert restored.rev_id == "connection-r"
 
 
 def test_local_formula_binding_uses_explicit_dataset_identity():

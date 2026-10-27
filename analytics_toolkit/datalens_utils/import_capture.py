@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
+from contextlib import contextmanager
 from importlib.metadata import version
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 from datalens_sdk import ForbiddenError, NotFoundError
 
@@ -81,6 +82,33 @@ class Capture:
         }
         self.root = state.paths.runtime_root / "imports" / digest(identity)
         self.root.mkdir(parents=True, exist_ok=True)
+
+    @contextmanager
+    def failures(self) -> Iterator[None]:
+        """Keep restart diagnostics for either public import path."""
+        try:
+            yield
+        except Exception as error:
+            context = getattr(error, "context", None)
+            atomic_json(
+                current_session().paths.runtime_root / "import-failure.json",
+                {
+                    "error": type(error).__name__,
+                    "message": str(error),
+                    "stage": self.stage,
+                    "resource": getattr(error, "resource_key", None) or self.active_resource,
+                    "request_id": getattr(context, "request_id", None),
+                    "capture_issues": self.issues,
+                    "completed": len(self.records),
+                    "discovered": len(self.kinds),
+                    "cache_root": str(self.root),
+                    "resume": (
+                        "Rerun the same import; existing-project imports resume automatically, "
+                        "new projects use resume=True / --resume."
+                    ),
+                },
+            )
+            raise
 
     def announce(self, stage: str) -> None:
         self.stage = stage

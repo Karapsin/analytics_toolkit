@@ -41,7 +41,6 @@ def test_unrepresentable_occurrence_formats_leave_local_files_untouched(
         bi_project.client_factory = lambda _: nullcontext(client)
         recipe_before = file_bytes(bi_project.paths.project_root)
         runtime_before = file_bytes(bi_project.paths.runtime_root)
-        runtime_exists = bi_project.paths.runtime_root.exists()
         arguments = {"dashboard_id": source.id, "mode": "copy", "dry_run": False}
         if command == "import_tab":
             arguments["tab_id"] = "audit"
@@ -50,8 +49,13 @@ def test_unrepresentable_occurrence_formats_leave_local_files_untouched(
         assert any("field formats" in item["reason"] for item in report["blockers"])
         assert any(item["status"] == "unsupported" for item in report["fidelity"])
         assert file_bytes(bi_project.paths.project_root) == recipe_before
-        assert file_bytes(bi_project.paths.runtime_root) == runtime_before
-        assert bi_project.paths.runtime_root.exists() == runtime_exists
+        after = file_bytes(bi_project.paths.runtime_root)
+        assert {
+            path: data
+            for path, data in after.items()
+            if "imports" not in path.relative_to(bi_project.paths.runtime_root).parts
+        } == runtime_before
+        assert (bi_project.paths.runtime_root / "imports").is_dir()
     finally:
         api.client.close()
 

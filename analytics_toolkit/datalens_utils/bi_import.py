@@ -512,72 +512,82 @@ def import_recipe(
     datasets: dict[str, Any] = {}
     connections: dict[str, Any] = {}
     with datalens_client() as client:
-        dashboard = client.get.dashboard(by_id=dashboard_id, branch="published")
-        selected = {tab.id for tab in dashboard.tabs} if tab_id is None else {tab_id}
-        if selected - {tab.id for tab in dashboard.tabs}:
-            msg = "Requested tab is absent from the source dashboard."
-            raise DataLensConfigurationError(msg)
-        dependencies = discover_dependencies(client, dashboard, selected, report)
-        charts, datasets, connections = (
-            dependencies.charts,
-            dependencies.datasets,
-            dependencies.connections,
-        )
-        report["provenance"] = {
-            "dashboard": dashboard.id,
-            "charts": sorted(charts),
-            "datasets": sorted(datasets),
-            "connections": sorted(connections),
-        }
-        connection_keys = {
-            identifier: known.get("connection", {}).get(
-                identifier, semantic_key("connection", identifier)
+        from .import_archive import preserve  # noqa: PLC0415 - Shared extraction cycle.
+        from .import_capture import Capture  # noqa: PLC0415 - Shared capture cycle.
+
+        capture = Capture(client, resume=True)
+        with capture.failures():
+            selected = capture.discover(dashboard_id, [tab_id] if tab_id is not None else None)
+            capture.finish()
+            dashboard = capture.entities[dashboard_id]
+            charts, datasets, connections = (
+                {
+                    identifier: entity
+                    for identifier, entity in capture.entities.items()
+                    if capture.kinds[identifier] == kind
+                }
+                for kind in ("chart", "dataset", "connection")
             )
-            for identifier in connections
-        }
-        dataset_keys = {
-            identifier: known.get("dataset", {}).get(
-                identifier, semantic_key("dataset", identifier)
+            report["provenance"] = {
+                "dashboard": dashboard.id,
+                "charts": sorted(charts),
+                "datasets": sorted(datasets),
+                "connections": sorted(connections),
+            }
+            connection_keys = {
+                identifier: known.get("connection", {}).get(
+                    identifier, semantic_key("connection", identifier)
+                )
+                for identifier in connections
+            }
+            dataset_keys = {
+                identifier: known.get("dataset", {}).get(
+                    identifier, semantic_key("dataset", identifier)
+                )
+                for identifier in datasets
+            }
+            chart_keys = {
+                identifier: known.get("chart", {}).get(
+                    identifier, semantic_key("chart", identifier)
+                )
+                for identifier in charts
+            }
+            proposed["configs/DL objects/connections.json"] = {
+                connection_keys[key]: connection_definition(value)
+                for key, value in connections.items()
+            }
+            proposed["configs/DL objects/datasets.json"] = {}
+            context = SimpleNamespace(
+                registry=registry,
+                proposed=proposed,
+                report=report,
+                known=known,
+                dataset_keys=dataset_keys,
+                chart_keys=chart_keys,
+                connection_keys=connection_keys,
+                datasets=datasets,
+                selected=selected,
+                dashboard=dashboard,
+                charts=charts,
+                client=client,
+                mode=mode,
             )
-            for identifier in datasets
-        }
-        chart_keys = {
-            identifier: known.get("chart", {}).get(identifier, semantic_key("chart", identifier))
-            for identifier in charts
-        }
-        proposed["configs/DL objects/connections.json"] = {
-            connection_keys[key]: connection_definition(value) for key, value in connections.items()
-        }
-        proposed["configs/DL objects/datasets.json"] = {}
-        context = SimpleNamespace(
-            registry=registry,
-            proposed=proposed,
-            report=report,
-            known=known,
-            dataset_keys=dataset_keys,
-            chart_keys=chart_keys,
-            connection_keys=connection_keys,
-            datasets=datasets,
-            selected=selected,
-            dashboard=dashboard,
-            charts=charts,
-            client=client,
-            mode=mode,
-        )
-        for entity in datasets.values():
-            import_dataset(client, entity, context)
-        for entity in charts.values():
-            import_chart(entity, context)
-        import_ui(context)
-        prepare_upgrade(context, legacy=legacy)
-        merged = merge_proposed(proposed, report, legacy=legacy)
-        report["proposed_files"] = merged
-        if not report["blockers"]:
-            try:
-                stage_and_validate(merged)
-            except (DataLensUtilsError, ValueError, TypeError, KeyError) as error:
-                report["blockers"].append({"operation": "import.compile", "reason": str(error)})
-        if not dry_run and not report["blockers"]:
-            replace_files(merged)
-            report["written"] = True
+            for entity in datasets.values():
+                import_dataset(client, entity, context)
+            for entity in charts.values():
+                import_chart(entity, context)
+            import_ui(context)
+            preserve(capture, context)
+            prepare_upgrade(context, legacy=legacy)
+            merged = merge_proposed(proposed, report, legacy=legacy)
+            report["proposed_files"] = merged
+            if not report["blockers"]:
+                try:
+                    stage_and_validate(merged)
+                except (DataLensUtilsError, ValueError, TypeError, KeyError) as error:
+                    report["blockers"].append({"operation": "import.compile", "reason": str(error)})
+            if not dry_run and not report["blockers"]:
+                replace_files(merged)
+                report["written"] = True
+        report["request_count"] = state.runtime.get("_request_count", 0)
     return report

@@ -3,12 +3,13 @@
 import json
 from contextlib import nullcontext
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from analytics_toolkit.datalens_utils.bi_import import _merge_mapping
 from analytics_toolkit.datalens_utils.recipe_io import replace_files
 from datalens_sdk import Dashboard
+
+from tests.datalens_utils._support.published import published_client
 
 
 def source_dashboard():
@@ -42,7 +43,7 @@ def source_dashboard():
 
 
 def test_full_dashboard_preview_and_merge(bi_project):
-    client = SimpleNamespace(get=SimpleNamespace(dashboard=lambda **kwargs: source_dashboard()))
+    client = published_client({"source": source_dashboard()})
     bi_project.client_factory = lambda _: nullcontext(client)
     root = bi_project.paths.project_root
     before = {
@@ -55,17 +56,19 @@ def test_full_dashboard_preview_and_merge(bi_project):
     assert before == {
         path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()
     }
-    assert not bi_project.paths.runtime_root.exists()
+    assert (bi_project.paths.runtime_root / "imports").is_dir()
+    assert not list(bi_project.paths.runtime_root.glob("local-transactions/*.json"))
     result = bi_project.import_dashboard(dashboard_id="source", dry_run=False)
     assert result["written"]
     assert set(json.loads((root / "configs/UI/tabs.json").read_text())) == {"main", "one", "two"}
-    assert not bi_project.paths.runtime_root.exists()
+    assert (bi_project.paths.runtime_root / "imports").is_dir()
+    assert not list(bi_project.paths.runtime_root.glob("local-transactions/*.json"))
     assert bi_project.validate()["coverage"]["schema_version"] == 2
 
 
 def test_tab_import_selects_only_requested_tab(bi_project):
     bi_project.client_factory = lambda _: nullcontext(
-        SimpleNamespace(get=SimpleNamespace(dashboard=lambda **kwargs: source_dashboard()))
+        published_client({"source": source_dashboard()})
     )
     report = bi_project.import_tab(dashboard_id="source", tab_id="two")
     assert not report["blockers"]
@@ -77,9 +80,7 @@ def test_tab_import_selects_only_requested_tab(bi_project):
 def test_collision_keeps_tree_unchanged(bi_project):
     source = source_dashboard()
     source.data["tabs"][0]["id"] = "main"
-    bi_project.client_factory = lambda _: nullcontext(
-        SimpleNamespace(get=SimpleNamespace(dashboard=lambda **kwargs: source))
-    )
+    bi_project.client_factory = lambda _: nullcontext(published_client({"source": source}))
     path = bi_project.paths.project_root / "configs/UI/tabs.json"
     before = path.read_bytes()
     result = bi_project.import_dashboard(dashboard_id="source", dry_run=False)
@@ -92,9 +93,7 @@ def test_collision_keeps_tree_unchanged(bi_project):
 def test_unsupported_item_has_fidelity_blocker(bi_project):
     source = source_dashboard()
     source.data["tabs"][0]["items"][0]["type"] = "neuro_widget"
-    bi_project.client_factory = lambda _: nullcontext(
-        SimpleNamespace(get=SimpleNamespace(dashboard=lambda **kwargs: source))
-    )
+    bi_project.client_factory = lambda _: nullcontext(published_client({"source": source}))
     report = bi_project.import_dashboard(dashboard_id="source", dry_run=False)
     assert not report["written"]
     assert any("Unsupported dashboard item" in item["reason"] for item in report["blockers"])
