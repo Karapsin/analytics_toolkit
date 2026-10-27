@@ -133,6 +133,13 @@ def check_control_source(control: Any) -> None:
         raise DataLensUtilsError(
             "Selector pinning cannot be faithfully written through the public SDK: " + control.id
         )
+    if any(member.source_type == "external" for member in control.members):
+        data = control.item.data
+        unsupported = set(data) - {"title", "sourceType", "source", "pinned"}
+        if unsupported or control.item.defaults or set(data.get("source", {})) - {"chartId"}:
+            raise DataLensUtilsError(
+                "Editor selector wrapper settings cannot be faithfully written: " + control.id
+            )
 
 
 def import_controls(tab: Any, endpoints: dict[str, str], context: Any) -> None:

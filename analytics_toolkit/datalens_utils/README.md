@@ -214,6 +214,10 @@ Pinned selectors are preserved in source but make the dashboard captured-only
 because the public SDK cannot faithfully recreate their pinning. This applies
 to local, shared and Editor selectors; supported chart-widget pinning remains
 editable. Pull rejects newly pinned selectors before replacing a writable baseline.
+Editor selector wrapper settings beyond the supported title and chart reference
+also block dashboard writes, including height, borders and authored defaults.
+Captured dataset pulls merge current remote settings, including additions and
+removals, through the same three-way conflict checks as other managed content.
 
 Pull rechecks imported Wizard fidelity before replacing its baseline, including
 per-occurrence formats and unmodeled settings. Newly authored Editor tabs also

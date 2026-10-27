@@ -45,7 +45,9 @@ SDK 3.1/3.2 do not expose typed selector pinning or authored HTML retrieval.
 Pinned local, shared and Editor selectors are captured with their authored state,
 but make the dashboard captured-only. Supported chart-widget pinning remains
 editable. A pull that encounters newly pinned selectors preserves the previous
-local files and baseline. HTML
+local files and baseline. Editor selector wrapper height, borders, defaults and
+other settings outside the supported title/chart reference likewise make the
+dashboard captured-only; a pull cannot silently accept them into a writable baseline. HTML
 source cannot be claimed as captured. General multi-dataset chart writing also
 depends on public adapter support. These limitations do not permit private HTTP
 or payload workarounds.
@@ -97,5 +99,10 @@ an incomplete dependency-closure report rather than aborting unrelated capture.
 If pull reports changed Editor tabs or unsupported Wizard fidelity, the previous
 local files and baseline remain intact. Import into another empty destination to
 capture the changed source and reassess writer restrictions before merging.
+
+Captured dataset pulls refresh all remote settings, including additions and
+removals. The normal three-way merge retains independent local edits and rejects
+conflicting edits before replacing project files or the checkpoint. Subsequent
+apply therefore cannot restore stale settings accepted by an earlier pull.
 
 [Module index](index.md)

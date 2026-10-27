@@ -107,7 +107,7 @@ def extract_resource(  # noqa: PLR0913 - One baseline and its dependency snapsho
     incoming = copy.deepcopy(base)
     if resource.kind == "dataset":
         incoming["definition"] = extract_dataset(
-            entity, SimpleNamespace(definition=base["definition"]), old
+            entity, SimpleNamespace(definition=base["definition"], capture=resource.capture), old
         )
         sources = source_identities(entity, base["definition"], old)
         for name, source in base["definition"]["sources"].items():
@@ -185,9 +185,19 @@ def propose_resource(
         proposed[relative] = value
 
 
+def pull_dataset_settings(entity: Any, resource: Any, result: dict[str, Any]) -> None:
+    settings = entity.raw.get("dataset", {}).get("settings", {})
+    names = settings if getattr(resource, "capture", None) else result.get("settings", {})
+    if names or "settings" in result:
+        result["settings"] = {
+            name: copy.deepcopy(settings[name]) for name in names if name in settings
+        }
+
+
 def extract_dataset(entity: Any, resource: Any, old: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = resolved_definition(resource.definition, old)
     result.update(name=entity.name, description=entity.description)
+    pull_dataset_settings(entity, resource, result)
     sources = source_identities(entity, result, old)
     for key, source in sources.items():
         value = result["sources"][key]
