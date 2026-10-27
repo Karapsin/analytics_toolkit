@@ -14,7 +14,7 @@ HELP_TEXT = """SQL Explorer commands
   Editing: cp, pst, del; help movement for navigation and selection
   Layout: results switch, results expand N, results shrink N
   Keyboard: keyboard on|off|toggle (F8); F6 switches panes
-  Settings: shortcut KEY|reset, confirm on|off|toggle
+  Settings: settings, shortcut KEY|reset, confirm on|off|toggle
   Modes: mode exploratory|navigation
   Exit: exit / quit / q, exit! / q!, wq
 

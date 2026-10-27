@@ -561,6 +561,47 @@
         "#journal-export-sql",
         "#journal-export-json"
       ]
+    },
+    {
+      "id": "settings",
+      "required_elements": [
+        "#settings-dialog",
+        "#settings-title",
+        "#settings-fields",
+        "#settings-run-binding",
+        "#settings-confirm",
+        "#settings-keyboard",
+        "#settings-orientation",
+        "#settings-horizontal-size",
+        "#settings-vertical-size",
+        "#settings-connections-path",
+        "#settings-connections",
+        "#settings-actions",
+        "#settings-reset",
+        "#settings-cancel",
+        "#settings-save"
+      ]
+    },
+    {
+      "id": "settings-invalid",
+      "required_elements": [
+        "#settings-dialog",
+        "#settings-title",
+        "#settings-fields",
+        "#settings-run-binding",
+        "#settings-confirm",
+        "#settings-keyboard",
+        "#settings-orientation",
+        "#settings-horizontal-size",
+        "#settings-vertical-size",
+        "#settings-connections-path",
+        "#settings-connections",
+        "#settings-actions",
+        "#settings-reset",
+        "#settings-cancel",
+        "#settings-save",
+        "#settings-notice"
+      ]
     }
   ]
 }
