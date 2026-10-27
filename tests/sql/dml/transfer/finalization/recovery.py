@@ -37,7 +37,8 @@ def replacement(
             finalize,
             name,
             lambda *_a, **_k: pytest.fail(
-                "failed existing-target replacement must not use fresh-target or analysis operations"
+                "failed existing-target replacement must not use "
+                "fresh-target or analysis operations"
             ),
         )
     client = ReplacementClient()
