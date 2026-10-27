@@ -50,20 +50,7 @@ class ReplacementClient:
         tokens = [token for token in sqlparse.parse(clean)[0].tokens if not token.is_whitespace]
         operation = tokens[0].value.upper()
         if operation == "CREATE":
-            tree = parse_one(clean, read="clickhouse")
-            target = tree.this
-            if isinstance(target, exp.Schema):
-                columns = tuple(column.name for column in target.expressions)
-                target = target.this
-            else:
-                source = self.tables[self.reference(tree.expression)]
-                columns = source.columns
-            scope = tree.find(exp.OnCluster)
-            key = (scope.this.name if scope else LOCAL, self.table_name(target))
-            engine = tree.find(exp.EngineProperty).this.name.lower()
-            self.tables.setdefault(
-                key, Table(0, columns, replicated=engine.startswith(("replicated", "shared")))
-            )
+            self._create_table(parse_one(clean, read="clickhouse"))
         elif operation == "INSERT":
             index = 3 if tokens[2].value.upper() == "FUNCTION" else 2
             target = self.reference(
@@ -111,24 +98,39 @@ class ReplacementClient:
             message = f"Unexpected command: {sql}"
             raise AssertionError(message)
 
+    def _create_table(self, tree: exp.Create) -> None:
+        scope = tree.find(exp.OnCluster)
+        execution_scope = scope.this.name if scope else LOCAL
+        target = tree.this
+        if isinstance(target, exp.Schema):
+            columns = tuple(column.name for column in target.expressions)
+            target = target.this
+        else:
+            source_scope, source_table = self.reference(tree.expression)
+            if source_scope == LOCAL:
+                source_scope = execution_scope
+            source = self.tables[source_scope, source_table]
+            columns = source.columns
+        key = (execution_scope, self.table_name(target))
+        engine = tree.find(exp.EngineProperty).this.name.lower()
+        self.tables.setdefault(
+            key, Table(0, columns, replicated=engine.startswith(("replicated", "shared")))
+        )
+
     def query(self, sql: str, **_kwargs: Any) -> Any:
         self.queries.append(sql)
-        tree = parse_one(strip_query_label(sql), read="clickhouse")
+        clean = strip_query_label(sql)
+        if clean.startswith("EXISTS TABLE "):
+            table = parse_one(f"SELECT * FROM {clean[len('EXISTS TABLE ') :]}", read="clickhouse")
+            key = self.reference(table.args["from_"].this)
+            return SimpleNamespace(result_rows=[(int(key in self.tables),)])
+        if "getMacro(" in clean:
+            return SimpleNamespace(result_rows=[("core",)])
+        tree = parse_one(clean, read="clickhouse")
         source = tree.args["from_"].this
         scope, table = self.reference(source)
-        if table == "system.databases":
-            return SimpleNamespace(result_rows=[(self.engines[scope],)])
-        metadata = {
-            "system.tables": [],
-            "system.clusters": [(1, 1, "ingest1"), (1, 2, "ingest2")],
-            "system.one": [("ingest1",), ("ingest2",)],
-            "system.processes": [(0,)],
-        }
-        if table in metadata:
-            return SimpleNamespace(result_rows=metadata[table])
-        if table == "system.parts":
-            state = self.tables[scope, PHYSICAL]
-            return SimpleNamespace(result_rows=[(scope, 1, state.rows, 1, 1)])
+        if table.startswith("system."):
+            return SimpleNamespace(result_rows=self._metadata_rows(tree, scope, table))
         rows = self.tables[scope, table].rows
         # Replicated destinations must be read once per shard, whereas private
         # non-replicated stages need their rows from every replica.
@@ -144,6 +146,30 @@ class ReplacementClient:
             self.rollback_pending = True
             rows -= 1
         return SimpleNamespace(result_rows=[(rows,)])
+
+    def _metadata_rows(self, tree: exp.Expression, scope: str, table: str) -> list[tuple[Any, ...]]:
+        if table == "system.databases":
+            return [(self.engines[scope],)]
+        if table == "system.parts":
+            state = self.tables[scope, PHYSICAL]
+            return [(scope, 1, state.rows, 1, 1)]
+        if table in {"system.clusters", "system.one"} and tree.find(exp.Count):
+            return [(2,)]
+        if table == "system.tables" and tree.find(exp.Count):
+            relation = next(
+                item.expression.this for item in tree.find_all(exp.EQ) if item.this.name == "name"
+            )
+            exists = any(
+                table_scope == scope and table_name.rsplit(".", 1)[-1] == relation
+                for table_scope, table_name in self.tables
+            )
+            return [(2 * int(exists),)]
+        return {
+            "system.tables": [],
+            "system.clusters": [(1, 1, "ingest1"), (1, 2, "ingest2")],
+            "system.one": [("ingest1",), ("ingest2",)],
+            "system.processes": [(0,)],
+        }[table]
 
     @staticmethod
     def table_name(table: exp.Table) -> str:

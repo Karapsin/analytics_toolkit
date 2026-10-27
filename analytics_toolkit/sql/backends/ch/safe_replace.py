@@ -9,8 +9,13 @@ from sqlglot import parse_one
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends.models import StageFinalizationRequest, StageTargetTableRequest
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
+from analytics_toolkit.sql.ddl.schema import (
+    _build_column_definitions,
+    build_table_schema_column_definitions,
+)
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
+from .creation_policy import DEFAULT_DDL_READY_TIMEOUT_SECONDS, ClickHouseCreationPolicy
 from .ddl import _sql_string_literal, split_ch_table_name_for_distributed_engine
 from .reconfigure_ddl import distributed_table_parts
 from .reconfigure_execution import cluster_clause, execute_reconfiguration_sqls
@@ -205,7 +210,6 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
                 adapter,
                 request,
                 replacement_facade=replacement_facade,
-                replacement_physical=replacement_physical,
                 physical_target=physical_target,
                 facade_cluster=facade_cluster,
                 distributed_cluster=distributed_cluster,
@@ -297,6 +301,20 @@ def _create_replacement_physical(
     request: StageFinalizationRequest,
     replacement_physical: str,
 ) -> None:
+    policy = request.ch_creation_policy
+    if policy is None:
+        # The legacy only-shard builder is local-only. Normalize replacement DDL
+        # to a physical policy so its placement matches the load and cutover.
+        policy = ClickHouseCreationPolicy(
+            create_distributed_pair=False,
+            shard_engine=request.ch_engine,
+            shard_on_cluster=request.ch_cluster,
+            distributed_engine_template=None,
+            distributed_cluster=None,
+            distributed_on_cluster=None,
+            sharding_key=request.ch_sharding_key,
+            ddl_ready_timeout_seconds=DEFAULT_DDL_READY_TIMEOUT_SECONDS,
+        )
     with local_sql(request.connection):
         adapter.ensure_stage_target_table(
             StageTargetTableRequest(
@@ -313,7 +331,7 @@ def _create_replacement_physical(
                 query_label=request.query_label,
                 connection_key=request.connection_key,
                 ch_only_shard=True,
-                ch_creation_policy=request.ch_creation_policy,
+                ch_creation_policy=policy,
             )
         )
 
@@ -323,7 +341,6 @@ def _create_replacement_facade(
     request: StageFinalizationRequest,
     *,
     replacement_facade: str,
-    replacement_physical: str,
     physical_target: str,
     facade_cluster: str | None,
     distributed_cluster: str,
@@ -331,9 +348,16 @@ def _create_replacement_facade(
     database_expression, target_relation = split_ch_table_name_for_distributed_engine(
         physical_target
     )
+    # ON CLUSTER executes on facade hosts, which need not contain the physical
+    # replacement. Use the same schema builders as physical-table creation.
+    columns = (
+        build_table_schema_column_definitions("ch", request.target_column_types)
+        if request.target_column_types is not None
+        else _build_column_definitions("ch", request.sample_batch, None)
+    )
     sql = (
         f"CREATE TABLE {replacement_facade}{cluster_clause(facade_cluster)} "
-        f"AS {replacement_physical} ENGINE = Distributed("
+        f"({columns}) ENGINE = Distributed("
         f"{_sql_string_literal(distributed_cluster)}, {database_expression}, "
         f"{_sql_string_literal(target_relation)}, {request.ch_sharding_key})"
     )

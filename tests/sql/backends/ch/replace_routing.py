@@ -115,6 +115,27 @@ def test_replace_preserves_stage_replica_routing_without_changing_storage_scope(
     assert not any("ON CLUSTER 'ingest'" in sql for sql, _ in client.commands)
 
 
+@pytest.mark.parametrize("only_shard", [False, True], ids=["pair", "shard"])
+def test_replace_legacy_cluster_creates_remote_physical_before_loading(only_shard) -> None:
+    client = ReplacementClient()
+    request = replace(
+        _request(client, only_shard=only_shard),
+        ch_creation_policy=None,
+        ch_cluster="core",
+    )
+
+    get_backend_adapter("ch").finalize_stage_table(request)
+
+    assert client.tables["core", PHYSICAL] == Table(STAGED_ROWS, ("id", "value"))
+    assert client.loads[0][0][0] == "core"
+    assert all(scope == "core" for scope, _left, _right in client.swaps)
+    assert any(
+        "CREATE TABLE IF NOT EXISTS sandbox.events_shard__replace_" in sql and "ON CLUSTER" in sql
+        for sql, _settings in client.commands
+    )
+    assert not any("__replace_" in table for _scope, table in client.tables)
+
+
 @pytest.mark.parametrize("bad_final", [False, True], ids=["before-cutover", "after-cutover"])
 def test_remote_replace_row_count_failure_preserves_original(bad_final) -> None:
     client = ReplacementClient()
