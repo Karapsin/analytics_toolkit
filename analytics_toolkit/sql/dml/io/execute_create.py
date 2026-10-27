@@ -29,19 +29,11 @@ from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ..ddl_options import resolve_operation_ddl
 from ..table.create_table_from_sql import _validate_backend_options, _validate_source_columns
 from ..table.table_validation import normalize_key_columns, validate_key_columns_in_columns
-from ..transfer.runtime.retry import is_non_retryable_sql_error, run_with_retry
+from ..transfer.runtime.retry import run_with_retry
 from ..transfer.schema import inspect_source_query_schema, map_source_schema_to_target
-from .execute_safety import (
-    AmbiguousSqlMutationError,
-    ExecuteAttemptState,
-    ExecuteRetryPolicy,
-    TrackingConnection,
-    validate_execute_retry_policy,
-)
 from .execute_sql import (
     _iterate_statements_with_progress,
     _maybe_print_query,
-    _rollback_confirmed,
     _validate_progress,
 )
 from .query_batch import run_query_batch
@@ -81,7 +73,6 @@ class _ExecuteCreateOptions:
     query_label: str | None
     return_metadata: bool
     progress: bool
-    retry_policy: ExecuteRetryPolicy
 
 
 @timed_public_sql_function
@@ -117,7 +108,6 @@ def execute_create(
     return_sql: bool = False,
     return_metadata: bool = False,
     progress: bool = False,
-    retry_policy: ExecuteRetryPolicy = "safe",
     concurrency: int = 1,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = 5,
@@ -156,7 +146,6 @@ def execute_create(
             query_label=query_label,
             return_metadata=return_metadata,
             progress=progress,
-            retry_policy=retry_policy,
         )
         plan = _build_execute_create_plan(options)
         if dry_run or return_sql:
@@ -177,7 +166,6 @@ def execute_create(
 def _build_execute_create_options(**values: Any) -> _ExecuteCreateOptions:
     validate_retry_options(values["retry_cnt"], values["timeout_increment"])
     _validate_progress(values["progress"])
-    retry_policy = validate_execute_retry_policy(values["retry_policy"])
     drop_if_exists = _validate_bool(values["drop_if_exists"], "drop_if_exists")
     if_not_exists = _validate_bool(values["if_not_exists"], "if_not_exists")
     if drop_if_exists and if_not_exists:
@@ -292,7 +280,6 @@ def _build_execute_create_options(**values: Any) -> _ExecuteCreateOptions:
         query_label=values["query_label"],
         return_metadata=values["return_metadata"],
         progress=values["progress"],
-        retry_policy=retry_policy,
     )
 
 
@@ -347,7 +334,6 @@ def _build_execute_create_plan(options: _ExecuteCreateOptions) -> SqlPlan:
         options={
             "drop_if_exists": options.drop_if_exists,
             "if_not_exists": options.if_not_exists,
-            "retry_policy": options.retry_policy,
             "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
         },
         metadata=metadata,
@@ -376,7 +362,6 @@ def _execute_create_options(
     def operation(attempt: int) -> int:
         attempt_numbers.append(attempt)
         connection: Any | None = None
-        state = ExecuteAttemptState()
         try:
             connection = get_sql_connection(options.connection_key)
             if options.if_not_exists and adapter.table_exists(
@@ -388,9 +373,6 @@ def _execute_create_options(
                 metadata.affected_rows = 0
                 metadata.inserted_rows = 0
                 return 0
-            execution_connection = connection
-            if bool(getattr(adapter, "supports_transactions", False)):
-                execution_connection = TrackingConnection(connection, state)
             with tracked_sql_operation(
                 metadata=metadata,
                 operation_name="execute_create",
@@ -401,33 +383,16 @@ def _execute_create_options(
                 query_label=options.query_label,
                 preview_sql=options.source_sql,
             ):
-                result = _execute_create_attempt(options, adapter, execution_connection, state)
+                result = _execute_create_attempt(options, adapter, connection)
                 metadata.affected_rows = result
                 metadata.inserted_rows = result
                 return result
         except Exception as exc:
             context = _execute_create_context(options, attempt)
             annotate_sql_exception(exc, context)
-            if connection is None or options.retry_policy == "always":
-                if connection is not None:
-                    adapter.rollback_quietly(connection)
-                raise
-            if is_non_retryable_sql_error(exc):
+            if connection is not None:
                 adapter.rollback_quietly(connection)
-                raise
-            if (
-                bool(getattr(adapter, "supports_transactions", False))
-                and not state.commit_started
-                and not state.committed
-                and _rollback_confirmed(connection)
-            ):
-                raise
-            raise AmbiguousSqlMutationError(
-                "Table creation may have completed before the connection failed; "
-                "the toolkit will not replay it automatically.",
-                context=context,
-                original_error=exc,
-            ) from exc
+            raise
         finally:
             _close_connection_quietly(connection, options)
 
@@ -438,7 +403,7 @@ def _execute_create_options(
                 f"creating table {options.connection_key}.{options.table_name} "
                 f"({options.backend}) from final query"
             ),
-            retry_cnt=1 if options.retry_policy == "never" else options.retry_cnt,
+            retry_cnt=options.retry_cnt,
             timeout_increment=options.timeout_increment,
             operation=operation,
         ),
@@ -452,10 +417,7 @@ def _execute_create_attempt(
     options: _ExecuteCreateOptions,
     adapter: Any,
     connection: Any,
-    state: ExecuteAttemptState,
 ) -> int:
-    if not bool(getattr(adapter, "supports_transactions", False)):
-        state.submitted = True
     if options.setup_sqls:
         adapter.execute_sql(
             connection,

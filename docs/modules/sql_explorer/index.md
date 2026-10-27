@@ -283,9 +283,10 @@ the visible user-query status.
 Table completion is available only after `FROM`, `JOIN`, `UPDATE`, or `INTO`.
 There is no minimum table-name prefix length. Saved snapshots are filtered
 locally; without a snapshot, Tab requests names using the complete typed prefix
-in the current catalog/database/schema. An empty prefix lists all names in that
-scope. Live-query results are cached for 60 seconds; narrower prefixes filter
-locally, and backspacing beyond the fetched prefix requests a broader result. A catalog,
+in the current catalog/database/schema. Prefixes match literally, ignoring case;
+characters such as `%` and `_` do not act as SQL wildcards. An empty prefix lists
+all names in that scope. Live-query results are cached for 60 seconds; narrower
+prefixes filter locally, and backspacing beyond the fetched prefix requests a broader result. A catalog,
 database, or schema change permits a new lookup; changing the SQL clause or
 cursor position reuses matching cached names.
 

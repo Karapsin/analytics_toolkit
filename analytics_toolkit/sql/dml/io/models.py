@@ -36,7 +36,6 @@ class ExecuteSqlOptions:
     return_sql: bool = False
     return_metadata: bool = False
     progress: bool = False
-    retry_policy: str = "safe"
     source_sql: str | None = None
     batch_id: str | None = None
     batch_index: int | None = None
