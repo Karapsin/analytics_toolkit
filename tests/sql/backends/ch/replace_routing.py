@@ -8,9 +8,12 @@ import pytest
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.creation_policy import ClickHouseCreationPolicy
 from analytics_toolkit.sql.backends.ch.routing import ChClusterRouting, wrap_client
-from analytics_toolkit.sql.backends.ch.safe_replace import _database_engine_on_scope
+from analytics_toolkit.sql.backends.ch.safe_replace import (
+    _database_engine_on_scope,
+    _validate_nonreplicated_facade_cluster,
+)
 from analytics_toolkit.sql.backends.models import StageFinalizationRequest
-from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
+from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError, SqlConfigError
 
 from tests.sql._support.ch_replace import (
     LOCAL,
@@ -55,13 +58,8 @@ def _request(connection, *, shard_scope="core", facade_scope="core", only_shard=
 
 @pytest.mark.parametrize("native", [False, True], ids=["http", "native"])
 @pytest.mark.parametrize("only_shard", [False, True], ids=["pair", "shard"])
-@pytest.mark.parametrize(
-    ("engine", "data_function"),
-    [("ReplicatedMergeTree", "cluster"), ("MergeTree", "clusterAllReplicas")],
-)
-def test_replace_loads_remote_storage_from_local_stage(
-    native, only_shard, engine, data_function
-) -> None:
+@pytest.mark.parametrize("engine", ["ReplicatedMergeTree", "MergeTree"])
+def test_replace_loads_remote_storage_from_local_stage(native, only_shard, engine) -> None:
     client = ReplacementClient()
     client.is_native_transport = native
     original_local = Table(23, ("unrelated_local_column",))
@@ -73,9 +71,10 @@ def test_replace_loads_remote_storage_from_local_stage(
     )
     get_backend_adapter("ch").finalize_stage_table(request)
 
-    assert client.tables["core", PHYSICAL] == Table(
-        STAGED_ROWS, ("id", "value"), replicated=engine == "ReplicatedMergeTree"
-    )
+    state = client.tables["core", PHYSICAL]
+    assert state.rows == STAGED_ROWS
+    assert state.columns == ("id", "value")
+    assert state.replicated == (engine == "ReplicatedMergeTree")
     assert client.tables[LOCAL, PHYSICAL] == original_local
     assert client.loads[0][0][0] == "core"
     assert client.loads[0][1] == (LOCAL, STAGE)
@@ -86,6 +85,7 @@ def test_replace_loads_remote_storage_from_local_stage(
     insert, settings = next(
         (sql, settings) for sql, settings in client.commands if "INSERT INTO" in sql
     )
+    data_function = "clusterAllReplicas" if only_shard and engine == "MergeTree" else "cluster"
     assert f"FUNCTION {data_function}('core', 'sandbox', 'events_shard__replace_" in insert
     assert "cityHash64(id)" in insert
     assert "(`id`, `value`) SELECT CAST(`id` AS Int64)" in insert
@@ -95,6 +95,12 @@ def test_replace_loads_remote_storage_from_local_stage(
     assert len(counts) == 2
     assert all(f"FROM {data_function}('core', 'sandbox', 'events_shard" in sql for sql in counts)
     assert any("DROP TABLE" in sql and "ON CLUSTER" not in sql for sql, _ in client.commands)
+    if not only_shard:
+        for replica in (0, 1):
+            client.validation_replica = replica
+            assert client.query(
+                "SELECT count() FROM cluster('core', 'sandbox', 'events')"
+            ).result_rows == [(STAGED_ROWS,)]
 
 
 def test_replace_preserves_stage_replica_routing_without_changing_storage_scope() -> None:
@@ -198,6 +204,76 @@ def test_remote_replace_sync_failure_leaves_original_untouched() -> None:
     assert not any("__replace_" in table for _scope, table in client.tables)
 
 
+@pytest.mark.parametrize(
+    ("database_engine", "boundary"),
+    [("Atomic", 1), ("Atomic", 2), *(("Ordinary", index) for index in range(1, 5))],
+)
+@pytest.mark.parametrize("after_apply", [False, True], ids=["before-execution", "lost-ack"])
+def test_partial_cutover_reverses_only_acknowledged_steps_and_preserves_artifacts(
+    database_engine, boundary, after_apply
+) -> None:
+    client = ReplacementClient()
+    client.engines["core"] = database_engine
+    original = client.tables["core", PHYSICAL]
+    original_facade = client.tables["core", TARGET]
+    client.fail_cutover_at = boundary
+    client.fail_cutover_after_apply = after_apply
+
+    with pytest.raises(AmbiguousSqlReplaceError, match="preserved for recovery"):
+        get_backend_adapter("ch").finalize_stage_table(_request(client))
+
+    assert any(state == original for (scope, _), state in client.tables.items() if scope == "core")
+    assert any(
+        state == original_facade for (scope, _), state in client.tables.items() if scope == "core"
+    )
+    if not after_apply:
+        assert client.tables["core", PHYSICAL] == original
+        assert client.tables["core", TARGET] == original_facade
+    assert not any("DROP TABLE" in sql for sql, _ in client.commands)
+
+
+@pytest.mark.parametrize("routed", [False, True])
+def test_nonreplicated_facade_rejects_unsafe_replica_configuration_before_cutover(routed) -> None:
+    client = ReplacementClient()
+    client.internal_replication = not routed
+    connection = (
+        wrap_client(
+            client, SimpleNamespace(cluster_routing=ChClusterRouting("core"), database="sandbox")
+        )
+        if routed
+        else client
+    )
+    request = _request(connection)
+    request = replace(
+        request, ch_creation_policy=replace(request.ch_creation_policy, shard_engine="MergeTree")
+    )
+
+    with pytest.raises(SqlConfigError, match="replica"):
+        get_backend_adapter("ch").finalize_stage_table(request)
+
+    assert client.tables["core", PHYSICAL].rows == 17
+    assert client.loads == []
+    assert client.commands == []
+
+
+def test_replace_uses_distributed_data_cluster_separately_from_ddl_scope() -> None:
+    client = ReplacementClient()
+    client.scope_aliases["deployment"] = "core"
+    request = _request(client, shard_scope="deployment")
+    request = replace(
+        request, ch_creation_policy=replace(request.ch_creation_policy, distributed_cluster="core")
+    )
+
+    get_backend_adapter("ch").finalize_stage_table(request)
+
+    insert = next(sql for sql, _ in client.commands if "INSERT INTO" in sql)
+    assert "FUNCTION cluster('core'," in insert
+    assert any("ON CLUSTER deployment" in sql for sql, _ in client.commands)
+    assert client.query("SELECT count() FROM cluster('core', 'sandbox', 'events')").result_rows == [
+        (STAGED_ROWS,)
+    ]
+
+
 @pytest.mark.parametrize("only_shard", [False, True], ids=["pair", "shard"])
 def test_unqualified_replace_uses_current_database_for_metadata_and_operations(only_shard) -> None:
     client = ReplacementClient()
@@ -241,6 +317,7 @@ def test_unqualified_replace_detects_writers_in_current_database() -> None:
 def test_remote_replace_keeps_separate_facade_scope_and_engine(bad_final) -> None:
     client = ReplacementClient()
     client.tables["facades", TARGET] = client.tables.pop(("core", TARGET))
+    client.facade_sources["facades", TARGET] = client.facade_sources.pop(("core", TARGET))
     client.engines["facades"] = "Ordinary"
     client.bad_final_count = bad_final
     original = client.tables["core", PHYSICAL]
@@ -262,18 +339,62 @@ def test_remote_replace_keeps_separate_facade_scope_and_engine(bad_final) -> Non
     assert not any("__replace_" in table or "__backup_" in table for _scope, table in client.tables)
 
 
-def test_local_replace_retains_local_loading_counting_and_rename() -> None:
+@pytest.mark.parametrize("engine", ["ReplicatedMergeTree", "MergeTree"])
+@pytest.mark.parametrize("only_shard", [False, True], ids=["pair", "shard"])
+def test_local_replace_retains_local_loading_counting_and_rename(engine, only_shard) -> None:
     client = ReplacementClient(storage=LOCAL)
-    request = _request(client, shard_scope=None, facade_scope=None)
-    request = replace(request, insert_column_types=None)
+    client.replica_count = 1
+    client.validation_replica = 0
+    request = _request(client, shard_scope=None, facade_scope=None, only_shard=only_shard)
+    request = replace(
+        request,
+        insert_column_types=None,
+        ch_creation_policy=replace(request.ch_creation_policy, shard_engine=engine),
+    )
 
     get_backend_adapter("ch").finalize_stage_table(request)
 
     assert client.tables[LOCAL, PHYSICAL].rows == STAGED_ROWS
     assert client.local_loads
-    assert len(client.swaps) == 4
+    assert len(client.swaps) == (2 if only_shard else 4)
     assert all(scope == LOCAL for scope, _left, _right in client.swaps)
-    assert not any("ON CLUSTER" in sql for sql, _ in client.commands)
+    assert not any(
+        "ON CLUSTER" in sql for sql, _ in client.commands if "SYSTEM SYNC REPLICA" not in sql
+    )
+
+
+def test_local_ddl_cannot_report_success_for_a_remote_distributed_destination() -> None:
+    client = ReplacementClient(storage=LOCAL)
+    remote = Table(23, ("remote_column",))
+    client.tables["core", PHYSICAL] = remote
+    local = client.tables[LOCAL, PHYSICAL]
+    request = _request(client, shard_scope=None, facade_scope=None)
+    request = replace(
+        request, ch_creation_policy=replace(request.ch_creation_policy, distributed_cluster="core")
+    )
+
+    with pytest.raises(KeyError):
+        get_backend_adapter("ch").finalize_stage_table(request)
+
+    assert client.tables["core", PHYSICAL] == remote
+    assert client.tables[LOCAL, PHYSICAL] == local
+    assert client.swaps == []
+    assert any("FUNCTION cluster('core'," in sql for sql, _ in client.commands)
+
+
+@pytest.mark.parametrize("rows", [[], [(1,)]])
+def test_nonreplicated_facade_rejects_unverifiable_cluster_metadata(rows) -> None:
+    connection = SimpleNamespace(query=lambda _sql: SimpleNamespace(result_rows=rows))
+    with pytest.raises(SqlConfigError, match="verify replica configuration"):
+        _validate_nonreplicated_facade_cluster(connection, "core")
+
+
+def test_nonreplicated_facade_allows_one_replica_on_a_routed_connection() -> None:
+    connection = wrap_client(
+        SimpleNamespace(query=lambda _sql: SimpleNamespace(result_rows=[(1, 1, True)])),
+        SimpleNamespace(cluster_routing=ChClusterRouting("core"), database="sandbox"),
+    )
+    _validate_nonreplicated_facade_cluster(connection, "core")
 
 
 @pytest.mark.parametrize("engines", [[], [("Atomic",), ("Ordinary",)]])

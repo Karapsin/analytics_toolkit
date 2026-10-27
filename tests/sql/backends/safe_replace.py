@@ -434,7 +434,7 @@ def test_clickhouse_replace_reports_ambiguous_failed_rollback(
     def execute_sqls(current_adapter: Any, current_connection: Any, sqls: list[str]) -> None:
         nonlocal calls
         calls += 1
-        if calls == 2:
+        if calls == 3:
             raise OSError("rollback unavailable")
         for sql in sqls:
             current_adapter.execute_command(current_connection, sql)

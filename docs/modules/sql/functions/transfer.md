@@ -107,7 +107,7 @@ source follows `empty_source_policy`: replace/truncate modes produce an empty
 target by default, while append/upsert keep the target.
 
 For an existing ClickHouse target, replacement data is loaded and counted on
-the configured physical storage cluster, even when the connection host is
+the configured storage cluster, even when the connection host is
 outside that cluster. A local stage remains local; cluster-routed private
 stages retain their all-replica reads. Unqualified targets are resolved once
 against the connection's current database for metadata, DDL, and data operations.
@@ -117,6 +117,12 @@ Replicated replacement tables are synchronized across the storage cluster before
 validation so a count cannot read a replica that has not received the staged data.
 A failed final check rolls back the cutover. If rollback also fails, replacement
 artifacts are preserved for recovery.
+Cutover rollback reverses only acknowledged statements; a command with uncertain
+completion preserves artifacts and raises `AmbiguousSqlReplaceError` for recovery.
+Managed Distributed targets retain their facade's replica semantics. For
+non-replicated engines on multi-replica clusters, this requires
+`internal_replication=false`; cluster-routed connections must instead use a
+replicated engine or a shard-only target to avoid ambiguous replica semantics.
 
 Single-key slices require one or more predicate placeholder occurrences in
 `from_sql`. Every occurrence is replaced with the full predicate, not just the
