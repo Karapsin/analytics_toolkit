@@ -24,6 +24,7 @@ pip install 'analytics-toolkit[tui]'
 - [Query status and cancellation](#query-status-and-cancellation)
 - [Query journal](#query-journal)
 - [Commands](#commands)
+- [Settings](#settings)
 - [Creating tables](#creating-tables)
 
 ## Launch and execution
@@ -282,9 +283,10 @@ the visible user-query status.
 Table completion is available only after `FROM`, `JOIN`, `UPDATE`, or `INTO`.
 There is no minimum table-name prefix length. Saved snapshots are filtered
 locally; without a snapshot, Tab requests names using the complete typed prefix
-in the current catalog/database/schema. An empty prefix lists all names in that
-scope. Live-query results are cached for 60 seconds; narrower prefixes filter
-locally, and backspacing beyond the fetched prefix requests a broader result. A catalog,
+in the current catalog/database/schema. Prefixes match literally, ignoring case;
+characters such as `%` and `_` do not act as SQL wildcards. An empty prefix lists
+all names in that scope. Live-query results are cached for 60 seconds; narrower
+prefixes filter locally, and backspacing beyond the fetched prefix requests a broader result. A catalog,
 database, or schema change permits a new lookup; changing the SQL clause or
 cursor position reuses matching cached names.
 
@@ -548,6 +550,7 @@ Enter commands in the lower panel, with or without a leading colon:
 - `pst` - paste clipboard fragments or matching lines in document order, otherwise the full clipboard at every cursor or selection
 - `db DB_KEY` - switch to another valid configured connection
 - `shortcut KEY|reset` - save a run shortcut or restore `Ctrl+Enter`
+- `settings` - open the settings menu for all Explorer preferences
 - `confirm on|off|toggle` - change and save mutation confirmation
 - `clear query|results|all` - clear workspace content
 - `to_excel` - choose a project directory and save the current result as `.xlsx`
@@ -625,6 +628,31 @@ existing destination requires replacement confirmation. If a result has more tha
 In every two-choice confirmation dialog, Left selects the affirmative action and
 Right selects cancellation; Enter activates the focused choice. The existing Y,
 N, Escape, and mouse controls remain available.
+
+## Settings
+
+Enter `settings` (or `:settings`) in the command pane to edit the run shortcut,
+mutation confirmation, keyboard mode, results position, and both result-pane
+sizes. Choose results below or to the right of the editor; sizes are in terminal
+rows and columns respectively. Leave a size blank for automatic sizing.
+
+**Save** validates and saves the entire form before applying changes. Invalid
+shortcuts or sizes and file-write failures leave the form open without applying
+any changes. **Cancel** or Escape discards edits. **Reset defaults** resets the
+form; Save applies those defaults. The selected connections file is preserved.
+Tab/Shift+Tab move between controls; arrows navigate choices and Space toggles
+checkboxes. Focus returns to the command pane when the menu closes.
+
+Shortcut, confirmation, and keyboard changes apply across the current session.
+Layout changes apply to the active tab and become defaults for new tabs and
+future launches; other open tabs keep their layouts. The menu displays the
+active tab's layout when opened. F5 remains available regardless of the selected
+run shortcut.
+
+The menu also shows the current connections file. **Save & change connections**
+saves the form and opens the existing connections chooser, including its
+unsaved-file prompts and query cancellation when switching sources. These
+preferences use the existing connection-local settings store described above.
 
 ## Creating tables
 

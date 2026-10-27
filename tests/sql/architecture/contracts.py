@@ -56,7 +56,7 @@ def test_public_sql_facade_exports_safety_contracts() -> None:
     assert sql_module.ClickHouseClusterTopologyError is not None
     assert sql_module.EmptySourceError is not None
     assert sql_module.EmptySourcePolicy is not None
-    assert sql_module.ExecuteRetryPolicy is not None
+    assert not hasattr(sql_module, "ExecuteRetryPolicy")
     assert sql_module.SqlBatchExecutionError is not None
     assert sql_module.SqlBatchItemResult is not None
     assert sql_module.SqlBatchItemStatus is not None

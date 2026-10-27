@@ -46,6 +46,7 @@ from analytics_toolkit.sql_explorer.runtime import (
     ExplorerRunResult,
 )
 from analytics_toolkit.sql_explorer.settings import ExplorerSettings
+from analytics_toolkit.sql_explorer.settings_screen import SettingsScreen
 from analytics_toolkit.sql_explorer.statements import ExecutionRoute, build_execution_plan
 from analytics_toolkit.sql_explorer.tabs import SaveChangesScreen, TabSelectButton
 from analytics_toolkit.sql_explorer.widgets import (
@@ -184,6 +185,8 @@ class VisualExplorerApp(SqlExplorerApp):
             "save-changes",
             "save-changes-cancel",
             "export-confirm",
+            "settings",
+            "settings-invalid",
         }:
             await self._configure_modal_scene(scene)
         elif scene in {
@@ -330,7 +333,9 @@ class VisualExplorerApp(SqlExplorerApp):
 
     async def _configure_modal_scene(self, scene: str) -> None:
         workspace = self.active_workspace
-        if scene == "file-open":
+        if scene in {"settings", "settings-invalid"}:
+            await self._open_settings_scene(scene)
+        elif scene == "file-open":
             self.push_screen(FileNavigationScreen(Path.cwd()))
         elif scene == "directory-armed":
             picker = FileNavigationScreen(Path.cwd(), select_directory=True)
@@ -370,6 +375,17 @@ class VisualExplorerApp(SqlExplorerApp):
                     confirm_label="Save all",
                 )
             )
+
+    async def _open_settings_scene(self, scene: str) -> None:
+        screen = SettingsScreen(
+            self.session.settings,
+            lambda _settings: None,
+            Path("/Users/analyst/project/.connections"),
+        )
+        await self.push_screen(screen)
+        if scene == "settings-invalid":
+            screen.query_one("#settings-run-binding", Input).value = "ctrl+a"
+            screen.query_one("#settings-save", Button).press()
 
     def _configure_workspace_scene(self, scene: str) -> None:
         if scene in {"keyboard-multicursor", "editor-command-caret", "column-ruler-scrolled"}:
