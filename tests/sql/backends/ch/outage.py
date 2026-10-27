@@ -316,6 +316,31 @@ def test_dataframe_append_does_not_replay_wrapped_ambiguous_error(outage: Any) -
     assert cluster.tables[("h1", "db.events_shard")].rows.count((9,)) == 1
 
 
+@pytest.mark.parametrize("mode", [None, "truncate_insert"])
+def test_outage_new_dataframe_target_skips_destructive_preparation(outage: Any, mode: Any) -> None:
+    cluster, _ = outage
+    cluster.alive.remove("h2")
+    options = {} if mode is None else {"write_mode": mode}
+    with pytest.warns(sql.ClickHouseDegradedClusterWarning):
+        result = sql.load_df(
+            "ch",
+            "db.new_data",
+            pd.DataFrame({"id": [9, 10]}),
+            table_schema={"id": "UInt64"},
+            ch_unavailable_shards="healthy_shards",
+            return_metadata=True,
+            retry_cnt=1,
+            **options,
+        )
+    assert result.inserted_rows == 2
+    assert result.metadata.data_complete is False
+    assert cluster.tables[("h1", "db.new_data_shard")].rows == [(9,), (10,)]
+    assert ("h2", "db.new_data_shard") not in cluster.tables
+    assert all(
+        "DROP" not in command and "TRUNCATE" not in command for _, command, _ in cluster.commands
+    )
+
+
 @pytest.mark.parametrize("write_mode", ["replace", "upsert", "truncate_insert"])
 def test_existing_dataframe_destructive_mode_rejected_before_staging(
     outage: Any, write_mode: str

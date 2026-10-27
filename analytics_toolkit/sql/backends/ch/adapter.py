@@ -604,6 +604,9 @@ class ClickHouseAdapter(BackendAdapter):
         if request.write_mode == "append":
             return request.target_exists
 
+        if request.write_mode == "replace" and not request.target_exists:
+            return False
+
         if request.ch_only_shard:
             if request.write_mode == "truncate_insert" and request.target_exists:
                 self.clear_table(

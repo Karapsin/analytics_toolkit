@@ -423,10 +423,7 @@ def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch
     )
 
     assert inserted_rows == 1
-    assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE}" in client.commands
-    assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE}" in client.commands
-    assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE} ON CLUSTER '{{cluster}}'" in client.commands
-    assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE} ON CLUSTER '{{cluster}}'" in client.commands
+    assert not any(command.startswith("DROP TABLE") for command in client.commands)
     assert "SETTINGS index_granularity" not in "\n".join(client.commands)
     assert any(
         command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")

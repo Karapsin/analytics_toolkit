@@ -102,6 +102,15 @@ class OutageSession:
                     msg = "Ad hoc routing requires a standard managed table pair."
                     raise ClickHouseClusterTopologyError(msg)
                 scope.require_all(scope.reachable, "Distributed facade")
+                if shard is None:
+                    msg = "Cannot verify the physical destination of this Distributed facade."
+                    raise ClickHouseClusterTopologyError(msg)
+                destination = self.scope(shard.cluster)
+                physical = destination.objects(shard.database, shard.table)
+                destination.usable(physical, f"{shard.database}.{shard.table}", write=writing)
+                if physical[0].engine.lower() == "distributed":
+                    msg = "Nested Distributed destinations cannot be verified safely."
+                    raise ClickHouseClusterTopologyError(msg)
                 return ManagedTableRoute(database, table, "local", engine)
             if self.scope(shard.cluster).cluster != scope.cluster:
                 if self.policy == "healthy_shards":

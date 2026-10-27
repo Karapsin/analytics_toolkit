@@ -39,12 +39,44 @@ def test_outage_system_metadata_and_missing_relations(outage: Any, policy: str) 
 def test_outage_nonstandard_facade_is_local_only_in_strict_mode(outage: Any, policy: str) -> None:
     cluster, _ = outage
     _facade(cluster, "Distributed('core', 'db', 'custom_shard', rand())")
+    for host in cluster.hosts:
+        cluster.tables[(host, "db.custom_shard")] = cluster.tables[(host, "db.events_shard")]
     if policy == "stop":
         sql.read("ch", "SELECT id FROM db.events")
         assert cluster.queries[-1] == "SELECT id FROM db.events"
     else:
         with pytest.raises(sql.ClickHouseClusterTopologyError, match="standard"):
             sql.read("ch", "SELECT id FROM db.events", ch_unavailable_shards=policy)
+
+
+@pytest.mark.parametrize("missing", ["host", "table", "nested", "dynamic"])
+def test_outage_nonstandard_destination_is_checked_before_any_insert(
+    outage: Any, missing: str
+) -> None:
+    cluster, _ = outage
+    engine = (
+        "Distributed('', 'otherdb', 'custom', rand())"
+        if missing == "dynamic"
+        else "Distributed('remote', 'otherdb', 'custom', rand())"
+    )
+    _facade(cluster, engine)
+    cluster.members_by_cluster["remote"] = [(1, 1, "h1", 9000), (2, 1, "h3", 9000)]
+    cluster.hosts.append("h3")
+    cluster.alive.add("h3")
+    for host in ("h1", "h3"):
+        cluster.tables[(host, "otherdb.custom")] = replace(
+            cluster.tables[("h1", "db.events_shard")]
+        )
+    if missing == "host":
+        cluster.alive.remove("h3")
+    elif missing == "table":
+        del cluster.tables[("h3", "otherdb.custom")]
+    elif missing == "nested":
+        for host in ("h1", "h3"):
+            cluster.tables[(host, "otherdb.custom")].engine = "Distributed"
+    with pytest.raises((sql.ClickHouseClusterUnavailableError, sql.ClickHouseClusterTopologyError)):
+        sql.execute("ch", "INSERT INTO db.events VALUES (9)", retry_cnt=1)
+    assert cluster.commands == []
 
 
 @pytest.mark.parametrize("policy", ["stop", "healthy_shards"])
