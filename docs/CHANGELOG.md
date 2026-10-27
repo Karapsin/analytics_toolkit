@@ -156,6 +156,7 @@ Generated from package version bumps and recent commit history.
 - Treat validation-workflow repair incidents as CI-log evidence without missing integration artifacts, and report a newer CPython minor whose core dependencies cannot install yet as WAITING FOR UPSTREAM SUPPORT instead of a stale window.
 - Remove SQL retry_policy arguments and restore always-retry behavior within configured attempt limits.
 - Fix ClickHouse SQL Explorer metadata discovery by using literal prefix comparisons instead of unsupported LIKE ESCAPE syntax.
+- Added a SQL Explorer settings menu for saved execution, keyboard, results layout, and connections preferences.
 
 ## 1.3.12.5 - 2026-10-14
 
