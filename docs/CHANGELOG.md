@@ -157,6 +157,7 @@ Generated from package version bumps and recent commit history.
 - Remove SQL retry_policy arguments and restore always-retry behavior within configured attempt limits.
 - Fix ClickHouse SQL Explorer metadata discovery by using literal prefix comparisons instead of unsupported LIKE ESCAPE syntax.
 - Added a SQL Explorer settings menu for saved execution, keyboard, results layout, and connections preferences.
+- Fix ClickHouse safe replacement routing to the configured storage cluster with local staging, preserve validation and rollback, and retain ambiguous recovery artifacts across attempts.
 
 ## 1.3.12.5 - 2026-10-14
 
