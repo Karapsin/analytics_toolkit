@@ -229,7 +229,9 @@ automatically. Their reports expose capture completeness separately from strict
 merge fidelity. `configs/imports/<capture-id>/manifest.json` records immutable
 source provenance and exact source/SQL/Editor assets; it does not rebind the
 destination dashboard to the source dashboard.
-`mode="adopt"` (default) retains IDs and individual resource locations. Explicit `mode="copy"`
+`mode="adopt"` (default) retains IDs and individual resource locations. Resources
+without their own location always use the deployment target and its inventory,
+including when reconciled immediately after imported resources. Explicit `mode="copy"`
 accepts dependencies across folders, omits copied persistent IDs, reuses existing
 connections and uses a separate unused runtime. `copy_from` records provenance
 and prevents accidental exact-name adoption in the destination. CLI imports accept

@@ -195,6 +195,7 @@ class BIResourceStore(ResourceStore):
             raise DataLensUtilsError(msg)
         self.folders: dict[str, Any] = {}
         self.entries: dict[str, Any] = {}
+        self._deployment_location: tuple[Any, Any, dict[str, Any], dict[str, Any]] | None = None
         for key, resource in registry.resources.items():
             internal = self.internal_key(key)
             old = self.state["resources"].get(internal, {})
@@ -253,6 +254,12 @@ class BIResourceStore(ResourceStore):
         )
         entries = list(location.list_entries())
         self.entries = dict.fromkeys(self.folders, entries)
+        self._deployment_location = (
+            self.folder,
+            self.entry_location,
+            self.folders,
+            self.entries,
+        )
 
     def verify_location(self, entity: Any, name: Any = None, *, scope: Any = None) -> None:
         resource = next(
@@ -421,9 +428,16 @@ class BIResourceStore(ResourceStore):
         return entity
 
     def use_resource_location(self, resource: Any) -> None:
-        """Retained imported IDs need no folder enumeration or folder creation."""
+        """Select a retained location or restore the deployment and its cached inventory."""
         target = resource.definition.get("location")
-        if target:
+        if not target:
+            if self._deployment_location is None:
+                message = (
+                    "The default deployment location must be initialized before reconciliation."
+                )
+                raise DataLensUtilsError(message)
+            self.folder, self.entry_location, self.folders, self.entries = self._deployment_location
+        else:
             self.entry_location = (
                 EntryLocation.path(target["value"])
                 if target["kind"] == "path"
