@@ -633,9 +633,10 @@ def _cleanup_orphan_replacements(
     connection: Any,
     targets: list[tuple[str, str | None]],
 ) -> None:
+    del adapter  # Unknown artifacts cannot be proved safe to delete automatically.
     for target, cluster in targets:
         database, relation = distributed_table_parts(target)
-        prefix = f"{relation}__replace_"
+        prefixes = (f"{relation}__replace_", f"{relation}__backup_")
         try:
             source = (
                 "system.tables"
@@ -646,17 +647,24 @@ def _cleanup_orphan_replacements(
                 connection,
                 f"SELECT DISTINCT name FROM {source} "
                 f"WHERE database = {_sql_string_literal(database)} "
-                f"AND startsWith(name, {_sql_string_literal(prefix)})",
+                f"AND (startsWith(name, {_sql_string_literal(prefixes[0])}) "
+                f"OR startsWith(name, {_sql_string_literal(prefixes[1])}))",
             ).result_rows
             for row in rows or []:
                 name = str(row[0]) if row else ""
-                if not name.startswith(prefix):
+                if not name.startswith(prefixes):
                     continue
                 orphan = f"{database}.{name}"
                 if _replacement_is_active(connection, orphan, cluster):
                     continue
-                with local_sql(connection):
-                    adapter.execute_command(connection, drop_table_sql(orphan, cluster))
+                message = (
+                    f"ClickHouse replacement found unresolved artifact {orphan}; "
+                    "inspect and recover the previous operation before replacing again. "
+                    "Recovery artifacts were preserved."
+                )
+                raise AmbiguousSqlReplaceError(message)
+        except AmbiguousSqlReplaceError:
+            raise
         except Exception as exc:
             time_print(
                 f"Could not inspect ClickHouse replacement artifacts for {target}: "

@@ -330,17 +330,18 @@ class _ReplaceChAdapter(_ChAdapter):
         return self.counts.pop(0)
 
 
-def test_clickhouse_orphan_cleanup_drops_only_inactive_replacement_tables() -> None:
+def test_clickhouse_orphan_cleanup_preserves_inactive_replacement_tables_for_recovery() -> None:
     connection = _ChConnection()
     adapter = _ChAdapter()
 
-    _cleanup_orphan_replacements(
-        adapter,
-        connection,
-        [("sandbox.target", "core")],
-    )
+    with pytest.raises(AmbiguousSqlReplaceError, match="unresolved artifact"):
+        _cleanup_orphan_replacements(
+            adapter,
+            connection,
+            [("sandbox.target", "core")],
+        )
 
-    assert adapter.commands == ["DROP TABLE IF EXISTS sandbox.target__replace_abcd ON CLUSTER core"]
+    assert adapter.commands == []
 
 
 def test_clickhouse_orphan_cleanup_keeps_active_and_ignores_bad_or_failed_metadata() -> None:

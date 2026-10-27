@@ -119,6 +119,9 @@ A failed final check rolls back the cutover. If rollback also fails, replacement
 artifacts are preserved for recovery.
 Cutover rollback reverses only acknowledged statements; a command with uncertain
 completion preserves artifacts and raises `AmbiguousSqlReplaceError` for recovery.
+Inactive replacement or backup artifacts from a previous operation are never
+removed automatically; another replacement stops until they are inspected and
+recovered or explicitly cleaned up by the owner.
 Managed Distributed targets retain their facade's replica semantics. For
 non-replicated engines on multi-replica clusters, this requires
 `internal_replication=false`; cluster-routed connections must instead use a

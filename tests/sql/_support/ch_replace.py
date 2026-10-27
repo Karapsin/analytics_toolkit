@@ -281,13 +281,30 @@ class ReplacementClient:
             )
             return [(self.replica_count * int(exists),)]
         return {
-            "system.tables": [],
+            "system.tables": self._artifact_rows(tree, scope) if tree.args.get("distinct") else [],
             "system.clusters": [
                 (1, replica, f"ingest{replica}") for replica in range(1, self.replica_count + 1)
             ],
             "system.one": [(f"ingest{replica}",) for replica in range(1, self.replica_count + 1)],
             "system.processes": [(0,)],
         }[table]
+
+    def _artifact_rows(self, tree: exp.Expression, scope: str) -> list[tuple[Any, ...]]:
+        database = next(
+            item.expression.this for item in tree.find_all(exp.EQ) if item.this.name == "database"
+        )
+        prefixes = tuple(
+            str(item.this)
+            for item in tree.find_all(exp.Literal)
+            if str(item.this).endswith(("__replace_", "__backup_"))
+        )
+        return [
+            (name.rsplit(".", 1)[-1],)
+            for (table_scope, name) in self.tables
+            if table_scope == scope
+            and name.rsplit(".", 1)[0] == database
+            and name.rsplit(".", 1)[-1].startswith(prefixes)
+        ]
 
     @staticmethod
     def table_name(table: exp.Table) -> str:

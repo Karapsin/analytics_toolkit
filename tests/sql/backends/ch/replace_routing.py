@@ -175,6 +175,31 @@ def test_remote_replace_failed_rollback_preserves_recovery_artifacts() -> None:
     assert not any("DROP TABLE" in sql for sql, _ in client.commands)
 
 
+def test_replacement_after_failed_rollback_retains_original_recovery_data() -> None:
+    client = ReplacementClient()
+    original = client.tables["core", PHYSICAL]
+    client.bad_final_count = True
+    client.fail_rollback = True
+    request = _request(client)
+    with pytest.raises(AmbiguousSqlReplaceError, match="automatic rollback"):
+        get_backend_adapter("ch").finalize_stage_table(request)
+    recovery = {
+        key: state for key, state in client.tables.items() if key[0] == "core" and state == original
+    }
+    assert recovery
+    client.bad_final_count = False
+    client.fail_rollback = False
+    client.rollback_pending = False
+    command_count = len(client.commands)
+
+    with pytest.raises(AmbiguousSqlReplaceError, match="unresolved artifact"):
+        get_backend_adapter("ch").finalize_stage_table(request)
+
+    assert all(client.tables[key] == state for key, state in recovery.items())
+    assert len(client.commands) == command_count
+    assert len(client.loads) == 1
+
+
 def test_remote_replace_synchronizes_lagging_validation_replica_before_cutover() -> None:
     client = ReplacementClient()
     client.lag_replica = True
