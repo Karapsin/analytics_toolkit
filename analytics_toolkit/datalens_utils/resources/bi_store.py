@@ -11,6 +11,8 @@ from datalens_sdk import EntryLocation
 from analytics_toolkit.datalens_utils.deployment import BIProjectDeployment, TargetLocation
 from analytics_toolkit.datalens_utils.editing.state import fingerprint
 from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
+from analytics_toolkit.datalens_utils.import_manifest import guard_write
+from analytics_toolkit.datalens_utils.import_source import location as source_location
 from analytics_toolkit.datalens_utils.session import current_session
 
 from .store import ResourceStore
@@ -206,6 +208,19 @@ class BIResourceStore(ResourceStore):
                     "name": resource.definition.get("name"),
                     "scope": self.scope(resource.kind),
                 }
+                if resource.capture and resource.capture.get("baseline_metadata"):
+                    baseline = dict(resource.files)
+                    baseline["definition"] = resource.capture["baseline_definition"]
+                    for asset in (
+                        baseline.keys() & resource.capture.get("baseline_assets", {}).keys()
+                    ):
+                        baseline[asset] = resource.capture["baseline_assets"][asset]
+                    self.state["resources"][internal].update(
+                        baseline=baseline,
+                        fingerprint=fingerprint(baseline),
+                        metadata=resource.capture["baseline_metadata"],
+                        branch="published",
+                    )
 
     @staticmethod
     def internal_key(key: str) -> str:
@@ -240,6 +255,22 @@ class BIResourceStore(ResourceStore):
         self.entries = dict.fromkeys(self.folders, entries)
 
     def verify_location(self, entity: Any, name: Any = None, *, scope: Any = None) -> None:
+        resource = next(
+            (
+                item
+                for item in self.registry.resources.values()
+                if item.definition.get("id") == entity.id
+            ),
+            None,
+        )
+        if resource is not None and resource.definition.get("location"):
+            if source_location(entity) != resource.definition["location"]:
+                raise DataLensUtilsError(
+                    "Resource "
+                    + entity.id
+                    + " moved from its configured location; migration refused."
+                )
+            return
         location = self.folder_for(scope or "dash")
         if hasattr(location, "collection_id") and not hasattr(location, "key"):
             valid = getattr(entity, "workbook_id", None) == location.id
@@ -348,6 +379,7 @@ class BIResourceStore(ResourceStore):
 
     def check_write(self, key: str, entity: Any) -> None:
         resource = self.registry.resources[key]
+        guard_write(resource)
         old = self.state["resources"].get(self.internal_key(key), {})
         live = safe_metadata(entity, resource.kind)
         pending = old.get("pending_write", {})
@@ -387,3 +419,18 @@ class BIResourceStore(ResourceStore):
         if kind == "dataset":
             check_components(entity, key, "fetch " + branch)
         return entity
+
+    def use_resource_location(self, resource: Any) -> None:
+        """Retained imported IDs need no folder enumeration or folder creation."""
+        target = resource.definition.get("location")
+        if target:
+            self.entry_location = (
+                EntryLocation.path(target["value"])
+                if target["kind"] == "path"
+                else EntryLocation.workbook(target["value"])
+            )
+            self.folder = self.entry_location
+            self.folders = dict.fromkeys(
+                ("dash", "widget", "dataset", "connection", "html_page"), self.folder
+            )
+            self.entries = {scope: [] for scope in self.folders}

@@ -194,4 +194,10 @@ def cache_matches(dataset: Any, desired: CacheInvalidationSource) -> bool:
         actual = {"mode": "off", "filters": []}
     elif isinstance(actual, dict):
         actual = {"filters": [], **actual}
+        # The getter includes nullable inactive settings and a response-only error.
+        # Preserve authored non-null SQL/fields even when the cache is disabled.
+        actual.pop("cache_invalidation_error", None)
+        for name in ("sql", "field"):
+            if actual.get(name) is None:
+                actual.pop(name, None)
     return bool(actual == exported)

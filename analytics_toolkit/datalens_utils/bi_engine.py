@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from types import SimpleNamespace
-from typing import Any, Sequence
+from typing import Any, Sequence, cast
 
 from datalens_sdk import (
     Connection,
@@ -28,6 +28,8 @@ from .capabilities import get_capabilities, require_capability
 from .dashboard_generation.charts.create import chart_adapter, chart_getter, create_charts
 from .editing.state import fingerprint
 from .errors import DataLensConfigurationError, DataLensUtilsError
+from .import_manifest import existing_connection, is_reference
+from .import_manifest import source as captured_source
 from .planning import plan
 from .recipe import load_registry
 from .resources.bi_store import BIResourceStore, safe_metadata
@@ -39,6 +41,17 @@ def local_datasets(registry: Any) -> dict[str, Any]:
     result = {}
     for key, resource in registry.resources.items():
         if resource.kind != "dataset":
+            continue
+        if is_reference(resource):
+            original = captured_source(resource.capture) if resource.capture else None
+            result[key.split(":", 1)[1]] = Dataset(
+                id=resource.definition["id"],
+                name=resource.definition["name"],
+                result_schema=tuple(original.get("fields", ())) if original else (),
+                installation="yacloud"
+                if current_session().runtime["installation"] == "yc"
+                else "enterprise",
+            )
             continue
         schema = []
         for name, value in resource.definition.get("fields", {}).items():
@@ -96,6 +109,57 @@ def local_datasets(registry: Any) -> dict[str, Any]:
     return result
 
 
+def validate_resource(client: Any, resource: Any, registry: Any, datasets: Any) -> None:
+    if resource.kind == "html_page":
+        html_content(resource.definition)
+    elif resource.kind == "chart":
+        adapter = chart_adapter(resource.definition)
+        adapter.validate_definition(resource.definition)
+        selected = registry.resources.get(
+            "connection:" + resource.definition.get("connection", "default")
+        )
+
+        connection = (
+            Connection(
+                id=selected.definition.get("id") or selected.key,
+                name=selected.definition["name"],
+                type=selected.definition["connector"],
+                installation=client.INSTALLATION,
+            )
+            if selected
+            else None
+        )
+        context = SimpleNamespace(client=client, connection=connection)
+        adapter.create_builder(
+            context,
+            datasets,
+            resource.definition,
+            EntryLocation.path("Offline/Validation"),
+        ).to_spec()
+    elif resource.kind == "dataset":
+        dataset = datasets[resource.key.split(":", 1)[1]]
+        handles = {
+            key: dataset.fields.by_name(value.get("title", key))
+            for section in ("fields", "calculations", "parameters")
+            for key, value in resource.definition.get(section, {}).items()
+        }
+        for name, rule in resource.definition.get("rls", {}).items():
+            if rule["field"] not in handles or rule.get("pattern_type", "value") not in {
+                "value",
+                "all",
+                "userid",
+            }:
+                raise DataLensConfigurationError("Invalid RLS field or pattern: " + name)
+            dataset.update.add_rls(
+                field=handles[rule["field"]],
+                **{key: value for key, value in rule.items() if key != "field"},
+            ).to_spec()
+        if "cache_invalidation" in resource.definition:
+            dataset.update.update_cache_invalidation_source(
+                source=cache_source(resource.definition, handles)
+            ).to_spec()
+
+
 def validate_registry(registry: Any) -> dict[str, Any]:
     """No client factory, authentication, network, or runtime filesystem writes."""
     installation = current_session().runtime["installation"]
@@ -109,71 +173,52 @@ def validate_registry(registry: Any) -> dict[str, Any]:
             for key, value in registry.resources.items()
             if value.kind == "chart"
         }
-        ui = load_ui(definitions)
         charts = {
             key: SimpleNamespace(id=value.get("id") or "chart:" + key)
             for key, value in definitions.items()
         }
-        preflight_ui(
-            client,
-            ui,
-            charts,
-            datasets,
-            definitions,
-            registry.resources["dashboard:main"].definition,
-        )
+        if not is_reference(registry.resources["dashboard:main"]):
+            try:
+                ui = load_ui(definitions)
+                preflight_ui(
+                    client,
+                    ui,
+                    charts,
+                    datasets,
+                    definitions,
+                    registry.resources["dashboard:main"].definition,
+                )
+            except Exception as error:
+                cast("Any", error).resource_key = "dashboard:main"
+                raise
         for resource in registry.resources.values():
-            if resource.kind == "html_page":
-                html_content(resource.definition)
-            elif resource.kind == "chart":
-                adapter = chart_adapter(resource.definition)
-                adapter.validate_definition(resource.definition)
-                selected = registry.resources.get(
-                    "connection:" + resource.definition.get("connection", "default")
-                )
-
-                connection = (
-                    Connection(
-                        id=selected.definition.get("id") or selected.key,
-                        name=selected.definition["name"],
-                        type=selected.definition["connector"],
-                        installation=client.INSTALLATION,
-                    )
-                    if selected
-                    else None
-                )
-                context = SimpleNamespace(client=client, connection=connection)
-                adapter.create_builder(
-                    context, datasets, resource.definition, EntryLocation.path("Offline/Validation")
-                ).to_spec()
-            elif resource.kind == "dataset":
-                dataset = datasets[resource.key.split(":", 1)[1]]
-                handles = {
-                    key: dataset.fields.by_name(value.get("title", key))
-                    for section in ("fields", "calculations", "parameters")
-                    for key, value in resource.definition.get(section, {}).items()
-                }
-                for name, rule in resource.definition.get("rls", {}).items():
-                    if rule["field"] not in handles or rule.get("pattern_type", "value") not in {
-                        "value",
-                        "all",
-                        "userid",
-                    }:
-                        raise DataLensConfigurationError("Invalid RLS field or pattern: " + name)
-                    dataset.update.add_rls(
-                        field=handles[rule["field"]],
-                        **{key: value for key, value in rule.items() if key != "field"},
-                    ).to_spec()
-                if "cache_invalidation" in resource.definition:
-                    dataset.update.update_cache_invalidation_source(
-                        source=cache_source(resource.definition, handles)
-                    ).to_spec()
-    return {"schema_version": 2, "resource_count": len(registry.resources)}
+            if is_reference(resource):
+                continue
+            try:
+                validate_resource(client, resource, registry, datasets)
+            except Exception as error:
+                cast("Any", error).resource_key = resource.key
+                raise
+    return {
+        "schema_version": 2,
+        "resource_count": len(registry.resources),
+        **(
+            {
+                "captured_only": [
+                    key for key, resource in registry.resources.items() if is_reference(resource)
+                ]
+            }
+            if any(resource.capture for resource in registry.resources.values())
+            else {}
+        ),
+    }
 
 
 def getter(client: Any, resource: Any) -> Any:
     return (
         chart_getter(client, resource.definition)
+        if resource.kind == "chart" and not is_reference(resource)
+        else client.get.chart
         if resource.kind == "chart"
         else getattr(client.get, resource.kind)
     )
@@ -244,16 +289,14 @@ def validate_update_scope(
         raise DataLensUtilsError("Capability preflight blocked: " + str(blocked))
     for key, entity in entities.items():
         resource = registry.resources[key]
-        if resource.kind == "connection" and resource.definition["mode"] == "existing":
+        if existing_connection(resource) or (is_reference(resource) and key not in writes):
             issues = resource_issues(client, store, registry, key, entities)
             if issues:
-                raise DataLensUtilsError(key + " existing reference differs: " + ", ".join(issues))
+                raise DataLensUtilsError(key + " reference differs: " + ", ".join(issues))
+            continue
         if key in writes:
             store.check_write(key, entity)
-        elif (
-            registry.resources[key].kind != "connection"
-            or registry.resources[key].definition["mode"] != "existing"
-        ):
+        else:
             old = store.state["resources"].get(store.internal_key(key), {})
             if (
                 not old.get("fingerprint")
@@ -278,7 +321,7 @@ def resolve_write_secrets(
     # Resolve required secrets before the first persistence call.
     for key in writes:
         resource = registry.resources[key]
-        if resource.kind == "connection" and resource.definition["mode"] == "managed":
+        if resource.kind == "connection" and resource.definition.get("mode") == "managed":
             old = store.state["resources"].get(key, {})
             if key not in entities or old.get("credentials_revision") != resource.definition.get(
                 "credentials_revision"
@@ -332,7 +375,12 @@ def apply_resources(
                 client, store, resource, containers
             )
             store.remember(key, entities[key])
-    store.set_location(resolve_location(client, containers))
+    if any(
+        not registry.resources[key].definition.get("location")
+        for key in writes
+        if registry.resources[key].kind not in {"collection", "workbook"}
+    ):
+        store.set_location(resolve_location(client, containers))
     connections = {
         key.split(":", 1)[1]: value
         for key, value in entities.items()
@@ -363,6 +411,7 @@ def apply_resources(
         resource = registry.resources[key]
         if key not in writes or resource.kind in {"collection", "workbook"}:
             continue
+        store.use_resource_location(resource)
         entities[key] = reconcile_entry(client, store, resource, inputs)
         verify_resources(client, store, registry, {key}, entities)
         store.remember(key, entities[key])

@@ -13,6 +13,29 @@ from .errors import DataLensConfigurationError
 from .session import current_session
 
 
+def publish_project(files: dict[str, Any]) -> None:
+    """Publish one validated new project with a same-filesystem directory rename."""
+    root = current_session().paths.project_root
+    root.parent.mkdir(parents=True, exist_ok=True)
+    if root.exists() and (not root.is_dir() or any(root.iterdir())):
+        msg = "Import destination changed while capturing; files preserved."
+        raise DataLensConfigurationError(msg)
+    temporary = Path(tempfile.mkdtemp(prefix=".datalens-import-", dir=root.parent))
+    try:
+        for relative, value in files.items():
+            path = (temporary / relative).resolve()
+            if temporary not in path.parents:
+                raise DataLensConfigurationError("Import asset escapes the recipe: " + relative)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(serialized(relative, value))
+        if root.exists():
+            root.rmdir()  # Fails closed if another writer populated the destination.
+        temporary.rename(root)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+
+
 def serialized(relative: str, value: Any) -> bytes:
     return (
         json.dumps(value, ensure_ascii=False, indent=2) + "\n"

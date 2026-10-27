@@ -1022,7 +1022,7 @@ def dashboard_settings_issues(
     issues: list[str] = []
     for key, value in settings.get("settings", {}).items():
         actual = dashboard.data.get("settings", {})
-        if SETTINGS[key] in actual if value is None else actual.get(SETTINGS[key]) != value:
+        if actual.get(SETTINGS[key]) != value:
             issues.append("settings." + key)
     cascading = any(set(recipients) & set(ui["selectors"]) for recipients in ui["wiring"].values())
     if cascading and not dashboard.data.get("settings", {}).get("dependentSelectors"):

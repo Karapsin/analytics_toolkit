@@ -362,7 +362,9 @@ def chart_definition(
         else {}
     )
     definition["fields"] = {
-        slot: [] for slot in wizard.SLOTS if items(visualization, aliases.get(slot, slot))
+        slot: []
+        for slot in wizard.SLOTS
+        if slot not in aliases.values() and items(visualization, aliases.get(slot, slot))
     }
     return cast(
         "tuple[dict[str, Any], dict[str, str]]",

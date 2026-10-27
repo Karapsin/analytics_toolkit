@@ -179,7 +179,40 @@ HTML uploads use contained UTF-8 assets and preserve revisions and source
 fingerprints. Getters expose metadata, so remote HTML source pull/import is
 unavailable and remote changes block automatic overwrite.
 
-## Import a dashboard or tab
+## Import a dashboard into a new project
+
+Use the package CLI with an existing environment and authentication configuration:
+
+```sh
+python -m analytics_toolkit.cli datalens import-dashboard 'DASHBOARD_URL_OR_ID' \
+  --destination /path/to/project --runtime-dir /path/to/runtime \
+  --organization-id EXISTING_ORG --yc-profile EXISTING_PROFILE --json
+```
+
+Preview is the default. Add `--resume --write` to create the project locally;
+neither command changes cloud resources. All tabs, including hidden tabs, are
+included unless `--tab` selects a subset. A URL's tab query does not limit capture.
+The destination must be empty or absent. The matching public API is
+[`import_dashboard`](../../docs/modules/datalens_utils/functions/import-dashboard.md)
+with `DataLensAuthConfig`.
+
+Published reads, batched inventories and exact-revision caches capture one
+verified source snapshot. A newer saved draft does not prevent capture; write
+protection remains in effect. Original IDs and each resource's folder/workbook
+are retained. The generated launcher and object/UI configuration use the ordinary
+project engine. Original authored JSON, SQL and complete Editor tabs remain
+available even when a faithful writer is unsupported. `configs/import.json`
+separates capture completeness, editing capability, restrictions and binding
+analysis. Inaccessible source is reported explicitly. Connections are safe
+existing references, without exported credentials.
+
+Run the generated `dashboard.py validate --json`, `status --json`, and
+`verify --full --json` to check offline integrity, metadata and authored content.
+No business SQL or Editor scripts are executed. Captured-only resources cannot
+be written. Private snapshots, failure reports and resumable caches stay outside
+the project. See the [import workflow](../../docs/modules/datalens_utils/import-dashboard.md).
+
+## Merge a dashboard or tab into an existing recipe
 
 ```python
 preview = project.import_dashboard(dashboard_id="source-dashboard")
@@ -190,7 +223,7 @@ result = project.import_dashboard(dashboard_id="source-dashboard", dry_run=False
 ```
 
 Imports merge into the current project and change no cloud resources.
-`mode="adopt"` (default) retains IDs and location checks. Explicit `mode="copy"`
+`mode="adopt"` (default) retains IDs and individual resource locations. Explicit `mode="copy"`
 accepts dependencies across folders, omits copied persistent IDs, reuses existing
 connections and uses a separate unused runtime. `copy_from` records provenance
 and prevents accidental exact-name adoption in the destination. CLI imports accept
@@ -212,7 +245,7 @@ explicit placement values win. `chart_title: null` retains an absent internal ti
 Copied Editor definitions use `meta_links_mode: "managed"` to rewrite declared
 aliases only; authored Meta is the default for existing definitions. Local writing requires a blocker-free staged recipe; failed
 replacements roll back. Version-1 projects need explicit `upgrade_recipe=True`.
-Unresolved dynamic Editor dependencies, incompatible locations, unknown item
+Unresolved dynamic Editor dependencies, unknown item
 forms and unavailable authored source retrieval block writes.
 
 CLI equivalents include `capabilities`, `plan`, `reconcile`, repeatable

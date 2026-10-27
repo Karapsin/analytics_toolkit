@@ -13,6 +13,10 @@ def items(section: Any, slot: Any) -> Any:
 
 
 def field_names(datasets: Any, chart: Any = None) -> Any:
+    if chart is not None and len(getattr(chart, "dataset_ids", ())) == 1:
+        datasets = {
+            key: value for key, value in datasets.items() if value.id == chart.dataset_ids[0]
+        }
     names = {field.guid: field.title for dataset in datasets.values() for field in dataset.fields}
     if chart is not None:
         names.update(

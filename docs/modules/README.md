@@ -23,6 +23,7 @@ docs stay easy to scan and edit.
 
 [Documentation overview](../README.md)
 
-DataLens advanced workflows: [BI projects and import](datalens_utils/bi-projects.md).
+DataLens workflows: [capture an existing dashboard](datalens_utils/import-dashboard.md)
+and [advanced BI projects and merge](datalens_utils/bi-projects.md).
 
 [Documentation overview](../README.md)

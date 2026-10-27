@@ -23,6 +23,7 @@ from .deployment import BIProjectDeployment
 from .errors import DataLensConfigurationError, DataLensUtilsError
 from .import_copy import check_copy_key, copy_preflight, place_defaults, relocate
 from .import_fidelity import record, wizard_source_issues
+from .import_source import explicit_dataset_ids, location
 from .recipe import load_registry
 from .recipe_io import replace_files, stage_and_validate
 from .resources.bi_store import entry_description
@@ -82,6 +83,7 @@ def chart_dependencies(
     identifier = entity.id
     if entity.category == "wizard":
         dataset_ids.update(entity.dataset_ids)
+        dataset_ids.update(explicit_dataset_ids(entity.data))
     elif entity.category == "editor":
         try:
             meta = json.loads(entity.data.get("meta", "{}"))
@@ -119,26 +121,17 @@ def tab_dependencies(dashboard: Any, selected: set[str]) -> tuple[set[str], set[
     return chart_ids, dataset_ids
 
 
-def discover_dependencies(
-    client: Any, dashboard: Any, selected: set[str], report: dict[str, Any]
+def collect_dependencies(
+    dashboard: Any, selected: set[str], report: dict[str, Any], register: Any, read: Any
 ) -> Any:
+    """One public dependency traversal for new capture and existing-recipe merges."""
     charts: dict[str, Any] = {}
     datasets: dict[str, Any] = {}
     connections: dict[str, Any] = {}
-    chart_ids: set[str] = set()
-    dataset_ids: set[str] = set()
     chart_ids, dataset_ids = tab_dependencies(dashboard, selected)
-    inventory = (
-        {
-            entry.id: entry
-            for entry in client.navigation.get_entries(ids=sorted(chart_ids), page_size=100)
-        }
-        if chart_ids
-        else {}
-    )
+    scopes = register("chart", chart_ids)
     for identifier in sorted(chart_ids):
-        entry = inventory.get(identifier)
-        if entry is not None and entry.scope == "artifact":
+        if scopes.get(identifier) == "artifact":
             report["blockers"].append(
                 {
                     "resource": "html_page:" + identifier,
@@ -147,18 +140,45 @@ def discover_dependencies(
                 }
             )
             continue
-        entity = client.get.chart(by_id=identifier, branch="published")
-        charts[identifier] = entity
-        chart_dependencies(entity, dataset_ids, connections, report)
-    if dataset_ids:
-        list(client.navigation.get_entries(ids=sorted(dataset_ids), page_size=100))
+        entity = read("chart", identifier)
+        if entity is not None:
+            charts[identifier] = entity
+            chart_dependencies(entity, dataset_ids, connections, report)
+    register("dataset", dataset_ids)
     for identifier in sorted(dataset_ids):
-        datasets[identifier] = client.get.dataset(by_id=identifier, branch="published")
-        for source in datasets[identifier].sources:
-            connections[source.connection_id] = None
-    for identifier in connections:
-        connections[identifier] = client.get.connection(by_id=identifier)
-    return SimpleNamespace(charts=charts, datasets=datasets, connections=connections)
+        entity = read("dataset", identifier)
+        if entity is not None:
+            datasets[identifier] = entity
+            for source in entity.sources:
+                if source.connection_id:
+                    connections[source.connection_id] = None
+    register("connection", set(connections))
+    for identifier in sorted(connections):
+        connections[identifier] = read("connection", identifier)
+    return SimpleNamespace(
+        charts=charts,
+        datasets=datasets,
+        connections={key: value for key, value in connections.items() if value is not None},
+    )
+
+
+def discover_dependencies(
+    client: Any, dashboard: Any, selected: set[str], report: dict[str, Any]
+) -> Any:
+    def register(kind: str, identifiers: set[str]) -> dict[str, str]:
+        if not identifiers or kind == "connection":
+            return {}
+        return {
+            entry.id: getattr(entry, "scope", "")
+            for entry in client.navigation.get_entries(ids=sorted(identifiers), page_size=100)
+        }
+
+    def read(kind: str, identifier: str) -> Any:
+        return getattr(client.get, kind)(
+            by_id=identifier, **({} if kind == "connection" else {"branch": "published"})
+        )
+
+    return collect_dependencies(dashboard, selected, report, register, read)
 
 
 def import_dataset(client: Any, entity: Any, context: Any) -> None:
@@ -166,9 +186,9 @@ def import_dataset(client: Any, entity: Any, context: Any) -> None:
     registry, proposed, report = context.registry, context.proposed, context.report
     dataset_keys, connection_keys = context.dataset_keys, context.connection_keys
     try:
-        if context.mode == "adopt":
-            _compatible_location(entity, registry)
         value, assets = dataset_definition(client, entity, connection_keys)
+        if context.mode == "adopt" and location(entity):
+            value["location"] = location(entity)
         if any("manual" in source.parameters for source in entity.sources):
             record(
                 report,
@@ -244,14 +264,14 @@ def import_chart(entity: Any, context: Any) -> None:
     datasets, selected, dashboard = context.datasets, context.selected, context.dashboard
     state = current_session()
     try:
-        if context.mode == "adopt":
-            _compatible_location(entity, registry)
         value, assets = chart_definition(
             entity,
             {dataset_keys[key]: value for key, value in datasets.items()},
             connection_keys,
             next(tab.id for tab in dashboard.tabs if tab.id in selected),
         )
+        if context.mode == "adopt" and location(entity):
+            value["location"] = location(entity)
         value["key"] = chart_keys[identifier]
         check_imported_chart(entity, context, value)
         if context.mode == "copy":
@@ -497,13 +517,6 @@ def import_recipe(
         if selected - {tab.id for tab in dashboard.tabs}:
             msg = "Requested tab is absent from the source dashboard."
             raise DataLensConfigurationError(msg)
-        if dashboard.saved_id != dashboard.published_id:
-            report["blockers"].append(
-                {
-                    "resource": "dashboard:" + dashboard_id,
-                    "reason": "Source dashboard has an unpublished draft.",
-                }
-            )
         dependencies = discover_dependencies(client, dashboard, selected, report)
         charts, datasets, connections = (
             dependencies.charts,

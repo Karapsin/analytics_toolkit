@@ -9,6 +9,7 @@ from .auth.client import datalens_client
 from .capabilities import get_capabilities
 from .editing.state import configuration, fingerprint, metadata
 from .errors import DataLensConfigurationError
+from .import_manifest import is_reference
 from .recipe import load_registry
 from .session import current_session
 
@@ -208,6 +209,8 @@ def plan_v2(registry: Any, *, resource_keys: Sequence[str] | None) -> dict[str, 
             old = store.state["resources"].get(store.internal_key(key), {})
             live = safe_metadata(entities[key], resource.kind) if key in entities else None
             action = classify(fingerprint(resource.files), old, live)
+            if is_reference(resource):
+                action = "captured_reference" if live is not None else "inaccessible_reference"
             if (
                 resource.kind == "dashboard"
                 and action == "unchanged"
@@ -216,7 +219,7 @@ def plan_v2(registry: Any, *, resource_keys: Sequence[str] | None) -> dict[str, 
                 action = "update"
             if (
                 resource.kind == "connection"
-                and resource.definition["mode"] == "existing"
+                and resource.definition.get("mode") == "existing"
                 and key in entities
                 and resource_issues(client, store, registry, key, entities)
             ):
@@ -233,7 +236,7 @@ def plan_v2(registry: Any, *, resource_keys: Sequence[str] | None) -> dict[str, 
                 )
             if (
                 resource.kind == "connection"
-                and resource.definition["mode"] == "existing"
+                and resource.definition.get("mode") == "existing"
                 and live is not None
                 and action != "conflict"
             ):
@@ -246,7 +249,7 @@ def plan_v2(registry: Any, *, resource_keys: Sequence[str] | None) -> dict[str, 
                         **capabilities["operations"]["html_page.pull"],
                     }
                 )
-            if key not in writes and action not in {"unchanged", "reference"}:
+            if key not in writes and action not in {"unchanged", "reference", "captured_reference"}:
                 conflicts.append(
                     {
                         "resource": key,
@@ -262,6 +265,14 @@ def plan_v2(registry: Any, *, resource_keys: Sequence[str] | None) -> dict[str, 
                     and action in {"update", "create_or_adopt", "recover"},
                     "id": old.get("id"),
                     "dependencies": list(resource.dependencies),
+                    **(
+                        {
+                            "capture": resource.capture["capture"],
+                            "editable": not is_reference(resource),
+                        }
+                        if resource.capture
+                        else {}
+                    ),
                 }
             )
     return {

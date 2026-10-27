@@ -1,0 +1,1 @@
+- Import published DataLens dashboards into new projects with preserved source, per-resource locations, resumable capture, failure diagnostics, and a self-contained skill. Cover capture recovery, retained-source pulls and publication failures; isolate headless color tests from host NO_COLOR while verifying monochrome rendering.

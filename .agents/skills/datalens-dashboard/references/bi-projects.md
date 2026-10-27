@@ -14,7 +14,8 @@ of affected resources without silently expanding the write scope. Retain IDs,
 remote draft protection and owned-write recovery. Verification must compare
 managed content, including formulas and selector defaults, as well as revisions.
 
-For imported content, use `import_dashboard` for every tab or `import_tab` for one
+For a new local project, use the [package import command](import-dashboard.md).
+For a merge into an existing project, use its `import_dashboard` for every tab or `import_tab` for one
 selected tab. Preview is the default; merge into the current project only after
 reviewing blockers, collisions and the fidelity report. Import changes no cloud
 resources. SQL/JS extraction is restricted to source exposed by public getters;
@@ -46,7 +47,7 @@ configuration contract and upstream requirements for blocked operations.
 For copying, use `mode="copy"` (CLI `--mode copy`), a destination recipe without
 copied IDs, and a separate unused runtime. Connections are reused; datasets,
 charts and the destination dashboard get new IDs. Adopt mode is the default and
-retains location restrictions. `copy_from` prevents accidental name adoption.
+retains each resource's original location. `copy_from` prevents accidental name adoption.
 Copied Editor Meta uses managed semantic aliases while retaining unrelated authored
 content. Chart defaults are normalized onto every repeated placement.
 
