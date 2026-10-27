@@ -35,6 +35,10 @@ class ReplacementClient:
             (stage_scope, STAGE): Table(STAGED_ROWS, ("id", "value")),
         }
         self.engines = {LOCAL: "Ordinary", "core": "Atomic", "facades": "Atomic"}
+        self.current_database = "sandbox"
+        self.database_engines: dict[tuple[str, str], str] = {}
+        self.fingerprint_calls = 0
+        self.concurrent_destination_change = False
         self.commands: list[tuple[str, dict[str, Any]]] = []
         self.queries: list[str] = []
         self.loads: list[tuple[tuple[str, str], tuple[str, str]]] = []
@@ -110,6 +114,9 @@ class ReplacementClient:
             )
             self.swaps.append((scope, left, right))
             if operation == "EXCHANGE":
+                database = left.rsplit(".", 1)[0]
+                engine = self.database_engines.get((scope, database), self.engines[scope])
+                assert engine in {"Atomic", "Replicated"}
                 self.tables[scope, left], self.tables[scope, right] = (
                     self.tables[scope, right],
                     self.tables[scope, left],
@@ -161,6 +168,8 @@ class ReplacementClient:
     def query(self, sql: str, **_kwargs: Any) -> Any:
         self.queries.append(sql)
         clean = strip_query_label(sql)
+        if clean == "SELECT currentDatabase()":
+            return SimpleNamespace(result_rows=[(self.current_database,)])
         if clean.startswith("EXISTS TABLE "):
             table = parse_one(f"SELECT * FROM {clean[len('EXISTS TABLE ') :]}", read="clickhouse")
             key = self.reference(table.args["from_"].this)
@@ -195,10 +204,19 @@ class ReplacementClient:
 
     def _metadata_rows(self, tree: exp.Expression, scope: str, table: str) -> list[tuple[Any, ...]]:
         if table == "system.databases":
-            return [(self.engines[scope],)]
+            database = next(
+                item.expression.this for item in tree.find_all(exp.EQ) if item.this.name == "name"
+            )
+            return [(self.database_engines.get((scope, database), self.engines[scope]),)]
         if table == "system.parts":
-            state = self.tables[scope, PHYSICAL]
-            return [(scope, 1, state.rows, 1, 1)]
+            self.fingerprint_calls += 1
+            if self.concurrent_destination_change and self.fingerprint_calls == 2:
+                state = self.tables[self.storage, PHYSICAL]
+                self.tables[self.storage, PHYSICAL] = replace(state, rows=state.rows + 1)
+            filters = {item.this.name: item.expression.this for item in tree.find_all(exp.EQ)}
+            target = f"{filters['database']}.{filters['table']}"
+            state = self.tables.get((scope, target))
+            return [(scope, 1, state.rows, 1, 1)] if state else [(scope, 0, 0, 0, 0)]
         if table in {"system.clusters", "system.one"} and tree.find(exp.Count):
             return [(2,)]
         if table == "system.tables" and tree.find(exp.Count):

@@ -198,6 +198,45 @@ def test_remote_replace_sync_failure_leaves_original_untouched() -> None:
     assert not any("__replace_" in table for _scope, table in client.tables)
 
 
+@pytest.mark.parametrize("only_shard", [False, True], ids=["pair", "shard"])
+def test_unqualified_replace_uses_current_database_for_metadata_and_operations(only_shard) -> None:
+    client = ReplacementClient()
+    client.engines["core"] = "Ordinary"
+    client.database_engines["core", "default"] = "Atomic"
+    target = PHYSICAL if only_shard else TARGET
+    request = replace(_request(client, only_shard=only_shard), target_table=target.split(".")[1])
+
+    get_backend_adapter("ch").finalize_stage_table(request)
+
+    assert client.tables["core", PHYSICAL].rows == STAGED_ROWS
+    assert client.queries.count("SELECT currentDatabase()") == 1
+    assert all(
+        left.startswith("sandbox.") and right.startswith("sandbox.")
+        for _, left, right in client.swaps
+    )
+    assert not any(sql.startswith("EXCHANGE TABLES") for sql, _ in client.commands)
+    metadata = [sql for sql in client.queries if "system, databases" in sql]
+    assert metadata
+    assert all("name = 'sandbox'" in sql for sql in metadata)
+    assert not any("__replace_" in table or "__backup_" in table for _, table in client.tables)
+
+
+def test_unqualified_replace_detects_writers_in_current_database() -> None:
+    client = ReplacementClient()
+    client.concurrent_destination_change = True
+    request = replace(_request(client), target_table="events")
+
+    with pytest.raises(RuntimeError, match="destination changed"):
+        get_backend_adapter("ch").finalize_stage_table(request)
+
+    assert client.swaps == []
+    assert client.tables["core", PHYSICAL].rows == 18
+    fingerprints = [sql for sql in client.queries if "system, parts" in sql]
+    assert len(fingerprints) == 2
+    assert all("database = 'sandbox'" in sql for sql in fingerprints)
+    assert not any("__replace_" in table for _, table in client.tables)
+
+
 @pytest.mark.parametrize("bad_final", [False, True])
 def test_remote_replace_keeps_separate_facade_scope_and_engine(bad_final) -> None:
     client = ReplacementClient()

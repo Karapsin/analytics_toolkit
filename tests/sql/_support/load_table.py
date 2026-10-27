@@ -88,6 +88,8 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> object:
         self.queries.append(sql)
+        if sql == "SELECT currentDatabase()":
+            return type("FakeResult", (), {"result_rows": [("default",)]})()
         if "system, databases" in sql or "system.databases" in sql:
             return type("FakeResult", (), {"result_rows": [("Ordinary",)]})()
         if sql.startswith("SELECT getMacro("):

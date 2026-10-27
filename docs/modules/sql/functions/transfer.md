@@ -109,7 +109,9 @@ target by default, while append/upsert keep the target.
 For an existing ClickHouse target, replacement data is loaded and counted on
 the configured physical storage cluster, even when the connection host is
 outside that cluster. A local stage remains local; cluster-routed private
-stages retain their all-replica reads. The staged and replacement row counts
+stages retain their all-replica reads. Unqualified targets are resolved once
+against the connection's current database for metadata, DDL, and data operations.
+The staged and replacement row counts
 must match before cutover, and the final storage row count is checked afterward.
 Replicated replacement tables are synchronized across the storage cluster before
 validation so a count cannot read a replica that has not received the staged data.

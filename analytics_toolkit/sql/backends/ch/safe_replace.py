@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # ruff: noqa: BLE001, EM101, PLR0913, PLR0915, S608, TRY003, TRY301
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -27,8 +28,11 @@ from .reconfigure_support import (
     cutover_sqls,
     database_engine,
     drop_table_sql,
+    qualify_with_database,
+    query_scalar,
     suffixed_table,
     supports_exchange,
+    unquoted_table_name,
 )
 from .routing import local_sql, query_local, routed_connection_sql
 
@@ -150,6 +154,7 @@ def _finalize_upsert(adapter: Any, request: StageFinalizationRequest) -> None:
 
 
 def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None:
+    request = _qualify_replacement_target(request)
     token = uuid4().hex[:12]
     physical_target = (
         request.target_table
@@ -299,6 +304,15 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
         raise
 
     _best_effort_drop(adapter, request.connection, [*cleanup_tables, *local_replacement])
+
+
+def _qualify_replacement_target(request: StageFinalizationRequest) -> StageFinalizationRequest:
+    database, _relation = unquoted_table_name(request.target_table)
+    if database is not None:
+        return request
+    with local_sql(request.connection):
+        database = str(query_scalar(request.connection, "SELECT currentDatabase()"))
+    return replace(request, target_table=qualify_with_database(request.target_table, database))
 
 
 def _create_replacement_physical(
