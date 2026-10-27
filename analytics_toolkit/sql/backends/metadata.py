@@ -1,6 +1,8 @@
 # ruff: noqa: S608 -- SQL builders quote values; catalog identifiers are quoted by the caller.
 from __future__ import annotations
 
+from sqlglot import exp
+
 from .utils import sql_string_literal
 
 
@@ -162,9 +164,11 @@ SELECT CASE
 
 
 def build_ch_completion_query(schema: str | None, prefix: str) -> str:
-    filters = [completion_prefix_filter("name", prefix)]
+    literal = exp.Literal.string(prefix).sql(dialect="clickhouse")
+    filters = [f"startsWith(lower(name), lower({literal}))"]
     if schema is not None:
-        filters.append(f"database = {sql_string_literal(schema)}")
+        database = exp.Literal.string(schema).sql(dialect="clickhouse")
+        filters.append(f"database = {database}")
     return "SELECT name FROM system.tables WHERE " + " AND ".join(filters) + " ORDER BY name"
 
 
