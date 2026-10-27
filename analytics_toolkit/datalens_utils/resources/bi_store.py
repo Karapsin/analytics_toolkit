@@ -13,6 +13,7 @@ from analytics_toolkit.datalens_utils.editing.state import fingerprint
 from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
 from analytics_toolkit.datalens_utils.import_manifest import guard_write
 from analytics_toolkit.datalens_utils.import_source import location as source_location
+from analytics_toolkit.datalens_utils.import_source import source_document
 from analytics_toolkit.datalens_utils.session import current_session
 
 from .store import ResourceStore
@@ -375,6 +376,8 @@ class BIResourceStore(ResourceStore):
     def remember(self, key: str, entity: Any) -> None:
         resource = self.registry.resources[key]
         entry = self.state["resources"][self.internal_key(key)]
+        if resource.capture:
+            entry["verified_source"] = source_document(entity, resource.kind)
         entry.update(
             baseline=resource.files,
             fingerprint=fingerprint(resource.files),

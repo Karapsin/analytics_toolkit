@@ -81,6 +81,11 @@ Stop exhausted SDK errors and retain request IDs; do not add retry loops.
 Run `python dashboard.py validate --json` for offline integrity,
 `status --json` for current metadata, and `verify --full --json` for published
 content. These checks do not establish numerical or rendering equivalence.
+Full verification also compares complete source for editable resources, so new
+unmodeled settings cannot pass a subset-only recipe check. Its per-resource
+`source_verification` identifies the capture or latest verified checkpoint as
+the comparison baseline. After supported writes, the new complete source is
+retained in the external checkpoint while import-file integrity remains checked.
 Use `plan` before scoped writes; saved-draft and revision protections still apply.
 Published-source verification accepts a newer saved draft, while writes still
 require explicit draft reconciliation. Malformed Editor Meta is preserved with

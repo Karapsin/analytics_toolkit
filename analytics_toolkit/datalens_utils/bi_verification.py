@@ -86,10 +86,15 @@ def connection_issues(entity: Any, definition: dict[str, Any]) -> list[str]:
     return issues
 
 
-def captured_issues(resource: Any, entity: Any, issues: list[str]) -> list[str]:
+def captured_issues(
+    resource: Any, entity: Any, issues: list[str], old: dict[str, Any] | None = None
+) -> list[str]:
     original = source(resource.capture) if resource.capture else None
     if original is None:
         return [*issues, "captured_source.unavailable"]
+    # A verified managed write has a newer authored baseline in the private
+    # checkpoint; the original shareable source still passes its integrity check.
+    original = (old or {}).get("verified_source", original)
     actual = source_document(entity, resource.kind)
     # Revision pointers, including a newer saved draft, are not authored content.
     original = {name: value for name, value in original.items() if name != "metadata"}
@@ -99,15 +104,23 @@ def captured_issues(resource: Any, entity: Any, issues: list[str]) -> list[str]:
     return issues
 
 
-def resource_issues(
-    client: Any, store: Any, registry: Any, key: str, entities: dict[str, Any]
+def resource_issues(  # noqa: PLR0913 - Existing comparator inputs plus explicit verification mode.
+    client: Any,
+    store: Any,
+    registry: Any,
+    key: str,
+    entities: dict[str, Any],
+    *,
+    captured: bool = True,
 ) -> list[str]:
     resource = registry.resources[key]
     entity, definition = entities[key], resource.definition
     old = store.state["resources"].get(store.internal_key(key), {})
     issues = common_resource_issues(store, resource, entity, old)
+    if captured and (resource.capture or is_reference(resource)):
+        issues = captured_issues(resource, entity, issues, old)
     if is_reference(resource):
-        return captured_issues(resource, entity, issues)
+        return issues
     if resource.kind == "connection":
         issues.extend(connection_issues(entity, definition))
     elif resource.kind in {"collection", "workbook"}:
@@ -158,14 +171,20 @@ def resource_issues(
     return issues
 
 
-def verify_resources(
-    client: Any, store: Any, registry: Any, selected: set[str], entities: dict[str, Any]
+def verify_resources(  # noqa: PLR0913 - Existing verifier inputs plus write-result/full-source mode.
+    client: Any,
+    store: Any,
+    registry: Any,
+    selected: set[str],
+    entities: dict[str, Any],
+    *,
+    captured: bool = True,
 ) -> dict[str, Any]:
     mismatches = [
         {"resource": key, "path": issue}
         for key in registry.order
         if key in selected
-        for issue in resource_issues(client, store, registry, key, entities)
+        for issue in resource_issues(client, store, registry, key, entities, captured=captured)
     ]
     if mismatches:
         error = DataLensUtilsError("Persisted recipe verification failed: " + str(mismatches))
@@ -174,6 +193,20 @@ def verify_resources(
     return {
         "verified_resources": sorted(selected),
         "mismatches": [],
+        "source_verification": {
+            key: {
+                "status": "matched",
+                "baseline": (
+                    "verified_checkpoint"
+                    if store.state["resources"]
+                    .get(store.internal_key(key), {})
+                    .get("verified_source")
+                    else "capture"
+                ),
+            }
+            for key in sorted(selected)
+            if captured and registry.resources[key].capture
+        },
         "captured_resources": {
             key: {
                 "capture": registry.resources[key].capture["capture"],

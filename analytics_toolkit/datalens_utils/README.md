@@ -203,7 +203,9 @@ are retained. The generated launcher and object/UI configuration use the ordinar
 project engine. Original authored JSON, SQL and complete Editor tabs remain
 available even when a faithful writer is unsupported. `configs/import.json`
 separates capture completeness, editing capability, restrictions and binding
-analysis. Inaccessible source is reported explicitly. Connections are safe
+analysis. Dataset identity and GUID are checked together before enabling a Wizard
+writer; ambiguous or foreign-dataset bindings remain captured-only even when
+their GUIDs coincide. Inaccessible source is reported explicitly. Connections are safe
 existing references, without exported credentials. Malformed or dynamic Editor
 Meta retains its authored tabs and reports an unresolved dependency closure;
 other readable resources remain importable.
@@ -216,6 +218,11 @@ and its current writer restrictions before merging.
 
 Run the generated `dashboard.py validate --json`, `status --json`, and
 `verify --full --json` to check offline integrity, metadata and authored content.
+Full verification compares complete authored source for editable imports too,
+including settings outside the managed recipe. `source_verification` reports
+each resource's result and whether its baseline is the capture or the private
+verified checkpoint. Supported writes and pulls retain their complete verified
+source in that checkpoint; preserved import files still receive integrity checks.
 No business SQL or Editor scripts are executed. Captured-only resources cannot
 be written. Private snapshots, failure reports and resumable caches stay outside
 the project. See the [import workflow](../../docs/modules/datalens_utils/import-dashboard.md).

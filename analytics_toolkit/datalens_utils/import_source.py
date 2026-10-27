@@ -272,3 +272,18 @@ def wizard_bindings(entity: Any, datasets: dict[str, Any]) -> dict[str, Any]:
         "bindings": occurrences,
         "ambiguous": ambiguous,
     }
+
+
+def wizard_binding_issues(entity: Any, datasets: Any, definition: Any) -> list[str]:
+    """Gate a single-dataset writer using both dataset identity and field GUID."""
+    dataset = datasets.get(definition.get("dataset"))
+    analysis = wizard_bindings(entity, datasets)
+    if (
+        dataset is None
+        or analysis["declared_dataset_ids"] != [dataset.id]
+        or analysis["ambiguous"]
+        or set(analysis["referenced_dataset_ids"]) - {dataset.id}
+        or explicit_dataset_ids(entity.data) - {dataset.id}
+    ):
+        return ["dataset identity and GUID bindings cannot be reproduced by this recipe"]
+    return []

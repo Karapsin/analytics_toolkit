@@ -413,7 +413,9 @@ def apply_resources(
             continue
         store.use_resource_location(resource)
         entities[key] = reconcile_entry(client, store, resource, inputs)
-        verify_resources(client, store, registry, {key}, entities)
+        # A deliberate write changes the original capture. Verify its managed
+        # result first; remember then stores the new complete authored baseline.
+        verify_resources(client, store, registry, {key}, entities, captured=False)
         store.remember(key, entities[key])
 
 

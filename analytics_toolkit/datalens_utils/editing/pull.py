@@ -93,6 +93,14 @@ def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
     if chart.visualization_id != wizard.VISUALIZATIONS[definition["type"]]:
         message = "Pull cannot change a Wizard visualization or resource family."
         raise DataLensUtilsError(message)
+    if strict_fidelity:
+        from analytics_toolkit.datalens_utils.import_source import (  # noqa: PLC0415
+            wizard_binding_issues,
+        )
+
+        binding_issues = wizard_binding_issues(chart, datasets, definition)
+        if binding_issues:
+            raise DataLensUtilsError("; ".join(binding_issues))
     names = field_names(datasets, chart)
     visualization = chart.data.get("visualization", {})
     settings = visualization.get("chartSettings", {})

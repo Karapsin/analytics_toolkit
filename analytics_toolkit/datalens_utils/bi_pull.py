@@ -17,6 +17,7 @@ from .editing.state import fingerprint, merge
 from .errors import DataLensUtilsError
 from .import_fidelity import wizard_source_issues
 from .import_manifest import MANIFEST, is_reference, load_manifest
+from .import_source import source_document
 from .recipe_io import replace_files, stage_and_validate
 from .resources.bi_store import safe_metadata
 from .session import current_session
@@ -244,6 +245,17 @@ def pull_reference(resource: Any, entity: Any, registry: Any, manifest: Any, pro
     return incoming
 
 
+def remember_pulled(resource: Any, entity: Any, old: Any, baseline: Any, branch: str) -> None:
+    if resource.capture:
+        old["verified_source"] = source_document(entity, resource.kind)
+    old.update(
+        baseline=baseline,
+        metadata=safe_metadata(entity, resource.kind),
+        branch=branch,
+        fingerprint=fingerprint(baseline),
+    )
+
+
 def pull_resources(  # noqa: PLR0913 - Three-way baseline, dependency snapshots and selected branch.
     client: Any,
     store: Any,
@@ -312,11 +324,6 @@ def pull_resources(  # noqa: PLR0913 - Three-way baseline, dependency snapshots 
     store.readonly = False
     for key in selected:
         old = store.state["resources"][store.internal_key(key)]
-        old.update(
-            baseline=baselines[key],
-            metadata=safe_metadata(entities[key], registry.resources[key].kind),
-            branch=branch,
-        )
-        old["fingerprint"] = fingerprint(baselines[key])
+        remember_pulled(registry.resources[key], entities[key], old, baselines[key], branch)
     store.save_checkpoint()
     return {"pulled_resources": sorted(selected), "branch": branch}
