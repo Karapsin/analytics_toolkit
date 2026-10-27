@@ -18,7 +18,11 @@ from analytics_toolkit.sql.execution.labels import apply_query_label
 from .creation_policy import DEFAULT_DDL_READY_TIMEOUT_SECONDS, ClickHouseCreationPolicy
 from .ddl import _sql_string_literal, split_ch_table_name_for_distributed_engine
 from .reconfigure_ddl import distributed_table_parts
-from .reconfigure_execution import cluster_clause, execute_reconfiguration_sqls
+from .reconfigure_execution import (
+    SYNCHRONOUS_CLUSTER_COMMAND_SETTINGS,
+    cluster_clause,
+    execute_reconfiguration_sqls,
+)
 from .reconfigure_support import (
     cutover_sqls,
     database_engine,
@@ -215,6 +219,7 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
                 distributed_cluster=distributed_cluster,
             )
         _load_replacement(adapter, request, replacement_physical, shard_cluster, data_function)
+        _synchronize_replacement(request, replacement_physical, shard_cluster, data_function)
         replacement_rows = _count_rows_on_scope(
             adapter,
             request.connection,
@@ -440,6 +445,33 @@ def _load_replacement(
     )
     with local_sql(request.connection):
         request.connection.command(sql, settings={"distributed_foreground_insert": 1})
+
+
+def _synchronize_replacement(
+    request: StageFinalizationRequest,
+    table: str,
+    cluster: str | None,
+    data_function: str,
+) -> None:
+    if cluster is None or data_function != "cluster":
+        return
+    # Foreground INSERT acknowledges the receiving replica, not every replica
+    # cluster() may select. Synchronize the off-side table before either count
+    # or cutover, waiting for every configured host rather than only active ones.
+    sql = apply_query_label(
+        f"SYSTEM SYNC REPLICA{cluster_clause(cluster)} {table}", request.query_label
+    )
+    with local_sql(request.connection):
+        request.connection.command(
+            sql,
+            settings={
+                **SYNCHRONOUS_CLUSTER_COMMAND_SETTINGS,
+                "distributed_ddl_output_mode": "throw",
+                "receive_timeout": SYNCHRONOUS_CLUSTER_COMMAND_SETTINGS[
+                    "distributed_ddl_task_timeout"
+                ],
+            },
+        )
 
 
 def _count_rows_on_scope(

@@ -139,6 +139,7 @@ def test_replace_legacy_cluster_creates_remote_physical_before_loading(only_shar
 @pytest.mark.parametrize("bad_final", [False, True], ids=["before-cutover", "after-cutover"])
 def test_remote_replace_row_count_failure_preserves_original(bad_final) -> None:
     client = ReplacementClient()
+    client.lag_replica = True
     original = client.tables["core", PHYSICAL]
     client.incomplete_load = not bad_final
     client.bad_final_count = bad_final
@@ -166,6 +167,35 @@ def test_remote_replace_failed_rollback_preserves_recovery_artifacts() -> None:
     assert any(scope == "core" and "__replace_" in table for scope, table in client.tables)
     assert any(scope == LOCAL and "__replace_" in table for scope, table in client.tables)
     assert not any("DROP TABLE" in sql for sql, _ in client.commands)
+
+
+def test_remote_replace_synchronizes_lagging_validation_replica_before_cutover() -> None:
+    client = ReplacementClient()
+    client.lag_replica = True
+
+    get_backend_adapter("ch").finalize_stage_table(_request(client))
+
+    assert client.syncs[0][0] == "core"
+    assert client.syncs[0][2] == (STAGED_ROWS, 0)
+    final = client.tables["core", PHYSICAL]
+    assert final.replica_rows == (STAGED_ROWS, STAGED_ROWS)
+    assert final.replica_rows[client.validation_replica] == STAGED_ROWS
+    assert len(client.swaps) == 2
+    assert not any("__replace_" in table for _scope, table in client.tables)
+
+
+def test_remote_replace_sync_failure_leaves_original_untouched() -> None:
+    client = ReplacementClient()
+    client.lag_replica = True
+    client.fail_sync = True
+    original = client.tables["core", PHYSICAL]
+
+    with pytest.raises(TimeoutError, match="replica synchronization timed out"):
+        get_backend_adapter("ch").finalize_stage_table(_request(client))
+
+    assert client.tables["core", PHYSICAL] == original
+    assert client.swaps == []
+    assert not any("__replace_" in table for _scope, table in client.tables)
 
 
 @pytest.mark.parametrize("bad_final", [False, True])

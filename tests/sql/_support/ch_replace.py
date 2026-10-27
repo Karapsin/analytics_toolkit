@@ -21,6 +21,7 @@ class Table:
     rows: int
     columns: tuple[str, ...]
     replicated: bool = True
+    replica_rows: tuple[int, int] | None = None
 
 
 class ReplacementClient:
@@ -43,6 +44,10 @@ class ReplacementClient:
         self.bad_final_count = False
         self.fail_rollback = False
         self.rollback_pending = False
+        self.lag_replica = False
+        self.validation_replica = 1
+        self.syncs: list[tuple[str, str, tuple[int, int] | None]] = []
+        self.fail_sync = False
 
     def command(self, sql: str, settings: dict[str, Any] | None = None) -> None:
         self.commands.append((sql, settings or {}))
@@ -69,7 +74,29 @@ class ReplacementClient:
             if target[0] == LOCAL:
                 self.local_loads.append(target[1])
             rows = self.tables[source].rows - int(self.incomplete_load)
-            self.tables[target] = replace(self.tables[target], rows=rows)
+            state = self.tables[target]
+            replica_rows = (rows, 0) if self.lag_replica and state.replicated else None
+            self.tables[target] = replace(state, rows=rows, replica_rows=replica_rows)
+        elif operation == "SYSTEM":
+            parts = [
+                token.value
+                for token in sqlparse.parse(clean)[0].flatten()
+                if not token.is_whitespace
+            ]
+            assert [part.upper() for part in parts[:5]] == [
+                "SYSTEM",
+                "SYNC",
+                "REPLICA",
+                "ON",
+                "CLUSTER",
+            ]
+            scope = parts[5].strip("'\"`")
+            table = self.table_name(
+                parse_one(f"SELECT * FROM {''.join(parts[6:])}", read="clickhouse")
+                .args["from_"]
+                .this
+            )
+            self._synchronize(scope, table, settings or {})
         elif operation in {"EXCHANGE", "RENAME"}:
             if self.rollback_pending and self.fail_rollback:
                 message = "rollback unavailable"
@@ -97,6 +124,20 @@ class ReplacementClient:
         else:
             message = f"Unexpected command: {sql}"
             raise AssertionError(message)
+
+    def _synchronize(self, scope: str, table: str, settings: dict[str, Any]) -> None:
+        assert settings["distributed_ddl_output_mode"] == "throw"
+        assert settings["distributed_ddl_task_timeout"] > 0
+        if self.fail_sync:
+            message = "replica synchronization timed out"
+            raise TimeoutError(message)
+        state = self.tables[scope, table]
+        self.syncs.append((scope, table, state.replica_rows))
+        if state.replica_rows is not None:
+            acknowledged_rows = max(state.replica_rows)
+            self.tables[scope, table] = replace(
+                state, replica_rows=(acknowledged_rows, acknowledged_rows)
+            )
 
     def _create_table(self, tree: exp.Create) -> None:
         scope = tree.find(exp.OnCluster)
@@ -131,7 +172,12 @@ class ReplacementClient:
         scope, table = self.reference(source)
         if table.startswith("system."):
             return SimpleNamespace(result_rows=self._metadata_rows(tree, scope, table))
-        rows = self.tables[scope, table].rows
+        state = self.tables[scope, table]
+        rows = (
+            state.replica_rows[self.validation_replica]
+            if state.replica_rows is not None
+            else state.rows
+        )
         # Replicated destinations must be read once per shard, whereas private
         # non-replicated stages need their rows from every replica.
         if (

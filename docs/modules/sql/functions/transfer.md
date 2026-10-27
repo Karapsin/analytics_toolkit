@@ -111,6 +111,8 @@ the configured physical storage cluster, even when the connection host is
 outside that cluster. A local stage remains local; cluster-routed private
 stages retain their all-replica reads. The staged and replacement row counts
 must match before cutover, and the final storage row count is checked afterward.
+Replicated replacement tables are synchronized across the storage cluster before
+validation so a count cannot read a replica that has not received the staged data.
 A failed final check rolls back the cutover. If rollback also fails, replacement
 artifacts are preserved for recovery.
 
