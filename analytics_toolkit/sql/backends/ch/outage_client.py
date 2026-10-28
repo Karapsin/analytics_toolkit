@@ -139,6 +139,8 @@ class OutageClient:
             session = self._get_session(state)
             cluster = configured_cluster(self._config)
             table = parse_one(table_name, read=_RoutingClickHouse, into=exp.Table)
+            if self._config.cluster_routing is None:
+                return session.native_table_exists(table_name, table)
             target = (table.db or self._config.database, table.name)
             if state.resources.get(("ch_owned_local", self._config.connection_key, target)):
                 cluster = None
@@ -395,7 +397,12 @@ class OutageClient:
             if destructive:
                 configured = self._config.cluster_routing
                 preflight_clusters = clusters or (
-                    [configured.cluster] if configured is not None else []
+                    [configured.cluster]
+                    if configured is not None
+                    and not state.resources.get(
+                        ("ch_owned_local", self._config.connection_key, target)
+                    )
+                    else []
                 )
                 for cluster in preflight_clusters:
                     scope = session.scope(cluster)
@@ -807,7 +814,8 @@ class OutageClient:
     def _metadata_scope_sql(self, session: OutageSession, statement: exp.Expr, sql: str) -> str:  # noqa: C901, PLR0912 - metadata statements share one selected scope
         if not _LOCAL_SQL_EXECUTION.get():
             return sql
-        default = configured_cluster(self._config)
+        routing = self._config.cluster_routing
+        default = routing.cluster if routing is not None else None
         target = _named_target(statement, self._config.database)
         if (
             default

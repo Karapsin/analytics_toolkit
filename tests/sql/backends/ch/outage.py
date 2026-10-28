@@ -42,7 +42,10 @@ def test_ad_hoc_read_warns_and_reports_partial_coverage(outage: Any, capsys: Any
     assert result.data.id.tolist() == [1]
     assert result.metadata.data_complete is False
     assert result.metadata.ch_cluster_status[-1]["selected_shards"] == [1]
-    assert "DEGRADED MODE" in capsys.readouterr().err
+    banner = capsys.readouterr().err
+    assert "DEGRADED MODE" in banner
+    assert "Selected shards: [1]" in banner
+    assert "selected hosts: h1:" in banner
     assert cluster.commands == []
 
 

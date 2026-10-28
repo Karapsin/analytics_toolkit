@@ -16,21 +16,28 @@ from analytics_toolkit.sql.execution.backend_options import backend_operation
 from tests.sql._support.outage_gp import MemoryGreenplum
 
 
-def test_outage_local_stage_metadata_does_not_inherit_regular_cluster_defaults(outage: Any) -> None:
+@pytest.mark.parametrize("routed", [False, True])
+def test_outage_local_stage_metadata_does_not_inherit_regular_cluster_defaults(
+    outage: Any, routed: bool
+) -> None:
     cluster, configure = outage
-    configure(cluster_routing=None)
+    if not routed:
+        configure(cluster_routing=None)
     cluster.alive.remove("h2")
     name = "db.local__stage__metadata"
     with backend_operation():
         client = sql.get_sql_connection("ch")
-        client.command(f"CREATE TABLE IF NOT EXISTS {name} (id UInt64) ENGINE=Memory")
         with local_sql(client):
+            client.command(f"CREATE TABLE IF NOT EXISTS {name} (id UInt64) ENGINE=Memory")
             assert client.query(f"DESCRIBE TABLE {name}").result_rows == [("id", "UInt64")]
             assert client.query(
                 "SELECT name, type FROM system.columns "
                 "WHERE database='db' AND table='local__stage__metadata'"
             ).result_rows == [("id", "UInt64")]
         assert client.outage_table_exists(name)
+        with local_sql(client):
+            client.command(f"DROP TABLE {name}")
+        assert not client.outage_table_exists(name)
         assert not client._session.scopes
 
 
