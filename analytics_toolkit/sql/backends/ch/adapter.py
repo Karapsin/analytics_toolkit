@@ -588,6 +588,14 @@ class ClickHouseAdapter(BackendAdapter):
         if on_progress is not None:
             on_progress(len(rows))
 
+    def preflight_new_target(
+        self, connection: Any, table_name: str, *, creation_policy: Any = None
+    ) -> None:
+        if getattr(connection, "_ch_outage_client", False):
+            connection.outage_assert_new_target(
+                table_name, policy=creation_policy, cluster=None, only_shard=False
+            )
+
     def apply_target_write_mode(self, request: TargetWriteModeRequest) -> bool:
         from analytics_toolkit.general import time_print
         from analytics_toolkit.sql.connection.get_sql_connection import get_ch_connection_for_host

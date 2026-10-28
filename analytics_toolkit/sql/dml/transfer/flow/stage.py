@@ -35,12 +35,11 @@ def create_stage_state(
         connection_key=options.to_db_key,
     )
     connection = connection_refs.target["connection"]
-    if not target_exists and getattr(connection, "_ch_outage_client", False):
-        connection.outage_assert_new_target(
+    if not target_exists:
+        get_backend_adapter(options.to_db_backend).preflight_new_target(
+            connection,
             options.target_table,
-            policy=options.regular_ch_policy,
-            cluster=options.ch_cluster,
-            only_shard=options.ch_only_shard,
+            creation_policy=options.regular_ch_policy,
         )
     return TransferStageState(
         target_exists=target_exists,

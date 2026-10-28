@@ -15,6 +15,11 @@ def column_list_sql(self: Any, columns: Sequence[str]) -> str:
     return ", ".join(self.quote_identifier(column_name) for column_name in columns)
 
 
+def cast_select_expression(self: Any, column_name: str, target_type: str) -> str:
+    quoted_column = self.quote_identifier(column_name)
+    return f"CAST({quoted_column} AS {target_type}) AS {quoted_column}"
+
+
 def get_table_column_names(
     self: Any, connection: Any, table_name: str, *, connection_key: str
 ) -> tuple[str, ...]:

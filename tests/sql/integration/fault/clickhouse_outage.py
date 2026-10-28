@@ -126,6 +126,19 @@ def _exercise(alias: str, controller: Any, registry: Any) -> None:
         output_type="scalar",
     )
     assert count == 1
+    # Once every DDL host has recovered, explicit idempotent cleanup must work
+    # without creating an empty table on the recovered shard first.
+    sql.drop_tables(
+        alias, table, if_exists=True, ch_cluster="integration_two_shards", query_label=label
+    )
+    count_after_drop = sql.read(
+        "ch",
+        "SELECT count() FROM clusterAllReplicas('integration_two_shards', system, tables) "
+        f"WHERE database = '{database}' AND name IN ('{relation}', '{relation}_shard')",
+        query_label=label,
+        output_type="scalar",
+    )
+    assert count_after_drop == 0
 
 
 @pytest.mark.sql_scenario("fault.clickhouse.unavailable_shard.http")

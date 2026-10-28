@@ -22,6 +22,7 @@ _DEFAULT_CH_ENGINE = "ReplicatedMergeTree"
 _DEFAULT_CH_CLUSTER = "{cluster}"
 _DEFAULT_CH_SHARDING_KEY = "rand()"
 should_ensure_load_target_table = _target_create.should_ensure_load_target_table
+preflight_new_target = _target_create.preflight_new_target
 
 
 def validate_airflow_file_overrides(

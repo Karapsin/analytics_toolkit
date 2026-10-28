@@ -51,7 +51,7 @@ def assert_new_target(
             ch_engine=None,
             ch_cluster=cluster,
             ch_sharding_key=None,
-            ch_distributed_table=not only_shard,
+            ch_distributed_table=None,
             ch_only_shard=only_shard,
             ch_distributed_engine_template=None,
             ch_distributed_cluster=None,

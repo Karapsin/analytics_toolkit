@@ -623,12 +623,11 @@ def _apply_load_target_write_mode(
     state: LoadState,
     connection: Any,
 ) -> None:
-    if not state.target_exists and getattr(connection, "_ch_outage_client", False):
-        connection.outage_assert_new_target(
+    if not state.target_exists:
+        get_backend_adapter(options.connection_backend).preflight_new_target(
+            connection,
             options.destination_table,
-            policy=options.regular_ch_policy,
-            cluster=options.ch_cluster,
-            only_shard=options.ch_only_shard,
+            creation_policy=options.regular_ch_policy,
         )
     if state.original_target_exists and options.write_mode != "append":
         require_complete_operation(

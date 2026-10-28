@@ -178,6 +178,13 @@ append to an existing replicated target through a surviving replica without
 cluster DDL; a transfer configured to create stages `ON CLUSTER` must wait for
 all DDL hosts.
 
+After every execution host recovers, `sql.drop_tables(..., if_exists=True)`
+and explicit `DROP TABLE IF EXISTS ... ON CLUSTER` can remove a partially
+created table pair under either policy. They do not create schema on the
+recovered shard first. Every execution host must be reachable, and cleanup is
+still refused after an uncertain live mutation. Plain DROP without `IF EXISTS`
+retains its table-readiness checks.
+
 Ad hoc operations emit a prominent stderr banner, bold red on terminals that
 support color, a red notebook banner when IPython is active, and
 `ClickHouseDegradedClusterWarning`. A completion banner records the observed

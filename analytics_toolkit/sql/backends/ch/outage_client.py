@@ -718,6 +718,14 @@ class OutageClient:
                 raise ClickHouseClusterTopologyError(msg)
             database = table.db or self._config.database
             objects = scope.objects(database, table.name) if database else []
+            if (
+                isinstance(statement, exp.Drop)
+                and statement.args.get("kind") == "TABLE"
+                and statement.args.get("exists")
+            ):
+                # All execution hosts were checked before this table inspection.
+                # Missing schema is the explicit intent of IF EXISTS, not a missing host.
+                continue
             if objects and database:
                 if objects[0].engine.lower().startswith(
                     ("replicated", "shared")
