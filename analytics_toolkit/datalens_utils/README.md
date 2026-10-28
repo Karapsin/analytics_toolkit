@@ -210,6 +210,13 @@ existing references, without exported credentials. Malformed or dynamic Editor
 Meta retains its authored tabs and reports an unresolved dependency closure;
 other readable resources remain importable.
 
+Wizard title text and visibility remain editable when faithfully representable;
+serializer `settingsId` metadata stays in preserved source without requiring a
+recipe setting. Unknown authored settings still block affected writes. Individual
+and grouped chart placements may omit `hideTitle`; import retains that omission
+in source and uses the SDK's default title behavior. A widget with no chart
+bindings remains captured-only, with the missing bindings reported explicitly.
+
 Pinned selectors are preserved in source but make the dashboard captured-only
 because the public SDK cannot faithfully recreate their pinning. This applies
 to local, shared and Editor selectors; supported chart-widget pinning remains

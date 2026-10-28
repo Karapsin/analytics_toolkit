@@ -1,11 +1,12 @@
 """Authored-source analysis and local publication reject silent loss."""
 
 import copy
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
-from analytics_toolkit.datalens_utils.errors import DataLensConfigurationError
+from analytics_toolkit.datalens_utils.errors import DataLensConfigurationError, DataLensUtilsError
 from analytics_toolkit.datalens_utils.import_fidelity import wizard_source_issues
 from analytics_toolkit.datalens_utils.import_source import (
     model_record,
@@ -19,6 +20,60 @@ from analytics_toolkit.datalens_utils.session import current_session
 from datalens_sdk import Connection, EntryLocation
 
 from tests.datalens_utils._support.captured_import import imported_project, run_import
+from tests.datalens_utils.bi.captured_pull import replace_data
+
+
+@pytest.mark.parametrize("title_mode", ["show", "hide"])
+@pytest.mark.parametrize("unsupported", [False, True])
+def test_wizard_title_and_serializer_metadata_preserve_source_and_writer_safety(
+    import_source, tmp_path, title_mode, unsupported
+):
+    data = copy.deepcopy(import_source.chart.data)
+    visualization = data["visualization"]
+    visualization.setdefault("chartSettings", {}).update(
+        title="Authored chart title", titleMode=title_mode, settingsId="chart-settings"
+    )
+    visualization["columns"].setdefault("settings", {})["settingsId"] = "column-settings"
+    if unsupported:
+        visualization["chartSettings"]["futureSetting"] = {"keep": "authored"}
+    chart = replace_data(import_source, "chart", data)
+    writes = list(import_source.api.writes)
+    report = run_import(import_source, tmp_path, dry_run=False)
+    key, entry = next(
+        (key, item) for key, item in report["resources"].items() if item["id"] == chart.id
+    )
+    assert report["written"]
+    assert report["capture_complete"]
+    assert entry["capture"] == "complete"
+    assert entry["editable"] == (not unsupported)
+    root = tmp_path / "project"
+    assert json.loads((root / entry["source_file"]).read_text())["data"] == data
+    project = imported_project(import_source, tmp_path)
+    project.validate()
+    verified = project.verify(full=True)
+    assert not verified["mismatches"]
+    assert verified["source_verification"][key] == {"status": "matched", "baseline": "capture"}
+    if unsupported:
+        assert any(
+            "unrepresented chart setting futureSetting" in item["reason"]
+            for item in entry["restrictions"]
+        )
+        with pytest.raises(DataLensUtilsError, match="Captured-only"):
+            project.apply(resource_keys=[key])
+    else:
+        assert not entry["restrictions"]
+        with project.session():
+            registry = load_registry()
+            definition = registry.resources[key].definition
+            datasets = {
+                name.split(":", 1)[1]: import_source.dataset
+                for name, item in registry.resources.items()
+                if item.kind == "dataset"
+            }
+            assert definition["title"] == "Authored chart title"
+            assert definition.get("show_title", True) == (title_mode == "show")
+            assert not wizard_source_issues(import_source.client, chart, datasets, definition)
+    assert import_source.api.writes == writes
 
 
 @pytest.mark.parametrize("workbook", ["book", None])
