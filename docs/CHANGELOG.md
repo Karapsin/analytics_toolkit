@@ -158,6 +158,7 @@ Generated from package version bumps and recent commit history.
 - Fix ClickHouse SQL Explorer metadata discovery by using literal prefix comparisons instead of unsupported LIKE ESCAPE syntax.
 - Added a SQL Explorer settings menu for saved execution, keyboard, results layout, and connections preferences.
 - Import published DataLens dashboards through shared revision-aware capture into new or existing projects, preserving source, locations and caches with durable local recovery. Restore deployment defaults for mixed locations; enforce dataset-plus-GUID fidelity, guard authored UI metadata and defaults, preserve all-tabs scope, selector filenames and new supported properties during pull without adopting unmanaged placements, merge remote dataset settings, and verify complete authored source independently of draft write protection. Provide a self-contained skill and audited fresh-agent evidence. Isolate SQL Explorer color tests from host NO_COLOR while verifying monochrome rendering.
+- Add offline DataLens fidelity regressions for Wizard title settings and serializer metadata, omitted widget title flags, and safe rejection of empty chart bindings while preserving exact source.
 
 ## 1.3.12.5 - 2026-10-14
 
