@@ -331,18 +331,34 @@ class _ReplaceChAdapter(_ChAdapter):
         return self.counts.pop(0)
 
 
-def test_clickhouse_orphan_cleanup_retains_inactive_recovery_tables() -> None:
+@pytest.mark.parametrize(
+    ("name", "blocked"),
+    [
+        ("target__replace_abcd", False),
+        ("target__replace_guarded_abcd", True),
+        ("target__replace_guarded_abcd__discardable", False),
+    ],
+)
+def test_clickhouse_orphan_cleanup_distinguishes_recovery_from_disposable_leftovers(
+    name: str, blocked: bool
+) -> None:
     connection = _ChConnection()
     adapter = _ChAdapter()
 
-    with pytest.raises(AmbiguousSqlReplaceError, match="Unreconciled"):
-        _cleanup_orphan_replacements(
-            adapter,
-            connection,
-            [("sandbox.target", "core")],
+    original = connection.query
+    connection.query = lambda query: (
+        SimpleNamespace(result_rows=[(name,)]) if "startsWith" in query else original(query)
+    )
+    if blocked:
+        with pytest.raises(AmbiguousSqlReplaceError, match="Unreconciled"):
+            _cleanup_orphan_replacements(adapter, connection, [("sandbox.target", "core")])
+        assert adapter.commands == []
+    else:
+        _cleanup_orphan_replacements(adapter, connection, [("sandbox.target", "core")])
+        assert any(
+            f"sandbox.{name}" in command and command.startswith("DROP TABLE")
+            for command in adapter.commands
         )
-
-    assert adapter.commands == []
 
 
 def test_clickhouse_orphan_cleanup_keeps_active_and_ignores_bad_or_failed_metadata() -> None:
@@ -374,6 +390,39 @@ def test_clickhouse_orphan_cleanup_keeps_active_and_ignores_bad_or_failed_metada
             BrokenConnection(),
             [("sandbox.target", None)],
         )
+
+
+def test_clickhouse_completed_cutover_leftovers_are_disposable_after_drop_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailedCleanup(_ReplaceChAdapter):
+        def execute_command(self, connection: Any, sql: str) -> None:
+            super().execute_command(connection, sql)
+            if sql.startswith("DROP TABLE") and "__discardable" in sql:
+                raise OSError("cleanup unavailable")
+
+    adapter = FailedCleanup([2, 2, 2])
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    connection = _ChConnection()
+    ch_safe_replace._replace_from_stage(adapter, _request(connection))
+    rename = next(
+        command
+        for command in connection.commands
+        if command.startswith("RENAME TABLE") and "__discardable" in command
+    )
+    finished = rename.split(" TO ")[1].split(" ON CLUSTER", maxsplit=1)[0]
+
+    class CompletedConnection(_ChConnection):
+        def query(self, query: str) -> Any:
+            if "startsWith" in query:
+                return SimpleNamespace(result_rows=[(finished.split(".", 1)[1],)])
+            return super().query(query)
+
+    cleanup = _ChAdapter()
+    _cleanup_orphan_replacements(cleanup, CompletedConnection(), [("sandbox.target_shard", "core")])
+    assert any(
+        finished in command and command.startswith("DROP TABLE") for command in cleanup.commands
+    )
 
 
 def test_clickhouse_replace_builds_and_swaps_complete_distributed_pair(

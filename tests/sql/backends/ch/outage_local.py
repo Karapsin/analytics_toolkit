@@ -23,7 +23,8 @@ def test_outage_defaults_preserve_local_ddl_and_all_physical_insert_paths(
     client.insert("db.events_shard", [(4,)], column_names=["id"])
     client.insert_df("db.events_shard", pd.DataFrame({"id": [5]}))
     client.command("INSERT INTO db.events_shard SELECT 6")
-    assert cluster.tables[("h1", "db.events_shard")].rows == [(1,), (3,), (4,), (5,), (6,)]
+    client.command("INSERT INTO db.events_shard (id) VALUES (7)")
+    assert cluster.tables[("h1", "db.events_shard")].rows == [(1,), (3,), (4,), (5,), (6,), (7,)]
     assert cluster.tables[("h2", "db.events_shard")].rows == [(2,)]
     client.command("CREATE TABLE db.only_here (id UInt64) ENGINE=MergeTree ORDER BY id")
     assert ("h1", "db.only_here") in cluster.tables

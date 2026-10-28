@@ -190,6 +190,22 @@ preserving the row count.
 `ClickHouseClusterUnavailableError` identifies a rejected coverage requirement;
 `ClickHouseClusterTopologyError` identifies unsafe or inconsistent topology.
 
+Coverage and topology rejections stop the current operation immediately;
+the SQL retry parameters do not poll until a shard recovers. Production
+schedulers can retry the whole job after recovery. Ordinary transient
+connection failures before a live write retain the normal retry behavior.
+Once a live write has been submitted, a later failure conservatively stops
+automatic retries for the entire operation, including a multi-statement batch,
+and retains recovery artifacts. This prevents replaying an earlier successful
+mutation while retrying a later failed statement.
+
+Coverage enforcement adds metadata round trips: table definitions, cluster
+membership and reachability, and, where applicable, settings and replica health.
+These observations are reused within the operation but refreshed on the next
+operation, so small queries can incur noticeable latency. Plain local-table
+operations without a cluster scope do not fan out to other hosts, but still
+inspect local metadata to distinguish local and Distributed tables.
+
 ### How healthy-only table creation works
 
 `CREATE TABLE new AS existing_table` copies the source definition without
@@ -284,12 +300,20 @@ Replace flows build and populate offside physical and Distributed tables,
 validate row counts and a destination fingerprint, then exchange names in an
 Atomic/Shared database or use a reversible rename sequence. The old target is
 not dropped before the replacement is ready. A failed rollback raises
-`AmbiguousSqlReplaceError` and preserves recovery artifacts. Later replacements
-retain orphan `__replace_...` tables and backups across operations, and refuse
-another replacement until that namespace is reconciled. An inactive query is
-insufficient evidence for deletion: inspect all shards and reconcile both the
-current target and recovery tables before explicitly removing the artifacts.
+`AmbiguousSqlReplaceError` and preserves new `__replace_guarded_...` recovery
+artifacts across operations. Unresolved guarded artifacts and active replacement
+work block another replacement until reconciled. After verified successful cutover,
+cleanup tables receive a `__discardable` suffix before best-effort deletion;
+inactive completed leftovers and legacy artifacts retain automatic cleanup.
+An inactive guarded artifact alone is insufficient evidence for deletion: inspect
+all shards and reconcile the current target and recovery tables first.
 Failure to inspect recovery metadata also stops a replacement before mutation.
+
+Aliases without `cluster_routing` retain native SQL text, including joins between
+Distributed tables and local dimensions. Distributed sources are preflighted
+without turning other tables into cluster-function reads. In `stop`, native
+commands and syntax outside SQLGlot's dialect pass through after known declared
+cluster scopes are checked; unmodeled query scopes are not inferred.
 
 [sql.drop_tables](functions/drop_tables.md) removes managed table pairs.
 

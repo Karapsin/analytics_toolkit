@@ -173,6 +173,8 @@ class Client:
             ),
             None,
         )
+        if function is None and isinstance(statement, exp.Select):
+            function = self._native_distributed_function(statement)
         cluster_name = str(function.expressions[0].this) if function is not None else "core"
         members = self.cluster.members_by_cluster.get(cluster_name, self.cluster.members)
         hosts = [item[2] for item in members]
@@ -263,6 +265,14 @@ class Client:
         if "LIMIT 0" in upper:
             return Result([])
         return Result([(1,)])
+
+    def _native_distributed_function(self, statement: Any) -> Any:
+        for table in statement.find_all(exp.Table):
+            obj = self.cluster.tables.get((self.host, f"{table.db or 'db'}.{table.name}"))
+            if obj is not None and obj.engine == "Distributed":
+                engine = parse_one(obj.engine_full, read=_RoutingClickHouse)
+                return exp.Anonymous(this="cluster", expressions=engine.expressions)
+        return None
 
     def _select_hosts(self, function: Any, members: Any, name: str, settings: Any) -> list[str]:
         selected = [host for _shard, _replica, host, _port in members if host in self.cluster.alive]

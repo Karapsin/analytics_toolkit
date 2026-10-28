@@ -207,7 +207,8 @@ def test_outage_local_facade_can_infer_routing_without_alias_override(outage: An
     session = OutageSession(client._client, client._config, BackendOperationState())
     assert configured_cluster(client._config) == "core"
     route = session.infer_routing(parse_one("SELECT id FROM db.events", read=_RoutingClickHouse))
-    assert route.cluster == "core"
+    assert route is None
+    assert "core" in session.scopes
     assert session.infer_routing(parse_one("SELECT 1", read=_RoutingClickHouse)) is None
     session.config = replace(session.config, database=None)
     assert (

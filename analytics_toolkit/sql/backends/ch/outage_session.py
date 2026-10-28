@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlglot import exp, parse_one
+from sqlglot.optimizer.scope import traverse_scope
 
 from analytics_toolkit.sql.backends.transfer_stage import is_transfer_stage_identifier
 from analytics_toolkit.sql.backends.utils import sql_string_literal
@@ -19,13 +20,14 @@ from .metadata import extract_clickhouse_distributed_shard_table, extract_clickh
 from .outage_context import INSERT_KEY, WRITING
 from .outage_ddl import provision_missing
 from .outage_topology import ClusterScope, Host, TableObject, query_rows, warn_degraded
-from .routing import ChClusterRouting, _RoutingClickHouse
+from .routing import ChClusterRouting, _identifier_value, _RoutingClickHouse
 
 if TYPE_CHECKING:
     from analytics_toolkit.sql.execution.backend_options import BackendOperationState
 
 
 _DISTRIBUTED_KEY_ARGUMENTS = 4
+_CLUSTER_ARGUMENTS = 3
 
 
 def configured_cluster(config: Any) -> str | None:
@@ -41,6 +43,22 @@ def configured_cluster(config: Any) -> str | None:
 
 def private_table(name: str) -> bool:
     return is_transfer_stage_identifier(name) or "__replace_" in name or "__stage__" in name
+
+
+def _native_tables(statement: exp.Expr) -> list[exp.Table]:
+    if isinstance(statement, exp.Insert):
+        target = statement.this.this if isinstance(statement.this, exp.Schema) else statement.this
+        return [target] if isinstance(target, exp.Table) else []
+    if isinstance(statement, exp.Query):
+        return [
+            table
+            for scope in traverse_scope(statement) or []
+            for table in scope.tables
+            if table.db or table.name not in scope.cte_sources
+        ]
+    if isinstance(statement, exp.Describe):
+        return list(statement.find_all(exp.Table))
+    return []
 
 
 class OutageSession:
@@ -238,16 +256,10 @@ class OutageSession:
         configured = getattr(self.config, "cluster_routing", None)
         if configured is not None:
             return cast("ChClusterRouting", configured)
-        if isinstance(statement, exp.Insert):
-            target = (
-                statement.this.this if isinstance(statement.this, exp.Schema) else statement.this
-            )
-            tables = [target] if isinstance(target, exp.Table) else []
-        elif isinstance(statement, (exp.Query, exp.Describe)):
-            tables = list(statement.find_all(exp.Table))
-        else:
-            return None
-        for table in tables:
+        for table in _native_tables(statement):
+            if isinstance(table.this, exp.Anonymous):
+                self._preflight_function(table.this)
+                continue
             if not isinstance(table.this, exp.Identifier) or table.db.lower() == "system":
                 continue
             database = table.db or self.config.database
@@ -262,5 +274,16 @@ class OutageSession:
             if rows:
                 shard = extract_clickhouse_distributed_shard_table(str(rows[0][0]), database)
                 if shard is not None:
-                    return ChClusterRouting(shard.cluster)
+                    self.resolve(cluster=shard.cluster, database=database, table=table.name)
         return None
+
+    def _preflight_function(self, function: exp.Anonymous) -> None:
+        if function.name.lower() not in {"cluster", "clusterallreplicas"}:
+            return
+        args = [_identifier_value(value) for value in function.expressions[:_CLUSTER_ARGUMENTS]]
+        if len(args) != _CLUSTER_ARGUMENTS or not all(args):
+            msg = "Cluster source arguments must be static identifiers."
+            raise ClickHouseClusterTopologyError(msg)
+        self.resolve(
+            cluster=cast("str", args[0]), database=cast("str", args[1]), table=cast("str", args[2])
+        )

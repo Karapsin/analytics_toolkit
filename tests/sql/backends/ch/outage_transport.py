@@ -151,6 +151,7 @@ def test_outage_completion_sink_failure_cannot_turn_success_into_retry(
 def test_outage_statement_parser_handles_empty_and_multiple_commands() -> None:
     assert exchange_or_rename("") is None
     assert exchange_or_rename("SELECT 1; SELECT 2") is None
+    assert exchange_or_rename("EXCHANGE TABLES db.a AND db.b; RENAME TABLE db.c TO db.d") is None
     parsed = exchange_or_rename("RENAME TABLE db.a TO db.b, db.c TO db.d ON CLUSTER 'core'")
     assert parsed is not None
     assert len(list(parsed[0].find_all(exp.Table))) == 4

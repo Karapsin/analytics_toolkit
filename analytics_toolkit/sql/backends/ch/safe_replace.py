@@ -149,15 +149,17 @@ def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share o
     )
     if physical_target is None:
         raise RuntimeError("ClickHouse replacement could not resolve its physical shard table.")
-    replacement_physical = suffixed_table(physical_target, f"__replace_{token}")
+    replacement_physical = suffixed_table(physical_target, f"__replace_guarded_{token}")
     replacement_facade = (
         None
         if request.ch_only_shard
-        else suffixed_table(request.target_table, f"__replace_{token}")
+        else suffixed_table(request.target_table, f"__replace_guarded_{token}")
     )
-    backup_physical = suffixed_table(physical_target, f"__backup_{token}")
+    backup_physical = suffixed_table(physical_target, f"__replace_guarded_backup_{token}")
     backup_facade = (
-        None if request.ch_only_shard else suffixed_table(request.target_table, f"__backup_{token}")
+        None
+        if request.ch_only_shard
+        else suffixed_table(request.target_table, f"__replace_guarded_backup_{token}")
     )
     shard_cluster, facade_cluster, distributed_cluster = _clusters(request)
     _cleanup_orphan_replacements(
@@ -265,7 +267,17 @@ def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share o
         )
         raise
 
-    _best_effort_drop(adapter, request.connection, cleanup_tables)
+    disposable = []
+    for table, cluster in cleanup_tables:
+        finished = suffixed_table(table, "__discardable")
+        with local_sql(request.connection):
+            execute_reconfiguration_sqls(
+                adapter,
+                request.connection,
+                [f"RENAME TABLE {table} TO {finished}{cluster_clause(cluster)}"],
+            )
+        disposable.append((finished, cluster))
+    _best_effort_drop(adapter, request.connection, disposable)
 
 
 def _create_replacement_physical(
@@ -387,7 +399,6 @@ def _cleanup_orphan_replacements(
     connection: Any,
     targets: list[tuple[str, str | None]],
 ) -> None:
-    del adapter
     unresolved: list[str] = []
     for target, cluster in targets:
         database, relation = distributed_table_parts(target)
@@ -410,6 +421,12 @@ def _cleanup_orphan_replacements(
                     continue
                 orphan = f"{database}.{name}"
                 active = _replacement_is_active(connection, orphan, cluster)
+                guarded = name.startswith(f"{relation}__replace_guarded_") and not name.endswith(
+                    "__discardable"
+                )
+                if not active and not guarded:
+                    _best_effort_drop(adapter, connection, [(orphan, cluster)])
+                    continue
                 unresolved.append(orphan + (" (active)" if active else ""))
                 time_print(
                     f"Retaining ClickHouse recovery artifact {orphan}; "
@@ -443,7 +460,8 @@ def _replacement_is_active(
     )
     rows = query_local(
         connection,
-        f"SELECT count() FROM {source} WHERE position(query, {_sql_string_literal(table)}) > 0",
+        f"SELECT count() FROM {source} WHERE position(query, {_sql_string_literal(table)}) > 0 "
+        "AND query_id != currentQueryID() AND initial_query_id != initialQueryID()",
     ).result_rows
     return bool(rows and rows[0] and int(rows[0][0]))
 

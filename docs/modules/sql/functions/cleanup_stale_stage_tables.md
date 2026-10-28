@@ -12,8 +12,6 @@ cleanup_stale_stage_tables(db_key: 'str', target_table: 'str | None' = None, *, 
 
 ### General Inputs
 
-### General Inputs
-
 - `db_key` - connection key or alias that owns the staging tables
 - `target_table` - target table name whose staging tables should be cleaned; required for target-scoped discovery and optional for `clean_all=True` or explicit `stage_tables`
 - `stage_tables` - explicit fully-qualified or unqualified stage table names to drop; `None` uses discovery and an empty sequence drops nothing
