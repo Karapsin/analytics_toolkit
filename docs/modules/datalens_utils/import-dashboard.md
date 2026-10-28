@@ -62,6 +62,9 @@ the editable UI configuration as well as the source snapshot. This includes
 widget hints/descriptions and newly authored dashboard settings. Subsequent local
 rebuilds preserve them, and the existing three-way merge rejects conflicting
 local additions before replacing files or checkpoints.
+Incoming layout is limited to the project's retained placement IDs. Remotely
+added unmanaged placements remain in preserved source and survive later scoped
+updates, including when an item ID happens to match a recipe chart key.
 
 Text/title styles and selector member/source properties that the recipe cannot
 reproduce are likewise captured with a dashboard write restriction. This includes

@@ -577,6 +577,7 @@ def ui_definition(  # noqa: PLR0913 - Stable import identities and managed proje
                 for number in (value.x, value.y, value.w, value.h)
             ]
             for value in tab.layout
+            if managed_items is None or value.item_id in managed_items
         }
         endpoints: dict[str, str] = {}
         import_tab_items(tab, endpoints, context)

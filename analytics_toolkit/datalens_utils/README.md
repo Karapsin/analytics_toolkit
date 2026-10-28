@@ -223,6 +223,8 @@ their text and enabled state for individual placements and chart groups.
 Captured-dashboard pulls also retain newly added supported UI properties and
 settings, so a remote hint or description survives a later local dashboard rebuild.
 Selector configuration filenames are retained through their stable selector keys.
+Pull refreshes owned placements; remotely added placements remain unmanaged and
+retain their authored metadata through later scoped updates.
 Conflicting local and remote additions leave files and checkpoints intact.
 Unrepresented text/title styles and selector member/source metadata also block
 dashboard writes while retaining exact readable source. Native SDK defaults stay
