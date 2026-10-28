@@ -366,6 +366,11 @@ class Client:
         elif isinstance(statement, exp.Drop):
             target = statement.this or statement.args["tables"][0]
             self.cluster.tables.pop((self.host, f"{target.db or 'db'}.{target.name}"), None)
+        elif isinstance(statement, exp.TruncateTable):
+            for target in statement.find_all(exp.Table):
+                self.cluster.tables[(self.host, f"{target.db or 'db'}.{target.name}")].rows.clear()
+            if self.cluster.failure is not None:
+                raise self.cluster.failure
         elif isinstance(statement, exp.Insert):
             rows = [
                 (int(next(item.find_all(exp.Literal)).this),)

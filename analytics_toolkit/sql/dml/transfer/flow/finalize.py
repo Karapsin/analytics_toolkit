@@ -230,7 +230,11 @@ def _finalize_target_once(  # noqa: PLR0913
             target_ref["connection"],
             stage_table=stage_table,
             target_table=options.target_table,
-            replace_target_table=options.replace_target_table and not target_precleared,
+            replace_target_table=(
+                options.replace_target_table
+                and not target_precleared
+                and not _should_drop_created_target(stage_state)
+            ),
             target_exists=stage_state.target_exists and not target_precleared,
             sample_batch=stage_state.first_non_empty_batch,
             target_column_types=target_column_types,

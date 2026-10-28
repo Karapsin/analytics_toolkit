@@ -373,6 +373,7 @@ class OutageClient:
                     self._check_destructive(session, target)
                     if (
                         session.policy == "healthy_shards"
+                        and clusters
                         and target is not None
                         and self._owned_private(session, target)
                     ):
@@ -383,6 +384,16 @@ class OutageClient:
                             for host in scope.reachable:
                                 _execute_local(
                                     scope, host, local_statement.sql(dialect="clickhouse")
+                                )
+                            if isinstance(statement, exp.Drop):
+                                state.resources.pop(
+                                    (
+                                        "ch_create",
+                                        self._config.connection_key,
+                                        scope.cluster,
+                                        f"{target[0]}.{target[1]}",
+                                    ),
+                                    None,
                                 )
                         return None
                 if clusters and routing is None and not mutation and not _LOCAL_SQL_EXECUTION.get():

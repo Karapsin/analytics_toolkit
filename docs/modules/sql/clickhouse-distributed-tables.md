@@ -254,6 +254,11 @@ on shard 1 after shard 2 returns; recovery does not redistribute those 100 rows.
 
 ### Write delivery and recovery
 
+When a retry deliberately drops a disposable snapshot, its retained creation
+identity is cleared. Recreating it populates the observed source again before
+counting and delivery. Finalization inserts into an empty target created by the
+same operation; it does not require a replacement of that newly created target.
+
 Degraded writes require the effective sharding key to be exactly `rand()`.
 Deterministic keys, parameterized random expressions, unknown dependencies, and
 nonstandard managed pairs are rejected when safe routing cannot be established.

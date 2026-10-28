@@ -190,7 +190,9 @@ def create_on_healthy_hosts(scope: ClusterScope, statement: exp.Create) -> bool:
         msg = f"Creation of {full_name} was not verified on selected hosts."
         raise ClickHouseClusterUnavailableError(msg)
     scope.record([item.host for item in objects], full_name)
-    return not existing and not owned
+    # A retained definition records identity, not whether a disposable table
+    # still exists. A recreated table must be populated again before counting.
+    return not existing
 
 
 def provision_missing(

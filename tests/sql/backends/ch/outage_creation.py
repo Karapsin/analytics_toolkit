@@ -120,9 +120,10 @@ def test_outage_retained_identity_is_validated_and_reused(outage: Any, retained:
             create_on_healthy_hosts(scope, statement)
         assert not cluster.commands
     else:
-        assert create_on_healthy_hosts(scope, statement) is False
+        assert create_on_healthy_hosts(scope, statement) is True
         assert ("h1", "db.new") in cluster.tables
         assert ("h2", "db.new") in cluster.tables
+        assert create_on_healthy_hosts(scope, statement) is False
 
 
 def test_outage_creation_requires_confirmed_schema_on_every_selected_host(
