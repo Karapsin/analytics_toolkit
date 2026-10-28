@@ -220,6 +220,14 @@ Chart placements with authored defaults or unsupported widget/member metadata
 remain captured-only as well. Disabled descriptions and hints cannot silently
 become enabled during reconstruction. Supported descriptions and hints retain
 their text and enabled state for individual placements and chart groups.
+Captured-dashboard pulls also retain newly added supported UI properties and
+settings, so a remote hint or description survives a later local dashboard rebuild.
+Selector configuration filenames are retained through their stable selector keys.
+Conflicting local and remote additions leave files and checkpoints intact.
+Unrepresented text/title styles and selector member/source metadata also block
+dashboard writes while retaining exact readable source. Native SDK defaults stay
+writable; selector defaults must retain their parameter keys and operation encoding.
+Shared selectors configured for all tabs keep that scope when new tabs are added.
 Captured dataset pulls merge current remote settings, including additions and
 removals, through the same three-way conflict checks as other managed content.
 

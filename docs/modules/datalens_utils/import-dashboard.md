@@ -57,6 +57,18 @@ dashboard writing. Their complete authored source remains available. The same
 checks run before a pull replaces a writable baseline, so a later apply cannot
 discard newly authored metadata. Supported widget descriptions and hints retain
 their enabled state; unsupported visibility combinations are reported explicitly.
+When a supported property is added remotely, captured-dashboard pull adds it to
+the editable UI configuration as well as the source snapshot. This includes
+widget hints/descriptions and newly authored dashboard settings. Subsequent local
+rebuilds preserve them, and the existing three-way merge rejects conflicting
+local additions before replacing files or checkpoints.
+
+Text/title styles and selector member/source properties that the recipe cannot
+reproduce are likewise captured with a dashboard write restriction. This includes
+custom member widths, hidden hints, malformed readable options and defaults that
+would lose parameter bindings or operation prefixes. Native SDK text/title defaults
+and supported selector defaults remain writable. An all-tabs shared-selector scope
+stays dynamic when a later recipe adds a tab; it is not reduced to a fixed tab list.
 
 ## Consistency and recovery
 

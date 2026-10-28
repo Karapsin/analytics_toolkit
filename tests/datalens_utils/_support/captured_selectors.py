@@ -22,7 +22,7 @@ def set_native_pin(value, wrapper, pinned):
     return count
 
 
-def selector_source(source, scope, pinned):
+def selector_source(source, scope, pinned, *, default_value=None, operation=None):
     tab = DashboardTab("One", tab_id="one").add_chart(
         source.chart, item_id="first", at=(0, 0, 12, 6)
     )
@@ -49,6 +49,8 @@ def selector_source(source, scope, pinned):
             element="select",
             title="Choice",
             options=["A", "B"],
+            default_value=default_value,
+            operation=operation,
         )
         tab.add_group_selector(
             group="filters",

@@ -13,7 +13,9 @@ from tests.datalens_utils.bi.captured_safety import with_revisions
 from tests.datalens_utils.bi.occurrence_fidelity import file_bytes
 
 
-@pytest.mark.parametrize("setting", ["auto-height", "fixed-height", "border", "defaults", "source"])
+@pytest.mark.parametrize(
+    "setting", ["auto-height", "fixed-height", "border", "defaults", "source", "title"]
+)
 def test_editor_wrapper_settings_block_imported_writes_and_baseline_refresh(
     import_source, tmp_path, setting
 ):
@@ -32,6 +34,8 @@ def test_editor_wrapper_settings_block_imported_writes_and_baseline_refresh(
         wrapper["defaults"] = {"region": ["north"]}
     elif setting == "source":
         wrapper["data"]["source"]["parameters"] = {"region": "north"}
+    elif setting == "title":
+        wrapper["data"]["title"] = {"text": "Authored title"}
     else:
         key, value = {
             "auto-height": ("autoHeight", True),

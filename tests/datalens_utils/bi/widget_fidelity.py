@@ -6,41 +6,12 @@ import json
 import pytest
 from analytics_toolkit.datalens_utils import bi_engine
 from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
-from datalens_sdk import DashboardChartTab, DashboardTab
 
 from tests.datalens_utils._support.captured_import import imported_project, run_import
+from tests.datalens_utils._support.captured_widgets import widget_source
 from tests.datalens_utils.bi.captured_pull import replace_data
 from tests.datalens_utils.bi.captured_safety import with_revisions
 from tests.datalens_utils.bi.occurrence_fidelity import file_bytes
-
-
-def widget_source(source, grouped, *, supported_metadata=False):
-    options = (
-        {"description": "Authored description", "hint": "Authored hint"}
-        if supported_metadata
-        else {}
-    )
-    tab = DashboardTab("One", tab_id="one")
-    if grouped:
-        tab.add_chart_group(
-            [
-                DashboardChartTab(chart=source.chart, title="First", **options),
-                DashboardChartTab(chart=source.chart, title="Second", **options),
-            ],
-            item_id="placement",
-            at=(0, 0, 12, 6),
-        )
-    else:
-        tab.add_chart(source.chart, item_id="placement", at=(0, 0, 12, 6), **options)
-    dashboard = (
-        source.api.client.create.dashboard(name="Source", location=source.api.folder)
-        .add_tab(tab)
-        .build()
-    )
-    source.dashboard = dashboard
-    source.entities[dashboard.id] = dashboard
-    source.kinds[dashboard.id] = "dash"
-    return dashboard
 
 
 def change_widget(data, feature):

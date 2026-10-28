@@ -141,7 +141,7 @@ def extract_resource(  # noqa: PLR0913 - One baseline and its dependency snapsho
                 if name in metadata["parameters"]
             }
     else:
-        incoming = pull_dashboard(entity, base, datasets, charts)
+        incoming = pull_dashboard(entity, base, datasets, charts, complete=bool(resource.capture))
     return incoming
 
 

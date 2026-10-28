@@ -36,15 +36,46 @@ def check_widget_member(value: Any, identifier: str) -> None:
         )
 
 
-def check_widget_source(item: Any) -> None:
+def item_source_issues(item: Any, *, allow_defaults: bool = False) -> set[str]:
+    if not item.id:
+        message = "Dashboard item identity cannot be faithfully written."
+        raise DataLensUtilsError(message)
     unsupported = set(item.raw) - {"id", "type", "namespace", "data", "defaults"}
-    unsupported.update(
-        "data." + name for name in set(item.data) - {"tabs", "hideTitle", "borderRadius", "pinned"}
-    )
-    if item.raw.get("defaults") not in (None, {}):
+    if not allow_defaults and item.raw.get("defaults") not in (None, {}):
         unsupported.add("defaults")
     if item.raw.get("namespace") not in (None, "default"):
         unsupported.add("namespace")
+    return unsupported
+
+
+def check_static_source(item: Any) -> None:
+    unsupported = item_source_issues(item)
+    allowed = {"text", "size"} if item.item_type == "title" else {"text"}
+    neutral: dict[str, Any] = {"autoHeight": True, "pinned": False}
+    if item.item_type == "title":
+        neutral["showInTOC"] = False
+    else:
+        # Neutral default emitted by the supported SDK 3.1/3.2 text builders.
+        neutral["backgroundSettings"] = {"color": {"light": "#FFFFFF", "dark": "#343535"}}
+    unsupported.update(
+        "data." + key
+        for key, value in item.data.items()
+        if key not in allowed and (key not in neutral or value != neutral[key])
+    )
+    if unsupported:
+        raise DataLensUtilsError(
+            "Text/title properties cannot be faithfully written: "
+            + item.id
+            + ": "
+            + ", ".join(sorted(unsupported))
+        )
+
+
+def check_widget_source(item: Any) -> None:
+    unsupported = item_source_issues(item)
+    unsupported.update(
+        "data." + name for name in set(item.data) - {"tabs", "hideTitle", "borderRadius", "pinned"}
+    )
     if unsupported:
         raise DataLensUtilsError(
             "Chart widget properties cannot be faithfully written: "
@@ -183,11 +214,163 @@ def check_control_source(control: Any) -> None:
         )
     if any(member.source_type == "external" for member in control.members):
         data = control.item.data
-        unsupported = set(data) - {"title", "sourceType", "source", "pinned"}
+        unsupported = item_source_issues(control.item)
+        unsupported.update(set(data) - {"title", "sourceType", "source", "pinned"})
+        if data.get("title") is not None and not isinstance(data["title"], str):
+            unsupported.add("title")
         if unsupported or control.item.defaults or set(data.get("source", {})) - {"chartId"}:
             raise DataLensUtilsError(
                 "Editor selector wrapper settings cannot be faithfully written: " + control.id
             )
+        return
+    check_native_control(control)
+
+
+def check_selector_defaults(member: Any) -> None:
+    source = member.source
+    value = source.default_value
+    if value is None:
+        value = [] if source.element_type == "select" else ""
+    elif source.operation:
+        prefix = "__" + source.operation.lower() + "_"
+        if isinstance(value, list):
+            if any(not isinstance(item, str) for item in value):
+                raise DataLensUtilsError(
+                    "Selector defaults cannot be faithfully written: " + member.id
+                )
+            value = [prefix + item for item in value]
+        else:
+            value = prefix + str(value)
+    key = source.dataset_field_id or source.param_name
+    if member.defaults != {key: value} and (member.defaults or source.default_value is not None):
+        raise DataLensUtilsError("Selector defaults cannot be faithfully written: " + member.id)
+
+
+def selector_source_issues(member: Any) -> set[str]:
+    source = member.source.raw
+    source_keys = {
+        "datasetId",
+        "datasetFieldId",
+        "datasetFieldType",
+        "fieldType",
+        "fieldName",
+        "elementType",
+        "showTitle",
+        "titlePlacement",
+        "innerTitle",
+        "hint",
+        "showHint",
+        "defaultValue",
+        "multiselectable",
+        "isRange",
+        "required",
+        "operation",
+        "acceptableValues",
+    }
+    unsupported = {"source." + name for name in set(source) - source_keys}
+    for name in ("showTitle", "showHint", "multiselectable", "isRange", "required"):
+        if name in source and not isinstance(source[name], bool):
+            unsupported.add("source." + name)
+    for name in (
+        "datasetId",
+        "datasetFieldId",
+        "datasetFieldType",
+        "fieldType",
+        "fieldName",
+        "elementType",
+        "titlePlacement",
+        "innerTitle",
+        "hint",
+        "operation",
+    ):
+        if name in source and source[name] is not None and not isinstance(source[name], str):
+            unsupported.add("source." + name)
+    if source.get("showHint", False) != bool(source.get("hint")):
+        unsupported.add("source.showHint")
+    if any(set(option) - {"title", "value"} for option in member.source.acceptable_values):
+        unsupported.add("source.acceptableValues")
+    options = source.get("acceptableValues", [])
+    if not isinstance(options, (list, tuple)) or len(options) != len(
+        member.source.acceptable_values
+    ):
+        unsupported.add("source.acceptableValues")
+    if options and (member.source_type != "manual" or member.source.element_type != "select"):
+        unsupported.add("source.acceptableValues")
+    return unsupported
+
+
+def check_selector_member(member: Any) -> None:
+    if not member.id:
+        message = "Selector member identity cannot be faithfully written."
+        raise DataLensUtilsError(message)
+    raw = member.raw
+    # Standalone controls keep wrapper metadata in raw; group members keep it directly.
+    if "data" in raw:
+        raw = raw["data"]
+    allowed = {
+        "id",
+        "title",
+        "namespace",
+        "sourceType",
+        "placementMode",
+        "width",
+        "source",
+        "defaults",
+        "impactType",
+        "impactTabsIds",
+        "pinned",
+    }
+    unsupported = set(raw) - allowed
+    if raw.get("title") is not None and not isinstance(raw["title"], str):
+        unsupported.add("title")
+    for name, default in (("namespace", "default"), ("placementMode", "auto"), ("width", "")):
+        if raw.get(name, default) != default:
+            unsupported.add(name)
+    unsupported.update(selector_source_issues(member))
+    if unsupported:
+        raise DataLensUtilsError(
+            "Selector member properties cannot be faithfully written: "
+            + member.id
+            + ": "
+            + ", ".join(sorted(unsupported))
+        )
+    check_selector_defaults(member)
+
+
+def check_native_control(control: Any) -> None:
+    standalone = control.wire_format == "standalone_control"
+    unsupported = item_source_issues(control.item, allow_defaults=standalone)
+    allowed = {
+        "group",
+        "autoHeight",
+        "buttonApply",
+        "buttonReset",
+        "updateControlsOnChange",
+        "showGroupName",
+        "impactType",
+        "impactTabsIds",
+        "borderRadius",
+        "pinned",
+    }
+    if standalone:
+        allowed = {"title", "sourceType", "source", "pinned", "impactType", "impactTabsIds"}
+    unsupported.update(set(control.item.data) - allowed)
+    members = control.item.data.get("group", [])
+    if not standalone and (
+        not isinstance(members, (list, tuple))
+        or not members
+        or len(members) != len(control.members)
+    ):
+        unsupported.add("group")
+    if unsupported:
+        raise DataLensUtilsError(
+            "Selector wrapper properties cannot be faithfully written: "
+            + control.id
+            + ": "
+            + ", ".join(sorted(unsupported))
+        )
+    for member in control.members:
+        check_selector_member(member)
 
 
 def import_controls(tab: Any, endpoints: dict[str, str], context: Any) -> None:
@@ -214,7 +397,9 @@ def import_controls(tab: Any, endpoints: dict[str, str], context: Any) -> None:
             if actual_scope and set(actual_scope) - selected:
                 msg = "Shared selector reaches unselected tabs; import the whole dashboard."
                 raise DataLensUtilsError(msg)
-            group["show_on_tabs"] = shared
+            group["show_on_tabs"] = (
+                "all" if control.item.data.get("impactType") == "allTabs" else shared
+            )
         for public, wire in (
             ("apply_button", "buttonApply"),
             ("reset_button", "buttonReset"),
@@ -283,6 +468,7 @@ def import_tab_items(tab: Any, endpoints: dict[str, str], context: Any) -> None:
         if item.item_type == "widget":
             import_widget(item, tab, endpoints, context)
         elif item.item_type in {"title", "text"}:
+            check_static_source(item)
             path = "configs/UI/" + ("titles" if item.item_type == "title" else "texts") + ".json"
             value = {"text": data.get("text", "")}
             if item.item_type == "title":
