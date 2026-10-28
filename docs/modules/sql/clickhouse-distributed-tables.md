@@ -195,6 +195,10 @@ preserving the row count.
 `CREATE TABLE new AS existing_table` copies the source definition without
 copying rows, including defaults and inherited storage properties. CTAS with
 `AS SELECT ...` populates the new table through acknowledged delivery.
+In `healthy_shards`, CREATE AS with an explicit column schema is refused before
+mutation. Use separate CREATE and population steps when specifying types,
+renamed columns, defaults, constraints or indexes. This avoids replacing the
+requested schema with the inferred SELECT schema. `stop` retains native CTAS behavior.
 A physical `_shard` table without its logical facade is an ambiguous partial
 pair, not a new target: reconcile it before loading. Healthy-only `IF NOT EXISTS`
 creation checks the complete definition, including engine, keys, indexes and

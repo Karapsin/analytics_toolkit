@@ -501,6 +501,13 @@ class OutageClient:
         query = statement.args.get("expression")
         if query is None:
             return statement, None
+        if isinstance(statement.this, exp.Schema):
+            msg = (
+                "Healthy-only CREATE AS with an explicit schema is unsupported. "
+                "Use separate CREATE and population steps to preserve explicit types, "
+                "names, defaults, constraints, and indexes."
+            )
+            raise ClickHouseClusterTopologyError(msg)
         if isinstance(query, exp.Table):
             with backend_operation() as state:
                 session = self._get_session(state)
