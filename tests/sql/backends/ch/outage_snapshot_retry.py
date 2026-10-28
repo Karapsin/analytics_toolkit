@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Any
 
 import pytest
@@ -12,20 +13,23 @@ from tests.sql._support.outage import Client
 from tests.sql._support.outage_gp import MemoryGreenplum
 
 
+@pytest.mark.parametrize("policy", ["stop", "healthy_shards"])
 def test_outage_public_transfer_repopulates_snapshot_after_failed_first_population(
-    outage: Any, monkeypatch: Any
+    outage: Any, monkeypatch: Any, policy: str
 ) -> None:
     cluster, configure = outage
     configure(
         aliases=("ch", "gp"),
-        ch_unavailable_shards="healthy_shards",
+        ch_unavailable_shards=policy,
         transfer_staging_schema="db",
         per_alias={"gp": {"type": "gp", "ddl_defaults": None, "cluster_routing": None}},
     )
-    cluster.alive.remove("h2")
+    if policy == "healthy_shards":
+        cluster.alive.remove("h2")
     greenplum = MemoryGreenplum()
     greenplum.install(monkeypatch)
     original = Client.insert
+    original_command = Client.command
     attempts: list[tuple[str, str]] = []
 
     def insert(client: Any, table: str, *args: Any, **kwargs: Any) -> None:
@@ -43,8 +47,28 @@ def test_outage_public_transfer_repopulates_snapshot_after_failed_first_populati
             return
         original(client, table, *args, **kwargs)
 
+    def command(client: Any, query: str, **kwargs: Any) -> Any:
+        result = original_command(client, query, **kwargs)
+        if policy == "stop" and query.startswith("INSERT INTO") and "__source" in query:
+            name, obj = next(
+                (name, obj)
+                for (host, name), obj in cluster.tables.items()
+                if host == "h1" and "__source" in name
+            )
+            attempts.append((name, obj.uuid))
+            if len(attempts) == 1:
+                message = "disposable snapshot population interrupted after acceptance"
+                raise ConnectionError(message)
+        return result
+
     monkeypatch.setattr(Client, "insert", insert)
-    with pytest.warns(sql.ClickHouseDegradedClusterWarning):
+    monkeypatch.setattr(Client, "command", command)
+    warning = (
+        pytest.warns(sql.ClickHouseDegradedClusterWarning)
+        if policy == "healthy_shards"
+        else nullcontext()
+    )
+    with warning:
         result = sql.transfer(
             from_db="ch",
             to_db="gp",
@@ -62,11 +86,13 @@ def test_outage_public_transfer_repopulates_snapshot_after_failed_first_populati
     assert len(attempts) == 2
     assert attempts[0][0] == attempts[1][0]
     assert attempts[0][1] != attempts[1][1]
-    assert result.inserted_rows == 1
-    assert result.metadata.expected_source_rows == 1
+    expected = [1] if policy == "healthy_shards" else [1, 2]
+    assert result.inserted_rows == len(expected)
+    assert result.metadata.expected_source_rows == len(expected)
     assert result.metadata.row_count_validated is True
-    assert greenplum.tables["db.retried"].id.tolist() == [1]
+    assert greenplum.tables["db.retried"].id.tolist() == expected
     assert greenplum.tables["db.target"].id.tolist() == [99]
+    assert not any("__source" in name for _host, name in cluster.tables)
 
 
 def test_outage_truncating_owned_stage_preserves_its_existing_creation_identity(

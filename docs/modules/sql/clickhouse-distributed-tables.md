@@ -171,6 +171,13 @@ hosts. Preflight is a snapshot: a later failure can still interrupt an operation
 The configured entry server must be reachable; this policy does not select an
 alternate entry server when the initial connection fails.
 
+Existence and schema checks for existing replicated data also use replica
+failover. `stop` still requires all participating hosts for cluster DDL, including
+creation and removal of transfer stages. A transfer using local staging can
+append to an existing replicated target through a surviving replica without
+cluster DDL; a transfer configured to create stages `ON CLUSTER` must wait for
+all DDL hosts.
+
 Ad hoc operations emit a prominent stderr banner, bold red on terminals that
 support color, a red notebook banner when IPython is active, and
 `ClickHouseDegradedClusterWarning`. A completion banner records the observed
@@ -201,6 +208,11 @@ Once a live write has been submitted, a later failure conservatively stops
 automatic retries for the entire operation, including a multi-statement batch,
 and retains recovery artifacts. This prevents replaying an earlier successful
 mutation while retrying a later failed statement.
+New toolkit-private stages are disposable under both policies, including stages
+created with `IF NOT EXISTS`: the toolkit checks absence in the actual creation
+scope before claiming ownership. A transient failure while populating an owned
+stage can be cleaned up and retried with fresh connections. A pre-existing table
+with a stage-like name is never claimed merely because `IF NOT EXISTS` succeeds.
 
 Coverage enforcement adds metadata round trips: table definitions, cluster
 membership and reachability, and, where applicable, settings and replica health.
@@ -223,6 +235,9 @@ pair, not a new target: reconcile it before loading. Healthy-only `IF NOT EXISTS
 creation checks the complete definition, including engine, keys, indexes and
 settings; conflicting definitions are rejected. Appends to verified existing
 targets use their established definitions instead of recreating them from defaults.
+Replace-style loads also prove absence in the resolved per-call creation scopes,
+so an orphan physical table on another healthy host cannot contribute stale rows
+when the alias has no automatic routing or cluster defaults.
 
 DDL defaults do not enable automatic SQL routing. With `cluster_routing=None`,
 plain physical-table reads, inserts, CREATE and DROP stay local. Explicit

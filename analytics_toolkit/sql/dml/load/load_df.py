@@ -623,6 +623,13 @@ def _apply_load_target_write_mode(
     state: LoadState,
     connection: Any,
 ) -> None:
+    if not state.target_exists and getattr(connection, "_ch_outage_client", False):
+        connection.outage_assert_new_target(
+            options.destination_table,
+            policy=options.regular_ch_policy,
+            cluster=options.ch_cluster,
+            only_shard=options.ch_only_shard,
+        )
     if state.original_target_exists and options.write_mode != "append":
         require_complete_operation(
             "Replacing or upserting an existing target requires complete coverage."

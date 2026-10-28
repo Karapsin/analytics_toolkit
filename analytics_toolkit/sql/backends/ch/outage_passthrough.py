@@ -13,7 +13,7 @@ from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyErr
 from .metadata import normalize_clickhouse_engine_arg
 from .outage_session import configured_cluster
 from .outage_statements import exchange_or_rename
-from .routing import _RoutingClickHouse
+from .routing import _LOCAL_SQL_EXECUTION, _RoutingClickHouse
 
 _MODELED = {
     "SELECT",
@@ -35,6 +35,15 @@ _MODELED = {
 
 
 def modeled_statement(session: Any, sql: str, parser: Any) -> Any:
+    tokens = _native_tokens(sql)
+    if _LOCAL_SQL_EXECUTION.get() and [token.normalized for token in tokens[:2]] == [
+        "EXISTS",
+        "TABLE",
+    ]:
+        parser(
+            "".join(token.value for token in tokens[2:]), into=exp.Table, read=_RoutingClickHouse
+        )
+        return None
     routed = session.config.cluster_routing is not None
     native = not routed and session.policy == "stop"
     if native and native_command(sql):

@@ -42,7 +42,11 @@ def test_outage_metadata_is_scoped_to_selected_hosts(outage: Any, query: str) ->
                 routed = client._metadata_scope_sql(session, statement, query)
             assert "events_shard" in routed
         else:
-            routed = client._metadata_scope_sql(session, statement, query)
+            if "system.clusters" in query:
+                routed = client._metadata_scope_sql(session, statement, query)
+            else:
+                with pytest.warns(sql.ClickHouseDegradedClusterWarning):
+                    routed = client._metadata_scope_sql(session, statement, query)
             assert "(1, 1)" in routed or "_shard_num = 1" in routed
     assert "h2" not in routed
 
@@ -67,7 +71,7 @@ def test_outage_metadata_leaves_unrelated_queries_unchanged(outage: Any, query: 
         assert client._metadata_scope_sql(session, statement, query) == query
 
 
-def test_outage_metadata_requires_database_and_strict_coverage(outage: Any) -> None:
+def test_outage_metadata_requires_database_and_complete_data_coverage(outage: Any) -> None:
     cluster, _ = outage
     client = sql.get_sql_connection("ch")
     query = "SELECT name FROM system.tables WHERE name='events'"
@@ -79,7 +83,7 @@ def test_outage_metadata_requires_database_and_strict_coverage(outage: Any) -> N
         assert client._metadata_scope_sql(session, statement, query) == query
     session.config = replace(session.config, database="db")
     client._config = session.config
-    del cluster.tables[("h2", "db.events")]
+    del cluster.tables[("h2", "db.events_shard")]
     with local_sql(), pytest.raises(sql.ClickHouseClusterUnavailableError):
         client._metadata_scope_sql(_session(client, "stop"), statement, query)
 

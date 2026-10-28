@@ -135,11 +135,10 @@ class Client:
         if "GETMACRO(" in upper:
             return Result([("core",)])
         if "FROM SYSTEM.CLUSTERS" in upper:
-            return Result(
-                self.cluster.members_by_cluster.get(
-                    filters.get("cluster", "core"), self.cluster.members
-                )
+            members = self.cluster.members_by_cluster.get(
+                filters.get("cluster", "core"), self.cluster.members
             )
+            return Result([(len(members),)] if statement.find(exp.Count) else members)
         if "FROM SYSTEM.SERVER_SETTINGS" in upper:
             return Result(list(self.cluster.replica_defaults.items()))
         if "FROM SYSTEM.MACROS" in upper:
@@ -181,9 +180,8 @@ class Client:
         if "SYSTEM, ONE" in upper:
             if self.cluster.probe_failure:
                 raise self.cluster.probe_failure
-            return Result(
-                [(i + 1, host) for i, host in enumerate(hosts) if host in self.cluster.alive]
-            )
+            alive = [(i + 1, host) for i, host in enumerate(hosts) if host in self.cluster.alive]
+            return Result([(len(alive),)] if statement.find(exp.Count) else alive)
         if "SYSTEM, DATABASES" in upper:
             return Result(
                 [
@@ -209,30 +207,21 @@ class Client:
             )
         if "SYSTEM, TABLES" in upper:
             name = f"{filters.get('database', 'db')}.{filters.get('name', '')}"
-            return Result(
-                [
-                    (i + 1, obj.engine, obj.engine_full, obj.ddl, obj.uuid)
-                    for i, host in enumerate(hosts)
-                    if host in self.cluster.alive
-                    and (obj := self.cluster.tables.get((host, name))) is not None
-                ]
-            )
+            objects = [
+                (i + 1, obj.engine, obj.engine_full, obj.ddl, obj.uuid)
+                for i, host in enumerate(hosts)
+                if host in self.cluster.alive
+                and (obj := self.cluster.tables.get((host, name))) is not None
+            ]
+            return Result([(len(objects),)] if statement.find(exp.Count) else objects)
         if "FROM SYSTEM.TABLES" in upper:
             name = f"{filters.get('database', 'db')}.{filters.get('name', '')}"
             obj = self.cluster.tables.get((self.host, name))
             return Result([(obj.engine_full,)] if obj else [])
         if "FROM SYSTEM.COLUMNS" in upper or "SYSTEM, COLUMNS" in upper:
-            return Result([("id", "UInt64")], ("name", "type"), ("String", "String"))
+            return self._columns(statement, filters, hosts)
         if isinstance(statement, exp.Describe):
             return self._describe(statement)
-        function = next(
-            (
-                item
-                for item in statement.find_all(exp.Anonymous)
-                if item.name.lower() in {"cluster", "clusterallreplicas"}
-            ),
-            None,
-        )
         if function is not None:
             args = function.expressions
             name = f"{args[1].this}.{args[2].this}"
@@ -260,10 +249,32 @@ class Client:
                 None,
             )
             return self._project(statement, rows, obj)
+        return self._local_data(statement, upper)
+
+    def _local_data(self, statement: Any, upper: str) -> Result:
+        local = next(
+            (
+                self.cluster.tables[(self.host, f"{table.db or 'db'}.{table.name}")]
+                for table in statement.find_all(exp.Table)
+                if isinstance(table.this, exp.Identifier)
+                and (self.host, f"{table.db or 'db'}.{table.name}") in self.cluster.tables
+            ),
+            None,
+        )
+        if local is not None:
+            if "LIMIT 0" in upper:
+                return self._project(statement, [], local)
+            return (
+                Result([(len(local.rows),)])
+                if statement.find(exp.Count)
+                else self._project(statement, local.rows, local)
+            )
         if statement.find(exp.Count):
             return Result([(1,)])
         if "LIMIT 0" in upper:
             return Result([])
+        if isinstance(statement, exp.Select) and statement.args.get("from_") is None:
+            return self._project(statement, [()], None)
         return Result([(1,)])
 
     def _native_distributed_function(self, statement: Any) -> Any:
@@ -273,6 +284,27 @@ class Client:
                 engine = parse_one(obj.engine_full, read=_RoutingClickHouse)
                 return exp.Anonymous(this="cluster", expressions=engine.expressions)
         return None
+
+    def _columns(self, statement: Any, filters: Any, hosts: Any) -> Result:
+        name = f"{filters.get('database', 'db')}.{filters.get('table', '')}"
+        rows = []
+        include_host = "_shard_num" in [item.alias_or_name for item in statement.expressions]
+        for index, host in enumerate(hosts):
+            obj = self.cluster.tables.get((host, name))
+            if obj is None or host not in self.cluster.alive:
+                continue
+            for column in parse_one(obj.ddl, read=_RoutingClickHouse).find_all(exp.ColumnDef):
+                value = (column.name, column.args["kind"].sql(dialect="clickhouse"))
+                rows.append((index + 1, *value) if include_host else value)
+            if not include_host:
+                break
+        if not rows and not include_host:
+            rows = [("id", "UInt64")]
+        return Result(
+            rows,
+            ("_shard_num", "name", "type") if include_host else ("name", "type"),
+            ("UInt64", "String", "String") if include_host else ("String", "String"),
+        )
 
     def _select_hosts(self, function: Any, members: Any, name: str, settings: Any) -> list[str]:
         selected = [host for _shard, _replica, host, _port in members if host in self.cluster.alive]
@@ -372,24 +404,77 @@ class Client:
         self.cluster.commands.append((self.host, sql, dict(kwargs.get("settings") or {})))
         statement = parse_one(sql, read=_RoutingClickHouse)
         if isinstance(statement, exp.Create):
-            self.cluster.create(self.host, sql)
+            self._create(statement, sql)
         elif isinstance(statement, exp.Drop):
             target = statement.this or statement.args["tables"][0]
-            self.cluster.tables.pop((self.host, f"{target.db or 'db'}.{target.name}"), None)
+            for host in self._ddl_hosts(statement):
+                self.cluster.tables.pop((host, f"{target.db or 'db'}.{target.name}"), None)
         elif isinstance(statement, exp.TruncateTable):
             for target in statement.find_all(exp.Table):
-                self.cluster.tables[(self.host, f"{target.db or 'db'}.{target.name}")].rows.clear()
+                for host in self._ddl_hosts(statement):
+                    self.cluster.tables[(host, f"{target.db or 'db'}.{target.name}")].rows.clear()
             if self.cluster.failure is not None:
                 raise self.cluster.failure
         elif isinstance(statement, exp.Insert):
-            rows = [
-                (int(next(item.find_all(exp.Literal)).this),)
-                for item in statement.expression.expressions
-            ]
+            rows = (
+                self.query(statement.expression.sql(dialect="clickhouse")).result_rows
+                if isinstance(statement.expression, exp.Query)
+                else [
+                    (int(next(item.find_all(exp.Literal)).this),)
+                    for item in statement.expression.expressions
+                ]
+            )
             self._insert(statement.this, rows, kwargs.get("settings") or {})
         elif self.cluster.failure is not None:
             raise self.cluster.failure
         return None
+
+    def _ddl_hosts(self, statement: Any) -> list[str]:
+        cluster = statement.find(exp.OnCluster)
+        if cluster is None:
+            return [self.host]
+        members = self.cluster.members_by_cluster.get(str(cluster.this.this), self.cluster.members)
+        return [item[2] for item in members if item[2] in self.cluster.alive]
+
+    def _create(self, statement: Any, sql: str) -> None:
+        populated = None
+        source = statement.args.get("expression")
+        if isinstance(source, exp.Query) and not isinstance(statement.this, exp.Schema):
+            data = self.query(source.sql(dialect="clickhouse"))
+            statement.set(
+                "this",
+                exp.Schema(
+                    this=statement.this.copy(),
+                    expressions=[
+                        exp.ColumnDef(
+                            this=exp.to_identifier(name),
+                            kind=exp.DataType.build(str(kind), dialect="clickhouse"),
+                        )
+                        for name, kind in zip(data.column_names, data.column_types)
+                    ],
+                ),
+            )
+            if statement.find(exp.EmptyProperty) is None:
+                populated = data.result_rows
+            sql = statement.sql(dialect="clickhouse")
+        if (
+            statement.find(exp.OnCluster) is not None
+            and statement.find(exp.UuidProperty) is None
+            and self.cluster.database_engine == "Atomic"
+        ):
+            # Native Atomic ON CLUSTER DDL assigns one UUID to the whole task.
+            properties = statement.args.get("properties")
+            properties.append(
+                "expressions", exp.UuidProperty(this=exp.Literal.string(str(uuid4())))
+            )
+            sql = statement.sql(dialect="clickhouse")
+        for host in self._ddl_hosts(statement):
+            self.cluster.create(host, sql)
+            if populated:
+                table = statement.this.this
+                self.cluster.tables[(host, f"{table.db or 'db'}.{table.name}")].rows.extend(
+                    populated
+                )
 
     def _insert(self, target: Any, rows: Any, settings: Any) -> None:
         if isinstance(target, exp.Schema):
@@ -399,7 +484,15 @@ class Client:
             arguments = function.expressions
             name = f"{arguments[1].this}.{arguments[2].this}"
             shard = int(settings.get("insert_shard_id", 1))
-            host = self.cluster.hosts[shard - 1]
+            members = self.cluster.members_by_cluster.get(
+                str(arguments[0].this), self.cluster.members
+            )
+            candidates = (
+                [members[shard - 1][2]]
+                if function.name.lower() == "clusterallreplicas"
+                else [member[2] for member in members if member[0] == shard]
+            )
+            host = next((item for item in candidates if item in self.cluster.alive), candidates[0])
         else:
             name = f"{target.db or 'db'}.{target.name}"
             obj = self.cluster.tables[(self.host, name)]
