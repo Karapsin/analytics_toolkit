@@ -43,6 +43,7 @@ class Cluster:
         self.tables: dict[tuple[str, str], Table] = {}
         self.commands: list[tuple[str, str, dict[str, Any]]] = []
         self.queries: list[str] = []
+        self.selected_reads: list[tuple[str, str]] = []
         self.connections: list[tuple[str, int]] = []
         self.database_engine = "Atomic"
         self.members_by_cluster: dict[str, list[Any]] = {}
@@ -233,10 +234,11 @@ class Client:
         if function is not None:
             args = function.expressions
             name = f"{args[1].this}.{args[2].this}"
+            selected = self._select_hosts(function, members, name, kwargs.get("settings") or {})
+            self.cluster.selected_reads.extend((host, name) for host in selected)
             rows = [
                 row
-                for host in hosts
-                if host in self.cluster.alive
+                for host in selected
                 for row in self.cluster.tables.get((host, name), Table("", "", "", "")).rows
             ]
             if statement.find(exp.Count):
@@ -261,6 +263,23 @@ class Client:
         if "LIMIT 0" in upper:
             return Result([])
         return Result([(1,)])
+
+    def _select_hosts(self, function: Any, members: Any, name: str, settings: Any) -> list[str]:
+        selected = [host for _shard, _replica, host, _port in members if host in self.cluster.alive]
+        if function.name.lower() == "cluster":
+            per_shard: dict[int, str] = {}
+            for shard, _replica, host, _port in members:
+                if host in self.cluster.alive:
+                    per_shard.setdefault(shard, host)
+            # Replica selection precedes table readiness. Skipping a missing
+            # table can therefore drop a whole shard, not choose its other replica.
+            selected = list(per_shard.values())
+            if any((host, name) not in self.cluster.tables for host in selected):
+                if not settings.get("skip_unavailable_shards"):
+                    msg = f"Selected reachable replica is missing {name}."
+                    raise RuntimeError(msg)
+                selected = [host for host in selected if (host, name) in self.cluster.tables]
+        return selected
 
     def _describe(self, statement: Any) -> Result:
         target = statement.this

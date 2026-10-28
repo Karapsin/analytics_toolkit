@@ -158,8 +158,14 @@ one usable replica per shard can preserve logical coverage. For independent
 non-replicated replicas, every host owns separate data and losing one means
 incomplete coverage. A reachable replica with expired coordination metadata
 blocks reads and writes under both policies; a read-only replica blocks writes.
-Cluster routing cannot safely exclude those reachable replicas. Partial-source
-INSERT SELECT uses separate streaming and delivery connections, including for
+Cluster routing cannot safely exclude those reachable replicas. Reads of replicated
+tables also stop if a reachable replica lacks the physical table while another
+replica in the same shard has it, because the
+original cluster route could select it or skip its entire shard. An unreachable
+replica can still fail over to a table-ready replica in the same shard. If an
+entire shard lacks the table, ad hoc reads can skip that shard and report partial
+coverage without provisioning it.
+Partial-source INSERT SELECT uses separate streaming and delivery connections, including for
 native transport. Destructive cluster DDL still requires all participating
 hosts. Preflight is a snapshot: a later failure can still interrupt an operation.
 The configured entry server must be reachable; this policy does not select an

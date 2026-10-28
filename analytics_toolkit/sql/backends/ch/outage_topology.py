@@ -270,6 +270,19 @@ class ClusterScope:
             raise ClickHouseClusterTopologyError(msg)
         return objects
 
+    def _require_ready_replicas(self, selected: list[Host], table: str) -> None:
+        ready_shards = {host.shard for host in selected}
+        if all(host in selected or host.shard not in ready_shards for host in self.reachable):
+            return
+        status = self.record(selected, table)
+        if self.policy == "healthy_shards":
+            warn_degraded(self.state, self.config, status, "blocked table-missing replica")
+        msg = (
+            f"Reachable replicas are missing {table}; cluster routing cannot safely "
+            "select only table-ready replicas. Reconcile their schemas before retrying."
+        )
+        raise ClickHouseClusterUnavailableError(msg)
+
     def usable(self, objects: list[TableObject], table: str, *, write: bool = False) -> list[Host]:  # noqa: C901 - keep the safety decision and submission in one boundary
         if not objects:
             msg = f"No table-ready hosts for {table}."
@@ -277,6 +290,7 @@ class ClusterScope:
         selected = [item.host for item in objects if item.host in self.reachable]
         replicated = objects[0].engine.lower().startswith(("replicated", "shared"))
         if replicated:
+            self._require_ready_replicas(selected, table)
             replica_rows = query_rows(
                 self.client,
                 "SELECT _shard_num, zookeeper_path, replica_name, is_readonly, is_session_expired "  # noqa: S608 - escaped literals or parsed SQL identifiers
