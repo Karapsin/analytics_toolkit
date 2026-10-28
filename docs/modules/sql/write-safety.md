@@ -57,13 +57,14 @@ a pre-existing target.
 | ClickHouse partition replacement | target is either exactly original or exactly committed; partial/mixed state is never reported as success |
 | destructive replace/truncate on a non-transactional backend | no preservation promise after the destructive statement; failure remains contextual and stages are cleaned |
 
-Retry-safe phases reopen a connection and start from a clean attempt. Ambiguous
-or unsafe mutations fail explicitly instead of silently reporting success.
-`insert`, `execute_insert`, and `execute_create` default to the same `safe`
-mutation replay policy as `execute`; pass `retry_policy="always"` only when the
-entire operation is known to be replay-safe, or `"never"` to disable retries.
-After a successful retry, the target must contain each expected batch exactly
-once. A cleanup error is reported alongside the primary operation error rather
+Staged load and transfer retry-safe phases reopen a connection and start from a
+clean attempt; their existing finalization and ambiguity safeguards still apply.
+`execute`, `insert`, `execute_insert`, and `execute_create` retry the whole
+operation on transient failures with fresh connections, including after mutation
+submission or a lost commit acknowledgement. Replays can repeat already committed
+effects. `retry_cnt` bounds attempts, `timeout_increment` controls backoff, and
+`retry_cnt=1` requests one attempt. Deterministic SQL errors are not retried.
+A cleanup error is reported alongside the primary operation error rather
 than replacing it.
 
 [SQL module index](index.md)

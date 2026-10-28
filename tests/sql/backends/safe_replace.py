@@ -8,6 +8,9 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from sqlglot import exp, parse_one
+
+from analytics_toolkit.sql.backends.ch.adapter import ClickHouseAdapter
 from analytics_toolkit.sql.backends.ch.safe_replace import (
     _cleanup_orphan_replacements,
 )
@@ -21,7 +24,6 @@ from analytics_toolkit.sql.execution.backend_options import (
     backend_operation,
     current_backend_operation,
 )
-from sqlglot import exp, parse_one
 
 ch_safe_replace = importlib.import_module("analytics_toolkit.sql.backends.ch.safe_replace")
 
@@ -306,6 +308,8 @@ class _ChAdapter:
 
 
 class _ReplaceChAdapter(_ChAdapter):
+    build_insert_from_table_sql = ClickHouseAdapter().build_insert_from_table_sql
+
     def __init__(self, counts: list[int]) -> None:
         super().__init__()
         self.counts = counts
@@ -327,14 +331,14 @@ class _ReplaceChAdapter(_ChAdapter):
     ) -> None:
         self.inserted.append((target, source))
 
-    def count_table_rows(self, _connection: Any, _table: str) -> int:
+    def count_table_rows(self, _connection: Any, _table: str, **_kwargs: Any) -> int:
         return self.counts.pop(0)
 
 
 @pytest.mark.parametrize(
     ("name", "blocked"),
     [
-        ("target__replace_abcd", False),
+        ("target__replace_abcd", True),
         ("target__replace_guarded_abcd", True),
         ("target__replace_guarded_abcd__discardable", False),
     ],
@@ -359,6 +363,20 @@ def test_clickhouse_orphan_cleanup_distinguishes_recovery_from_disposable_leftov
             f"sandbox.{name}" in command and command.startswith("DROP TABLE")
             for command in adapter.commands
         )
+
+
+def test_clickhouse_orphan_cleanup_preserves_inactive_replacement_tables_for_recovery() -> None:
+    connection = _ChConnection()
+    adapter = _ChAdapter()
+
+    with pytest.raises(AmbiguousSqlReplaceError, match="unresolved artifact"):
+        _cleanup_orphan_replacements(
+            adapter,
+            connection,
+            [("sandbox.target", "core")],
+        )
+
+    assert adapter.commands == []
 
 
 def test_clickhouse_orphan_cleanup_keeps_active_and_ignores_bad_or_failed_metadata() -> None:
@@ -402,7 +420,7 @@ def test_clickhouse_completed_cutover_leftovers_are_disposable_after_drop_failur
                 raise OSError("cleanup unavailable")
 
     adapter = FailedCleanup([2, 2, 2])
-    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
     connection = _ChConnection()
     ch_safe_replace._replace_from_stage(adapter, _request(connection))
     rename = next(
@@ -434,7 +452,7 @@ def test_clickhouse_completed_cutover_reports_success_if_cleanup_marker_rename_f
             if "__discardable" in sql:
                 raise ConnectionError("cleanup acknowledgement lost")
 
-    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
     adapter = _ReplaceChAdapter([2, 2, 2])
     connection = FailedMarker()
     messages = []
@@ -455,12 +473,15 @@ def test_clickhouse_replace_builds_and_swaps_complete_distributed_pair(
     connection = _ChConnection()
     adapter = _ReplaceChAdapter([2, 2, 2])
     monkeypatch.setattr(ch_safe_replace, "_cleanup_orphan_replacements", lambda *_args: None)
-    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
 
     ch_safe_replace._replace_from_stage(adapter, _request(connection))
 
     assert adapter.created[0].startswith("sandbox.target_shard__replace_")
-    assert adapter.inserted[0][1] == "stage.incoming"
+    assert any(
+        "INSERT INTO FUNCTION cluster(" in command and "SELECT * FROM stage.incoming" in command
+        for command in connection.commands
+    )
     assert any(
         command.startswith("CREATE TABLE sandbox.target__replace_") for command in adapter.commands
     )
@@ -474,7 +495,7 @@ def test_clickhouse_replace_rolls_back_failed_final_count(
     connection = _ChConnection()
     adapter = _ReplaceChAdapter([2, 2, 1])
     monkeypatch.setattr(ch_safe_replace, "_cleanup_orphan_replacements", lambda *_args: None)
-    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
 
     with pytest.raises(RuntimeError, match="final target row count"):
         ch_safe_replace._replace_from_stage(adapter, _request(connection))
@@ -490,7 +511,7 @@ def test_clickhouse_only_shard_replace_skips_distributed_facade(
     request = _request(connection)
     request = StageFinalizationRequest(**{**request.__dict__, "ch_only_shard": True})
     monkeypatch.setattr(ch_safe_replace, "_cleanup_orphan_replacements", lambda *_args: None)
-    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
 
     ch_safe_replace._replace_from_stage(adapter, request)
 
@@ -508,13 +529,13 @@ def test_clickhouse_replace_reports_ambiguous_failed_rollback(
     def execute_sqls(current_adapter: Any, current_connection: Any, sqls: list[str]) -> None:
         nonlocal calls
         calls += 1
-        if calls == 2:
+        if calls == 3:
             raise OSError("rollback unavailable")
         for sql in sqls:
             current_adapter.execute_command(current_connection, sql)
 
     monkeypatch.setattr(ch_safe_replace, "_cleanup_orphan_replacements", lambda *_args: None)
-    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
     monkeypatch.setattr(ch_safe_replace, "execute_reconfiguration_sqls", execute_sqls)
 
     with pytest.raises(AmbiguousSqlReplaceError, match="automatic rollback"):
@@ -536,7 +557,7 @@ def test_clickhouse_replace_rejects_incomplete_or_stale_replacement(
 ) -> None:
     adapter = _ReplaceChAdapter(counts)
     monkeypatch.setattr(ch_safe_replace, "_cleanup_orphan_replacements", lambda *_args: None)
-    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
     monkeypatch.setattr(
         ch_safe_replace,
         "_target_fingerprint",
@@ -626,7 +647,7 @@ def test_clickhouse_second_replace_retains_original_rows_after_uncertain_cutover
 
     connection = PartialCutover()
     adapter = ReconciliationAdapter([2, 2])
-    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
     with backend_operation(), pytest.raises(AmbiguousSqlReplaceError):
         ch_safe_replace._replace_from_stage(adapter, _request(connection))
     saved = dict(connection.recovery)

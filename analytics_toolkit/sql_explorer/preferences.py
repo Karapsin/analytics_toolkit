@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from .settings import save_settings
+from .settings import ExplorerSettings, save_settings
 
 if TYPE_CHECKING:
     from .app import SqlExplorerApp
@@ -35,3 +35,26 @@ def save_preferences(
 
 def _size(value: int | None) -> int | None:
     return max(0, value) if value is not None else None
+
+
+def apply_preferences(
+    app: SqlExplorerApp, workspace: SqlExplorerWorkspace, settings: ExplorerSettings
+) -> None:
+    """Save the whole form atomically before updating live application state."""
+    path = getattr(workspace.session, "settings_path", None)
+    if path is not None:
+        save_settings(settings, path)
+    for owner in app._workspaces.values():  # noqa: SLF001 -- shared app preference state.
+        owner.session.settings = settings
+    app.keyboard_mode = settings.keyboard_mode
+    if app.keyboard_mode:
+        app.capture_mouse(None)
+    for owner in app._workspaces.values():  # noqa: SLF001
+        app._update_editor_status(owner)  # noqa: SLF001
+    app._install_primary_binding(settings.run_binding)  # noqa: SLF001
+    workspace.results_orientation = settings.results_orientation
+    workspace.result_sizes.update(
+        horizontal=settings.horizontal_size, vertical=settings.vertical_size
+    )
+    workspace.apply_results_layout()
+    app._update_all_statuses()  # noqa: SLF001

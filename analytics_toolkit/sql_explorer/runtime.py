@@ -287,7 +287,6 @@ class ExplorerSession:
         return sql.execute(
             operation_database.connection_key,
             plan.execution_sql,
-            retry_policy="safe",
             **common_options,
         )
 

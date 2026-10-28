@@ -143,6 +143,8 @@ def test_finalize_stage_table_clickhouse_only_shard_upsert_deletes_target() -> N
 
 def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> None:
     client = FakeClickHouseClient()
+    qualified_target = f"default.{TEST_CH_TABLE}"
+    qualified_shard = f"default.{TEST_CH_SHARD_TABLE}"
     batch = pd.DataFrame(
         {
             "month_date": [date(2024, 2, 1)],
@@ -164,26 +166,29 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         ch_sharding_key="cityHash64(month_date, min_month_use)",
     )
 
-    assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE}" not in client.commands
-    assert f"DROP TABLE IF EXISTS {TEST_CH_SHARD_TABLE}" not in client.commands
+    assert f"DROP TABLE IF EXISTS {qualified_target}" not in client.commands
+    assert f"DROP TABLE IF EXISTS {qualified_shard}" not in client.commands
     assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}__replace_")
+        command.startswith(f"CREATE TABLE IF NOT EXISTS {qualified_shard}__replace_")
         for command in client.commands
     )
     assert any(
-        command.startswith(f"CREATE TABLE {TEST_CH_TABLE}__replace_") for command in client.commands
+        command.startswith(f"CREATE TABLE {qualified_target}__replace_")
+        for command in client.commands
     )
     assert any(
-        command.startswith(f"INSERT INTO {TEST_CH_SHARD_TABLE}__replace_")
+        command.startswith(
+            "INSERT INTO FUNCTION cluster('{cluster}', 'default', "
+            f"'{TEST_CH_SHARD_TABLE}__replace_"
+        )
         and f"FROM {TEST_CH_STAGE_TABLE}" in command
         for command in client.commands
     )
     assert any(
-        command.startswith(f"RENAME TABLE {TEST_CH_SHARD_TABLE} TO ") for command in client.commands
+        command.startswith(f"RENAME TABLE {qualified_shard} TO ") for command in client.commands
     )
     assert any(
-        f" TO {TEST_CH_SHARD_TABLE} ON CLUSTER '{{cluster}}'" in command
-        for command in client.commands
+        f" TO {qualified_shard} ON CLUSTER '{{cluster}}'" in command for command in client.commands
     )
     assert not any(query.startswith("DESCRIBE TABLE ") for query in client.queries)
     assert all(
@@ -224,13 +229,18 @@ def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() 
     assert "`month_date` Nullable(Date)" in create_sql
     assert "`users` Nullable(Int64)" in create_sql
     insert_sql = next(command for command in client.commands if command.startswith("INSERT INTO"))
-    assert insert_sql.startswith(f"INSERT INTO {TEST_CH_SHARD_TABLE}__replace_")
+    assert insert_sql.startswith(
+        f"INSERT INTO FUNCTION cluster('{{cluster}}', 'default', '{TEST_CH_SHARD_TABLE}__replace_"
+    )
     assert insert_sql.endswith(
         " (`month_date`, `users`) "
         f"SELECT CAST(`month_date` AS Nullable(Date)) AS `month_date`, "
         f"CAST(`users` AS Nullable(Int64)) AS `users` "
-        f"FROM {TEST_CH_STAGE_TABLE}"
+        f"FROM (SELECT * FROM {TEST_CH_STAGE_TABLE}) AS replacement_stage"
     )
+    assert client.command_settings[client.commands.index(insert_sql)] == {
+        "distributed_foreground_insert": 1
+    }
 
 
 def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:

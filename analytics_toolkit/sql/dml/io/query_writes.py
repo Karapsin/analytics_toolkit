@@ -20,7 +20,6 @@ from ...execution.plans import (
     SqlPlan,
     SqlStatement,
 )
-from .execute_safety import ExecuteRetryPolicy, validate_execute_retry_policy
 from .execute_sql import (
     _build_execute_sql_options,
     _execute_sql_options,
@@ -43,7 +42,6 @@ def insert(
     dry_run: bool = False,
     return_sql: bool = False,
     return_metadata: bool = False,
-    retry_policy: ExecuteRetryPolicy = "safe",
     concurrency: int = 1,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = 5,
@@ -74,7 +72,6 @@ def insert(
             return_sql=return_sql,
             return_metadata=return_metadata,
             progress=False,
-            retry_policy=retry_policy,
             attempt_numbers=attempts,
         )
 
@@ -105,7 +102,6 @@ def execute_insert(
     return_sql: bool = False,
     return_metadata: bool = False,
     progress: bool = False,
-    retry_policy: ExecuteRetryPolicy = "safe",
     concurrency: int = 1,
     soft_concurrency_cap: int | None = None,
     hard_concurrency_cap: int = 5,
@@ -131,7 +127,6 @@ def execute_insert(
             return_sql=return_sql,
             return_metadata=return_metadata,
             progress=progress,
-            retry_policy=retry_policy,
             attempt_numbers=attempts,
         )
 
@@ -162,10 +157,8 @@ def _prepare_query_insert(
     return_sql: bool,
     return_metadata: bool,
     progress: bool,
-    retry_policy: ExecuteRetryPolicy,
     attempt_numbers: list[int],
 ) -> Callable[[], int | SqlPlan | SqlOperationResult]:
-    resolved_retry_policy = validate_execute_retry_policy(retry_policy)
     target_table = _normalize_target_table(table_name)
     final_query = statements[-1]
     _validate_result_query(final_query)
@@ -189,7 +182,6 @@ def _prepare_query_insert(
         return_sql=return_sql,
         return_metadata=False,
         progress=progress,
-        retry_policy=resolved_retry_policy,
     )
     options = replace(options, query_label=query_label, attempt_numbers=attempt_numbers)
     _validate_target_table(target_table, options.backend)

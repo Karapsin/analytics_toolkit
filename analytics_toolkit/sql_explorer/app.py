@@ -36,6 +36,8 @@ from .journal_screen import JournalScreen
 from .picker import DatabasePickerApp
 from .query_commands import SqlExplorerQueryCommandsMixin
 from .scheduling import ExplorerQueryScheduler
+from .settings_commands import SqlExplorerSettingsCommandsMixin
+from .settings_screen import SettingsScreen
 from .status import QuerySummaryBar, query_summary_for
 from .styles import APP_CSS, explorer_css_variables
 from .tabs import (
@@ -74,6 +76,7 @@ def _remove_dynamic_binding(bindings: Any, key: str) -> None:
 
 
 class SqlExplorerApp(
+    SqlExplorerSettingsCommandsMixin,
     SqlExplorerJournalCommandsMixin,
     SqlExplorerConnectionsCommandsMixin,
     SqlExplorerCompletionCommandsMixin,
@@ -321,6 +324,9 @@ class SqlExplorerApp(
         """Compatibility action for explicitly ignored Tab-key combinations."""
 
     def action_plain_tab(self) -> None:
+        if isinstance(self.screen, SettingsScreen):
+            self.screen.action_next_field()
+            return
         if isinstance(self.screen, CreateTableScreen):
             if not self.screen.accept_type() and isinstance(self.focused, TextArea):
                 self.screen.action_form_indent(1)
@@ -345,6 +351,9 @@ class SqlExplorerApp(
             self.focused.action_indent()
 
     def action_plain_shift_tab(self) -> None:
+        if isinstance(self.screen, SettingsScreen):
+            self.screen.action_previous_field()
+            return
         if isinstance(self.screen, CreateTableScreen):
             self.screen.action_form_indent(-1)
             return
@@ -680,6 +689,7 @@ class SqlExplorerApp(
             "wq": self._command_write_quit,
             "run": self._command_run,
             "save": self._command_save,
+            "settings": self._command_settings,
             "shortcut": self._command_shortcut,
             "to_csv": self._command_to_csv,
             "to_excel": self._command_to_excel,

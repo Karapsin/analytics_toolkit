@@ -26,6 +26,7 @@ COMMAND_NAMES = (
     "quit",
     "run",
     "save",
+    "settings",
     "shortcut",
     "to_csv",
     "to_excel",
