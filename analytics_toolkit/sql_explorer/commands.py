@@ -81,6 +81,8 @@ class SqlExplorerCursorCommandsMixin:
             app._set_notice("Clipboard is empty.")
 
     def action_toggle_keyboard(self) -> None:
+        if len(cast("Any", self).screen_stack) > 1:
+            return
         self._command_keyboard(["toggle"])
 
     def _command_keyboard(self, arguments: list[str]) -> None:

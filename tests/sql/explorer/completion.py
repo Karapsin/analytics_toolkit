@@ -106,7 +106,10 @@ def test_provider_routing_and_show_tables_contract(
         assert values == ("sampletable",)
     queries = [query for _, query in calls if "partition_catalog" not in query]
     assert len(queries) == 3
-    assert all("sample%" in query and "analytics" in query for query in queries)
+    assert all("analytics" in query for query in queries)
+    assert "sample%" in queries[0]
+    assert "startsWith(lower(name), lower('sample'))" in queries[1]
+    assert "sample%" in queries[2]
     assert all(
         "pg_total_relation_size" not in query and "row_count" not in query for query in queries
     )

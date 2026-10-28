@@ -17,6 +17,8 @@ from tests.sql._support.explorer import FakeSession
     ("value", "cursor", "expected"),
     [
         (":cre", 4, ("create_table",)),
+        ("set", 3, ("settings",)),
+        (":set", 4, ("settings",)),
         ("  :cre", 6, ("create_table",)),
         ("confirm o", 9, ("on", "off")),
         ("mode ", 5, ("exploratory", "navigation")),

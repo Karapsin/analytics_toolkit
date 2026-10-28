@@ -14,6 +14,7 @@ from analytics_toolkit.sql.backends.metadata import (
 )
 from analytics_toolkit.sql_explorer import completion
 from analytics_toolkit.sql_explorer.completion import CompletionCoordinator, CompletionRequest
+from sqlglot import exp, parse
 
 from tests.sql.explorer.completion import FakeProvider
 
@@ -30,7 +31,6 @@ def test_names_only_queries_escape_prefixes_and_keep_partition_visibility() -> N
     for query in [
         legacy,
         modern,
-        build_ch_completion_query("mart", "name_%"),
         build_trino_completion_query('"iceberg"', "mart", "name_%"),
     ]:
         assert "name!_!%%" in query
@@ -41,6 +41,47 @@ def test_names_only_queries_escape_prefixes_and_keep_partition_visibility() -> N
     assert detailed.index("table_schema = 'mart'") < detailed.index("LEFT JOIN")
     assert "pg_total_relation_size" in detailed
     assert "row_count > 0" in detailed
+
+
+@pytest.mark.parametrize("prefix", ["", "NaMe", "name_%!", "a'b", "a\\n\\", "x'); --"])
+@pytest.mark.parametrize("schema", [None, "mart", "a'b", "a\\n\\"])
+def test_clickhouse_completion_uses_literal_prefixes_and_database_names(
+    prefix: str, schema: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def read(db_key: str, query: str, **kwargs: object) -> pd.DataFrame:
+        assert db_key == "ch"
+        assert str(kwargs["query_label"]).startswith("sql_explorer metadata=")
+        statements = parse(query, read="clickhouse")
+        assert len(statements) == 1
+        statement = statements[0]
+        assert isinstance(statement, exp.Select)
+        assert statement.find(exp.Escape) is None
+        table = statement.find(exp.Table)
+        assert table is not None
+        assert (table.db, table.name) == ("system", "tables")
+        assert [column.name for column in statement.selects] == ["name"]
+        predicate = statement.find(exp.StartsWith)
+        assert predicate is not None
+        assert isinstance(predicate.this, exp.Lower)
+        assert predicate.this.this.name == "name"
+        assert isinstance(predicate.expression, exp.Lower)
+        assert predicate.expression.this.this == prefix
+        database = statement.find(exp.EQ)
+        if schema is None:
+            assert database is None
+        else:
+            assert database is not None
+            assert database.this.name == "database"
+            assert database.expression.this == schema
+        assert statement.args["order"].expressions[0].this.name == "name"
+        return pd.DataFrame({"name": ["orders", "Customers", "orders"]})
+
+    monkeypatch.setattr(completion.sql, "read", read)
+    provider = completion.ClickHouseCompletionProvider()
+    assert provider.list_tables(connection_key="ch", prefix=prefix, schema=schema) == (
+        "Customers",
+        "orders",
+    )
 
 
 def test_cache_prefix_expiry_and_repeated_metadata_requests() -> None:

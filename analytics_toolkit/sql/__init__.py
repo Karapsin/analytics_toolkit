@@ -30,7 +30,6 @@ from .dml.io.execute_read import execute_read
 from .dml.io.execute_create import execute_create
 from .dml.io.execute_safety import (
     AmbiguousSqlMutationError,
-    ExecuteRetryPolicy,
     SqlBatchExecutionError,
     SqlBatchItemResult,
     SqlBatchItemStatus,
@@ -100,7 +99,6 @@ __all__ = [
     "ConnectionValidationResult",
     "EmptySourceError",
     "EmptySourcePolicy",
-    "ExecuteRetryPolicy",
     "SqlBatchExecutionError",
     "SqlBatchItemResult",
     "SqlBatchItemStatus",

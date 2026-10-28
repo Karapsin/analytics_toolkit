@@ -278,7 +278,7 @@ def test_execute_read_and_execute_are_dispatched(
     assert execute_read_calls[0]["return_metadata"] is True
     assert execute_read_calls[0]["row_limit"] == 201
     assert "row_limit" not in execute_calls[0]
-    assert execute_calls[0]["retry_policy"] == "safe"
+    assert "retry_policy" not in execute_calls[0]
 
 
 def test_row_query_requires_dataframe_result(

@@ -97,7 +97,6 @@ def _execute_create_options(**overrides: Any) -> Any:
         "query_label": None,
         "return_metadata": False,
         "progress": False,
-        "retry_policy": "safe",
     }
     values.update(overrides)
     return execute_create_module._ExecuteCreateOptions(**values)
@@ -402,37 +401,46 @@ def test_execute_create_runs_multi_create_then_one_insert(
     ]
 
 
-@pytest.mark.parametrize(
-    ("retry_policy", "non_retryable", "expected_error"),
-    [
-        ("safe", False, sql.AmbiguousSqlMutationError),
-        ("always", False, OSError),
-        ("safe", True, OSError),
-    ],
-)
-def test_execute_create_error_safety(
+@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+def test_execute_create_retries_with_fresh_connection(
     monkeypatch: pytest.MonkeyPatch,
-    retry_policy: str,
-    non_retryable: bool,
-    expected_error: type[Exception],
+    backend: str,
+) -> None:
+    adapter = _ExecuteCreateAdapter(failure=OSError("lost acknowledgement"))
+    connections = [_ExecuteCreateConnection(), _ExecuteCreateConnection()]
+    opened: list[Any] = []
+    options = _execute_create_options(backend=backend, connection_key=backend, retry_cnt=2)
+    plan = execute_create_module._build_execute_create_plan(options)
+
+    def connect(_key: str) -> Any:
+        connection = connections[len(opened)]
+        if opened:
+            adapter.failure = None
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(execute_create_module, "get_backend_adapter", lambda _backend: adapter)
+    monkeypatch.setattr(execute_create_module, "get_sql_connection", connect)
+    assert execute_create_module._execute_create_options(options, plan) == 7
+    assert len(opened) == 2
+    assert connections[0].rolled_back == 1
+    assert all(connection.closed == 1 for connection in connections)
+    assert "retry_policy" not in plan.options
+
+
+def test_execute_create_error_rolls_back_and_propagates(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = _ExecuteCreateAdapter(failure=OSError("database failure"))
     connection = _ExecuteCreateConnection()
-    options = _execute_create_options(retry_policy=retry_policy)
+    options = _execute_create_options()
     plan = execute_create_module._build_execute_create_plan(options)
     monkeypatch.setattr(execute_create_module, "get_backend_adapter", lambda _backend: adapter)
     monkeypatch.setattr(execute_create_module, "get_sql_connection", lambda _key: connection)
-    monkeypatch.setattr(
-        execute_create_module,
-        "is_non_retryable_sql_error",
-        lambda _error: non_retryable,
-    )
-
-    with pytest.raises(expected_error):
+    with pytest.raises(OSError, match="database failure"):
         execute_create_module._execute_create_options(options, plan)
-
     assert connection.closed == 1
-    assert connection.rolled_back == int(retry_policy == "always" or non_retryable)
+    assert connection.rolled_back == 1
 
 
 def test_execute_create_connection_and_transactional_presubmission_errors(
