@@ -52,6 +52,12 @@ source cannot be claimed as captured. General multi-dataset chart writing also
 depends on public adapter support. These limitations do not permit private HTTP
 or payload workarounds.
 
+Chart-widget defaults and unsupported placement/member properties also block
+dashboard writing. Their complete authored source remains available. The same
+checks run before a pull replaces a writable baseline, so a later apply cannot
+discard newly authored metadata. Supported widget descriptions and hints retain
+their enabled state; unsupported visibility combinations are reported explicitly.
+
 ## Consistency and recovery
 
 The importer inventories each discovered dependency set, reads the published

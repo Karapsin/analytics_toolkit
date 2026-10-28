@@ -9,7 +9,55 @@ from .bi_dashboard import SETTINGS
 from .errors import DataLensUtilsError
 
 
+def check_widget_member(value: Any, identifier: str) -> None:
+    allowed = {
+        "id",
+        "chartId",
+        "title",
+        "isDefault",
+        "params",
+        "enableActionParams",
+        "description",
+        "hint",
+        "autoHeight",
+        "enableDescription",
+        "enableHint",
+    }
+    unsupported = set(value) - allowed
+    for text, enabled in (("description", "enableDescription"), ("hint", "enableHint")):
+        if value.get(enabled, False) != bool(value.get(text)):
+            unsupported.add(enabled)
+    if unsupported:
+        raise DataLensUtilsError(
+            "Chart widget member properties cannot be faithfully written: "
+            + identifier
+            + ": "
+            + ", ".join(sorted(unsupported))
+        )
+
+
+def check_widget_source(item: Any) -> None:
+    unsupported = set(item.raw) - {"id", "type", "namespace", "data", "defaults"}
+    unsupported.update(
+        "data." + name for name in set(item.data) - {"tabs", "hideTitle", "borderRadius", "pinned"}
+    )
+    if item.raw.get("defaults") not in (None, {}):
+        unsupported.add("defaults")
+    if item.raw.get("namespace") not in (None, "default"):
+        unsupported.add("namespace")
+    if unsupported:
+        raise DataLensUtilsError(
+            "Chart widget properties cannot be faithfully written: "
+            + item.id
+            + ": "
+            + ", ".join(sorted(unsupported))
+        )
+    for value in item.data.get("tabs", ()):
+        check_widget_member(value, item.id)
+
+
 def import_widget(item: Any, tab: Any, endpoints: dict[str, str], context: Any) -> None:
+    check_widget_source(item)
     data = item.data
     files, chart_keys, member_keys, senders = (
         context.files,
