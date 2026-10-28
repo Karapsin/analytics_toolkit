@@ -8,8 +8,6 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from sqlglot import exp, parse_one
-
 from analytics_toolkit.sql.backends.ch.adapter import ClickHouseAdapter
 from analytics_toolkit.sql.backends.ch.safe_replace import (
     _cleanup_orphan_replacements,
@@ -24,6 +22,7 @@ from analytics_toolkit.sql.execution.backend_options import (
     backend_operation,
     current_backend_operation,
 )
+from sqlglot import exp, parse_one
 
 ch_safe_replace = importlib.import_module("analytics_toolkit.sql.backends.ch.safe_replace")
 

@@ -177,7 +177,9 @@ def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share o
     )
     backup_physical = suffixed_table(physical_target, f"__replace_guarded_backup_{token}")
     backup_facade = (
-        None if request.ch_only_shard else suffixed_table(request.target_table, f"__replace_guarded_backup_{token}")
+        None
+        if request.ch_only_shard
+        else suffixed_table(request.target_table, f"__replace_guarded_backup_{token}")
     )
     shard_cluster, facade_cluster, distributed_cluster = _clusters(request)
     data_cluster, data_function, replicated = _replacement_data_route(
@@ -292,14 +294,21 @@ def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share o
         )
         raise
 
+    _drop_completed_replacements(adapter, request.connection, cleanup_tables)
+    _best_effort_drop(adapter, request.connection, local_replacement)
+
+
+def _drop_completed_replacements(
+    adapter: Any, connection: Any, cleanup_tables: Sequence[tuple[str, str | None]]
+) -> None:
     disposable = []
     for table, cluster in cleanup_tables:
         finished = suffixed_table(table, "__discardable")
         try:
-            with local_sql(request.connection):
+            with local_sql(connection):
                 execute_reconfiguration_sqls(
                     adapter,
-                    request.connection,
+                    connection,
                     [f"RENAME TABLE {table} TO {finished}{cluster_clause(cluster)}"],
                 )
         except Exception as exc:
@@ -309,7 +318,7 @@ def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share o
             )
             continue
         disposable.append((finished, cluster))
-    _best_effort_drop(adapter, request.connection, [*disposable, *local_replacement])
+    _best_effort_drop(adapter, connection, disposable)
 
 
 def _execute_cutover_steps(
