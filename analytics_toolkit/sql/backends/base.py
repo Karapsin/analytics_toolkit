@@ -441,6 +441,7 @@ class BackendAdapter:
         return {column: column_types[column] for column in columns}
 
     should_ensure_load_target_table = _adapter_defaults.should_ensure_load_target_table
+    preflight_new_target = _adapter_defaults.preflight_new_target
     build_load_target_create_kwargs = _adapter_defaults.build_load_target_create_kwargs
     build_create_from_sql_target_create_kwargs = (
         _adapter_defaults.build_create_from_sql_target_create_kwargs
@@ -874,9 +875,7 @@ class BackendAdapter:
 
     column_list_sql = _common_methods.column_list_sql
 
-    def cast_select_expression(self, column_name: str, target_type: str) -> str:
-        quoted_column = self.quote_identifier(column_name)
-        return f"CAST({quoted_column} AS {target_type}) AS {quoted_column}"
+    cast_select_expression = _common_methods.cast_select_expression
 
     def null_safe_key_equality(
         self,

@@ -63,7 +63,13 @@ def test_bounded_connection_manager_tracks_high_water_replacement_and_close() ->
 
 def test_clickhouse_stage_cleanup_drops_every_policy_created_companion() -> None:
     commands: list[str] = []
-    connection = SimpleNamespace(command=commands.append)
+
+    def command(sql: str, *, settings: Any = None) -> None:
+        if "ON CLUSTER" in sql:
+            assert settings["distributed_ddl_task_timeout"] == 0
+        commands.append(sql)
+
+    connection = SimpleNamespace(command=command)
     policy = SimpleNamespace(
         create_distributed_pair=True,
         shard_on_cluster="STAGE_SHARDS",

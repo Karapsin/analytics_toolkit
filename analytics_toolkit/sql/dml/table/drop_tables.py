@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.execution.backend_options import preflight_sql_statements
+
 from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
 from ...connection.get_sql_connection import get_sql_connection
 from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
-from ...execution.validation import validate_positive_int, validate_positive_number
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from analytics_toolkit.general import time_print
+from ...execution.validation import validate_positive_int, validate_positive_number
 from .models import ChDropTableOptions
 
 
@@ -80,6 +82,7 @@ def drop_tables(
             query_label=options.query_label,
             preview_sql=plan.sqls[0] if plan.sqls else None,
         ):
+            preflight_sql_statements(connection, plan.sqls)
             for target_table in target_tables:
                 get_backend_adapter(options.backend).drop_table_with_options(
                     connection,
@@ -90,9 +93,7 @@ def drop_tables(
                     ch_drop_distributed=bool(ch_drop_distributed),
                     ch_wait_for_absence=options.ch_wait_for_absence,
                     ch_wait_timeout_seconds=options.ch_wait_timeout_seconds,
-                    ch_wait_poll_interval_seconds=(
-                        options.ch_wait_poll_interval_seconds
-                    ),
+                    ch_wait_poll_interval_seconds=(options.ch_wait_poll_interval_seconds),
                     ch_retry_per_host_drops=options.ch_retry_per_host_drops,
                     if_exists=bool(if_exists),
                     query_label=options.query_label,
@@ -144,9 +145,7 @@ def build_drop_table_plan(
             "ch_drop_distributed": ch_drop_distributed,
             "ch_wait_for_absence": options.ch_wait_for_absence,
             "ch_wait_timeout_seconds": options.ch_wait_timeout_seconds,
-            "ch_wait_poll_interval_seconds": (
-                options.ch_wait_poll_interval_seconds
-            ),
+            "ch_wait_poll_interval_seconds": (options.ch_wait_poll_interval_seconds),
             "ch_retry_per_host_drops": options.ch_retry_per_host_drops,
         },
         metadata=SqlOperationMetadata(
@@ -201,10 +200,7 @@ def _normalize_target_tables(table: str | list[str]) -> list[str]:
         return [_normalize_non_empty_string(table, "table")]
     if not isinstance(table, list):
         raise TypeError("table must be a string or a list of strings.")
-    normalized_tables = [
-        _normalize_non_empty_string(table_name, "table")
-        for table_name in table
-    ]
+    normalized_tables = [_normalize_non_empty_string(table_name, "table") for table_name in table]
     if not normalized_tables:
         raise ValueError("table must not be empty.")
     return normalized_tables

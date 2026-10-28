@@ -5,7 +5,7 @@
 Drop one table or a list of tables using the configured backend.
 
 ```python
-drop_tables(db_key: 'str', table: 'str | list[str]', *, if_exists: 'bool' = False, ch_cluster: 'str | None' = '{cluster}', ch_drop_shard: 'bool' = True, ch_drop_distributed: 'bool' = True, ch_wait_for_absence: 'bool' = False, ch_wait_timeout_seconds: 'int' = 300, ch_wait_poll_interval_seconds: 'float' = 1, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None) -> 'SqlPlan | SqlOperationResult | None'
+drop_tables(db_key: 'str', table: 'str | list[str]', *, if_exists: 'bool' = False, ch_cluster: 'str | None' = '{cluster}', ch_drop_shard: 'bool' = True, ch_drop_distributed: 'bool' = True, ch_wait_for_absence: 'bool' = False, ch_wait_timeout_seconds: 'int' = 300, ch_wait_poll_interval_seconds: 'float' = 1, ch_retry_per_host_drops: 'bool' = True, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, query_label: 'str | None' = None, ch_unavailable_shards: 'str | None' = None) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -21,6 +21,8 @@ drop_tables(db_key: 'str', table: 'str | list[str]', *, if_exists: 'bool' = Fals
 - `query_label` - safe label added to generated SQL comments, plans, metadata, and logs
 
 ### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 - `ch_cluster` - cluster name or macro for ClickHouse distributed/shard DDL; `None` skips cluster DDL where supported
 - `ch_drop_distributed` - whether ClickHouse distributed tables should be dropped

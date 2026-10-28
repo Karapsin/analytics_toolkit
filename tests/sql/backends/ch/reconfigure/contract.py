@@ -544,22 +544,26 @@ def test_settings_change_uses_direct_alter_and_preserves_ddl() -> None:
     assert "index_granularity = 4096" in reconfiguration.after_ddl["shard"]
 
 
-def test_synchronous_execution_falls_back_for_simple_clients() -> None:
+def test_synchronous_execution_does_not_resubmit_after_type_error() -> None:
     class LegacyClient(ReconfigureClient):
         def command(self, query: str, settings: object = None) -> None:
+            super().command(query)
             if settings is not None:
                 message = "settings unsupported"
                 raise TypeError(message)
-            super().command(query)
 
     client = LegacyClient()
+    with pytest.raises(TypeError, match="settings unsupported"):
+        reconfigure_execution.execute_reconfiguration_sqls(
+            get_backend_adapter("ch"),
+            client,
+            ["CREATE TABLE analytics.new ON CLUSTER core (id UInt8) ENGINE=Memory"],
+        )
+    assert len(client.commands) == 1
     reconfigure_execution.execute_reconfiguration_sqls(
         get_backend_adapter("ch"),
         client,
-        [
-            "ALTER TABLE analytics.events ON CLUSTER core MODIFY COMMENT 'x'",
-            "OPTIMIZE TABLE x",
-        ],
+        ["OPTIMIZE TABLE x"],
     )
 
     assert len(client.commands) == 2

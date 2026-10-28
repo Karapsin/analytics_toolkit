@@ -14,6 +14,7 @@ from analytics_toolkit.sql.ddl.schema import (
     _build_column_definitions,
     build_table_schema_column_definitions,
 )
+from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
 from .creation_policy import DEFAULT_DDL_READY_TIMEOUT_SECONDS, ClickHouseCreationPolicy
@@ -156,7 +157,9 @@ def _finalize_upsert(adapter: Any, request: StageFinalizationRequest) -> None:
         adapter.execute_command(request.connection, sql)
 
 
-def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None:
+def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share one rollback boundary
+    adapter: Any, request: StageFinalizationRequest
+) -> None:
     request = _qualify_replacement_target(request)
     token = uuid4().hex[:12]
     physical_target = (
@@ -166,15 +169,17 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
     )
     if physical_target is None:
         raise RuntimeError("ClickHouse replacement could not resolve its physical shard table.")
-    replacement_physical = suffixed_table(physical_target, f"__replace_{token}")
+    replacement_physical = suffixed_table(physical_target, f"__replace_guarded_{token}")
     replacement_facade = (
         None
         if request.ch_only_shard
-        else suffixed_table(request.target_table, f"__replace_{token}")
+        else suffixed_table(request.target_table, f"__replace_guarded_{token}")
     )
-    backup_physical = suffixed_table(physical_target, f"__backup_{token}")
+    backup_physical = suffixed_table(physical_target, f"__replace_guarded_backup_{token}")
     backup_facade = (
-        None if request.ch_only_shard else suffixed_table(request.target_table, f"__backup_{token}")
+        None
+        if request.ch_only_shard
+        else suffixed_table(request.target_table, f"__replace_guarded_backup_{token}")
     )
     shard_cluster, facade_cluster, distributed_cluster = _clusters(request)
     data_cluster, data_function, replicated = _replacement_data_route(
@@ -275,6 +280,8 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
                 "ClickHouse final target row count does not match the staged row count."
             )
     except Exception as exc:
+        if preserve_recovery_artifacts():
+            raise
         _rollback_completed_steps(adapter, request.connection, rollback_sql, exc)
         _best_effort_drop(
             adapter,
@@ -287,7 +294,31 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
         )
         raise
 
-    _best_effort_drop(adapter, request.connection, [*cleanup_tables, *local_replacement])
+    _drop_completed_replacements(adapter, request.connection, cleanup_tables)
+    _best_effort_drop(adapter, request.connection, local_replacement)
+
+
+def _drop_completed_replacements(
+    adapter: Any, connection: Any, cleanup_tables: Sequence[tuple[str, str | None]]
+) -> None:
+    disposable = []
+    for table, cluster in cleanup_tables:
+        finished = suffixed_table(table, "__discardable")
+        try:
+            with local_sql(connection):
+                execute_reconfiguration_sqls(
+                    adapter,
+                    connection,
+                    [f"RENAME TABLE {table} TO {finished}{cluster_clause(cluster)}"],
+                )
+        except Exception as exc:
+            time_print(
+                "ClickHouse replacement completed; cleanup artifact could not be marked "
+                f"discardable and was retained for reconciliation: {table}: {exc}"
+            )
+            continue
+        disposable.append((finished, cluster))
+    _best_effort_drop(adapter, connection, disposable)
 
 
 def _execute_cutover_steps(
@@ -633,7 +664,7 @@ def _cleanup_orphan_replacements(
     connection: Any,
     targets: list[tuple[str, str | None]],
 ) -> None:
-    del adapter  # Unknown artifacts cannot be proved safe to delete automatically.
+    unresolved: list[str] = []
     for target, cluster in targets:
         database, relation = distributed_table_parts(target)
         prefixes = (f"{relation}__replace_", f"{relation}__backup_")
@@ -655,22 +686,32 @@ def _cleanup_orphan_replacements(
                 if not name.startswith(prefixes):
                     continue
                 orphan = f"{database}.{name}"
-                if _replacement_is_active(connection, orphan, cluster):
-                    continue
-                message = (
-                    f"ClickHouse replacement found unresolved artifact {orphan}; "
-                    "inspect and recover the previous operation before replacing again. "
-                    "Recovery artifacts were preserved."
+                active = _replacement_is_active(connection, orphan, cluster)
+                disposable = name.startswith(f"{relation}__replace_guarded_") and name.endswith(
+                    "__discardable"
                 )
-                raise AmbiguousSqlReplaceError(message)
-        except AmbiguousSqlReplaceError:
-            raise
+                if not active and disposable:
+                    _best_effort_drop(adapter, connection, [(orphan, cluster)])
+                    continue
+                unresolved.append(orphan + (" (active)" if active else ""))
+                time_print(
+                    f"Retaining ClickHouse recovery artifact {orphan}; "
+                    "verify its contents and reconcile the target before explicitly removing it.",
+                    level="warning",
+                )
         except Exception as exc:
-            time_print(
-                f"Could not inspect ClickHouse replacement artifacts for {target}: "
-                f"{type(exc).__name__}",
-                level="warning",
+            msg = (
+                f"Cannot verify recovery artifacts for {target}; "
+                "reconcile the previous replacement before another destructive operation."
             )
+            raise AmbiguousSqlReplaceError(msg) from exc
+    if unresolved:
+        raise AmbiguousSqlReplaceError(
+            "Unreconciled ClickHouse replacement artifacts remain (unresolved artifact): "
+            + ", ".join(sorted(set(unresolved)))
+            + ". Inspect and reconcile all shards before explicitly removing them "
+            "or replacing again."
+        )
 
 
 def _replacement_is_active(
@@ -685,7 +726,8 @@ def _replacement_is_active(
     )
     rows = query_local(
         connection,
-        f"SELECT count() FROM {source} WHERE position(query, {_sql_string_literal(table)}) > 0",
+        f"SELECT count() FROM {source} WHERE position(query, {_sql_string_literal(table)}) > 0 "
+        "AND query_id != currentQueryID() AND initial_query_id != initialQueryID()",
     ).result_rows
     return bool(rows and rows[0] and int(rows[0][0]))
 

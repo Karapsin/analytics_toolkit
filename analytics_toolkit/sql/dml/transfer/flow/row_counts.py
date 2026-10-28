@@ -28,6 +28,10 @@ from analytics_toolkit.sql.dml.transfer.runtime.retry import (
     run_with_fresh_connection,
     run_with_retry,
 )
+from analytics_toolkit.sql.execution.backend_options import (
+    current_backend_operation,
+    preserve_recovery_artifacts,
+)
 
 
 class TransferRowCountMismatchError(ValueError):
@@ -115,6 +119,7 @@ def prepare_row_count_validated_options(
     slice_index: int | None = None,
     transfer_key_label: str | None = None,
 ) -> TransferOptions:
+    _require_partial_source_snapshot(options)
     if not options.validate_row_count:
         return options
 
@@ -136,6 +141,7 @@ def prepare_row_count_validated_options(
             connection_refs.source,
             source_sql,
         )
+        _require_partial_source_snapshot(options)
     stage_state.expected_source_rows = (
         expected_rows
         if stage_state.expected_source_rows is None
@@ -153,11 +159,21 @@ def prepare_row_count_validated_options(
     return replace(options, source_sql=source_sql)
 
 
+def _require_partial_source_snapshot(options: TransferOptions) -> None:
+    state = current_backend_operation()
+    if state is not None:
+        if options.source_transfer_staging_schema is None or not options.validate_row_count:
+            state.resources[("require_materialized_source", options.from_db_key.lower())] = True
+        state.require_source_snapshot(options.from_db_key)
+
+
 def cleanup_materialized_sources(
     options: TransferOptions,
     connection_ref: dict[str, Any],
     stage_state: TransferStageState,
 ) -> None:
+    if preserve_recovery_artifacts():
+        return
     adapter = get_backend_adapter(options.from_db_backend)
     while stage_state.source_stage_tables:
         stage_table = stage_state.source_stage_tables[-1]

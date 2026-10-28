@@ -7,10 +7,12 @@ pair while preserving its data. Physical shard DDL, Distributed facade DDL, and
 Distributed routing are controlled independently.
 
 ```python
-ch_reconfigure_table(db_key: 'str', table: 'str', *, ch_engine: 'str | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_settings: 'Mapping[str, str | int | float | bool | None] | None' = None, ch_ddl_wait_policy: 'str | None' = None, reset_partition_by: 'bool' = False, reset_order_by: 'bool' = False, to_defaults: 'bool' = False, validate_row_count: 'bool' = True, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
+ch_reconfigure_table(db_key: 'str', table: 'str', *, ch_engine: 'str | None' = None, partition_by: 'Sequence[str] | str | None' = None, order_by: 'Sequence[str] | str | None' = None, ch_sharding_key: 'str | None' = None, ch_distributed_table: 'bool | None' = None, ch_distributed_engine_template: 'str | None' = None, ch_distributed_cluster: 'str | None' = None, ch_shard_on_cluster: 'str | None' = None, ch_distributed_on_cluster: 'str | None' = None, ch_settings: 'Mapping[str, str | int | float | bool | None] | None' = None, ch_ddl_wait_policy: 'str | None' = None, reset_partition_by: 'bool' = False, reset_order_by: 'bool' = False, to_defaults: 'bool' = False, validate_row_count: 'bool' = True, retry_cnt: 'int' = 5, timeout_increment: 'float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, ch_unavailable_shards: 'str | None' = None) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
+
+### General Inputs
 
 - `db_key` - configured ClickHouse connection key or alias
 - `table` - MergeTree table or managed Distributed table to reconfigure
@@ -35,6 +37,10 @@ ch_reconfigure_table(db_key: 'str', table: 'str', *, ch_engine: 'str | None' = N
 - `dry_run` - inspect the live table and return its `SqlPlan` without changing it
 - `return_sql` - return the same live, read-only plan instead of executing it
 - `return_metadata` - return `SqlOperationResult` with DDL, strategy, counts, and cleanup status
+
+### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 ## Usage
 

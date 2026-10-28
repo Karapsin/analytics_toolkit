@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.execution.backend_options import (
+    preserve_recovery_artifacts,
+    require_complete_operation,
+)
+
 # ruff: noqa: C901, E721, EM101, EM102, FBT001, I001, PLR0912, TID252, TRY003
 
 from collections.abc import Sequence
@@ -618,6 +623,16 @@ def _apply_load_target_write_mode(
     state: LoadState,
     connection: Any,
 ) -> None:
+    if not state.target_exists:
+        get_backend_adapter(options.connection_backend).preflight_new_target(
+            connection,
+            options.destination_table,
+            creation_policy=options.regular_ch_policy,
+        )
+    if state.original_target_exists and options.write_mode != "append":
+        require_complete_operation(
+            "Replacing or upserting an existing target requires complete coverage."
+        )
     if options.write_mode in {"append", "upsert"}:
         return
 
@@ -650,7 +665,7 @@ def _ensure_load_target_table(
     adapter = get_backend_adapter(options.connection_backend)
     if options.write_mode == "replace" and not options.append and state.original_target_exists:
         return
-    if not adapter.should_ensure_load_target_table(state.target_exists):
+    if not adapter.should_ensure_load_target_table(state.target_exists, connection=connection):
         return
 
     _create_load_target_table(options, state, connection, df)
@@ -1690,6 +1705,10 @@ def _cleanup_load(
     *,
     drop_created_target: bool = False,
 ) -> None:
+
+    if preserve_recovery_artifacts():
+        time_print("Preserving ClickHouse load recovery artifacts after an uncertain mutation.")
+        return
     if state is not None and state.overlap_stage_table is not None:
         try:
             _run_load_target_action(

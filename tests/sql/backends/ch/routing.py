@@ -403,13 +403,13 @@ def test_cluster_routing_client_routes_text_methods_and_delegates_attributes() -
     assert raw.closed is True
 
 
-def test_cluster_routing_client_retries_command_without_unsupported_settings() -> None:
+def test_cluster_routing_client_does_not_resubmit_after_settings_type_error() -> None:
     raw = _SettingsRejectingClient()
     client = wrap_client(raw, _config())
 
-    client.command("DROP TABLE db.events")
-
-    assert raw.commands == [("DROP TABLE db.events ON CLUSTER 'core'", {})]
+    with pytest.raises(TypeError, match="settings are not supported"):
+        client.command("DROP TABLE db.events")
+    assert raw.commands == []
 
 
 def test_local_sql_bypasses_routing_for_control_queries() -> None:
@@ -651,6 +651,15 @@ def test_generated_create_commands_preserve_intentional_local_fallback() -> None
 
     assert "ON CLUSTER '{cluster}'" in raw.commands[0][0]
     assert "ON CLUSTER" not in raw.commands[1][0]
+
+
+def test_generated_standalone_create_preserves_opted_in_cluster_routing() -> None:
+    raw = _HttpClient()
+    connection = wrap_client(raw, _config())
+    get_backend_adapter("ch").execute_commands(
+        connection, ["CREATE TABLE db.events (id UInt8) ENGINE=Memory"]
+    )
+    assert "ON CLUSTER 'core'" in raw.commands[0][0]
 
 
 def test_clickhouse_source_estimate_explains_routed_source_locally() -> None:

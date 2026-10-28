@@ -243,6 +243,33 @@ def _integration_connections() -> dict[str, dict[str, object]]:
             "sharding_key": "rand()",
         },
     }
+    outage_defaults = {
+        "regular": {
+            "create_distributed_pair": True,
+            "shard": {"engine": "MergeTree", "on_cluster": "integration_two_shards"},
+            "distributed": {
+                "engine_template": (
+                    "Distributed({cluster}, {database}, {shard_table}, {sharding_key})"
+                ),
+                "cluster": "integration_two_shards",
+                "on_cluster": "integration_two_shards",
+                "sharding_key": "rand()",
+            },
+        },
+        "staging": {
+            "create_distributed_pair": False,
+            "shard": {"engine": "MergeTree", "on_cluster": "integration_two_shards"},
+        },
+    }
+    for alias, transport in (
+        ("ch_outage_http", clickhouse_http),
+        ("ch_outage_native", clickhouse_native),
+    ):
+        connections[alias] = {
+            **transport,
+            "ddl_defaults": outage_defaults,
+            "cluster_routing": {"cluster": "integration_two_shards", "sharding_key": "rand()"},
+        }
     if os.environ.get("SQL_INTEGRATION_PROFILE") == "stress":
         connections["trino_pressure"] = {
             **connections["trino_values"],

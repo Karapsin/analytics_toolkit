@@ -12,6 +12,8 @@ from .connection.config import (
 from .connection.errors import (
     AmbiguousSqlReplaceError,
     ClickHouseClusterTopologyError,
+    ClickHouseClusterUnavailableError,
+    ClickHouseDegradedClusterWarning,
     SqlOperationContext,
     SqlOperationError,
 )
@@ -26,8 +28,8 @@ from .ddl.compat import create_sql_table
 from .ddl.extract_ddl import extract_ddl
 from .dml.empty_source import EmptySourceError, EmptySourcePolicy
 from .dml.io.cancel_queries import cancel_queries
-from .dml.io.execute_read import execute_read
 from .dml.io.execute_create import execute_create
+from .dml.io.execute_read import execute_read
 from .dml.io.execute_safety import (
     AmbiguousSqlMutationError,
     SqlBatchExecutionError,
@@ -95,6 +97,8 @@ __all__ = [
     "AmbiguousSqlReplaceError",
     "BackendName",
     "ClickHouseClusterTopologyError",
+    "ClickHouseClusterUnavailableError",
+    "ClickHouseDegradedClusterWarning",
     "ConnectionKey",
     "ConnectionValidationResult",
     "EmptySourceError",

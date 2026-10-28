@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.connection.errors import SqlConfigError
+from analytics_toolkit.sql.ddl.schema import normalize_table_schema
 
-from ...ddl.schema import normalize_table_schema
 from .ddl import (
     _normalize_non_empty_string,
     _sql_string_literal,
@@ -38,6 +38,13 @@ def after_create_table(
     ch_creation_policy: Any = None,
 ) -> None:
     del adapter
+    if getattr(connection, "_ch_outage_client", False) is True and connection.outage_after_create(
+        table_name,
+        policy=ch_creation_policy,
+        pair=ch_distributed_table and not ch_only_shard,
+        expected_columns=expected_column_types,
+    ):
+        return
     wait_policy = (
         getattr(ch_creation_policy, "ddl_wait_policy", "wait_all")
         if ch_creation_policy is not None
@@ -46,19 +53,13 @@ def after_create_table(
     if wait_policy == "wait_none":
         return
     shard_on_cluster = (
-        ch_creation_policy.shard_on_cluster
-        if ch_creation_policy is not None
-        else ch_cluster
+        ch_creation_policy.shard_on_cluster if ch_creation_policy is not None else ch_cluster
     )
     distributed_on_cluster = (
-        ch_creation_policy.distributed_on_cluster
-        if ch_creation_policy is not None
-        else ch_cluster
+        ch_creation_policy.distributed_on_cluster if ch_creation_policy is not None else ch_cluster
     )
     routing_cluster = (
-        ch_creation_policy.distributed_cluster
-        if ch_creation_policy is not None
-        else ch_cluster
+        ch_creation_policy.distributed_cluster if ch_creation_policy is not None else ch_cluster
     )
     timeout_seconds = (
         ch_creation_policy.ddl_ready_timeout_seconds
@@ -87,18 +88,16 @@ def after_create_table(
         )
         return
     run_ch_readiness_wait(
-        lambda current_timeout: (
-            _wait_for_ch_distributed_table_pair(
-                connection,
-                table_name,
-                ch_cluster=ch_cluster,
-                shard_on_cluster=shard_on_cluster,
-                distributed_on_cluster=distributed_on_cluster,
-                routing_cluster=routing_cluster,
-                timeout_seconds=current_timeout,
-                expected_column_types=expected_column_types,
-                wait_policy=wait_policy,
-            )
+        lambda current_timeout: _wait_for_ch_distributed_table_pair(
+            connection,
+            table_name,
+            ch_cluster=ch_cluster,
+            shard_on_cluster=shard_on_cluster,
+            distributed_on_cluster=distributed_on_cluster,
+            routing_cluster=routing_cluster,
+            timeout_seconds=current_timeout,
+            expected_column_types=expected_column_types,
+            wait_policy=wait_policy,
         ),
         timeout_seconds=timeout_seconds,
         extension_cnt=extension_cnt,
@@ -140,9 +139,7 @@ def _wait_for_ch_distributed_table_pair(  # noqa: C901 - phases share one deadli
     shard_table = build_ch_shard_table_name(table_name)
     shard_scope = ch_cluster if shard_on_cluster is _MISSING_CLUSTER_SCOPE else shard_on_cluster
     distributed_scope = (
-        ch_cluster
-        if distributed_on_cluster is _MISSING_CLUSTER_SCOPE
-        else distributed_on_cluster
+        ch_cluster if distributed_on_cluster is _MISSING_CLUSTER_SCOPE else distributed_on_cluster
     )
     routing_scope = routing_cluster
     deadline = time.monotonic() + timeout_seconds

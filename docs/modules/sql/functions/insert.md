@@ -7,10 +7,12 @@ are matched by position; the helper does not add a target column list or remap
 columns by name.
 
 ```python
-insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *, print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5) -> 'int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]'
+insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *, print_queries: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, ch_unavailable_shards: 'str | None' = None) -> 'int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]'
 ```
 
 ## Inputs
+
+### General Inputs
 
 - `db_key` - connection key or alias used for both the query and insert
 - `table_name` - existing target table; use one table for all queries or a list matching the query list
@@ -25,6 +27,10 @@ insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *
 - `dry_run` - whether to return a plan without executing SQL
 - `return_sql` - whether to return the same ordered plan instead of executing SQL
 - `return_metadata` - whether to wrap the affected-row count and plan in `SqlOperationResult`
+
+### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 ## Usage
 

@@ -5,7 +5,7 @@
 Drop partition values from one table using the configured backend.
 
 ```python
-drop_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', trino_partition_column: 'str | None' = None, gp_truncate: 'bool' = False, *, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False) -> 'SqlPlan | SqlOperationResult | None'
+drop_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', trino_partition_column: 'str | None' = None, gp_truncate: 'bool' = False, *, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, ch_unavailable_shards: 'str | None' = None) -> 'SqlPlan | SqlOperationResult | None'
 ```
 
 ## Inputs
@@ -23,6 +23,8 @@ drop_partitions(db_key: 'str', table: 'str', partition_keys_list: 'list[str]', t
 - `query_label` - safe label added to generated SQL comments, plans, metadata, and logs
 
 ### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 - `gp_truncate` - for Greenplum partition removal, truncate matching partitions instead of dropping them
 - `trino_partition_column` - partition column used by Trino partition deletes

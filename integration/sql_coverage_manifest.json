@@ -209,6 +209,12 @@
     },
     "airflow_ch": {
       "purpose": "Airflow ClickHouse"
+    },
+    "ch_outage_http": {
+      "purpose": "HTTP two-shard ClickHouse outage-policy validation"
+    },
+    "ch_outage_native": {
+      "purpose": "NATIVE two-shard ClickHouse outage-policy validation"
     }
   },
   "task_types": [
@@ -546,6 +552,20 @@
               "status": "covered",
               "tests": [
                 "tests/sql/architecture/misc_contracts.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -1031,6 +1051,20 @@
               ]
             }
           ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
+              ]
+            }
+          ]
         }
       }
     },
@@ -1179,6 +1213,20 @@
               "status": "covered",
               "scenarios": [
                 "lifecycle.trino"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -1838,6 +1886,20 @@
               ]
             }
           ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
+              ]
+            }
+          ]
         }
       }
     },
@@ -2068,6 +2130,20 @@
               "status": "covered",
               "tests": [
                 "tests/sql/architecture/misc_contracts.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -2365,6 +2441,20 @@
               "status": "covered",
               "scenarios": [
                 "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -2692,6 +2782,20 @@
               ]
             }
           ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
+              ]
+            }
+          ]
         }
       }
     },
@@ -2989,6 +3093,20 @@
               ]
             }
           ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
+              ]
+            }
+          ]
         }
       }
     },
@@ -3031,6 +3149,20 @@
               "status": "covered",
               "scenarios": [
                 "backend.contract.trino"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -4426,6 +4558,20 @@
               ]
             }
           ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
+              ]
+            }
+          ]
         }
       }
     },
@@ -4574,6 +4720,20 @@
               "status": "covered",
               "tests": [
                 "tests/sql/architecture/misc_contracts.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -4810,6 +4970,20 @@
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/row_limits.py::test_read_limit_reaches_driver_and_preserves_outputs"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -5124,6 +5298,20 @@
               ]
             }
           ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
+              ]
+            }
+          ]
         }
       }
     },
@@ -5187,6 +5375,20 @@
               "status": "covered",
               "tests": [
                 "tests/sql/architecture/misc_contracts.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -6695,6 +6897,20 @@
               ]
             }
           ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
+              ]
+            }
+          ]
         }
       }
     },
@@ -7398,6 +7614,20 @@
               ]
             }
           ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
+              ]
+            }
+          ]
         }
       }
     },
@@ -7651,6 +7881,20 @@
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/query_batches.py::test_invalid_caps"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -7970,6 +8214,20 @@
               "status": "covered",
               "tests": [
                 "tests/sql/dml/io/query_batches.py::test_invalid_caps"
+              ]
+            }
+          ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
               ]
             }
           ]
@@ -8649,8 +8907,40 @@
               ]
             }
           ]
+        },
+        "ch_unavailable_shards": {
+          "kind": "KEYWORD_ONLY",
+          "signature_default": "None",
+          "states": [
+            {
+              "state": "inherited-production-default-and-explicit-ad-hoc-policy",
+              "status": "covered",
+              "tests": [
+                "tests/sql/backends/ch/outage.py::test_policy_keyword_is_exposed_consistently",
+                "tests/sql/backends/ch/outage.py::test_connection_default_and_per_call_override"
+              ]
+            }
+          ]
         }
       }
+    },
+    "ClickHouseClusterUnavailableError": {
+      "classification": "unit_only",
+      "reason": "Typed ClickHouse availability-policy outcome; transport behavior is covered through public operations.",
+      "tests": [
+        "tests/sql/backends/ch/outage.py::test_production_default_rejects_missing_shard_before_mutation",
+        "tests/sql/backends/ch/outage.py::test_ad_hoc_read_warns_and_reports_partial_coverage"
+      ],
+      "parameters": {}
+    },
+    "ClickHouseDegradedClusterWarning": {
+      "classification": "unit_only",
+      "reason": "Typed ClickHouse availability-policy outcome; transport behavior is covered through public operations.",
+      "tests": [
+        "tests/sql/backends/ch/outage.py::test_production_default_rejects_missing_shard_before_mutation",
+        "tests/sql/backends/ch/outage.py::test_ad_hoc_read_warns_and_reports_partial_coverage"
+      ],
+      "parameters": {}
     }
   },
   "scenarios": {
@@ -10195,6 +10485,20 @@
       "backends": [
         "trino"
       ]
+    },
+    "fault.clickhouse.unavailable_shard.http": {
+      "profile": "fault",
+      "backends": [
+        "ch"
+      ],
+      "node_id": "tests/sql/integration/fault/clickhouse_outage.py::test_clickhouse_http_new_target_during_shard_outage"
+    },
+    "fault.clickhouse.unavailable_shard.native": {
+      "profile": "fault",
+      "backends": [
+        "ch"
+      ],
+      "node_id": "tests/sql/integration/fault/clickhouse_outage.py::test_clickhouse_native_new_target_during_shard_outage"
     }
   },
   "unsupported_authentication": {

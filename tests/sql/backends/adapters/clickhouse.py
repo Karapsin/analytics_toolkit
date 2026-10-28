@@ -67,6 +67,22 @@ def test_clickhouse_adapter_execute_and_read_failures_report_last_sql(
     assert "Failed SQL:\nSELECT broken" in messages
 
 
+def test_clickhouse_adapter_does_not_resubmit_a_command_after_type_error() -> None:
+    submitted = []
+    failure = TypeError("driver failed after accepting CREATE")
+
+    class Client:
+        def command(self, statement: str, **_kwargs: object) -> None:
+            submitted.append(statement)
+            raise failure
+
+    statement = "CREATE TABLE db.stage ON CLUSTER core (id UInt8) ENGINE=Memory"
+    with pytest.raises(TypeError) as error:
+        get_backend_adapter("ch").execute_command(Client(), statement)
+    assert error.value is failure
+    assert submitted == [statement]
+
+
 def test_clickhouse_adapter_maintenance_delete_and_progress_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -243,6 +259,8 @@ def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
         ("truncate_insert", True, False, True, True),
         ("truncate_insert", False, False, False, False),
         ("replace", True, False, True, False),
+        ("replace", False, False, True, False),
+        ("replace", False, True, True, False),
     ],
 )
 def test_clickhouse_adapter_write_mode_matrix(
@@ -276,8 +294,10 @@ def test_clickhouse_adapter_write_mode_matrix(
         )
     )
     assert result is expected
-    if write_mode == "replace":
+    if write_mode == "replace" and target_exists:
         assert events == (["drop"] if only_shard else ["drop_pair"])
+    elif write_mode == "replace":
+        assert events == []
 
 
 def test_clickhouse_ddl_expression_cluster_and_uuid_edges(

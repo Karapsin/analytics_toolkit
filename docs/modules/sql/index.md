@@ -37,6 +37,10 @@ and input defaults.
 [execute](functions/execute.md). Results keep input order; each item uses a
 separate connection while its statements remain sequential.
 
+ClickHouse cluster operations default to production-safe `stop` on incomplete
+coverage. Opt into `healthy_shards` for ad hoc partial work; see
+[unavailable shards](clickhouse-distributed-tables.md#unavailable-shards).
+
 ## Workflow Guides
 
 - [Configuration](configuration.md)

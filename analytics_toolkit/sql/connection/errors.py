@@ -26,6 +26,18 @@ class SqlTableReadinessError(TimeoutError, SqlUtilsError):
 class ClickHouseClusterTopologyError(ValueError, SqlUtilsError):
     """Cluster routing metadata is incomplete, inconsistent, or unhealthy."""
 
+    analytics_toolkit_sql_retry_safe = False
+
+
+class ClickHouseClusterUnavailableError(ClickHouseClusterTopologyError):
+    """Required ClickHouse host or table coverage could not be established."""
+
+    analytics_toolkit_sql_retry_safe = False
+
+
+class ClickHouseDegradedClusterWarning(RuntimeWarning):
+    """An explicitly requested ad hoc operation uses incomplete cluster coverage."""
+
 
 class AmbiguousSqlReplaceError(SqlUtilsError):
     """A replacement cutover failed and its final table state could not be proven."""
