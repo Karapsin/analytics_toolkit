@@ -77,6 +77,10 @@ by verified signed PR publication and durable handoff to the Pi.
 
 ## Test Layout
 
+The root test fixtures remove the host's `NO_COLOR` preference so headless
+theme-color assertions remain deterministic. Tests of monochrome rendering set
+`NO_COLOR` explicitly with `monkeypatch`; the application continues to honor it.
+
 Tests use a module-first tree under `tests/`, mirroring production package paths
 before adding function or behavior directories for larger areas. Pytest collects
 all Python filenames in that tree, so test modules omit the redundant `test_`

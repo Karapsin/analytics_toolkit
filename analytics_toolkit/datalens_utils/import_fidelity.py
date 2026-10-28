@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from .errors import DataLensUtilsError
+from .import_source import wizard_binding_issues
 from .validation.charts import wizard_issues
 
 # Neutral defaults emitted by the supported SDK serializers. Non-default values
@@ -152,6 +153,9 @@ def wizard_source_issues(client: Any, chart: Any, datasets: Any, definition: Any
     """Check both modeled output and observed source settings before claiming parity."""
     from .dashboard_generation.charts import wizard  # noqa: PLC0415
 
+    binding_issues = wizard_binding_issues(chart, datasets, definition)
+    if binding_issues:
+        return binding_issues
     context = SimpleNamespace(client=client)
     spec = wizard.create_builder(context, datasets, definition, chart.location).to_spec()
     issues: list[str] = wizard_issues(chart, context, datasets, definition)

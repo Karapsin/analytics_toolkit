@@ -55,6 +55,39 @@ def test_editor_carets_use_the_command_pane_input_cursor_style() -> None:
     asyncio.run(exercise())
 
 
+@pytest.mark.parametrize("no_color", [False, True])
+def test_composed_carets_honor_explicit_terminal_color_preference(
+    monkeypatch: pytest.MonkeyPatch, no_color: bool
+) -> None:
+    if no_color:
+        monkeypatch.setenv("NO_COLOR", "1")
+
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 30)) as pilot:
+            editor = app.active_workspace.editor
+            editor.text = "SELECT"
+            editor._set_selections(Selection.cursor((0, 0)), [Selection.cursor((0, 6))])
+            await pilot.pause()
+            viewport = editor.scrollable_content_region
+            row = app.screen._compositor.render_strips()[viewport.y]
+            for column, character in ((0, "S"), (6, " ")):
+                x = viewport.x + editor.gutter_width + column
+                cell = row.crop(x, x + 1)
+                assert cell.text == character
+                if no_color:
+                    for segment in cell:
+                        assert segment.style is not None
+                        for color in (segment.style.color, segment.style.bgcolor):
+                            assert color is not None
+                            red, green, blue = color.get_truecolor()
+                            assert red == green == blue
+                else:
+                    assert_caret_block(row, x, input_cursor_style(app), text=character)
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.parametrize("command_focus", [False, True])
 def test_blocks_cover_the_character_cell_in_every_caret_position(command_focus: bool) -> None:
     async def exercise() -> None:

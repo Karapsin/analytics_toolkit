@@ -15,6 +15,7 @@ from .bi_import_resources import (
     chart_definition,
     connection_definition,
     dataset_definition,
+    editor_links,
     retain_dataset_keys,
     semantic_key,
 )
@@ -23,6 +24,7 @@ from .deployment import BIProjectDeployment
 from .errors import DataLensConfigurationError, DataLensUtilsError
 from .import_copy import check_copy_key, copy_preflight, place_defaults, relocate
 from .import_fidelity import record, wizard_source_issues
+from .import_source import explicit_dataset_ids, location
 from .recipe import load_registry
 from .recipe_io import replace_files, stage_and_validate
 from .resources.bi_store import entry_description
@@ -82,18 +84,19 @@ def chart_dependencies(
     identifier = entity.id
     if entity.category == "wizard":
         dataset_ids.update(entity.dataset_ids)
+        dataset_ids.update(explicit_dataset_ids(entity.data))
     elif entity.category == "editor":
         try:
-            meta = json.loads(entity.data.get("meta", "{}"))
-        except (ValueError, TypeError):
+            links = editor_links(entity)
+        except DataLensUtilsError as error:
             report["blockers"].append(
                 {
                     "resource": "chart:" + identifier,
-                    "reason": "Dynamic Editor Meta cannot establish dependency closure.",
+                    "reason": str(error),
                 }
             )
             return
-        dataset_ids.update(meta.get("links", {}).values())
+        dataset_ids.update(links.values())
     elif entity.category == "ql":
         connection_id = (entity.connection or {}).get("entryId")
         if connection_id:
@@ -119,26 +122,17 @@ def tab_dependencies(dashboard: Any, selected: set[str]) -> tuple[set[str], set[
     return chart_ids, dataset_ids
 
 
-def discover_dependencies(
-    client: Any, dashboard: Any, selected: set[str], report: dict[str, Any]
+def collect_dependencies(
+    dashboard: Any, selected: set[str], report: dict[str, Any], register: Any, read: Any
 ) -> Any:
+    """One public dependency traversal for new capture and existing-recipe merges."""
     charts: dict[str, Any] = {}
     datasets: dict[str, Any] = {}
     connections: dict[str, Any] = {}
-    chart_ids: set[str] = set()
-    dataset_ids: set[str] = set()
     chart_ids, dataset_ids = tab_dependencies(dashboard, selected)
-    inventory = (
-        {
-            entry.id: entry
-            for entry in client.navigation.get_entries(ids=sorted(chart_ids), page_size=100)
-        }
-        if chart_ids
-        else {}
-    )
+    scopes = register("chart", chart_ids)
     for identifier in sorted(chart_ids):
-        entry = inventory.get(identifier)
-        if entry is not None and entry.scope == "artifact":
+        if scopes.get(identifier) == "artifact":
             report["blockers"].append(
                 {
                     "resource": "html_page:" + identifier,
@@ -147,18 +141,45 @@ def discover_dependencies(
                 }
             )
             continue
-        entity = client.get.chart(by_id=identifier, branch="published")
-        charts[identifier] = entity
-        chart_dependencies(entity, dataset_ids, connections, report)
-    if dataset_ids:
-        list(client.navigation.get_entries(ids=sorted(dataset_ids), page_size=100))
+        entity = read("chart", identifier)
+        if entity is not None:
+            charts[identifier] = entity
+            chart_dependencies(entity, dataset_ids, connections, report)
+    register("dataset", dataset_ids)
     for identifier in sorted(dataset_ids):
-        datasets[identifier] = client.get.dataset(by_id=identifier, branch="published")
-        for source in datasets[identifier].sources:
-            connections[source.connection_id] = None
-    for identifier in connections:
-        connections[identifier] = client.get.connection(by_id=identifier)
-    return SimpleNamespace(charts=charts, datasets=datasets, connections=connections)
+        entity = read("dataset", identifier)
+        if entity is not None:
+            datasets[identifier] = entity
+            for source in entity.sources:
+                if source.connection_id:
+                    connections[source.connection_id] = None
+    register("connection", set(connections))
+    for identifier in sorted(connections):
+        connections[identifier] = read("connection", identifier)
+    return SimpleNamespace(
+        charts=charts,
+        datasets=datasets,
+        connections={key: value for key, value in connections.items() if value is not None},
+    )
+
+
+def discover_dependencies(
+    client: Any, dashboard: Any, selected: set[str], report: dict[str, Any]
+) -> Any:
+    def register(kind: str, identifiers: set[str]) -> dict[str, str]:
+        if not identifiers or kind == "connection":
+            return {}
+        return {
+            entry.id: getattr(entry, "scope", "")
+            for entry in client.navigation.get_entries(ids=sorted(identifiers), page_size=100)
+        }
+
+    def read(kind: str, identifier: str) -> Any:
+        return getattr(client.get, kind)(
+            by_id=identifier, **({} if kind == "connection" else {"branch": "published"})
+        )
+
+    return collect_dependencies(dashboard, selected, report, register, read)
 
 
 def import_dataset(client: Any, entity: Any, context: Any) -> None:
@@ -166,9 +187,9 @@ def import_dataset(client: Any, entity: Any, context: Any) -> None:
     registry, proposed, report = context.registry, context.proposed, context.report
     dataset_keys, connection_keys = context.dataset_keys, context.connection_keys
     try:
-        if context.mode == "adopt":
-            _compatible_location(entity, registry)
         value, assets = dataset_definition(client, entity, connection_keys)
+        if context.mode == "adopt" and location(entity):
+            value["location"] = location(entity)
         if any("manual" in source.parameters for source in entity.sources):
             record(
                 report,
@@ -244,14 +265,14 @@ def import_chart(entity: Any, context: Any) -> None:
     datasets, selected, dashboard = context.datasets, context.selected, context.dashboard
     state = current_session()
     try:
-        if context.mode == "adopt":
-            _compatible_location(entity, registry)
         value, assets = chart_definition(
             entity,
             {dataset_keys[key]: value for key, value in datasets.items()},
             connection_keys,
             next(tab.id for tab in dashboard.tabs if tab.id in selected),
         )
+        if context.mode == "adopt" and location(entity):
+            value["location"] = location(entity)
         value["key"] = chart_keys[identifier]
         check_imported_chart(entity, context, value)
         if context.mode == "copy":
@@ -492,79 +513,82 @@ def import_recipe(
     datasets: dict[str, Any] = {}
     connections: dict[str, Any] = {}
     with datalens_client() as client:
-        dashboard = client.get.dashboard(by_id=dashboard_id, branch="published")
-        selected = {tab.id for tab in dashboard.tabs} if tab_id is None else {tab_id}
-        if selected - {tab.id for tab in dashboard.tabs}:
-            msg = "Requested tab is absent from the source dashboard."
-            raise DataLensConfigurationError(msg)
-        if dashboard.saved_id != dashboard.published_id:
-            report["blockers"].append(
+        from .import_archive import preserve  # noqa: PLC0415 - Shared extraction cycle.
+        from .import_capture import Capture  # noqa: PLC0415 - Shared capture cycle.
+
+        capture = Capture(client, resume=True)
+        with capture.failures():
+            selected = capture.discover(dashboard_id, [tab_id] if tab_id is not None else None)
+            capture.finish()
+            dashboard = capture.entities[dashboard_id]
+            charts, datasets, connections = (
                 {
-                    "resource": "dashboard:" + dashboard_id,
-                    "reason": "Source dashboard has an unpublished draft.",
+                    identifier: entity
+                    for identifier, entity in capture.entities.items()
+                    if capture.kinds[identifier] == kind
                 }
+                for kind in ("chart", "dataset", "connection")
             )
-        dependencies = discover_dependencies(client, dashboard, selected, report)
-        charts, datasets, connections = (
-            dependencies.charts,
-            dependencies.datasets,
-            dependencies.connections,
-        )
-        report["provenance"] = {
-            "dashboard": dashboard.id,
-            "charts": sorted(charts),
-            "datasets": sorted(datasets),
-            "connections": sorted(connections),
-        }
-        connection_keys = {
-            identifier: known.get("connection", {}).get(
-                identifier, semantic_key("connection", identifier)
+            report["provenance"] = {
+                "dashboard": dashboard.id,
+                "charts": sorted(charts),
+                "datasets": sorted(datasets),
+                "connections": sorted(connections),
+            }
+            connection_keys = {
+                identifier: known.get("connection", {}).get(
+                    identifier, semantic_key("connection", identifier)
+                )
+                for identifier in connections
+            }
+            dataset_keys = {
+                identifier: known.get("dataset", {}).get(
+                    identifier, semantic_key("dataset", identifier)
+                )
+                for identifier in datasets
+            }
+            chart_keys = {
+                identifier: known.get("chart", {}).get(
+                    identifier, semantic_key("chart", identifier)
+                )
+                for identifier in charts
+            }
+            proposed["configs/DL objects/connections.json"] = {
+                connection_keys[key]: connection_definition(value)
+                for key, value in connections.items()
+            }
+            proposed["configs/DL objects/datasets.json"] = {}
+            context = SimpleNamespace(
+                registry=registry,
+                proposed=proposed,
+                report=report,
+                known=known,
+                dataset_keys=dataset_keys,
+                chart_keys=chart_keys,
+                connection_keys=connection_keys,
+                datasets=datasets,
+                selected=selected,
+                dashboard=dashboard,
+                charts=charts,
+                client=client,
+                mode=mode,
             )
-            for identifier in connections
-        }
-        dataset_keys = {
-            identifier: known.get("dataset", {}).get(
-                identifier, semantic_key("dataset", identifier)
-            )
-            for identifier in datasets
-        }
-        chart_keys = {
-            identifier: known.get("chart", {}).get(identifier, semantic_key("chart", identifier))
-            for identifier in charts
-        }
-        proposed["configs/DL objects/connections.json"] = {
-            connection_keys[key]: connection_definition(value) for key, value in connections.items()
-        }
-        proposed["configs/DL objects/datasets.json"] = {}
-        context = SimpleNamespace(
-            registry=registry,
-            proposed=proposed,
-            report=report,
-            known=known,
-            dataset_keys=dataset_keys,
-            chart_keys=chart_keys,
-            connection_keys=connection_keys,
-            datasets=datasets,
-            selected=selected,
-            dashboard=dashboard,
-            charts=charts,
-            client=client,
-            mode=mode,
-        )
-        for entity in datasets.values():
-            import_dataset(client, entity, context)
-        for entity in charts.values():
-            import_chart(entity, context)
-        import_ui(context)
-        prepare_upgrade(context, legacy=legacy)
-        merged = merge_proposed(proposed, report, legacy=legacy)
-        report["proposed_files"] = merged
-        if not report["blockers"]:
-            try:
-                stage_and_validate(merged)
-            except (DataLensUtilsError, ValueError, TypeError, KeyError) as error:
-                report["blockers"].append({"operation": "import.compile", "reason": str(error)})
-        if not dry_run and not report["blockers"]:
-            replace_files(merged)
-            report["written"] = True
+            for entity in datasets.values():
+                import_dataset(client, entity, context)
+            for entity in charts.values():
+                import_chart(entity, context)
+            import_ui(context)
+            preserve(capture, context)
+            prepare_upgrade(context, legacy=legacy)
+            merged = merge_proposed(proposed, report, legacy=legacy)
+            report["proposed_files"] = merged
+            if not report["blockers"]:
+                try:
+                    stage_and_validate(merged)
+                except (DataLensUtilsError, ValueError, TypeError, KeyError) as error:
+                    report["blockers"].append({"operation": "import.compile", "reason": str(error)})
+            if not dry_run and not report["blockers"]:
+                replace_files(merged)
+                report["written"] = True
+        report["request_count"] = state.runtime.get("_request_count", 0)
     return report

@@ -9,6 +9,7 @@ class DataLensUtilsError(RuntimeError):
     """A project recipe, managed-resource, or reconciliation failure."""
 
     mismatches: list[dict[str, Any]]
+    resource_key: str | None = None
 
 
 class DataLensDependencyError(DataLensUtilsError):

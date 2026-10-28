@@ -37,6 +37,9 @@ download HTML source. RLS protects dataset access; QL queries bypass datasets.
 
 ## Import into the current project
 
+For an absent or empty destination, use the [new-project capture workflow](import-dashboard.md)
+and its package CLI instead of building a starter recipe first.
+
 `project.import_dashboard(dashboard_id="source")` previews every tab;
 `project.import_tab(dashboard_id="source", tab_id="tab")` previews one tab.
 Both return proposed files, a fidelity report, and blockers. Set `dry_run=False`
@@ -45,7 +48,7 @@ for a local merge after resolving blockers. CLI commands `import-dashboard` and
 conversion requires explicit `upgrade_recipe=True` or `--upgrade-recipe`.
 
 Import follows public resource metadata and retrieves available SQL/JS assets.
-Adopt mode preserves IDs and requires compatible locations. Explicit
+Adopt mode preserves IDs and each resource's original folder/workbook location. Explicit
 `mode="copy"` discovers dependencies across folders and writes local recipes for new
 owned resources, reusing read-only connections. Reconciliation creates those resources
 later. Copy import preserves fields, defaults, ordering and placement parameters.
@@ -53,8 +56,8 @@ See the [copy walkthrough](copy-tab.md) and [recipe contract](recipe-contract.md
 persistent resources share one definition; direct placements and chart-group
 members keep separate identities. `group/member` wiring addresses one variant.
 Existing dataset source and field keys are retained during a merge.
-Unsupported item forms, unknown dependency bindings, incompatible adopted resource
-locations and conflicting local definitions prevent writes. No dynamic Editor
+Unsupported item forms, unknown dependency bindings and conflicting local
+definitions prevent merge writes. No dynamic Editor
 JavaScript is evaluated to discover dependencies.
 
 New imported inputs remain subject to normal planning, adoption and verification.

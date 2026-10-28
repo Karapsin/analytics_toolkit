@@ -3,7 +3,6 @@
 import json
 from contextlib import nullcontext
 from dataclasses import replace
-from types import SimpleNamespace
 
 import pytest
 from analytics_toolkit.datalens_utils.bi_import_resources import (
@@ -24,6 +23,7 @@ from datalens_sdk import (
 )
 
 from tests.datalens_utils._support.bi import dataset
+from tests.datalens_utils._support.published import published_client
 from tests.datalens_utils._support.sdk import MemoryDataLens
 
 
@@ -204,17 +204,8 @@ def test_whole_dashboard_import_discovers_chart_dataset_connection_closure(bi_pr
     tab.add_chart(chart, item_id="imported-widget", at=(0, 0, 12, 6))
     dashboard = api.client.create.dashboard(name="Source", location=api.folder).add_tab(tab).build()
     connection = Connection(id="ch", name="CH", type="clickhouse", installation="yacloud")
-    client = SimpleNamespace(
-        capabilities=api.client.capabilities,
-        create=api.client.create,
-        INSTALLATION=api.client.INSTALLATION,
-        navigation=SimpleNamespace(get_entries=lambda **kwargs: iter(())),
-        get=SimpleNamespace(
-            dashboard=lambda **kwargs: dashboard,
-            chart=lambda **kwargs: chart,
-            dataset=lambda **kwargs: source,
-            connection=lambda **kwargs: connection,
-        ),
+    client = published_client(
+        {entity.id: entity for entity in (dashboard, chart, source, connection)}, api.client
     )
     bi_project.client_factory = lambda _: nullcontext(client)
     before = list(api.writes)

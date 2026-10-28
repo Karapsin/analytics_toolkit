@@ -4,6 +4,9 @@ import pytest
 from analytics_toolkit.datalens_utils import BIProjectDeployment, DataLensProject, TargetLocation
 
 from tests._support.files import write_json
+from tests.datalens_utils._support.captured_import import (
+    import_source as import_source,  # noqa: PLC0414 - Register shared pytest fixture.
+)
 
 
 @pytest.fixture

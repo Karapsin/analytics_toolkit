@@ -27,6 +27,14 @@ def pytest_ignore_collect(collection_path: Path) -> bool | None:
     return None
 
 
+@pytest.fixture(autouse=True)
+def deterministic_terminal_colors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep headless color assertions independent of the host's terminal preference."""
+    # Textual reads this when constructing each App and filters composed strips.
+    # Tests of monochrome behavior opt in explicitly after this fixture runs.
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+
 DEFAULT_SQL_CONNECTIONS = {
     "gp": {
         "type": "gp",

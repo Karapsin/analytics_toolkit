@@ -22,14 +22,18 @@ def projection(template: Any, incoming: Any) -> Any:
     return copy.deepcopy(incoming)
 
 
-def project_ui_files(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+def project_ui_files(
+    base: dict[str, Any], incoming: dict[str, Any], *, complete: bool = False
+) -> dict[str, Any]:
     result = copy.deepcopy(base)
     for path, value in base.items():
         if path in incoming and path not in {
             "configs/UI/links/chart_params.json",
             "configs/UI/links/connections.json",
         }:
-            result[path] = projection(value, incoming[path])
+            result[path] = (
+                copy.deepcopy(incoming[path]) if complete else projection(value, incoming[path])
+            )
         elif (
             path.startswith("configs/UI/selectors/")
             and isinstance(value, dict)
@@ -38,7 +42,11 @@ def project_ui_files(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str
             remote_path = "configs/UI/selectors/" + value["key"] + ".json"
             if remote_path not in incoming:
                 raise DataLensUtilsError("Managed selector is missing: " + value["key"])
-            result[path] = projection(value, incoming[remote_path])
+            result[path] = (
+                copy.deepcopy(incoming[remote_path])
+                if complete
+                else projection(value, incoming[remote_path])
+            )
     return result
 
 
@@ -82,8 +90,23 @@ def retain_action_routes(incoming: dict[str, Any], result: dict[str, Any]) -> No
         routes.setdefault(sender, incoming["configs/UI/links/connections.json"].get(sender, []))
 
 
+def refresh_dashboard_settings(
+    definition: dict[str, Any], settings: dict[str, Any], *, complete: bool
+) -> None:
+    if complete:
+        definition["settings"] = copy.deepcopy(settings)
+    else:
+        for key in definition.get("settings", {}):
+            definition["settings"][key] = settings.get(key)
+
+
 def pull_dashboard(
-    entity: Any, base: dict[str, Any], datasets: dict[str, Any], charts: dict[str, Any]
+    entity: Any,
+    base: dict[str, Any],
+    datasets: dict[str, Any],
+    charts: dict[str, Any],
+    *,
+    complete: bool = False,
 ) -> dict[str, Any]:
     tabs = set(base["configs/UI/tabs.json"])
     owned = {key for layout in base["configs/UI/layout.json"].values() for key in layout}
@@ -109,8 +132,7 @@ def pull_dashboard(
     )
     settings = incoming.pop("imported_dashboard_settings")
     parameters = incoming.pop("imported_global_parameters")
-    result = copy.deepcopy(base)
-    result = project_ui_files(base, incoming)
+    result = project_ui_files(base, incoming, complete=complete)
     retain_direct_placements(base, incoming, charts, result)
     # Direct legacy placements retain their parameter file; explicit widgets and
     # groups retain theirs. Recipients stay qualified with stable member keys.
@@ -124,8 +146,7 @@ def pull_dashboard(
         if widget is not None:
             result["configs/UI/links/chart_params.json"][key] = widget["params"]
     definition = result["definition"]
-    for key in definition.get("settings", {}):
-        definition["settings"][key] = settings.get(key)
+    refresh_dashboard_settings(definition, settings, complete=complete)
     if "global_parameters" in definition:
         definition["global_parameters"] = parameters
     for key, wire in (

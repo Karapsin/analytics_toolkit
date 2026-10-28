@@ -19,6 +19,15 @@ default; importing drafts requires `--branch saved`. `apply` protects remote
 changes, locks and unimported drafts and updates dataset consumers. Full
 reconciliation handles creation, identity recovery and folder moves.
 
+Local pulls and existing-project imports use a durable journal under the external
+runtime's `local-transactions/` directory. After interruption, keep that runtime
+and rerun the project command; recovery occurs before configuration is loaded.
+A fingerprint mismatch means the destination changed during the operation, so
+the proposed replacement is refused. A recovery conflict preserves the edited
+file and journal. Inspect the named file and its journal's before/after versions,
+retain the user's edits separately, and resolve which version to restore before
+retrying. Do not delete the journal or reset the runtime to bypass a conflict.
+
 A successful create/update/move is persisted even when its later fetch fails.
 Checkpoint immediately, then re-fetch and verify; do not blindly create again.
 Adopt exact-name conflicts only within the expected folder, rejecting

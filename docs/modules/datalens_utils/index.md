@@ -9,6 +9,7 @@
 ## Workflow Guides
 
 - [BI projects and dashboard import](bi-projects.md)
+- [Import a published dashboard into a new project](import-dashboard.md)
 - [Version-2 recipe contract](recipe-contract.md)
 - [Copy a tab, fidelity and recovery](copy-tab.md)
 

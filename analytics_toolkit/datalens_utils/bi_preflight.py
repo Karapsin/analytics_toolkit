@@ -11,6 +11,7 @@ from .capabilities import get_capabilities
 from .dashboard_generation.charts.create import chart_adapter
 from .dataset_identity import resolved_definition
 from .errors import DataLensUtilsError
+from .import_manifest import existing_connection, is_reference, restriction
 from .session import current_session
 
 
@@ -25,6 +26,12 @@ def operation_blockers(
 ) -> list[dict[str, Any]]:
     """Use public update builders to reject unsupported topology before any write."""
     blockers = sql_access_issues(registry, entities, keys)
+    blockers.extend(
+        restriction(registry.resources[key])
+        for key in keys
+        if is_reference(registry.resources[key])
+        and not existing_connection(registry.resources[key])
+    )
     datasets = {
         key.split(":", 1)[1]: value
         for key, value in entities.items()
@@ -37,7 +44,7 @@ def operation_blockers(
     }
     report = get_capabilities(installation=current_session().runtime["installation"])
     for key in registry.order:
-        if key not in keys:
+        if key not in keys or is_reference(registry.resources[key]):
             continue
         resource = registry.resources[key]
         entity = entities.get(key)
@@ -95,6 +102,8 @@ def sql_access_issues(
     result = []
     for key in keys:
         resource = registry.resources[key]
+        if is_reference(resource):
+            continue
         requirements = []
         if resource.kind == "chart" and resource.definition["family"] == "ql":
             requirements.append((resource.definition.get("connection", "default"), {"dashsql"}))
