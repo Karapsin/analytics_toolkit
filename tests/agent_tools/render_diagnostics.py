@@ -20,6 +20,39 @@ from tests._support.paths import REPO_ROOT
 from tests.agent_tools._support import wait_for_scene
 
 
+@pytest.mark.parametrize("completes", [False, True])
+def test_scene_wait_requires_complete_checkbox_text(
+    monkeypatch: pytest.MonkeyPatch, completes: bool
+) -> None:
+    app = SimpleNamespace(visual_scene_id="create-table-advanced")
+    frames = []
+
+    async def pause(*_args: Any) -> None:
+        return
+
+    def observe(*_args: Any) -> dict[str, Any]:
+        ready = completes and bool(frames)
+        frames.append(ready)
+        row = {"text": "[ ] insert_data: False" if ready else "[ ] insert_data:      "}
+        region = {
+            "state": {"button_text": "[ ]", "label": "insert_data: False"},
+            "widget_rows": [row],
+            "composed_rows": [row],
+        }
+        return {"regions": [region] * 3}
+
+    monkeypatch.setattr(sql_explorer_visual_capture, "_scene_ready", lambda _app: True)
+    monkeypatch.setattr(diagnostics, "terminal_diagnostics", observe)
+    if completes:
+        asyncio.run(wait_for_scene(app, SimpleNamespace(pause=pause)))
+        assert frames == [False, True]
+    else:
+        with pytest.raises(AssertionError, match="required state"):
+            asyncio.run(wait_for_scene(app, SimpleNamespace(pause=pause)))
+        assert frames
+        assert not any(frames)
+
+
 def test_strip_records_unicode_cells_and_resolved_styles() -> None:
     strip = Strip([Segment("界e\u0301", Style(color="#123456", bgcolor="#abcdef", underline=True))])
     row = diagnostics.strip_record(strip, x=7, y=3, width=208)

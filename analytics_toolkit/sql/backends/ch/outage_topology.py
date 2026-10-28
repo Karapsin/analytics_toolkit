@@ -95,6 +95,8 @@ def warn_degraded(
         f"Alias: {config.connection_key}; cluster: {status['cluster']}; action: {action}\n"
         f"Table: {status.get('table') or '(cluster)'}\n"
         f"Using {len(status['selected_hosts'])}/{len(status['expected_hosts'])} hosts. "
+        f"Selected shards: {status['selected_shards']}; "
+        f"selected hosts: {', '.join(status['selected_hosts']) or '(none)'}. "
         f"Excluded: {', '.join(status['excluded_hosts']) or '(none)'}\n"
         "READS MAY BE INCOMPLETE. WRITES USE ONLY THE SELECTED HEALTHY SHARDS.\n"
         "No historical data is moved. No DDL is queued for excluded hosts."

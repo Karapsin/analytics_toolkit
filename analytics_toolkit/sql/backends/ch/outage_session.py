@@ -88,6 +88,15 @@ class OutageSession:
         # Metadata is read afresh; only membership is scoped to the current operation.
         return None
 
+    def native_table_exists(self, table_name: str, table: exp.Table) -> bool:
+        rows = query_rows(self.client, f"EXISTS TABLE {table_name}")
+        exists = bool(rows and rows[0][0])
+        if exists:
+            # DDL defaults do not define a read scope. Native Distributed facades
+            # still preflight their actual engine destination, without rewriting SQL.
+            self.infer_routing(exp.select("*").from_(table.copy()))
+        return exists
+
     def resolve(self, *, cluster: str, database: str, table: str) -> ManagedTableRoute:  # noqa: C901, PLR0912, PLR0915 - keep the safety decision and submission in one boundary
         scope = self.scope(cluster)
         writing = WRITING.get()

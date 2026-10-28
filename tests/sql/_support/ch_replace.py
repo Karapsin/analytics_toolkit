@@ -47,6 +47,7 @@ class ReplacementClient:
         self.queries: list[str] = []
         self.loads: list[tuple[tuple[str, str], tuple[str, str]]] = []
         self.swaps: list[tuple[str, str, str]] = []
+        self.cleanup_markers: list[tuple[str, str, str]] = []
         self.local_loads: list[str] = []
         self.incomplete_load = False
         self.bad_final_count = False
@@ -146,7 +147,8 @@ class ReplacementClient:
             )
             for index in (2, 4)
         )
-        self.swaps.append((scope, left, right))
+        operations = self.cleanup_markers if right.endswith("__discardable") else self.swaps
+        operations.append((scope, left, right))
         left_source = self.facade_sources.get((scope, left))
         right_source = self.facade_sources.get((scope, right))
         if operation == "EXCHANGE":

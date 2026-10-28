@@ -284,12 +284,15 @@ def test_replace_artifact_cleanup_failure_preserves_original_error() -> None:
 
 
 class _ChConnection:
-    def __init__(self) -> None:
+    def __init__(self, *, recovery_artifacts: bool = True) -> None:
         self.queries: list[str] = []
         self.commands: list[str] = []
+        self.recovery_artifacts = recovery_artifacts
 
     def query(self, sql: str) -> Any:
         self.queries.append(sql)
+        if "startsWith" in sql and not self.recovery_artifacts:
+            return SimpleNamespace(result_rows=[])
         if "system.processes" in sql or "system, processes" in sql:
             return SimpleNamespace(result_rows=[(0,)])
         return SimpleNamespace(result_rows=[("target__replace_abcd",)])
@@ -420,7 +423,7 @@ def test_clickhouse_completed_cutover_leftovers_are_disposable_after_drop_failur
 
     adapter = FailedCleanup([2, 2, 2])
     monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
-    connection = _ChConnection()
+    connection = _ChConnection(recovery_artifacts=False)
     ch_safe_replace._replace_from_stage(adapter, _request(connection))
     rename = next(
         command
@@ -453,7 +456,7 @@ def test_clickhouse_completed_cutover_reports_success_if_cleanup_marker_rename_f
 
     monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
     adapter = _ReplaceChAdapter([2, 2, 2])
-    connection = FailedMarker()
+    connection = FailedMarker(recovery_artifacts=False)
     messages = []
     monkeypatch.setattr(ch_safe_replace, "time_print", messages.append)
     ch_safe_replace._replace_from_stage(adapter, _request(connection))

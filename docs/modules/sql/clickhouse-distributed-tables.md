@@ -247,7 +247,11 @@ so an orphan physical table on another healthy host cannot contribute stale rows
 when the alias has no automatic routing or cluster defaults.
 
 DDL defaults do not enable automatic SQL routing. With `cluster_routing=None`,
-plain physical-table reads, inserts, CREATE and DROP stay local. Explicit
+plain physical-table reads, existence checks, column metadata, inserts, CREATE
+and DROP stay local, even when regular-table DDL defaults name a cluster. An
+append to an existing local table therefore does not require that table on
+other shards. New-table creation still validates its configured DDL scopes.
+Explicit
 `ON CLUSTER` and Distributed source tables retain their cluster semantics.
 For a local target with a partial cluster source, use separate CREATE and
 INSERT SELECT statements; a partial-source local CTAS is refused before creation.

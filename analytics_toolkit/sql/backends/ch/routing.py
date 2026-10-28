@@ -306,6 +306,10 @@ class ClusterRoutingClient:
         return self._routing
 
     def command(self, sql: str, **kwargs: Any) -> Any:
+        if _LOCAL_SQL_EXECUTION.get():
+            # Internal callers supply already-routed native SQL and command settings.
+            # SQLGlot cannot model every table-function INSERT with a column list.
+            return self._client.command(sql, **kwargs)
         routed_sql = self.route(sql)
         parsed = sqlglot.parse_one(sql, read=_RoutingClickHouse)
         clustered = parsed.find(exp.OnCluster) is not None or (

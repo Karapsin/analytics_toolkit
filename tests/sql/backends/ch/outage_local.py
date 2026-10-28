@@ -8,6 +8,49 @@ from typing import Any
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.backends import get_backend_adapter
+
+
+@pytest.mark.parametrize("policy", ["stop", "healthy_shards"])
+@pytest.mark.parametrize("driver", ["http", "native"])
+@pytest.mark.parametrize("offline", [False, True])
+def test_outage_ddl_defaults_keep_existing_local_table_work_local(
+    outage: Any, policy: str, driver: str, offline: bool
+) -> None:
+    cluster, configure = outage
+    configure(cluster_routing=None, driver=driver, ch_unavailable_shards=policy)
+    table = "db.only_local"
+    cluster.create("h1", f"CREATE TABLE {table} (id UInt64) ENGINE=MergeTree ORDER BY id")
+    if offline:
+        cluster.alive.remove("h2")
+    client = sql.get_sql_connection("ch")
+    assert client.outage_table_exists(table)
+    assert not client.outage_table_exists("db.absent_local")
+    assert get_backend_adapter("ch").get_table_column_types(client, table, connection_key="ch") == {
+        "id": "UInt64"
+    }
+    assert (
+        sql.load_df(
+            "ch", table, pd.DataFrame({"id": [9]}), append=True, retry_cnt=1, timeout_increment=0
+        )
+        == 1
+    )
+    assert cluster.tables[("h1", table)].rows == [(9,)]
+    assert ("h2", table) not in cluster.tables
+    assert all("cluster(" not in command for _, command, _ in cluster.commands)
+
+
+@pytest.mark.parametrize("driver", ["http", "native"])
+def test_outage_native_distributed_existence_still_checks_its_cluster(
+    outage: Any, driver: str
+) -> None:
+    cluster, configure = outage
+    configure(cluster_routing=None, driver=driver)
+    cluster.alive.remove("h2")
+    client = sql.get_sql_connection("ch")
+    with pytest.raises(sql.ClickHouseClusterUnavailableError):
+        client.outage_table_exists("db.events")
+    assert not cluster.commands
 
 
 @pytest.mark.parametrize("policy", ["stop", "healthy_shards"])

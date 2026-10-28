@@ -157,11 +157,7 @@ def _finalize_upsert(adapter: Any, request: StageFinalizationRequest) -> None:
         adapter.execute_command(request.connection, sql)
 
 
-def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share one rollback boundary
-    adapter: Any, request: StageFinalizationRequest
-) -> None:
-    request = _qualify_replacement_target(request)
-    token = uuid4().hex[:12]
+def _replacement_physical_target(adapter: Any, request: StageFinalizationRequest) -> str:
     physical_target = (
         request.target_table
         if request.ch_only_shard
@@ -169,6 +165,13 @@ def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share o
     )
     if physical_target is None:
         raise RuntimeError("ClickHouse replacement could not resolve its physical shard table.")
+    return physical_target
+
+
+def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None:
+    request = _qualify_replacement_target(request)
+    token = uuid4().hex[:12]
+    physical_target = _replacement_physical_target(adapter, request)
     replacement_physical = suffixed_table(physical_target, f"__replace_guarded_{token}")
     replacement_facade = (
         None
@@ -294,13 +297,13 @@ def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share o
         )
         raise
 
-    _drop_completed_replacements(adapter, request.connection, cleanup_tables)
-    _best_effort_drop(adapter, request.connection, local_replacement)
+    if _drop_completed_replacements(adapter, request.connection, cleanup_tables):
+        _best_effort_drop(adapter, request.connection, local_replacement)
 
 
 def _drop_completed_replacements(
     adapter: Any, connection: Any, cleanup_tables: Sequence[tuple[str, str | None]]
-) -> None:
+) -> bool:
     disposable = []
     for table, cluster in cleanup_tables:
         finished = suffixed_table(table, "__discardable")
@@ -319,6 +322,7 @@ def _drop_completed_replacements(
             continue
         disposable.append((finished, cluster))
     _best_effort_drop(adapter, connection, disposable)
+    return len(disposable) == len(cleanup_tables)
 
 
 def _execute_cutover_steps(
