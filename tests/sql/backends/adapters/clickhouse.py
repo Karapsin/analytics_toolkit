@@ -67,6 +67,22 @@ def test_clickhouse_adapter_execute_and_read_failures_report_last_sql(
     assert "Failed SQL:\nSELECT broken" in messages
 
 
+def test_clickhouse_adapter_does_not_resubmit_a_command_after_type_error() -> None:
+    submitted = []
+    failure = TypeError("driver failed after accepting CREATE")
+
+    class Client:
+        def command(self, statement: str, **_kwargs: object) -> None:
+            submitted.append(statement)
+            raise failure
+
+    statement = "CREATE TABLE db.stage ON CLUSTER core (id UInt8) ENGINE=Memory"
+    with pytest.raises(TypeError) as error:
+        get_backend_adapter("ch").execute_command(Client(), statement)
+    assert error.value is failure
+    assert submitted == [statement]
+
+
 def test_clickhouse_adapter_maintenance_delete_and_progress_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

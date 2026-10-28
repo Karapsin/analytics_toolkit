@@ -270,12 +270,19 @@ def _replace_from_stage(  # noqa: C901 - cutover and ambiguity retention share o
     disposable = []
     for table, cluster in cleanup_tables:
         finished = suffixed_table(table, "__discardable")
-        with local_sql(request.connection):
-            execute_reconfiguration_sqls(
-                adapter,
-                request.connection,
-                [f"RENAME TABLE {table} TO {finished}{cluster_clause(cluster)}"],
+        try:
+            with local_sql(request.connection):
+                execute_reconfiguration_sqls(
+                    adapter,
+                    request.connection,
+                    [f"RENAME TABLE {table} TO {finished}{cluster_clause(cluster)}"],
+                )
+        except Exception as exc:
+            time_print(
+                "ClickHouse replacement completed; cleanup artifact could not be marked "
+                f"discardable and was retained for reconciliation: {table}: {exc}"
             )
+            continue
         disposable.append((finished, cluster))
     _best_effort_drop(adapter, request.connection, disposable)
 

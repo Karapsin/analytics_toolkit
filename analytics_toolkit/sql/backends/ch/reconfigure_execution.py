@@ -32,13 +32,10 @@ def execute_reconfiguration_sqls(
         if "ON CLUSTER" not in sql:
             adapter.execute_command(connection, sql)
             continue
-        try:
-            connection.command(
-                sql,
-                settings=SYNCHRONOUS_CLUSTER_COMMAND_SETTINGS,
-            )
-        except TypeError:
-            adapter.execute_command(connection, sql)
+        connection.command(
+            sql,
+            settings=SYNCHRONOUS_CLUSTER_COMMAND_SETTINGS,
+        )
 
 
 __all__ = ["cluster_clause", "execute_reconfiguration_sqls"]

@@ -132,15 +132,10 @@ class ClickHouseAdapter(BackendAdapter):
         if "ON CLUSTER" not in sql:
             return connection.command(sql)
 
-        try:
-            return connection.command(
-                sql,
-                settings=_routing.ON_CLUSTER_COMMAND_SETTINGS,
-            )
-        except TypeError as exc:
-            if getattr(exc, "analytics_toolkit_sql_retry_safe", None) is False:
-                raise
-            return connection.command(sql)
+        return connection.command(
+            sql,
+            settings=_routing.ON_CLUSTER_COMMAND_SETTINGS,
+        )
 
     plan_table_reconfiguration = _reconfigure.plan
     execute_table_reconfiguration = _reconfigure.execute

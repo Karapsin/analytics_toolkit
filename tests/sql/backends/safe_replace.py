@@ -425,6 +425,30 @@ def test_clickhouse_completed_cutover_leftovers_are_disposable_after_drop_failur
     )
 
 
+def test_clickhouse_completed_cutover_reports_success_if_cleanup_marker_rename_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailedMarker(_ChConnection):
+        def command(self, sql: str, **kwargs: Any) -> None:
+            super().command(sql, **kwargs)
+            if "__discardable" in sql:
+                raise ConnectionError("cleanup acknowledgement lost")
+
+    monkeypatch.setattr(ch_safe_replace, "_database_engine_local", lambda *_args: "Atomic")
+    adapter = _ReplaceChAdapter([2, 2, 2])
+    connection = FailedMarker()
+    messages = []
+    monkeypatch.setattr(ch_safe_replace, "time_print", messages.append)
+    ch_safe_replace._replace_from_stage(adapter, _request(connection))
+    assert any("replacement completed" in message and "retained" in message for message in messages)
+    markers = [command for command in connection.commands if "__discardable" in command]
+    assert len(markers) == len(set(markers)) == 2
+    assert not any(
+        command.startswith("DROP TABLE") and "__replace_guarded_" in command
+        for command in adapter.commands
+    )
+
+
 def test_clickhouse_replace_builds_and_swaps_complete_distributed_pair(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

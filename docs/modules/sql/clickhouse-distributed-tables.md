@@ -180,6 +180,9 @@ does not suppress these warnings. With `return_metadata=True`, supported read,
 load, and transfer results expose `metadata.ch_cluster_status` (expected,
 selected, and excluded hosts and shards) and `metadata.data_complete`.
 Transfers additionally report `source_data_complete` and `target_data_complete`.
+`parallel_sql` and `async_sql` pass the policy default to each task, with
+per-task overrides taking precedence. Tasks keep separate coverage, retry,
+cleanup and metadata state; a degraded task does not restrict its siblings.
 Row-count validation in ad hoc mode validates the observed source rows; it does
 not establish that an unavailable shard had no additional data.
 Partial-source transfers require a materialized source snapshot and row-count
@@ -305,6 +308,9 @@ artifacts across operations. Unresolved guarded artifacts and active replacement
 work block another replacement until reconciled. After verified successful cutover,
 cleanup tables receive a `__discardable` suffix before best-effort deletion;
 inactive completed leftovers and legacy artifacts retain automatic cleanup.
+If marking a cleanup table fails after a verified successful cutover, the
+replacement still succeeds and logs a warning. The affected artifacts remain
+for reconciliation and are not automatically replayed or deleted.
 An inactive guarded artifact alone is insufficient evidence for deletion: inspect
 all shards and reconcile the current target and recovery tables first.
 Failure to inspect recovery metadata also stops a replacement before mutation.

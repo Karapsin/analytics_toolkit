@@ -725,8 +725,6 @@ class OutageClient:
         if session.state.partial and not owned:
             msg = "Destructive operations require complete ClickHouse coverage."
             raise ClickHouseClusterUnavailableError(msg)
-        if session.policy == "healthy_shards" and owned:
-            return
 
     def _settings(
         self, session: OutageSession, kwargs: dict[str, Any], required: dict[str, Any]

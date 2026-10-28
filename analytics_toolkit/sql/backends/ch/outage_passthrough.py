@@ -84,7 +84,12 @@ def preflight_native(session: Any, sql: str) -> None:
                 msg = "Cannot verify the native command's cluster scope."
                 raise ClickHouseClusterTopologyError(msg)
             clusters.append(normalize_clickhouse_engine_arg(value.value))
-    configured = configured_cluster(session.config)
+    first = next(iter(tokens), None)
+    configured = (
+        configured_cluster(session.config)
+        if first is not None and first.normalized in _MODELED - {"SHOW", "DESC", "DESCRIBE"}
+        else None
+    )
     if configured is not None:
         clusters.append(configured)
     for cluster in set(clusters):

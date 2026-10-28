@@ -653,6 +653,15 @@ def test_generated_create_commands_preserve_intentional_local_fallback() -> None
     assert "ON CLUSTER" not in raw.commands[1][0]
 
 
+def test_generated_standalone_create_preserves_opted_in_cluster_routing() -> None:
+    raw = _HttpClient()
+    connection = wrap_client(raw, _config())
+    get_backend_adapter("ch").execute_commands(
+        connection, ["CREATE TABLE db.events (id UInt8) ENGINE=Memory"]
+    )
+    assert "ON CLUSTER 'core'" in raw.commands[0][0]
+
+
 def test_clickhouse_source_estimate_explains_routed_source_locally() -> None:
     raw = _HttpClient()
     connection = wrap_client(raw, _config())

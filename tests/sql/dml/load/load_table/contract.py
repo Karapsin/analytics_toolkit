@@ -186,6 +186,11 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         for command in client.commands
     )
     assert not any(query.startswith("DESCRIBE TABLE ") for query in client.queries)
+    assert all(
+        settings["distributed_ddl_task_timeout"] == 300
+        for command, settings in zip(client.commands, client.command_settings)
+        if command.startswith("RENAME TABLE")
+    )
 
 
 def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() -> None:

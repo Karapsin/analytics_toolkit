@@ -246,9 +246,16 @@ def prepare_plan_sql(
 
 def execute_commands(adapter: Any, connection: Any, sqls: list[str]) -> None:
     preflight_sql_statements(connection, sqls)
+    clustered_create_targets: set[str] = set()
     for sql in sqls:
         create_target, has_cluster = _create_target(sql)
-        if create_target is not None and not has_cluster:
+        if create_target is not None and has_cluster:
+            clustered_create_targets.add(create_target)
+        if (
+            create_target is not None
+            and not has_cluster
+            and create_target in clustered_create_targets
+        ):
             with local_sql(connection):
                 adapter.execute_command(connection, sql)
         else:

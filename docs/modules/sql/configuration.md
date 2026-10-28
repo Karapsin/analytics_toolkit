@@ -467,7 +467,7 @@ See [unavailable shards](clickhouse-distributed-tables.md#unavailable-shards) fo
 the scenario matrix, healthy-only creation, red warnings, write restrictions,
 metadata, and empty-schema recovery behavior.
 
-## Automatic ClickHouse Cluster Routing
+### Automatic ClickHouse Cluster Routing
 
 Set `cluster_routing` on a ClickHouse connection when every user query and
 toolkit-generated data statement for that alias should target one ClickHouse

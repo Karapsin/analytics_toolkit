@@ -76,12 +76,14 @@ class FakeClickHouseClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
         self.commands: list[str] = []
+        self.command_settings: list[dict[str, object]] = []
         self.queries: list[str] = []
         self.created_tables: set[str] = set()
         self.close_calls = 0
 
-    def command(self, sql: str) -> None:
+    def command(self, sql: str, *, settings: dict[str, object] | None = None) -> None:
         self.commands.append(sql)
+        self.command_settings.append(dict(settings or {}))
         self._track_table_ddl(sql)
 
     def query(self, sql: str) -> object:

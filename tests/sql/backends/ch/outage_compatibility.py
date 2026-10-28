@@ -208,7 +208,22 @@ def test_outage_batch_native_preflight_has_no_command_side_effects(outage: Any) 
     client = sql.get_sql_connection("ch")
     client.sql_preflight_statements(["SYSTEM FLUSH LOGS"])
     assert not cluster.commands
-    assert "core" in client._session.scopes
+    assert not client._session.scopes
+
+
+@pytest.mark.parametrize("query", ["SYSTEM FLUSH LOGS", "OPTIMIZE TABLE db.local FINAL"])
+def test_outage_native_local_commands_do_not_require_remote_default_ddl_hosts(
+    outage: Any, monkeypatch: Any, query: str
+) -> None:
+    cluster, configure = outage
+    configure(cluster_routing=None)
+    cluster.alive.remove("h2")
+    submitted = []
+    monkeypatch.setattr(
+        Client, "command", lambda _client, value, **_kwargs: submitted.append(value)
+    )
+    sql.execute("ch", query, retry_cnt=1)
+    assert submitted == [query]
 
 
 def test_outage_native_table_functions_are_not_automatically_routed(outage: Any) -> None:

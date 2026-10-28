@@ -108,6 +108,7 @@ class BackendOperationState:
 
 _STATE: ContextVar[BackendOperationState | None] = ContextVar("sql_backend_options", default=None)
 _QUERY_LABEL: ContextVar[str | None] = ContextVar("sql_backend_query_label", default=None)
+_DEFAULT_POLICY: ContextVar[str | None] = ContextVar("sql_backend_default_policy", default=None)
 
 
 def current_backend_operation() -> BackendOperationState | None:
@@ -126,7 +127,9 @@ def backend_operation(policy: str | None = None) -> Iterator[BackendOperationSta
     if parent is not None and (policy is None or policy == parent.ch_unavailable_shards):
         yield parent
         return
-    state = BackendOperationState(ch_unavailable_shards=policy)
+    state = BackendOperationState(
+        ch_unavailable_shards=policy if policy is not None else _DEFAULT_POLICY.get()
+    )
     token = _STATE.set(state)
     succeeded = False
     try:
@@ -138,6 +141,22 @@ def backend_operation(policy: str | None = None) -> Iterator[BackendOperationSta
                 callback(succeeded)
         finally:
             _STATE.reset(token)
+
+
+@contextmanager
+def _independent_operations(policy: str | None) -> Iterator[None]:
+    """Propagate the batch default while keeping each task's observations private."""
+    parent = _STATE.get()
+    if policy is not None:
+        validate_ch_unavailable_shards(policy)
+    inherited = parent.ch_unavailable_shards if parent is not None else _DEFAULT_POLICY.get()
+    policy_token = _DEFAULT_POLICY.set(policy if policy is not None else inherited)
+    state_token = _STATE.set(None)
+    try:
+        yield
+    finally:
+        _STATE.reset(state_token)
+        _DEFAULT_POLICY.reset(policy_token)
 
 
 def public_backend_options(function: Callable[..., T]) -> Callable[..., T]:
@@ -164,6 +183,9 @@ def public_backend_options(function: Callable[..., T]) -> Callable[..., T]:
     @wraps(function)
     def wrapper(*args: Any, **kwargs: Any) -> T:
         policy = kwargs.pop("ch_unavailable_shards", None)
+        if function.__name__ in {"parallel_sql", "async_sql"}:
+            with _independent_operations(policy):
+                return function(*args, **kwargs)
         with backend_operation(policy) as state:
             bound = signature.bind_partial(*args, **kwargs)
             label_token = _QUERY_LABEL.set(bound.arguments.get("query_label") or _QUERY_LABEL.get())
