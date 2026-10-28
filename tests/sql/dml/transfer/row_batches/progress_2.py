@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.execution.backend_options import backend_operation
+
 from tests.sql._support.row_batches import (
     Any,
     FakeTransferConnection,
@@ -98,8 +100,10 @@ def test_row_count_disabled_mismatch_missing_workers_retry_and_labels(
     ]
 
 
+@pytest.mark.parametrize("partial", [False, True])
 def test_row_count_validation_materializes_source_once_when_schema_is_configured(
     monkeypatch: pytest.MonkeyPatch,
+    partial: bool,
 ) -> None:
     events: list[tuple[Any, ...]] = []
     source_connection = FakeTransferConnection("source")
@@ -143,13 +147,16 @@ def test_row_count_validation_materializes_source_once_when_schema_is_configured
     adapter = MaterializingAdapter()
     monkeypatch.setattr(row_counts_module, "get_backend_adapter", lambda _backend: adapter)
 
-    prepared = row_counts_module.prepare_row_count_validated_options(
-        options=options,
-        connection_refs=models_module.TransferConnectionRefs(
-            source={"connection": source_connection}
-        ),
-        stage_state=stage_state,
-    )
+    with backend_operation() as operation:
+        if partial:
+            operation.incomplete_aliases.add(options.from_db_key)
+        prepared = row_counts_module.prepare_row_count_validated_options(
+            options=options,
+            connection_refs=models_module.TransferConnectionRefs(
+                source={"connection": source_connection}
+            ),
+            stage_state=stage_state,
+        )
 
     assert prepared.source_sql.startswith(
         "SELECT * FROM scratch.source_result__analytics_toolkit_source_user__stage__"

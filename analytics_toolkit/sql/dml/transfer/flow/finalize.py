@@ -9,6 +9,7 @@ from typing import Any, cast
 import pandas as pd
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.creation_policy import (
     DEFAULT_DDL_READY_TIMEOUT_SECONDS,
 )
@@ -18,36 +19,38 @@ from analytics_toolkit.sql.backends.ch.reconfigure_support import (
     count_rows_on_cluster,
     resolve_optional_cluster,
 )
+from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.dml.empty_source import (
     EmptySourceError,
     resolve_empty_source_policy,
 )
+from analytics_toolkit.sql.dml.load.stage import cleanup_stage_table_with_retry, create_stage_table
 from analytics_toolkit.sql.dml.table._basic_ops import count_table_rows
+from analytics_toolkit.sql.dml.table.maintenance import analyze_table
+from analytics_toolkit.sql.dml.table.table_validation import (
+    validate_stage_target_key_overlap,
+    validate_stage_uniqueness,
+)
+from analytics_toolkit.sql.dml.table.write_modes import finalize_stage_table
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
     _count_loaded_stage_rows,
     cleanup_materialized_sources,
 )
-
-from ....backends import get_backend_adapter
-from ....connection.get_sql_connection import get_sql_connection
-from ...load.stage import cleanup_stage_table_with_retry, create_stage_table
-from ...table.maintenance import analyze_table
-from ...table.table_validation import (
-    validate_stage_target_key_overlap,
-    validate_stage_uniqueness,
+from analytics_toolkit.sql.dml.transfer.runtime.connection_pool import BoundedConnectionManager
+from analytics_toolkit.sql.dml.transfer.runtime.models import (
+    TransferConnectionRefs,
+    TransferOptions,
+    TransferStageState,
 )
-from ...table.write_modes import (
-    finalize_stage_table,
-)
-from ..runtime.connection_pool import BoundedConnectionManager
-from ..runtime.models import TransferConnectionRefs, TransferOptions, TransferStageState
-from ..runtime.retry import (
+from analytics_toolkit.sql.dml.transfer.runtime.retry import (
     replace_connection,
     rollback_quietly,
     run_with_fresh_connection,
     run_with_retry,
 )
-from ..schema import get_existing_target_insert_types
+from analytics_toolkit.sql.dml.transfer.schema import get_existing_target_insert_types
+from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
+
 from .parquet_stage import cleanup_parquet_stage_location
 
 
@@ -227,7 +230,11 @@ def _finalize_target_once(  # noqa: PLR0913
             target_ref["connection"],
             stage_table=stage_table,
             target_table=options.target_table,
-            replace_target_table=options.replace_target_table and not target_precleared,
+            replace_target_table=(
+                options.replace_target_table
+                and not target_precleared
+                and not _should_drop_created_target(stage_state)
+            ),
             target_exists=stage_state.target_exists and not target_precleared,
             sample_batch=stage_state.first_non_empty_batch,
             target_column_types=target_column_types,
@@ -497,6 +504,10 @@ def cleanup_transfer_attempt_stages(  # noqa: PLR0913
     transfer_error: Exception | None,
     cleanup_stage_fn: Any,
 ) -> Exception | None:
+
+    if preserve_recovery_artifacts():
+        time_print("Preserving transfer recovery stages after an uncertain mutation.")
+        return None
     cleanup_error: Exception | None = None
     try:
         cleanup_stage_fn(
@@ -679,6 +690,10 @@ def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
     target_connection_runner: Any | None = None,
     safe_exception_logging: bool = False,
 ) -> None:
+
+    if preserve_recovery_artifacts():
+        time_print("Preserving transfer recovery stages after an uncertain mutation.")
+        return
     stage_cleanup_error: Exception | None = None
     remote_cleanup_error: Exception | None = None
     target_cleanup_error: Exception | None = None

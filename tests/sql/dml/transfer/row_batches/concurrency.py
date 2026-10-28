@@ -15,10 +15,11 @@ def test_transfer_public_signature_exposes_concurrency_caps() -> None:
 
     assert signature.parameters["soft_concurrency_cap"].default is None
     assert signature.parameters["hard_concurrency_cap"].default == 5
-    assert list(signature.parameters)[-3:] == [
+    assert list(signature.parameters)[-4:] == [
         "soft_concurrency_cap",
         "hard_concurrency_cap",
         "empty_source_policy",
+        "ch_unavailable_shards",
     ]
 
 

@@ -5,10 +5,12 @@
 Run independent SQL task specs with thread-based parallelism.
 
 ```python
-parallel_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fail_fast: 'bool' = True, start_comment: 'str | None' = None, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, progress: 'bool' = False) -> 'dict[str, Any]'
+parallel_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fail_fast: 'bool' = True, start_comment: 'str | None' = None, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, progress: 'bool' = False, ch_unavailable_shards: 'str | None' = None) -> 'dict[str, Any]'
 ```
 
 ## Inputs
+
+### General Inputs
 
 - `tasks` - sequence of batch task specifications
 - `progress` - whether to show progress bars for supported multi-step or row-loading operations
@@ -17,6 +19,10 @@ parallel_sql(tasks: 'Sequence[Mapping[str, Any]]', *, concurrency: 'int' = 5, fa
 - `concurrency` - maximum requested task or cancellation concurrency
 - `soft_concurrency_cap` - optional lower cap for actual worker execution inside a larger requested batch
 - `hard_concurrency_cap` - maximum allowed actual worker concurrency after soft throttling
+
+### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 ## Usage
 

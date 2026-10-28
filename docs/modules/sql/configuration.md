@@ -419,7 +419,7 @@ rejected; use the `s3_transfer_*` pair.
 ClickHouse supports optional `secure`, `verify`, `ca_certs`,
 `ca_certs_variable`, `connect_timeout`, `send_receive_timeout`, `settings`,
 `ddl_ready_timeout_seconds`, `ddl_ready_timeout_extension_cnt`,
-`ch_ddl_wait_policy`, `cluster_routing`, `client_name`, and `compression` fields.
+`ch_ddl_wait_policy`, `ch_unavailable_shards`, `cluster_routing`, `client_name`, and `compression` fields.
 The optional
 `driver` selector is
 `"http"` by default and keeps the existing `clickhouse-connect` behavior and
@@ -438,6 +438,34 @@ particular, changing only `"interface": "https"` cannot make the HTTP client
 connect to a native-protocol port.
 `ca_certs_variable` resolves an Airflow Variable lazily when the connection is
 opened, which keeps the certificate path in Airflow instead of the file.
+
+### ClickHouse Outage Default
+
+Set the top-level alias field `ch_unavailable_shards` to `"stop"` (the built-in
+default) for production processes, or `"healthy_shards"` for ad hoc work using
+available shards. This is separate from raw ClickHouse `settings`.
+
+```json
+{
+  "ch": {
+    "type": "ch",
+    "host": "one-host-from-core",
+    "database": "sandbox",
+    "ch_unavailable_shards": "stop",
+    "cluster_routing": {"cluster": "core", "sharding_key": "rand()"}
+  }
+}
+```
+
+An explicit `ch_unavailable_shards` keyword on a public SQL helper overrides the
+alias default for that operation and its nested work. `None` uses the alias
+default. Airflow connection extras accept the same field. Invalid values are
+rejected. The policy guards configured cluster operations, not an arbitrary
+remote function or a local query whose hidden dependencies cannot be inferred.
+
+See [unavailable shards](clickhouse-distributed-tables.md#unavailable-shards) for
+the scenario matrix, healthy-only creation, red warnings, write restrictions,
+metadata, and empty-schema recovery behavior.
 
 ### Automatic ClickHouse Cluster Routing
 

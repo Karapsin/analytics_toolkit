@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ...backends import get_backend_adapter
-from ...backends import is_simple_identifier
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends import get_backend_adapter, is_simple_identifier
+from analytics_toolkit.sql.execution.backend_options import require_complete_operation
 
 
 def normalize_key_columns(
@@ -43,8 +43,7 @@ def validate_key_columns_in_columns(
     missing_columns = [column for column in key_columns if column not in available_columns]
     if missing_columns:
         raise ValueError(
-            "key_columns were not found in the staged data: "
-            + ", ".join(missing_columns)
+            "key_columns were not found in the staged data: " + ", ".join(missing_columns)
         )
 
 
@@ -75,8 +74,7 @@ def validate_upsert_partition_column_in_columns(
     available_columns = {str(column) for column in columns}
     if upsert_partition_column not in available_columns:
         raise ValueError(
-            "upsert_partition_column was not found in the staged data: "
-            f"{upsert_partition_column}"
+            f"upsert_partition_column was not found in the staged data: {upsert_partition_column}"
         )
 
 
@@ -92,8 +90,7 @@ def validate_stage_uniqueness(
 
     stage_table_label = ", ".join(stage_tables) if stage_tables else stage_table
     time_print(
-        f"Validating uniqueness for stage table {stage_table_label} "
-        f"using key_columns={key_columns}"
+        f"Validating uniqueness for stage table {stage_table_label} using key_columns={key_columns}"
     )
     if _stage_has_duplicate_keys(
         connection_type,
@@ -103,8 +100,7 @@ def validate_stage_uniqueness(
         stage_tables=stage_tables,
     ):
         raise ValueError(
-            "Duplicate key values found in staged data for key_columns: "
-            + ", ".join(key_columns)
+            "Duplicate key values found in staged data for key_columns: " + ", ".join(key_columns)
         )
 
 
@@ -120,16 +116,18 @@ def validate_stage_target_key_overlap(
     if not key_columns or replace_target_table or not target_exists:
         return
 
-    time_print(
-        f"Validating staged keys do not already exist in target table {target_table}"
-    )
-    if _stage_keys_overlap_target(
+    require_complete_operation("Global key-overlap validation requires complete target coverage.")
+
+    time_print(f"Validating staged keys do not already exist in target table {target_table}")
+    overlaps = _stage_keys_overlap_target(
         connection_type=connection_type,
         connection=connection,
         stage_table=stage_table,
         target_table=target_table,
         key_columns=key_columns,
-    ):
+    )
+    require_complete_operation("Global key-overlap validation requires complete target coverage.")
+    if overlaps:
         raise ValueError(
             "Staged data contains key values that already exist in target table for key_columns: "
             + ", ".join(key_columns)

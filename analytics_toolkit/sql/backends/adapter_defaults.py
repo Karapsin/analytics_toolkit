@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from . import target_create as _target_create
 from .models import (
     TargetConnectionDefaults,
     TransferAttemptPolicy,
@@ -16,9 +17,12 @@ def prepare_sql(adapter: Any, config: Any, sql: str) -> str:
     del adapter, config
     return sql
 
+
 _DEFAULT_CH_ENGINE = "ReplicatedMergeTree"
 _DEFAULT_CH_CLUSTER = "{cluster}"
 _DEFAULT_CH_SHARDING_KEY = "rand()"
+should_ensure_load_target_table = _target_create.should_ensure_load_target_table
+preflight_new_target = _target_create.preflight_new_target
 
 
 def validate_airflow_file_overrides(
@@ -401,11 +405,6 @@ def refine_stage_column_types_from_rows(
 ) -> dict[str, str] | None:
     del adapter, columns, rows
     return column_types
-
-
-def should_ensure_load_target_table(adapter: Any, target_exists: bool) -> bool:
-    del adapter
-    return not target_exists
 
 
 def build_load_target_create_kwargs(

@@ -162,6 +162,7 @@ Generated from package version bumps and recent commit history.
 - Fix ClickHouse safe replacement routing to the configured storage cluster with local staging, preserve validation and rollback, and retain ambiguous recovery artifacts across attempts.
 - Add ClickHouse transfer-finalization regressions for replacement count failures, rollback recovery, and retained-artifact protection without changing coverage floors.
 - Fix the ClickHouse replacement recovery test's overlong diagnostic without changing its message or assertions.
+- Reconcile ClickHouse shard outage handling with storage-cluster replacement routing, stepwise rollback and recovery-artifact retention.
 
 ## 1.3.12.5 - 2026-10-14
 

@@ -5,7 +5,7 @@
 Run setup SQL statements, then read the final SQL statement into a dataframe on the same connection.
 
 ```python
-execute_read(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, progress: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, row_limit: 'int | None' = None) -> 'pd.DataFrame | SqlOperationResult | list[pd.DataFrame | SqlOperationResult]'
+execute_read(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, return_metadata: 'bool' = False, progress: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, row_limit: 'int | None' = None, *, ch_unavailable_shards: 'str | None' = None) -> 'pd.DataFrame | SqlOperationResult | list[pd.DataFrame | SqlOperationResult]'
 ```
 
 ## Inputs
@@ -26,6 +26,8 @@ execute_read(db_key: 'str', query: 'str | list[str]', print_queries: 'bool' = Fa
 - `progress` - whether to show progress bars for supported multi-step or row-loading operations
 
 ### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 - `gp_break_query` - for Greenplum, whether to split and execute multi-statement SQL statement by statement
 - `gp_commit_each_statement` - for Greenplum split execution, whether to commit after each statement

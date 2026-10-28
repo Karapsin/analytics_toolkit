@@ -5,10 +5,12 @@
 Return native `CREATE TABLE` DDL for one table or several tables.
 
 ```python
-extract_ddl(db_key: 'str', tables: 'str | Sequence[str]') -> 'str'
+extract_ddl(db_key: 'str', tables: 'str | Sequence[str]', *, ch_unavailable_shards: 'str | None' = None) -> 'str'
 ```
 
 ## Inputs
+
+### General Inputs
 
 - `db_key` - connection key or alias from `.connections`
 - `tables` - one table name or a sequence of table names for DDL extraction
@@ -20,6 +22,10 @@ On clusters without that helper, `extract_ddl` reconstructs schema DDL from
 catalog metadata, including columns, constraints, storage options, distribution,
 indexes, partitions where discoverable, and comments. Ownership and grants are
 not included.
+
+### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 ## Usage
 

@@ -4,6 +4,8 @@ from typing import Any
 
 import pandas as pd
 
+from analytics_toolkit.sql.execution.backend_options import require_complete_operation
+
 from ....backends import get_backend_adapter
 from ....ddl.schema import validate_table_schema_columns
 from ...load.stage import create_stage_table
@@ -32,6 +34,13 @@ def create_stage_state(
         options.target_table,
         connection_key=options.to_db_key,
     )
+    connection = connection_refs.target["connection"]
+    if not target_exists:
+        get_backend_adapter(options.to_db_backend).preflight_new_target(
+            connection,
+            options.target_table,
+            creation_policy=options.regular_ch_policy,
+        )
     return TransferStageState(
         target_exists=target_exists,
         target_existed_at_start=target_exists,
@@ -47,6 +56,10 @@ def ensure_transfer_target_table(
     source_columns: list[str],
 ) -> None:
     if stage_state.target_exists:
+        if options.replace_target_table or options.write_mode in {"upsert", "truncate_insert"}:
+            require_complete_operation(
+                "Destructive transfers require complete source and target coverage."
+            )
         return
     if not get_backend_adapter(
         options.to_db_backend,

@@ -5,15 +5,17 @@ from typing import Any
 
 import pandas as pd
 
-from ...backends.base import (
+from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.base import (
     StageFinalizationRequest,
     StageTargetTableRequest,
     TargetWriteModeRequest,
 )
-from ...backends import get_backend_adapter
-from ...connection.config import resolve_connection_backend
-from ...execution.plans import SqlOperationMetadata, SqlPlan
-from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.connection.config import resolve_connection_backend
+from analytics_toolkit.sql.execution.backend_options import require_complete_operation
+from analytics_toolkit.sql.execution.plans import SqlOperationMetadata, SqlPlan
+
 from ._basic_ops import (
     build_clear_table_sqls,
 )
@@ -81,6 +83,10 @@ def apply_target_write_mode(
     ch_retry_per_host_drops: bool = True,
     ch_only_shard: bool = False,
 ) -> bool:
+    if target_exists and write_mode != "append":
+        require_complete_operation(
+            "Destructive write modes require complete source and target coverage."
+        )
     backend = resolve_connection_backend(connection_type)
     log_connection = connection_label or connection_type
     return get_backend_adapter(backend).apply_target_write_mode(
@@ -192,6 +198,7 @@ def upsert_stage_table(
     incoming_stage_tables: Sequence[str] | None = None,
     trino_partition_drop_sql_template: str | None = None,
 ) -> None:
+    require_complete_operation("Upsert requires complete source and target coverage.")
     backend = resolve_connection_backend(connection_type)
     time_print(
         f"Upserting staged rows from {stage_table} into {target_table}",
@@ -367,6 +374,10 @@ def finalize_stage_table(
     trino_upsert_partition_drop_sql_template: str | None = None,
     ch_creation_policy: Any = None,
 ) -> None:
+    if target_exists and (replace_target_table or write_mode in {"upsert", "truncate_insert"}):
+        require_complete_operation(
+            "Destructive finalization requires complete source and target coverage."
+        )
     backend = resolve_connection_backend(connection_type)
     time_print(
         f"Finalizing staged transfer from {stage_table} into {target_table}",

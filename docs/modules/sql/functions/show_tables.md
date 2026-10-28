@@ -5,7 +5,7 @@
 List tables visible through backend metadata as a dataframe.
 
 ```python
-show_tables(db_key: 'str', schema: 'str | None' = None, conditions: 'str | None' = None, table_name: 'str | Sequence[str] | None' = None, ch_distributed_table_stats: 'bool' = False, trino_catalog: 'str | None' = None) -> 'pd.DataFrame'
+show_tables(db_key: 'str', schema: 'str | None' = None, conditions: 'str | None' = None, table_name: 'str | Sequence[str] | None' = None, ch_distributed_table_stats: 'bool' = False, trino_catalog: 'str | None' = None, *, ch_unavailable_shards: 'str | None' = None) -> 'pd.DataFrame'
 ```
 
 ## Inputs
@@ -18,6 +18,8 @@ show_tables(db_key: 'str', schema: 'str | None' = None, conditions: 'str | None'
 - `conditions` - SQL predicate evaluated against the normalized metadata aliases `db`, `schema`, `table_name`, `row_count`, and `table_size_bytes`
 
 ### Backend-Specific Inputs
+
+- `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
 - `ch_distributed_table_stats` - whether ClickHouse table listings should resolve distributed shard statistics
 - `trino_catalog` - Trino catalog to query instead of `.connections[db_key].catalog`

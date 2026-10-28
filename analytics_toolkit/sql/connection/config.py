@@ -9,15 +9,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Union, cast
 
-from ..backends.registry import (
+from analytics_toolkit.sql.backends.registry import (
     BACKEND_REGISTRY,
     get_backend,
     require_backend_name,
 )
-from ..backends.registry import (
+from analytics_toolkit.sql.backends.registry import (
     normalize_backend_name as _registry_normalize_backend_name,
 )
-from ..execution.operation_runner import timed_public_sql_function
+from analytics_toolkit.sql.execution.operation_runner import timed_public_sql_function
+
 from .airflow_compat import connection_getter
 from .config_cache import load_cached_connections_source
 from .config_diagnostics import (
@@ -146,6 +147,7 @@ class ChConfig:
     ddl_ready_timeout_extension_cnt: int | None = None
     ch_ddl_wait_policy: str | None = None
     cluster_routing: ChClusterRouting | None = None
+    ch_unavailable_shards: str = "stop"
 
 
 ConnectionConfig = Union[TrinoConfig, GpConfig, ChConfig]
@@ -259,7 +261,9 @@ def _print_dummy_connections_cert_instructions(certs_dir: Path) -> None:
 
 
 def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
-    from ..backends.trino.config import example_upsert_partition_drop_sql_template
+    from analytics_toolkit.sql.backends.trino.config import (
+        example_upsert_partition_drop_sql_template,
+    )
 
     return {
         "gp": {
@@ -319,7 +323,9 @@ def _build_dummy_direct_connections() -> dict[str, dict[str, Any]]:
 
 
 def _build_dummy_airflow_connections() -> dict[str, Any]:
-    from ..backends.trino.config import example_upsert_partition_drop_sql_template
+    from analytics_toolkit.sql.backends.trino.config import (
+        example_upsert_partition_drop_sql_template,
+    )
 
     return {
         "source": "airflow",

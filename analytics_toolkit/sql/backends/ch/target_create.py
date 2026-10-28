@@ -4,9 +4,11 @@ from collections.abc import Sequence
 from typing import Any
 
 
-def should_ensure_load_target_table(adapter: Any, target_exists: bool) -> bool:
-    del adapter, target_exists
-    return True
+def should_ensure_load_target_table(
+    adapter: Any, target_exists: bool, *, connection: Any = None
+) -> bool:
+    del adapter
+    return not target_exists or not getattr(connection, "_ch_outage_client", False)
 
 
 def expected_create_table_column_types(

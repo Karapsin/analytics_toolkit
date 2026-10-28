@@ -170,7 +170,7 @@ def test_clickhouse_per_host_fallback_stays_inside_target_pool(monkeypatch: Any)
                 active += 1
                 high_water = max(high_water, active)
 
-        def command(self, _sql: str) -> None:
+        def command(self, _sql: str, **_kwargs: Any) -> None:
             return None
 
         def close(self) -> None:

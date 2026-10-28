@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal
 
-from .routing import parse_cluster_routing, wrap_client
+from analytics_toolkit.sql.execution.backend_options import validate_ch_unavailable_shards
+from analytics_toolkit.sql.execution.observation import observed_connection
+
+from .outage_client import OutageClient
+from .outage_context import INTERNAL_IO
+from .routing import parse_cluster_routing
 from .wait_policy import parse_connection_ch_ddl_wait_policy
 
 AIRFLOW_EXTRA_FIELDS = (
@@ -25,16 +30,12 @@ AIRFLOW_EXTRA_FIELDS = (
     "compression",
     "ddl_defaults",
     "cluster_routing",
+    "ch_unavailable_shards",
 )
 
 
 def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
-    from analytics_toolkit.sql.connection.ddl_defaults import (  # noqa: PLC0415
-        parse_ddl_defaults,
-    )
-    from analytics_toolkit.sql.connection.errors import SqlConfigError  # noqa: PLC0415
-
-    from ...connection.config import (
+    from analytics_toolkit.sql.connection.config import (
         ChConfig,
         _optional_bool,
         _optional_bool_or_string_as_string,
@@ -47,6 +48,10 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
         _reject_removed_fields,
         _require_string,
     )
+    from analytics_toolkit.sql.connection.ddl_defaults import (  # noqa: PLC0415
+        parse_ddl_defaults,
+    )
+    from analytics_toolkit.sql.connection.errors import SqlConfigError  # noqa: PLC0415
 
     _reject_removed_fields(
         raw_config,
@@ -152,6 +157,9 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
             raw_config.get("cluster_routing"),
             connection_key,
         ),
+        ch_unavailable_shards=validate_ch_unavailable_shards(
+            raw_config.get("ch_unavailable_shards", "stop"), error_type=SqlConfigError
+        ),
     )
 
 
@@ -202,7 +210,9 @@ def open_connection(
             parse_verify_value=parse_verify_value,
             resolve_ch_ca_certs=resolve_ch_ca_certs,
         )
-    return wrap_client(client, config)
+
+    client = observed_connection(client)
+    return client if INTERNAL_IO.get() else OutageClient(client, config)
 
 
 def _open_http_connection(
