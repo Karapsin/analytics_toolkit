@@ -12,6 +12,7 @@ from analytics_toolkit.sql.backends.base import (
     TargetWriteModeRequest,
     _apply_query_label,
 )
+from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
 
 from . import column_names as _column_names
 from . import create_table_from_sql as _create_from_sql
@@ -706,6 +707,15 @@ class ClickHouseAdapter(BackendAdapter):
         ch_only_shard: bool = False,
         ch_creation_policy: Any = None,
     ) -> None:
+        if (
+            target_exists
+            and not ch_replace_table
+            and getattr(connection, "_ch_outage_client", False)
+        ):
+            if not connection.outage_table_exists(target_table):
+                msg = "The existing target disappeared; reconcile it before continuing."
+                raise ClickHouseClusterTopologyError(msg)
+            return
         import pandas as pd
 
         from analytics_toolkit.sql.ddl.api import _create_sql_table_with_connection

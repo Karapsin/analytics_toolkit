@@ -186,6 +186,15 @@ preserving the row count.
 
 ### How healthy-only table creation works
 
+`CREATE TABLE new AS existing_table` copies the source definition without
+copying rows, including defaults and inherited storage properties. CTAS with
+`AS SELECT ...` populates the new table through acknowledged delivery.
+A physical `_shard` table without its logical facade is an ambiguous partial
+pair, not a new target: reconcile it before loading. Healthy-only `IF NOT EXISTS`
+creation checks the complete definition, including engine, keys, indexes and
+settings; conflicting definitions are rejected. Appends to verified existing
+targets use their established definitions instead of recreating them from defaults.
+
 DDL defaults do not enable automatic SQL routing. With `cluster_routing=None`,
 plain physical-table reads, inserts, CREATE and DROP stay local. Explicit
 `ON CLUSTER` and Distributed source tables retain their cluster semantics.

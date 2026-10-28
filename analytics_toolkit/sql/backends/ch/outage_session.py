@@ -180,17 +180,17 @@ class OutageSession:
 
     def local_facade(self, database: str, table: str) -> list[Any]:
         # A facade may intentionally be deployed outside its physical routing cluster.
+        objects = self.local_objects(database, table)
+        return objects if objects and objects[0].engine.lower() == "distributed" else []
+
+    def local_objects(self, database: str, table: str) -> list[Any]:
         rows = query_rows(
             self.client,
             "SELECT engine, engine_full, create_table_query, toString(uuid) FROM system.tables "  # noqa: S608 - escaped literals
             f"WHERE database = {sql_string_literal(database)} "
             f"AND name = {sql_string_literal(table)}",
         )
-        if (
-            not rows
-            or len(rows[0]) != _DISTRIBUTED_KEY_ARGUMENTS
-            or str(rows[0][0]).lower() != "distributed"
-        ):
+        if not rows or len(rows[0]) != _DISTRIBUTED_KEY_ARGUMENTS:
             return []
         host = Host(0, 0, 0, self.config.host, self.config.port, is_local=True)
         return [TableObject(host, *(str(item) for item in rows[0]))]

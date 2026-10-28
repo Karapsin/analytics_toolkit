@@ -69,6 +69,45 @@ def _column_signature(statement: exp.Create) -> tuple[str, ...]:
     return tuple(columns)
 
 
+def copy_table_definition(statement: exp.Create, source: TableObject) -> exp.Create:
+    original = parse_one(source.create_sql, read=_RoutingClickHouse)
+    if not isinstance(original, exp.Create) or not isinstance(original.this, exp.Schema):
+        msg = "Schema-only creation requires a verifiable CREATE TABLE source definition."
+        raise ClickHouseClusterTopologyError(msg)
+    converted = statement.copy()
+    target = converted.this.this if isinstance(converted.this, exp.Schema) else converted.this
+    converted.set(
+        "this",
+        exp.Schema(this=target, expressions=[item.copy() for item in original.this.expressions]),
+    )
+    inherited = local_create(original).args["properties"].expressions
+    explicit = converted.args.get("properties")
+    overrides = explicit.expressions if explicit is not None else []
+    overridden = {type(item) for item in overrides}
+    converted.set(
+        "properties",
+        exp.Properties(
+            expressions=[item for item in inherited if type(item) not in overridden] + overrides
+        ),
+    )
+    converted.set("expression", None)
+    return converted
+
+
+def _definition_signature(statement: exp.Create) -> str:
+    normalized = local_create(statement)
+    target = normalized.this.this if isinstance(normalized.this, exp.Schema) else normalized.this
+    target.set("db", None)
+    engine = normalized.find(exp.EngineProperty)
+    if engine is not None and isinstance(engine.this, exp.Identifier):
+        engine.set("this", exp.Anonymous(this=engine.this.name, expressions=[]))
+    for node in normalized.walk():
+        node.comments = None
+        if isinstance(node, exp.Identifier):
+            node.set("quoted", value=False)
+    return normalized.sql(dialect="clickhouse")
+
+
 def _database_engines(scope: ClusterScope, database: str) -> dict[int, str]:
     rows = query_rows(
         scope.client,
@@ -114,7 +153,11 @@ def create_on_healthy_hosts(scope: ClusterScope, statement: exp.Create) -> bool:
     expected_columns = _column_signature(statement)
     if existing:
         parsed = parse_one(existing[0].create_sql, read=_RoutingClickHouse)
-        if not isinstance(parsed, exp.Create) or _column_signature(parsed) != expected_columns:
+        if (
+            not isinstance(parsed, exp.Create)
+            or _column_signature(parsed) != expected_columns
+            or _definition_signature(parsed) != _definition_signature(statement)
+        ):
             msg = f"Existing schema conflicts with creation of {full_name}."
             raise ClickHouseClusterTopologyError(msg)
         canonical = local_create(

@@ -659,7 +659,7 @@ def _ensure_load_target_table(
     adapter = get_backend_adapter(options.connection_backend)
     if options.write_mode == "replace" and not options.append and state.original_target_exists:
         return
-    if not adapter.should_ensure_load_target_table(state.target_exists):
+    if not adapter.should_ensure_load_target_table(state.target_exists, connection=connection):
         return
 
     _create_load_target_table(options, state, connection, df)

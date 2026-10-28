@@ -60,7 +60,7 @@ def test_outage_create_as_table_and_invalid_expression(outage: Any) -> None:
     )
     converted, query = client._expand_create(statement)
     assert isinstance(converted.this, exp.Schema)
-    assert query == "SELECT * FROM db.events"
+    assert query is None
     statement.set("expression", exp.Literal.number(1))
     with pytest.raises(sql.ClickHouseClusterTopologyError):
         client._expand_create(statement)
@@ -236,7 +236,8 @@ def test_outage_existing_indexes_are_preserved_and_not_mistaken_for_columns(outa
         cluster.create(host, definition)
     client = sql.get_sql_connection("ch", ch_unavailable_shards="healthy_shards")
     client.command(
-        "CREATE TABLE IF NOT EXISTS db.indexed ON CLUSTER core (id UInt64) "
+        "CREATE TABLE IF NOT EXISTS db.indexed ON CLUSTER core "
+        "(id UInt64, INDEX by_id id TYPE minmax GRANULARITY 1) "
         "ENGINE=MergeTree ORDER BY id"
     )
     policy = type("Policy", (), {"shard_on_cluster": "core"})()

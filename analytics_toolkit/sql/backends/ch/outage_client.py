@@ -20,7 +20,12 @@ from analytics_toolkit.sql.execution.backend_options import (
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
 from .outage_context import INSERT_KEY, INTERNAL_IO, WRITING, internal_io
-from .outage_ddl import _execute_local, create_on_healthy_hosts, create_target
+from .outage_ddl import (
+    _execute_local,
+    copy_table_definition,
+    create_on_healthy_hosts,
+    create_target,
+)
 from .outage_session import OutageSession, configured_cluster, private_table
 from .outage_statements import exchange_or_rename
 from .outage_topology import warn_degraded
@@ -148,6 +153,12 @@ class OutageClient:
             )
             if objects:
                 session.resolve(cluster=cluster, database=database, table=table.name)
+            elif scope.objects(database, f"{table.name}_shard"):
+                msg = (
+                    f"Partial managed pair for {database}.{table.name}: the physical shard "
+                    "table exists without its facade. Reconcile the pair before loading data."
+                )
+                raise ClickHouseClusterTopologyError(msg)
             return bool(objects)
 
     def sql_preflight_statements(self, sqls: Any) -> None:
@@ -491,7 +502,22 @@ class OutageClient:
         if query is None:
             return statement, None
         if isinstance(query, exp.Table):
-            query = exp.select("*").from_(query.copy())
+            with backend_operation() as state:
+                session = self._get_session(state)
+                routing = session.infer_routing(exp.select("*").from_(query.copy()))
+                cluster = (
+                    routing.cluster if routing is not None else configured_cluster(self._config)
+                )
+                database = query.db or self._config.database or ""
+                objects = (
+                    session.scope(cluster).objects(database, query.name)
+                    if cluster is not None
+                    else session.local_objects(database, query.name)
+                )
+                if not objects:
+                    msg = "Cannot verify the source definition for schema-only table creation."
+                    raise ClickHouseClusterTopologyError(msg)
+                return copy_table_definition(statement, objects[0]), None
         if not isinstance(query, exp.Query):
             msg = "Cannot safely infer CREATE AS schema."
             raise ClickHouseClusterTopologyError(msg)

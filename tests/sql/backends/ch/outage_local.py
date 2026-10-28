@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Any
 
 import pandas as pd
@@ -45,7 +46,12 @@ def test_outage_explicit_cluster_scope_still_applies_without_routing_override(
     configure(cluster_routing=None)
     cluster.alive.remove("h2")
     client = sql.get_sql_connection("ch", ch_unavailable_shards=policy)
-    with pytest.raises(sql.ClickHouseClusterUnavailableError):
+    warning = (
+        pytest.warns(sql.ClickHouseDegradedClusterWarning)
+        if policy == "healthy_shards"
+        else nullcontext()
+    )
+    with warning, pytest.raises(sql.ClickHouseClusterUnavailableError):
         client.command("DROP TABLE db.events_shard ON CLUSTER core")
     assert not cluster.commands
 
