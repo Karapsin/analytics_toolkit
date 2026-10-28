@@ -464,15 +464,7 @@ def test_clickhouse_completed_cutover_reports_success_if_cleanup_marker_rename_f
     markers = [command for command in connection.commands if "__discardable" in command]
     assert len(markers) == len(set(markers)) == 2
     assert not any(
-        command.startswith("DROP TABLE")
-        and "__replace_guarded_" in command
-        and "ON CLUSTER" in command
-        for command in adapter.commands
-    )
-    assert any(
-        command.startswith("DROP TABLE")
-        and "__replace_guarded_" in command
-        and "ON CLUSTER" not in command
+        command.startswith("DROP TABLE") and "__replace_guarded_" in command
         for command in adapter.commands
     )
 

@@ -297,13 +297,13 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
         )
         raise
 
-    _drop_completed_replacements(adapter, request.connection, cleanup_tables)
-    _best_effort_drop(adapter, request.connection, local_replacement)
+    if _drop_completed_replacements(adapter, request.connection, cleanup_tables):
+        _best_effort_drop(adapter, request.connection, local_replacement)
 
 
 def _drop_completed_replacements(
     adapter: Any, connection: Any, cleanup_tables: Sequence[tuple[str, str | None]]
-) -> None:
+) -> bool:
     disposable = []
     for table, cluster in cleanup_tables:
         finished = suffixed_table(table, "__discardable")
@@ -322,6 +322,7 @@ def _drop_completed_replacements(
             continue
         disposable.append((finished, cluster))
     _best_effort_drop(adapter, connection, disposable)
+    return len(disposable) == len(cleanup_tables)
 
 
 def _execute_cutover_steps(

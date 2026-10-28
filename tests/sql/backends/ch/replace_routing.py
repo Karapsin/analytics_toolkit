@@ -130,6 +130,34 @@ def test_replace_preserves_stage_replica_routing_without_changing_storage_scope(
     assert not any("ON CLUSTER 'ingest'" in sql for sql, _ in client.commands)
 
 
+def test_cleanup_marker_failure_preserves_old_rows_when_entry_host_is_a_cluster_member() -> None:
+    class FailedMarkerClient(ReplacementClient):
+        def command(self, sql, settings=None) -> None:
+            if sql.startswith("RENAME TABLE") and "__discardable" in sql:
+                self.commands.append((sql, settings or {}))
+                message = "cleanup marker unavailable"
+                raise ConnectionError(message)
+            super().command(sql, settings=settings)
+
+    client = FailedMarkerClient(storage=LOCAL)
+    client.engines[LOCAL] = "Atomic"
+    get_backend_adapter("ch").finalize_stage_table(
+        _request(client, shard_scope=LOCAL, facade_scope=LOCAL)
+    )
+    assert client.tables[LOCAL, PHYSICAL].rows == STAGED_ROWS
+    backups = [
+        state
+        for (scope, name), state in client.tables.items()
+        if scope == LOCAL and name.startswith(PHYSICAL + "__replace_guarded_")
+    ]
+    assert len(backups) == 1
+    assert backups[0].rows == 17
+    assert backups[0].columns == ("old_column",)
+    assert not any(
+        "DROP TABLE" in sql and "__replace_guarded_" in sql for sql, _ in client.commands
+    )
+
+
 @pytest.mark.parametrize("only_shard", [False, True], ids=["pair", "shard"])
 def test_replace_legacy_cluster_creates_remote_physical_before_loading(only_shard) -> None:
     client = ReplacementClient()
