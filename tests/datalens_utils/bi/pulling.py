@@ -37,7 +37,7 @@ def test_dataset_pull_merges_independent_local_and_remote_changes(bi_project):
     write(bi_project.paths.project_root, "configs/DL objects/datasets.json", {"sales": definition})
     registry = load_registry()
     store = BIResourceStore(registry, readonly=True)
-    with DataLensClientYC(auth=NoAuthProvider()) as client:
+    with bi_project.session(), DataLensClientYC(auth=NoAuthProvider()) as client:
         result = pull_resources(
             client,
             store,

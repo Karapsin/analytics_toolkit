@@ -76,18 +76,22 @@ class FakeClickHouseClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
         self.commands: list[str] = []
-        self.command_settings: list[dict[str, object]] = []
+        self.command_settings: list[dict[str, Any]] = []
         self.queries: list[str] = []
         self.created_tables: set[str] = set()
         self.close_calls = 0
 
-    def command(self, sql: str, *, settings: dict[str, object] | None = None) -> None:
+    def command(self, sql: str, settings: dict[str, Any] | None = None) -> None:
         self.commands.append(sql)
         self.command_settings.append(dict(settings or {}))
         self._track_table_ddl(sql)
 
     def query(self, sql: str) -> object:
         self.queries.append(sql)
+        if sql == "SELECT currentDatabase()":
+            return type("FakeResult", (), {"result_rows": [("default",)]})()
+        if "system, databases" in sql or "system.databases" in sql:
+            return type("FakeResult", (), {"result_rows": [("Ordinary",)]})()
         if sql.startswith("SELECT getMacro("):
             return type("FakeResult", (), {"result_rows": [("core",)]})()
         if "clusterAllReplicas" in sql and "system, one" in sql:

@@ -2,6 +2,7 @@
 
 import copy
 import json
+from collections import ChainMap
 from contextlib import nullcontext
 from dataclasses import replace
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from analytics_toolkit.datalens_utils.import_copy import chart_defaults
 from datalens_sdk import Connection, DashboardTab, DataLensClientYC, NoAuthProvider
 
 from tests.datalens_utils._support.bi import dataset, write
+from tests.datalens_utils._support.published import published_client
 from tests.datalens_utils._support.sdk import MemoryDataLens
 
 
@@ -95,19 +97,9 @@ def audit_tab(api):
     for index, chart in enumerate(value for value in charts.values() if value.category == "editor"):
         tab.add_selector(chart=chart, item_id="selector" + str(index), at=(index * 12, 108, 12, 2))
     dashboard = api.client.create.dashboard(name="Source", location=api.folder).add_tab(tab).build()
-    client = SimpleNamespace(
-        create=api.client.create,
-        capabilities=api.client.capabilities,
-        INSTALLATION=api.client.INSTALLATION,
-        navigation=SimpleNamespace(get_entries=lambda **kwargs: iter(())),
-        get=SimpleNamespace(
-            dashboard=lambda **kwargs: dashboard,
-            chart=lambda **kwargs: charts[kwargs["by_id"]],
-            dataset=lambda **kwargs: datasets[kwargs["by_id"]],
-            connection=lambda **kwargs: Connection(
-                id="ch", name="CH", type="clickhouse", installation="yacloud"
-            ),
-        ),
+    connection = Connection(id="ch", name="CH", type="clickhouse", installation="yacloud")
+    client = published_client(
+        ChainMap({dashboard.id: dashboard, connection.id: connection}, charts, datasets), api.client
     )
     return client, dashboard, charts
 
@@ -153,7 +145,8 @@ def test_copy_audit_tab_retains_all_placements_defaults_encodings_and_links(bi_p
     )
     assert files["configs/DL objects/connections.json"]["ch"]["id"] == "ch"
     assert api.documents == before
-    assert not bi_project.paths.runtime_root.exists()
+    assert (bi_project.paths.runtime_root / "imports").is_dir()
+    assert not (bi_project.paths.runtime_root / "resources.json").exists()
     merged = bi_project.import_tab(
         dashboard_id=source.id, tab_id="audit", mode="copy", dry_run=False
     )
@@ -225,7 +218,7 @@ def test_copy_requires_new_dashboard_and_runtime_and_valid_mode(bi_project):
     )
 
     bi_project.client_factory = lambda _: nullcontext(
-        SimpleNamespace(get=SimpleNamespace(dashboard=lambda **kwargs: source_dashboard()))
+        published_client({"source": source_dashboard()})
     )
     assert bi_project.import_dashboard(dashboard_id="source", mode="copy")["blockers"]
     with pytest.raises(DataLensConfigurationError, match="mode"):

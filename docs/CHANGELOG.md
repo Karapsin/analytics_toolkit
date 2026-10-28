@@ -154,6 +154,15 @@ Generated from package version bumps and recent commit history.
 - Keep Pi repair preparation running when integration evidence exceeds limits: retain the redacted tail of oversized startup/build/compose diagnostics and record artifacts that exceed archive limits or are unreadable as unavailable evidence instead of aborting the repair.
 - Draw SQL Explorer editor carets as full-cell blocks in the command pane input cursor style, replacing the inserted thick bar; carets before a soft wrap cover only their character.
 - Treat validation-workflow repair incidents as CI-log evidence without missing integration artifacts, and report a newer CPython minor whose core dependencies cannot install yet as WAITING FOR UPSTREAM SUPPORT instead of a stale window.
+- Remove SQL retry_policy arguments and restore always-retry behavior within configured attempt limits.
+- Fix ClickHouse SQL Explorer metadata discovery by using literal prefix comparisons instead of unsupported LIKE ESCAPE syntax.
+- Added a SQL Explorer settings menu for saved execution, keyboard, results layout, and connections preferences.
+- Import published DataLens dashboards through shared revision-aware capture into new or existing projects, preserving source, locations and caches with durable local recovery. Restore deployment defaults for mixed locations; enforce dataset-plus-GUID fidelity, guard authored UI metadata and defaults, preserve all-tabs scope, selector filenames and new supported properties during pull without adopting unmanaged placements, merge remote dataset settings, and verify complete authored source independently of draft write protection. Provide a self-contained skill and audited fresh-agent evidence. Isolate SQL Explorer color tests from host NO_COLOR while verifying monochrome rendering.
+- Add offline DataLens fidelity regressions for Wizard title settings and serializer metadata, omitted widget title flags, and safe rejection of empty chart bindings while preserving exact source.
+- Fix ClickHouse safe replacement routing to the configured storage cluster with local staging, preserve validation and rollback, and retain ambiguous recovery artifacts across attempts.
+- Add ClickHouse transfer-finalization regressions for replacement count failures, rollback recovery, and retained-artifact protection without changing coverage floors.
+- Fix the ClickHouse replacement recovery test's overlong diagnostic without changing its message or assertions.
+- Reconcile ClickHouse shard outage handling with storage-cluster replacement routing, stepwise rollback and recovery-artifact retention.
 
 ## 1.3.12.5 - 2026-10-14
 

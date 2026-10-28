@@ -9,11 +9,13 @@ from .errors import (
     DataLensDependencyError,
     DataLensUtilsError,
 )
+from .import_api import DataLensAuthConfig, import_dashboard
 from .project import DataLensProject
 from .session import Deployment, ProjectPaths
 
 __all__ = [
     "BIProjectDeployment",
+    "DataLensAuthConfig",
     "DataLensCapabilityError",
     "DataLensComponentError",
     "DataLensConfigurationError",
@@ -24,4 +26,5 @@ __all__ = [
     "ProjectPaths",
     "TargetLocation",
     "get_capabilities",
+    "import_dashboard",
 ]

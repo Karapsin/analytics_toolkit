@@ -179,7 +179,85 @@ HTML uploads use contained UTF-8 assets and preserve revisions and source
 fingerprints. Getters expose metadata, so remote HTML source pull/import is
 unavailable and remote changes block automatic overwrite.
 
-## Import a dashboard or tab
+## Import a dashboard into a new project
+
+Use the package CLI with an existing environment and authentication configuration:
+
+```sh
+python -m analytics_toolkit.cli datalens import-dashboard 'DASHBOARD_URL_OR_ID' \
+  --destination /path/to/project --runtime-dir /path/to/runtime \
+  --organization-id EXISTING_ORG --yc-profile EXISTING_PROFILE --json
+```
+
+Preview is the default. Add `--resume --write` to create the project locally;
+neither command changes cloud resources. All tabs, including hidden tabs, are
+included unless `--tab` selects a subset. A URL's tab query does not limit capture.
+The destination must be empty or absent. The matching public API is
+[`import_dashboard`](../../docs/modules/datalens_utils/functions/import-dashboard.md)
+with `DataLensAuthConfig`.
+
+Published reads, batched inventories and exact-revision caches capture one
+verified source snapshot. A newer saved draft does not prevent capture or
+published-source verification; write protection remains in effect. Original IDs and each resource's folder/workbook
+are retained. The generated launcher and object/UI configuration use the ordinary
+project engine. Original authored JSON, SQL and complete Editor tabs remain
+available even when a faithful writer is unsupported. `configs/import.json`
+separates capture completeness, editing capability, restrictions and binding
+analysis. Dataset identity and GUID are checked together before enabling a Wizard
+writer; ambiguous or foreign-dataset bindings remain captured-only even when
+their GUIDs coincide. Inaccessible source is reported explicitly. Connections are safe
+existing references, without exported credentials. Malformed or dynamic Editor
+Meta retains its authored tabs and reports an unresolved dependency closure;
+other readable resources remain importable.
+
+Wizard title text and visibility remain editable when faithfully representable;
+serializer `settingsId` metadata stays in preserved source without requiring a
+recipe setting. Unknown authored settings still block affected writes. Individual
+and grouped chart placements may omit `hideTitle`; import retains that omission
+in source and uses the SDK's default title behavior. A widget with no chart
+bindings remains captured-only, with the missing bindings reported explicitly.
+
+Pinned selectors are preserved in source but make the dashboard captured-only
+because the public SDK cannot faithfully recreate their pinning. This applies
+to local, shared and Editor selectors; supported chart-widget pinning remains
+editable. Pull rejects newly pinned selectors before replacing a writable baseline.
+Editor selector wrapper settings beyond the supported title and chart reference
+also block dashboard writes, including height, borders and authored defaults.
+Chart placements with authored defaults or unsupported widget/member metadata
+remain captured-only as well. Disabled descriptions and hints cannot silently
+become enabled during reconstruction. Supported descriptions and hints retain
+their text and enabled state for individual placements and chart groups.
+Captured-dashboard pulls also retain newly added supported UI properties and
+settings, so a remote hint or description survives a later local dashboard rebuild.
+Selector configuration filenames are retained through their stable selector keys.
+Pull refreshes owned placements; remotely added placements remain unmanaged and
+retain their authored metadata through later scoped updates.
+Conflicting local and remote additions leave files and checkpoints intact.
+Unrepresented text/title styles and selector member/source metadata also block
+dashboard writes while retaining exact readable source. Native SDK defaults stay
+writable; selector defaults must retain their parameter keys and operation encoding.
+Shared selectors configured for all tabs keep that scope when new tabs are added.
+Captured dataset pulls merge current remote settings, including additions and
+removals, through the same three-way conflict checks as other managed content.
+
+Pull rechecks imported Wizard fidelity before replacing its baseline, including
+per-occurrence formats and unmodeled settings. Newly authored Editor tabs also
+require a fresh import. An unsafe refresh preserves local source, configuration
+and baselines; import into another empty destination to inspect the new source
+and its current writer restrictions before merging.
+
+Run the generated `dashboard.py validate --json`, `status --json`, and
+`verify --full --json` to check offline integrity, metadata and authored content.
+Full verification compares complete authored source for editable imports too,
+including settings outside the managed recipe. `source_verification` reports
+each resource's result and whether its baseline is the capture or the private
+verified checkpoint. Supported writes and pulls retain their complete verified
+source in that checkpoint; preserved import files still receive integrity checks.
+No business SQL or Editor scripts are executed. Captured-only resources cannot
+be written. Private snapshots, failure reports and resumable caches stay outside
+the project. See the [import workflow](../../docs/modules/datalens_utils/import-dashboard.md).
+
+## Merge a dashboard or tab into an existing recipe
 
 ```python
 preview = project.import_dashboard(dashboard_id="source-dashboard")
@@ -189,8 +267,16 @@ preview = project.import_tab(dashboard_id="source-dashboard", tab_id="business-t
 result = project.import_dashboard(dashboard_id="source-dashboard", dry_run=False)
 ```
 
-Imports merge into the current project and change no cloud resources.
-`mode="adopt"` (default) retains IDs and location checks. Explicit `mode="copy"`
+Imports merge into the current project and change no cloud resources. Both import
+paths share published getters, bulk starting/ending inventories, returned-revision
+checks and the external exact-revision cache. Existing-project imports resume
+automatically. Their reports expose capture completeness separately from strict
+merge fidelity. `configs/imports/<capture-id>/manifest.json` records immutable
+source provenance and exact source/SQL/Editor assets; it does not rebind the
+destination dashboard to the source dashboard.
+`mode="adopt"` (default) retains IDs and individual resource locations. Resources
+without their own location always use the deployment target and its inventory,
+including when reconciled immediately after imported resources. Explicit `mode="copy"`
 accepts dependencies across folders, omits copied persistent IDs, reuses existing
 connections and uses a separate unused runtime. `copy_from` records provenance
 and prevents accidental exact-name adoption in the destination. CLI imports accept
@@ -211,8 +297,13 @@ Chart defaults become defaults on every placement;
 explicit placement values win. `chart_title: null` retains an absent internal title.
 Copied Editor definitions use `meta_links_mode: "managed"` to rewrite declared
 aliases only; authored Meta is the default for existing definitions. Local writing requires a blocker-free staged recipe; failed
-replacements roll back. Version-1 projects need explicit `upgrade_recipe=True`.
-Unresolved dynamic Editor dependencies, incompatible locations, unknown item
+replacements roll back. An external `local-transactions/` journal durably records
+both versions before replacing any file. The next project operation recovers an
+interrupted merge before loading recipe configuration. Destination fingerprints
+reject edits made during capture; recovery preserves conflicting edits and its
+journal for resolution instead of overwriting them. Keep the same runtime for
+recovery and never delete an unresolved journal. Version-1 projects need explicit `upgrade_recipe=True`.
+Unresolved dynamic Editor dependencies, unknown item
 forms and unavailable authored source retrieval block writes.
 
 CLI equivalents include `capabilities`, `plan`, `reconcile`, repeatable

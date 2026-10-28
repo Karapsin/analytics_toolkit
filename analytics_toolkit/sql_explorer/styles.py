@@ -434,29 +434,31 @@ CreateTableScreen .remove-column:disabled:focus:hover {
     text-style: none;
 }
 CreateTableScreen Input,
+SettingsScreen Input,
 CreateTableScreen #create-from-sql {
     color: $text;
     border: solid $panel-lighten-3;
 }
 CreateTableScreen Input:focus,
+SettingsScreen Input:focus,
 CreateTableScreen #create-from-sql:focus {
     border: solid $accent;
 }
 /* SelectCurrent owns the frame; an outer border clips its three-row child. */
-CreateTableScreen Select {
+CreateTableScreen Select, SettingsScreen Select {
     height: 3;
     border: none;
     padding: 0;
     color: $text;
 }
-CreateTableScreen Select > SelectCurrent {
+CreateTableScreen Select > SelectCurrent, SettingsScreen Select > SelectCurrent {
     height: 3;
     border: solid $panel-lighten-3;
 }
-CreateTableScreen Select:focus > SelectCurrent {
+CreateTableScreen Select:focus > SelectCurrent, SettingsScreen Select:focus > SelectCurrent {
     border: solid $accent;
 }
-CreateTableScreen BooleanCheckbox {
+CreateTableScreen BooleanCheckbox, SettingsScreen BooleanCheckbox {
     color: $text;
     background: $panel;
     opacity: 100%;

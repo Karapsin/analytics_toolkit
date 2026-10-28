@@ -7,8 +7,9 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
-from .deployment import BIProjectDeployment
+from .deployment import BIProjectDeployment, TargetLocation
 from .errors import DataLensConfigurationError
+from .import_manifest import load_manifest, resource_capture
 from .session import current_session
 from .settings import asset_path, read_chart_definitions, read_config
 
@@ -151,6 +152,7 @@ class Resource:
     definition: dict[str, Any]
     files: dict[str, Any]
     dependencies: tuple[str, ...] = ()
+    capture: Any = None
 
 
 class ResourceRegistry:
@@ -213,6 +215,26 @@ class ResourceRegistry:
         """Read prerequisites of every affected resource without enlarging writes."""
         _, affected = self.closure(selected)
         writes = selected | set(affected)
+        dashboard = self.resources.get("dashboard:main")
+        if (
+            dashboard is not None
+            and dashboard.definition.get("read_only")
+            and dashboard.key not in selected
+        ):
+            routes = ("dataset", "connection", "links", "layers", "id", "tab")
+            independent = all(
+                self.resources[key].kind == "chart"
+                and self.resources[key].capture
+                and all(
+                    self.resources[key].definition.get(name)
+                    == self.resources[key].capture.get("baseline_definition", {}).get(name)
+                    for name in routes
+                )
+                for key in selected
+            )
+            if independent:
+                writes.discard(dashboard.key)
+                affected = [key for key in affected if key != dashboard.key]
         return self._order(writes), writes, affected
 
 
@@ -329,7 +351,15 @@ def validate_cache(key: str, definition: dict[str, Any]) -> None:
 
 
 def _validate_v2(kind: str, key: str, definition: dict[str, Any]) -> None:
-    strict(definition, _FIELDS[kind], key)
+    strict(definition, _FIELDS[kind] | {"location", "source_ref", "read_only"}, key)
+    if "location" in definition:
+        TargetLocation(**definition["location"])
+    if definition.get("read_only"):
+        if not definition.get("source_ref") or not definition.get("id"):
+            raise DataLensConfigurationError(
+                "Read-only resources require captured source identity: " + key
+            )
+        return
     if kind != "dashboard" and (
         not isinstance(definition.get("name"), str) or not definition["name"].strip()
     ):
@@ -407,6 +437,7 @@ def resource_files(kind: str, definition: dict[str, Any], root: Path) -> dict[st
 
 
 def load_registry() -> ResourceRegistry:
+    manifest = load_manifest()
     state = current_session()
     root = state.paths.project_root
     v2 = state.runtime.get("schema_version", 1) == RECIPE_SCHEMA_VERSION
@@ -448,11 +479,16 @@ def load_registry() -> ResourceRegistry:
         for name, original in values.items():
             key = kind + ":" + name
             definition = copy.deepcopy(original)
+            capture = resource_capture(manifest, key, definition)
             if v2:
                 _validate_v2(kind, key, definition)
-            dependencies = resource_dependencies(
-                kind, definition, definitions, target_dependency, v2=v2
+            dependencies = (
+                tuple(capture.get("dependencies", ()))
+                if capture and definition.get("read_only")
+                else resource_dependencies(kind, definition, definitions, target_dependency, v2=v2)
             )
             files = resource_files(kind, definition, root)
-            resources[key] = Resource(key, kind, definition, files, dependencies)
+            if capture:
+                files["capture"] = capture
+            resources[key] = Resource(key, kind, definition, files, dependencies, capture)
     return ResourceRegistry(resources)

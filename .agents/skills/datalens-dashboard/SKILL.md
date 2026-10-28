@@ -12,8 +12,15 @@ requested business scope and maintain coverage for the actual declared objects.
 
 ## Start or adapt
 
+For an existing dashboard URL, ID, or a project that identifies a live dashboard,
+start with [import an existing dashboard](references/import-dashboard.md).
+The package command creates the project and its thin launcher. Do not scaffold a
+placeholder, copy an old archive, write extraction Python, or consult toolkit
+implementation scripts to complete an import. “Clone locally” retains cloud IDs;
+cloud copying is a separate operation requiring explicit scope.
+
 Read [project structure](references/project-structure.md) when creating a
-project or changing ownership. Use the self-contained starter:
+new dashboard from scratch or changing ownership. Use the self-contained starter:
 
 ```sh
 python scripts/scaffold.py /path/to/new-project \
@@ -60,13 +67,14 @@ managed aliases are described in [project structure](references/project-structur
 
 For version-2 recipes, YC/Enterprise, workbook targets or imports, read
 [BI projects](references/bi-projects.md). Use `import_dashboard` to discover a
-whole dashboard, or `import_tab` for one tab; preview the local merge and fidelity
+whole dashboard into an existing recipe, or `import_tab` for one tab; preview the local merge and fidelity
 report before writing. For explicit copying to a new target, use copy mode,
 separate destination runtime state and the public copy/recipe contracts linked
 from that reference. Inspect per-feature fidelity; deployment verification alone
 cannot prove parity with the source. Keep unsupported SDK and adapter operations explicit.
 
-If floating coordinates cannot be represented by the installed public SDK,
+Preserve original geometry and authored content during source capture. If an
+explicitly requested editable copy has floating coordinates that the SDK cannot represent,
 round them automatically to the nearest integer, with halves rounded away from
 zero (`12.5` becomes `13`); no user confirmation is required. Convert
 whole-number floats such as `12.0` to `12` exactly. Record the rounding rule and
@@ -97,6 +105,11 @@ batch method exists, use typed individual calls with shared pacing across
 clients accessing the same organization. Concurrent calls and caching are not
 API batches. Do not invent a private batch endpoint or increase concurrency to
 push through a quota.
+
+Run separate cloud CLI processes sequentially, including status and verification.
+Wait for each process to finish; do not parallelize same-organization consumer
+trials. For an import, full verification includes metadata checks, so a separate
+status run is optional and usually redundant.
 
 Reuse existing connections and profiles. Credentials stay external; source
 preparation is separate. Persistent resource IDs are ordinary configuration.

@@ -5,13 +5,14 @@ from __future__ import annotations
 import inspect
 import os
 import re
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qsl, urlsplit
 
 from datalens_sdk import Connection, EntryLocation
 
 from .capabilities import get_capabilities
 from .errors import DataLensCapabilityError, DataLensConfigurationError, DataLensUtilsError
+from .import_manifest import is_reference
 from .resources.bi_store import CONNECTION_METADATA_FIELDS, safe_parameter
 from .settings import asset_path
 
@@ -111,45 +112,55 @@ def source_spec(
 def validate_factories(client: Any, registry: Any) -> None:
     """Compile local factory contracts before any cloud request or persistence."""
     for resource in registry.resources.values():
-        definition = resource.definition
-        if resource.kind == "connection":
-            connection_builder(client, definition, EntryLocation.path("Offline/Preflight"))
-        elif resource.kind == "dataset":
-            types = set()
-            connection_keys = set()
-            for alias, source in definition.get("sources", {}).items():
-                selected = registry.resources["connection:" + source["connection"]].definition
-                connection = Connection(
-                    id=selected.get("id") or "offline",
-                    name=selected["name"],
-                    type=selected["connector"],
-                    installation=client.INSTALLATION,
-                )
-                factory, parameters = source_spec(client, source, connection, alias)
-                factory(alias=alias, **parameters)
-                types.add(connection.type)
-                connection_keys.add(source["connection"])
-            if definition.get("relations") and (len(types) != 1 or len(connection_keys) != 1):
-                msg = "Dataset joins require sources from one supported connection."
-                raise DataLensConfigurationError(msg)
-        elif resource.kind == "chart":
-            if definition["type"] not in client.capabilities["chart_factories"].get(
-                definition["family"], ()
-            ):
-                msg = "Chart factory absent from the configured client inventory."
-                raise DataLensConfigurationError(msg)
-            if (
-                definition.get("links")
-                and definition["family"] == "wizard"
-                and definition["type"] != "geolayer"
-            ):
-                msg = "wizard.multi_dataset.create"
-                raise DataLensCapabilityError(
-                    msg,
-                    get_capabilities(
-                        installation="yc" if client.INSTALLATION == "yacloud" else "enterprise"
-                    ),
-                )
+        if is_reference(resource):
+            continue
+        try:
+            validate_factory(client, resource, registry)
+        except Exception as error:
+            cast("Any", error).resource_key = resource.key
+            raise
+
+
+def validate_factory(client: Any, resource: Any, registry: Any) -> None:
+    definition = resource.definition
+    if resource.kind == "connection":
+        connection_builder(client, definition, EntryLocation.path("Offline/Preflight"))
+    elif resource.kind == "dataset":
+        types = set()
+        connection_keys = set()
+        for alias, source in definition.get("sources", {}).items():
+            selected = registry.resources["connection:" + source["connection"]].definition
+            connection = Connection(
+                id=selected.get("id") or "offline",
+                name=selected["name"],
+                type=selected["connector"],
+                installation=client.INSTALLATION,
+            )
+            factory, parameters = source_spec(client, source, connection, alias)
+            factory(alias=alias, **parameters)
+            types.add(connection.type)
+            connection_keys.add(source["connection"])
+        if definition.get("relations") and (len(types) != 1 or len(connection_keys) != 1):
+            msg = "Dataset joins require sources from one supported connection."
+            raise DataLensConfigurationError(msg)
+    elif resource.kind == "chart":
+        if definition["type"] not in client.capabilities["chart_factories"].get(
+            definition["family"], ()
+        ):
+            msg = "Chart factory absent from the configured client inventory."
+            raise DataLensConfigurationError(msg)
+        if (
+            definition.get("links")
+            and definition["family"] == "wizard"
+            and definition["type"] != "geolayer"
+        ):
+            msg = "wizard.multi_dataset.create"
+            raise DataLensCapabilityError(
+                msg,
+                get_capabilities(
+                    installation="yc" if client.INSTALLATION == "yacloud" else "enterprise"
+                ),
+            )
 
 
 def connection_credentials(

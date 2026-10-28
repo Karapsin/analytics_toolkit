@@ -13,6 +13,10 @@ def items(section: Any, slot: Any) -> Any:
 
 
 def field_names(datasets: Any, chart: Any = None) -> Any:
+    if chart is not None and len(getattr(chart, "dataset_ids", ())) == 1:
+        datasets = {
+            key: value for key, value in datasets.items() if value.id == chart.dataset_ids[0]
+        }
     names = {field.guid: field.title for dataset in datasets.values() for field in dataset.fields}
     if chart is not None:
         names.update(
@@ -49,6 +53,9 @@ def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
         result["description"] = chart.description or ""
     family = definition["family"]
     if family == "editor":
+        if strict_fidelity and set(chart.data) != set(definition["scripts"]):
+            message = "Authored Editor tabs changed; reimport before refreshing the baseline."
+            raise DataLensUtilsError(message)
         editor.validate_change(chart, definition)
         for tab, relative in definition["scripts"].items():
             if tab not in chart.data:
@@ -86,6 +93,14 @@ def pull_chart(  # noqa: C901, PLR0912, PLR0915 - Family-specific extraction.
     if chart.visualization_id != wizard.VISUALIZATIONS[definition["type"]]:
         message = "Pull cannot change a Wizard visualization or resource family."
         raise DataLensUtilsError(message)
+    if strict_fidelity:
+        from analytics_toolkit.datalens_utils.import_source import (  # noqa: PLC0415
+            wizard_binding_issues,
+        )
+
+        binding_issues = wizard_binding_issues(chart, datasets, definition)
+        if binding_issues:
+            raise DataLensUtilsError("; ".join(binding_issues))
     names = field_names(datasets, chart)
     visualization = chart.data.get("visualization", {})
     settings = visualization.get("chartSettings", {})

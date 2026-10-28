@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from .errors import DataLensConfigurationError
+from .local_transactions import recover, snapshot
 
 if TYPE_CHECKING:
     from .deployment import BIProjectDeployment
@@ -67,6 +68,7 @@ class Session:
     client_factory: Callable[..., Any] | None = None
     reporter: Callable[..., Any] | None = None
     messages: list[str] = field(default_factory=list)
+    destination_snapshot: dict[str, str] | None = None
 
     @classmethod
     def load(
@@ -77,6 +79,8 @@ class Session:
         client_factory: Callable[..., Any] | None = None,
         reporter: Callable[..., Any] | None = None,
     ) -> Session:
+        recovered = recover(paths)
+        destination_snapshot = snapshot(paths.project_root)
         runtime = json.loads(
             (paths.project_root / "configs/runtime.json").read_text(encoding="utf-8")
         )
@@ -109,7 +113,19 @@ class Session:
             yc_profile=deployment.yc_profile,
             _request_count=0,
         )
-        return cls(paths, deployment, runtime, client_factory, reporter)
+        session = cls(
+            paths,
+            deployment,
+            runtime,
+            client_factory,
+            reporter,
+            destination_snapshot=destination_snapshot,
+        )
+        if recovered:
+            session.emit(
+                "Recovered interrupted local recipe transaction before loading configuration."
+            )
+        return session
 
     def emit(self, *values: Any, sep: Any = " ", end: Any = "\n", flush: Any = False) -> Any:
         self.messages.append(sep.join(str(value) for value in values))
@@ -120,7 +136,10 @@ class Session:
     def staged(self, root: Any) -> Iterator[Any]:
         """Validate proposed files in a temporary tree without patching imports."""
         child = replace(
-            self, paths=ProjectPaths(root, self.paths.runtime_root), runtime=dict(self.runtime)
+            self,
+            paths=ProjectPaths(root, self.paths.runtime_root),
+            runtime=dict(self.runtime),
+            destination_snapshot=snapshot(Path(root)),
         )
         with bind_session(child):
             yield child

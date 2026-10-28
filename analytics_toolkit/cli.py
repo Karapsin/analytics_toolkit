@@ -46,9 +46,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    from .datalens_utils.import_cli import add_parser  # noqa: PLC0415 - Optional module boundary.
+
     program = "atk" if Path(sys.argv[0]).stem == "atk" else "analytics-toolkit"
     parser = argparse.ArgumentParser(prog=program)
     subparsers = parser.add_subparsers(dest="command")
+    add_parser(subparsers)
 
     tui_parser = subparsers.add_parser("tui", help="Open the optional SQL Explorer.")
     tui_parser.add_argument("db_key", nargs="?", help="Optional .connections database key.")

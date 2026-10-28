@@ -1,0 +1,202 @@
+"""Chart placement metadata cannot be lost by import or a writable pull baseline."""
+
+import copy
+import json
+
+import pytest
+from analytics_toolkit.datalens_utils import bi_engine
+from analytics_toolkit.datalens_utils.errors import DataLensUtilsError
+
+from tests.datalens_utils._support.captured_import import imported_project, run_import
+from tests.datalens_utils._support.captured_widgets import widget_source
+from tests.datalens_utils.bi.captured_pull import replace_data
+from tests.datalens_utils.bi.captured_safety import with_revisions
+from tests.datalens_utils.bi.occurrence_fidelity import file_bytes
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_omitted_widget_title_flag_preserves_placements_and_source(
+    import_source, tmp_path, grouped
+):
+    dashboard = widget_source(import_source, grouped)
+    data = copy.deepcopy(dashboard.data)
+    widget = data["tabs"][0]["items"][0]
+    widget["data"].pop("hideTitle", None)
+    replace_data(import_source, "dashboard", data)
+    writes = list(import_source.api.writes)
+    report = run_import(import_source, tmp_path, dry_run=False)
+    entry = report["resources"]["dashboard:main"]
+    assert report["written"]
+    assert report["capture_complete"]
+    assert entry["capture"] == "complete"
+    assert entry["editable"]
+    assert not entry["restrictions"]
+    root = tmp_path / "project"
+    assert json.loads((root / entry["source_file"]).read_text())["data"] == data
+    chart_key = next(
+        key.split(":", 1)[1]
+        for key, item in report["resources"].items()
+        if item["id"] == import_source.chart.id
+    )
+    filename = "chart_groups.json" if grouped else "widgets.json"
+    placement = json.loads((root / "configs/UI" / filename).read_text())["placement"]
+    assert placement["tab"] == "one"
+    assert "show_title" not in placement["presentation"]
+    members = placement["charts"] if grouped else [placement]
+    assert [member["chart"] for member in members] == [chart_key] * (2 if grouped else 1)
+    assert [member["title"] for member in members] == [
+        member["title"] for member in widget["data"]["tabs"]
+    ]
+    layout = json.loads((root / "configs/UI/layout.json").read_text())
+    assert layout["one"]["placement"] == [0, 0, 12, 6]
+    project = imported_project(import_source, tmp_path)
+    assert project.validate()["coverage"]["resource_count"] == 4
+    verified = project.verify(full=True)
+    assert not verified["mismatches"]
+    assert verified["source_verification"]["dashboard:main"] == {
+        "status": "matched",
+        "baseline": "capture",
+    }
+    assert import_source.api.writes == writes
+
+
+def test_widget_without_chart_bindings_is_preserved_and_rejected_before_mutation(
+    import_source, tmp_path
+):
+    dashboard = widget_source(import_source, False)
+    data = copy.deepcopy(dashboard.data)
+    data["tabs"][0]["items"][0]["data"]["tabs"] = []
+    replace_data(import_source, "dashboard", data)
+    writes = list(import_source.api.writes)
+    report = run_import(import_source, tmp_path, dry_run=False)
+    entry = report["resources"]["dashboard:main"]
+    assert report["written"]
+    assert report["capture_complete"]
+    assert entry["capture"] == "complete"
+    assert not entry["editable"]
+    assert any(
+        "Widget has no chart bindings: placement" in item["reason"]
+        for item in entry["restrictions"]
+    )
+    root = tmp_path / "project"
+    assert json.loads((root / entry["source_file"]).read_text())["data"] == data
+    assert json.loads((root / "configs/UI/widgets.json").read_text()) == {}
+    assert json.loads((root / "configs/UI/chart_groups.json").read_text()) == {}
+    project = imported_project(import_source, tmp_path)
+    project.validate()
+    verified = project.verify(full=True)
+    assert not verified["mismatches"]
+    assert verified["source_verification"]["dashboard:main"] == {
+        "status": "matched",
+        "baseline": "capture",
+    }
+    with pytest.raises(DataLensUtilsError, match="Captured-only"):
+        project.apply(resource_keys=["dashboard:main"])
+    assert import_source.api.writes == writes
+
+
+def change_widget(data, feature):
+    widget = data["tabs"][0]["items"][0]
+    member = widget["data"]["tabs"][-1]
+    if feature in {"defaults", "combined"}:
+        widget["defaults"] = {"region": ["north"]}
+    if feature in {"member", "combined"}:
+        member["futureMetadata"] = {"keep": "authored"}
+    elif feature == "placement":
+        widget["data"]["futurePresentation"] = {"keep": "authored"}
+    elif feature == "raw-property":
+        widget["futurePlacement"] = {"keep": "authored"}
+    elif feature == "member-defaults":
+        member["defaults"] = {"region": ["north"]}
+    elif feature == "namespace":
+        widget["namespace"] = "authored-namespace"
+    elif feature == "background":
+        widget["data"]["backgroundSettings"] = {"color": {"light": "#ffffff", "dark": "#000000"}}
+    elif feature == "disabled-hint":
+        member.update(hint="Keep this hint", enableHint=False)
+    elif feature == "disabled-description":
+        member.update(description="Keep this description", enableDescription=False)
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+@pytest.mark.parametrize(
+    "feature",
+    [
+        "defaults",
+        "combined",
+        "placement",
+        "raw-property",
+        "member",
+        "member-defaults",
+        "namespace",
+        "background",
+        "disabled-hint",
+        "disabled-description",
+    ],
+)
+def test_unmodeled_chart_placement_blocks_imported_writes_and_pull_baseline(
+    import_source, tmp_path, grouped, feature
+):
+    dashboard = widget_source(import_source, grouped)
+    original = tmp_path / "original"
+    report = run_import(import_source, original, dry_run=False)
+    assert report["resources"]["dashboard:main"]["editable"]
+    project = imported_project(import_source, original)
+    project.pull(resource_keys=["dashboard:main"])
+    files = file_bytes(project.paths.project_root)
+    checkpoint = project.paths.runtime_root / "resources.json"
+    checkpoint_before = checkpoint.read_bytes()
+    data = copy.deepcopy(dashboard.data)
+    change_widget(data, feature)
+    changed = replace_data(import_source, "dashboard", data)
+    import_source.entities[changed.id] = with_revisions(
+        changed, saved_id="remote", published_id="remote", rev_id="remote"
+    )
+    writes = list(import_source.api.writes)
+    with pytest.raises(DataLensUtilsError, match=r"Chart widget.*cannot be faithfully written"):
+        project.pull(resource_keys=["dashboard:main"])
+    assert file_bytes(project.paths.project_root) == files
+    assert checkpoint.read_bytes() == checkpoint_before
+    with pytest.raises(DataLensUtilsError, match="changed remotely"):
+        project.apply(resource_keys=["dashboard:main"])
+
+    fresh = tmp_path / "fresh"
+    report = run_import(import_source, fresh, dry_run=False)
+    entry = report["resources"]["dashboard:main"]
+    assert report["written"]
+    assert report["capture_complete"]
+    assert entry["capture"] == "complete"
+    assert not entry["editable"]
+    assert any("Chart widget" in item["reason"] for item in entry["restrictions"])
+    assert json.loads((fresh / "project" / entry["source_file"]).read_text())["data"] == data
+    captured = imported_project(import_source, fresh)
+    assert not captured.verify(full=True)["mismatches"]
+    with pytest.raises(DataLensUtilsError, match="Captured-only"):
+        captured.apply(resource_keys=["dashboard:main"])
+    assert import_source.api.writes == writes
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_supported_widget_descriptions_and_hints_survive_dashboard_rebuild(
+    import_source, tmp_path, monkeypatch, grouped
+):
+    dashboard = widget_source(import_source, grouped, supported_metadata=True)
+    report = run_import(import_source, tmp_path, dry_run=False)
+    assert report["resources"]["dashboard:main"]["editable"]
+    project = imported_project(import_source, tmp_path)
+    path = project.paths.project_root / "configs/UI/tabs.json"
+    tabs = json.loads(path.read_text())
+    tabs["one"]["title"] = "Local tab title"
+    path.write_text(json.dumps(tabs))
+    import_source.client.get.dashboard = import_source.api.client.get.dashboard
+    monkeypatch.setattr(bi_engine, "resolve_location", lambda *_args: import_source.api.folder)
+    project.apply(resource_keys=["dashboard:main"])
+    current = import_source.api.client.get.dashboard(by_id=dashboard.id, branch="published")
+    assert current.data["tabs"][0]["title"] == "Local tab title"
+    for member in current.data["tabs"][0]["items"][0]["data"]["tabs"]:
+        assert member["description"] == "Authored description"
+        assert member["enableDescription"]
+        assert member["hint"] == "Authored hint"
+        assert member["enableHint"]
+    import_source.entities[current.id] = current
+    assert not project.verify(full=True)["mismatches"]

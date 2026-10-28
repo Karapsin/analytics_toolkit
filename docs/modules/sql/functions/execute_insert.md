@@ -6,7 +6,7 @@ Execute zero or more setup statements and insert the final `SELECT` result into
 an existing table. Every statement uses the connection selected by `db_key`.
 
 ```python
-execute_insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *, print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False, retry_policy: 'ExecuteRetryPolicy' = 'safe', concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, ch_unavailable_shards: 'str | None' = None) -> 'int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]'
+execute_insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[str]', *, print_queries: 'bool' = False, gp_break_query: 'bool' = False, gp_commit_each_statement: 'bool' = False, retry_cnt: 'int' = 5, timeout_increment: 'int | float' = 5, query_label: 'str | None' = None, dry_run: 'bool' = False, return_sql: 'bool' = False, return_metadata: 'bool' = False, progress: 'bool' = False, concurrency: 'int' = 1, soft_concurrency_cap: 'int | None' = None, hard_concurrency_cap: 'int' = 5, ch_unavailable_shards: 'str | None' = None) -> 'int | SqlPlan | SqlOperationResult | list[int | SqlPlan | SqlOperationResult]'
 ```
 
 ## Inputs
@@ -27,7 +27,6 @@ execute_insert(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[
 - `return_sql` - whether to return the same ordered plan instead of executing SQL
 - `return_metadata` - whether to wrap the affected-row count and plan in `SqlOperationResult`
 - `progress` - whether to show multi-statement execution progress
-- `retry_policy` - `safe`, `always`, or `never` mutation replay policy
 
 ### Backend-Specific Inputs
 

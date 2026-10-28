@@ -9,9 +9,11 @@ from . import bi_dataset_checks as _dataset_checks
 from .bi_dashboard import dashboard_issues
 from .bi_dataset_checks import dataset_issues_v2
 from .bi_html import html_content
-from .deployment import BIProjectDeployment
+from .deployment import BIProjectDeployment, TargetLocation
 from .editing.state import fingerprint
 from .errors import DataLensUtilsError
+from .import_manifest import is_reference, source
+from .import_source import digest, source_document
 from .resources.bi_store import entry_description, safe_metadata
 from .session import current_session
 from .validation.charts import check_chart
@@ -33,13 +35,23 @@ def common_resource_issues(
     if "description" in definition and entry_description(entity) != definition["description"]:
         issues.append("description")
     revisioned = resource.kind in {"chart", "dataset", "dashboard", "html_page"}
-    if revisioned and (not entity.published_id or entity.saved_id != entity.published_id):
-        issues.append("revisions")
+    if revisioned:
+        # Imported source is verified against the published branch. Draft safety
+        # remains a separate write-time check in BIResourceStore.check_write.
+        observed = entity.rev_id if resource.capture else entity.saved_id
+        if not entity.published_id or observed != entity.published_id:
+            issues.append("revisions")
     if resource.kind not in {"connection", "collection", "workbook"} or (
         resource.kind == "connection" and definition["mode"] == "managed"
     ):
         deployment = current_session().deployment
-        target = deployment.target if isinstance(deployment, BIProjectDeployment) else None
+        target = (
+            TargetLocation(**definition["location"])
+            if definition.get("location")
+            else deployment.target
+            if isinstance(deployment, BIProjectDeployment)
+            else None
+        )
         if target and target.kind == "workbook":
             workbook = (
                 target.value
@@ -74,13 +86,41 @@ def connection_issues(entity: Any, definition: dict[str, Any]) -> list[str]:
     return issues
 
 
-def resource_issues(
-    client: Any, store: Any, registry: Any, key: str, entities: dict[str, Any]
+def captured_issues(
+    resource: Any, entity: Any, issues: list[str], old: dict[str, Any] | None = None
+) -> list[str]:
+    original = source(resource.capture) if resource.capture else None
+    if original is None:
+        return [*issues, "captured_source.unavailable"]
+    # A verified managed write has a newer authored baseline in the private
+    # checkpoint; the original shareable source still passes its integrity check.
+    original = (old or {}).get("verified_source", original)
+    actual = source_document(entity, resource.kind)
+    # Revision pointers, including a newer saved draft, are not authored content.
+    original = {name: value for name, value in original.items() if name != "metadata"}
+    actual = {name: value for name, value in actual.items() if name != "metadata"}
+    if digest(actual) != digest(original):
+        issues.append("captured_source")
+    return issues
+
+
+def resource_issues(  # noqa: PLR0913 - Existing comparator inputs plus explicit verification mode.
+    client: Any,
+    store: Any,
+    registry: Any,
+    key: str,
+    entities: dict[str, Any],
+    *,
+    captured: bool = True,
 ) -> list[str]:
     resource = registry.resources[key]
     entity, definition = entities[key], resource.definition
     old = store.state["resources"].get(store.internal_key(key), {})
     issues = common_resource_issues(store, resource, entity, old)
+    if captured and (resource.capture or is_reference(resource)):
+        issues = captured_issues(resource, entity, issues, old)
+    if is_reference(resource):
+        return issues
     if resource.kind == "connection":
         issues.extend(connection_issues(entity, definition))
     elif resource.kind in {"collection", "workbook"}:
@@ -131,14 +171,20 @@ def resource_issues(
     return issues
 
 
-def verify_resources(
-    client: Any, store: Any, registry: Any, selected: set[str], entities: dict[str, Any]
+def verify_resources(  # noqa: PLR0913 - Existing verifier inputs plus write-result/full-source mode.
+    client: Any,
+    store: Any,
+    registry: Any,
+    selected: set[str],
+    entities: dict[str, Any],
+    *,
+    captured: bool = True,
 ) -> dict[str, Any]:
     mismatches = [
         {"resource": key, "path": issue}
         for key in registry.order
         if key in selected
-        for issue in resource_issues(client, store, registry, key, entities)
+        for issue in resource_issues(client, store, registry, key, entities, captured=captured)
     ]
     if mismatches:
         error = DataLensUtilsError("Persisted recipe verification failed: " + str(mismatches))
@@ -147,6 +193,28 @@ def verify_resources(
     return {
         "verified_resources": sorted(selected),
         "mismatches": [],
+        "source_verification": {
+            key: {
+                "status": "matched",
+                "baseline": (
+                    "verified_checkpoint"
+                    if store.state["resources"]
+                    .get(store.internal_key(key), {})
+                    .get("verified_source")
+                    else "capture"
+                ),
+            }
+            for key in sorted(selected)
+            if captured and registry.resources[key].capture
+        },
+        "captured_resources": {
+            key: {
+                "capture": registry.resources[key].capture["capture"],
+                "editable": registry.resources[key].capture["editable"],
+            }
+            for key in sorted(selected)
+            if registry.resources[key].capture
+        },
         "verification": (
             "Managed persisted recipe metadata and revisions; no data queries "
             "or authored HTML download."

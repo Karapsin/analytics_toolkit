@@ -15,6 +15,9 @@ from .dataset_identity import resolved_definition
 from .editing.pull import pull_chart
 from .editing.state import fingerprint, merge
 from .errors import DataLensUtilsError
+from .import_fidelity import wizard_source_issues
+from .import_manifest import MANIFEST, is_reference, load_manifest
+from .import_source import source_document
 from .recipe_io import replace_files, stage_and_validate
 from .resources.bi_store import safe_metadata
 from .session import current_session
@@ -104,7 +107,7 @@ def extract_resource(  # noqa: PLR0913 - One baseline and its dependency snapsho
     incoming = copy.deepcopy(base)
     if resource.kind == "dataset":
         incoming["definition"] = extract_dataset(
-            entity, SimpleNamespace(definition=base["definition"]), old
+            entity, SimpleNamespace(definition=base["definition"], capture=resource.capture), old
         )
         sources = source_identities(entity, base["definition"], old)
         for name, source in base["definition"]["sources"].items():
@@ -115,7 +118,16 @@ def extract_resource(  # noqa: PLR0913 - One baseline and its dependency snapsho
             incoming[cache["sql_file"]] = entity.raw["dataset"]["cache_invalidation_source"]["sql"]
     elif resource.kind == "chart":
         context = type("PullContext", (), {"client": client, "connection": None})()
-        incoming["definition"], assets = pull_chart(entity, base["definition"], datasets, context)
+        incoming["definition"], assets = pull_chart(
+            entity, base["definition"], datasets, context, strict_fidelity=bool(resource.capture)
+        )
+        if resource.capture and entity.category == "wizard":
+            issues = wizard_source_issues(client, entity, datasets, incoming["definition"])
+            if issues:
+                raise DataLensUtilsError(
+                    "Refreshed Wizard source cannot be faithfully edited; reimport before "
+                    "merging: " + ", ".join(issues)
+                )
         incoming.update(assets)
     elif resource.kind in {"connection", "collection", "workbook"}:
         incoming["definition"].update(
@@ -129,7 +141,7 @@ def extract_resource(  # noqa: PLR0913 - One baseline and its dependency snapsho
                 if name in metadata["parameters"]
             }
     else:
-        incoming = pull_dashboard(entity, base, datasets, charts)
+        incoming = pull_dashboard(entity, base, datasets, charts, complete=bool(resource.capture))
     return incoming
 
 
@@ -173,9 +185,19 @@ def propose_resource(
         proposed[relative] = value
 
 
+def pull_dataset_settings(entity: Any, resource: Any, result: dict[str, Any]) -> None:
+    settings = entity.raw.get("dataset", {}).get("settings", {})
+    names = settings if getattr(resource, "capture", None) else result.get("settings", {})
+    if names or "settings" in result:
+        result["settings"] = {
+            name: copy.deepcopy(settings[name]) for name in names if name in settings
+        }
+
+
 def extract_dataset(entity: Any, resource: Any, old: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = resolved_definition(resource.definition, old)
     result.update(name=entity.name, description=entity.description)
+    pull_dataset_settings(entity, resource, result)
     sources = source_identities(entity, result, old)
     for key, source in sources.items():
         value = result["sources"][key]
@@ -219,6 +241,31 @@ def extract_dataset(entity: Any, resource: Any, old: dict[str, Any]) -> dict[str
     return result
 
 
+def pull_reference(resource: Any, entity: Any, registry: Any, manifest: Any, proposed: Any) -> Any:
+    from .import_refresh import refresh_source  # noqa: PLC0415 - Import/extraction cycle.
+
+    entry = refresh_source(resource, entity, registry, manifest, proposed)
+    incoming = copy.deepcopy(resource.files)
+    incoming["capture"] = entry
+    if resource.kind != "dashboard":
+        incoming["definition"]["name"] = entity.name
+    entry["baseline_definition"] = copy.deepcopy(incoming["definition"])
+    definition_files = {"definition": incoming["definition"]}
+    propose_resource(resource, resource.key, definition_files, proposed)
+    return incoming
+
+
+def remember_pulled(resource: Any, entity: Any, old: Any, baseline: Any, branch: str) -> None:
+    if resource.capture:
+        old["verified_source"] = source_document(entity, resource.kind)
+    old.update(
+        baseline=baseline,
+        metadata=safe_metadata(entity, resource.kind),
+        branch=branch,
+        fingerprint=fingerprint(baseline),
+    )
+
+
 def pull_resources(  # noqa: PLR0913 - Three-way baseline, dependency snapshots and selected branch.
     client: Any,
     store: Any,
@@ -232,6 +279,9 @@ def pull_resources(  # noqa: PLR0913 - Three-way baseline, dependency snapshots 
         msg = "Pull requires retained resource IDs."
         raise DataLensUtilsError(msg)
     proposed: dict[str, Any] = {}
+    from .import_refresh import refresh_source  # noqa: PLC0415 - Import/extraction cycle.
+
+    manifest = load_manifest()
     baselines = {}
     datasets = {
         key.split(":", 1)[1]: entity
@@ -257,24 +307,33 @@ def pull_resources(  # noqa: PLR0913 - Three-way baseline, dependency snapshots 
         if not old.get("baseline"):
             raise DataLensUtilsError(key + " lacks a verified three-way baseline.")
         base = copy.deepcopy(old["baseline"])
+        if is_reference(resource):
+            baselines[key] = pull_reference(resource, entity, registry, manifest, proposed)
+            continue
         incoming = extract_resource(client, resource, entity, old, base, datasets, charts)
         if resource.kind == "dataset":
             normalize_dataset(incoming["definition"], base["definition"])
         elif resource.kind == "chart":
             normalize_chart(incoming["definition"], registry, store, datasets)
         merged = merge(base, resource.files, incoming, key)
+        if resource.capture:
+            entry = refresh_source(resource, entity, registry, manifest, proposed)
+            entry["baseline_definition"] = copy.deepcopy(incoming["definition"])
+            entry["baseline_assets"] = {
+                name: value
+                for name, value in incoming.items()
+                if name not in {"definition", "capture"}
+            }
+            incoming["capture"] = entry
+            merged.pop("capture", None)
         baselines[key] = incoming
         propose_resource(resource, key, merged, proposed)
+    proposed.update({MANIFEST: manifest} if manifest else {})
     stage_and_validate(proposed)
     replace_files(proposed)
     store.readonly = False
     for key in selected:
         old = store.state["resources"][store.internal_key(key)]
-        old.update(
-            baseline=baselines[key],
-            metadata=safe_metadata(entities[key], registry.resources[key].kind),
-            branch=branch,
-        )
-        old["fingerprint"] = fingerprint(baselines[key])
+        remember_pulled(registry.resources[key], entities[key], old, baselines[key], branch)
     store.save_checkpoint()
     return {"pulled_resources": sorted(selected), "branch": branch}
