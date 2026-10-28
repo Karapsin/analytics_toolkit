@@ -106,6 +106,27 @@ schema. Pass `write_mode="append"` explicitly for incremental loads. A zero-row
 source follows `empty_source_policy`: replace/truncate modes produce an empty
 target by default, while append/upsert keep the target.
 
+For an existing ClickHouse target, replacement data is loaded and counted on
+the configured storage cluster, even when the connection host is
+outside that cluster. A local stage remains local; cluster-routed private
+stages retain their all-replica reads. Unqualified targets are resolved once
+against the connection's current database for metadata, DDL, and data operations.
+The staged and replacement row counts
+must match before cutover, and the final storage row count is checked afterward.
+Replicated replacement tables are synchronized across the storage cluster before
+validation so a count cannot read a replica that has not received the staged data.
+A failed final check rolls back the cutover. If rollback also fails, replacement
+artifacts are preserved for recovery.
+Cutover rollback reverses only acknowledged statements; a command with uncertain
+completion preserves artifacts and raises `AmbiguousSqlReplaceError` for recovery.
+Inactive replacement or backup artifacts from a previous operation are never
+removed automatically; another replacement stops until they are inspected and
+recovered or explicitly cleaned up by the owner.
+Managed Distributed targets retain their facade's replica semantics. For
+non-replicated engines on multi-replica clusters, this requires
+`internal_replication=false`; cluster-routed connections must instead use a
+replicated engine or a shard-only target to avoid ambiguous replica semantics.
+
 Single-key slices require one or more predicate placeholder occurrences in
 `from_sql`. Every occurrence is replaced with the full predicate, not just the
 literal value:
@@ -424,6 +445,13 @@ rows = sql.transfer(
   query output columns when possible, and otherwise show an explicit
   source-column placeholder without opening database connections.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
+  If final row-count validation fails while replacing an existing target, transfer
+  finalization propagates the error after rollback restores the original tables.
+  A failed rollback raises `AmbiguousSqlReplaceError` and retains recovery tables,
+  including local fallback schema copies. A subsequent replacement refuses to
+  proceed when it finds unresolved artifacts; recover the previous operation
+  before trying again. Existing targets are never treated as newly created targets
+  for failure cleanup.
 - `target_rows_per_second`, `target_batch_seconds`, and `target_batch_memory_mb`
   are mutually exclusive adaptation controls: set at most one per call.
 - By default, transfer validates row counts before finalizing the target.
