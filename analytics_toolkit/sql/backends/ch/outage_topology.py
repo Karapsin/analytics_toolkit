@@ -68,6 +68,37 @@ def query_rows(client: Any, sql: str, *, settings: dict[str, Any] | None = None)
     return list(result.result_rows)
 
 
+def _probe_settings(client: Any) -> dict[str, Any]:
+    """Negotiate internal timeouts without relaxing required shard semantics."""
+    mode = "skip_unavailable_shards_mode"
+    names = ", ".join(sql_string_literal(name) for name in [*PROBE_SETTINGS, mode])
+    rows = query_rows(
+        client,
+        f"SELECT name, value, readonly FROM system.settings WHERE name IN ({names})",  # noqa: S608 - fixed setting names escaped as SQL literals
+    )
+    available = {str(name): (str(value), bool(int(readonly))) for name, value, readonly in rows}
+    required: dict[str, Any] = {"skip_unavailable_shards": 1}
+    if mode in available:
+        required[mode] = "unavailable_or_table_missing"
+    settings: dict[str, Any] = {}
+    for name, desired in {**PROBE_SETTINGS, **required}.items():
+        current = available.get(name)
+        if name in required:
+            if current is None or (current[1] and current[0] != str(desired)):
+                msg = (
+                    f"Cluster probes require setting {name!r}={desired!r}; "
+                    "the server profile forbids it."
+                )
+                raise ClickHouseClusterTopologyError(msg)
+            # Inherit matching immutable values: older HTTP drivers reject even
+            # redundant readonly overrides.
+            if not current[1]:
+                settings[name] = desired
+        elif current is not None and not current[1]:
+            settings[name] = desired
+    return settings
+
+
 def warn_degraded(
     state: BackendOperationState,
     config: Any,
@@ -173,14 +204,7 @@ class ClusterScope:
         ):
             msg = f"Cluster {self.cluster!r} has no unique hosts."
             raise ClickHouseClusterTopologyError(msg)
-        self.probe_settings: dict[str, Any] = dict(PROBE_SETTINGS)
-        # Older supported servers do not have this setting. Never inherit a
-        # profile's permissive catch-all exception mode on newer servers.
-        modes = query_rows(
-            client, "SELECT name FROM system.settings WHERE name = 'skip_unavailable_shards_mode'"
-        )
-        if modes:
-            self.probe_settings["skip_unavailable_shards_mode"] = "unavailable_or_table_missing"
+        self.probe_settings = _probe_settings(client)
         reached = query_rows(
             client,
             f"SELECT _shard_num, hostName() FROM clusterAllReplicas({literal}, system, one)",  # noqa: S608 - escaped literals or parsed SQL identifiers

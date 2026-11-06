@@ -256,6 +256,13 @@ Explicit
 For a local target with a partial cluster source, use separate CREATE and
 INSERT SELECT statements; a partial-source local CTAS is refused before creation.
 
+Internal cluster probes apply short timeout overrides only when the server
+supports changing those settings. Locked or unavailable timeout settings retain
+the server profile and existing client transport timeouts. Required shard-safety
+settings must remain available and compatible with the policy; a locked,
+conflicting value produces a topology error before the operation proceeds.
+This applies to HTTP and native connections without changing user query settings.
+
 The toolkit probes configured membership and reachable hosts, then inspects
 database engines and existing table definitions. It does not change `core` or
 create a temporary cluster definition. For a new managed pair, it creates the

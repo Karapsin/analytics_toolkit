@@ -15,6 +15,10 @@ from analytics_toolkit.sql.backends.ch.routing import _RoutingClickHouse
 from sqlglot import exp, parse_one
 
 
+class ProgrammingError(Exception):
+    """Fake transport error without importing the driver's native extensions."""
+
+
 class Result:
     def __init__(self, rows: Any, names: Any = ("id",), kinds: Any = ("UInt64",)) -> None:
         self.result_rows = list(rows)
@@ -56,6 +60,15 @@ class Cluster:
         self.replica_readonly: set[str] = set()
         self.replica_expired: set[str] = set()
         self.probe_failure: Exception | None = None
+        self.probe_settings = {
+            "skip_unavailable_shards": ("0", 0),
+            "connect_timeout_with_failover_ms": ("1000", 0),
+            "connections_with_failover_max_tries": ("3", 0),
+            "max_execution_time": ("0", 0),
+            "send_timeout": ("300", 0),
+            "receive_timeout": ("300", 0),
+        }
+        self.probe_requests: list[dict[str, Any]] = []
 
     def seed(self, *, key: str = "rand()", replicated: bool = False) -> None:
         identity = str(uuid4())
@@ -112,6 +125,14 @@ class Client:
         self.is_native_transport = native
         self.closed = False
 
+    def _validate_probe_settings(self, settings: dict[str, Any]) -> None:
+        self.cluster.probe_requests.append(dict(settings))
+        for name in settings:
+            definition = self.cluster.probe_settings.get(name)
+            if definition is None or definition[1]:
+                msg = f"Setting {name} is unknown or readonly"
+                raise ProgrammingError(msg)
+
     def query(self, sql: str, **kwargs: Any) -> Result:  # noqa: C901, PLR0911, PLR0912 - fake SQL dispatcher
         self.cluster.queries.append(sql)
         if sql.startswith("EXISTS TABLE "):
@@ -163,7 +184,7 @@ class Client:
                 return Result([(table.engine_full,)])
             return Result([(table.engine, table.engine_full, table.ddl, table.uuid)])
         if "FROM SYSTEM.SETTINGS" in upper:
-            return Result([])
+            return Result([(name, *values) for name, values in self.cluster.probe_settings.items()])
         function = next(
             (
                 item
@@ -178,6 +199,7 @@ class Client:
         members = self.cluster.members_by_cluster.get(cluster_name, self.cluster.members)
         hosts = [item[2] for item in members]
         if "SYSTEM, ONE" in upper:
+            self._validate_probe_settings(kwargs.get("settings", {}))
             if self.cluster.probe_failure:
                 raise self.cluster.probe_failure
             alive = [(i + 1, host) for i, host in enumerate(hosts) if host in self.cluster.alive]

@@ -179,18 +179,10 @@ def test_outage_shared_table_uses_one_replica_per_shard(outage: Any) -> None:
     assert scope.usable(objects, "db.events_shard") == scope.hosts
 
 
-def test_outage_settings_capability_is_detected(outage: Any, monkeypatch: Any) -> None:
+def test_outage_settings_capability_is_detected(outage: Any) -> None:
+    cluster, _ = outage
+    cluster.probe_settings["skip_unavailable_shards_mode"] = ("unavailable", 0)
     client = sql.get_sql_connection("ch")
-    original = client._client.query
-    monkeypatch.setattr(
-        client._client,
-        "query",
-        lambda query, **kwargs: (
-            Result([("skip_unavailable_shards_mode",)])
-            if "FROM system.settings" in query
-            else original(query, **kwargs)
-        ),
-    )
     scope = _scope(client)
     assert scope.probe_settings["skip_unavailable_shards_mode"] == "unavailable_or_table_missing"
     session = OutageSession(client._client, client._config, scope.state)
