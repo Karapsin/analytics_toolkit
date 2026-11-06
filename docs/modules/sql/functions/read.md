@@ -134,6 +134,8 @@ and non-integers are rejected.
 - Nullable integers are never routed through `float64`, so large integer values
   remain exact. Dtypes are inferred from values rather than declared database
   schema metadata.
+- Nested values such as Trino rows and arrays of rows remain Python objects in
+  `object` columns, preserving their values and named row field access.
 - `scalar` requires exactly one row and one column; `list` requires exactly one column.
 - `dict` reads backend columns directly without creating an intermediate dataframe and requires unique column names.
 - `to_excel` and `to_csv` cannot be used together in the same call.

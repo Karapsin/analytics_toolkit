@@ -3,6 +3,7 @@ from __future__ import annotations
 from numbers import Integral
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pandas as pd
 
 from analytics_toolkit.sql.backends.models import ReadColumnResult
@@ -58,7 +59,7 @@ def dataframe_from_columns(
 
 def _modern_array(values: Sequence[Any]) -> Any:
     if not values:
-        return pd.array([], dtype=object)
+        return _object_array(values)
 
     non_missing = [
         value
@@ -75,12 +76,20 @@ def _modern_array(values: Sequence[Any]) -> Any:
             return pd.array(values, dtype="Int64")
         if minimum >= 0 and maximum <= _UINT64_MAX:
             return pd.array(values, dtype="UInt64")
-        return pd.array(values, dtype=object)
+        return _object_array(values)
 
     try:
         return pd.array(values)
     except (OverflowError, TypeError, ValueError):
-        return pd.array(values, dtype=object)
+        return _object_array(values)
+
+
+def _object_array(values: Sequence[Any]) -> Any:
+    """Keep nested backend values opaque to NumPy's array protocol discovery."""
+    objects: np.ndarray[Any, np.dtype[np.object_]] = np.empty(len(values), dtype=object)
+    for index, value in enumerate(values):
+        objects[index] = value
+    return pd.array(objects, dtype=object)
 
 
 __all__ = [
