@@ -1,1 +1,1 @@
-- Respect ClickHouse profile restrictions on probe timeouts and reject immutable execution-setting conflicts without weakening shard safety.
+- Respect ClickHouse profile restrictions on internal probe timeouts and all required read, write, and DDL safety settings.

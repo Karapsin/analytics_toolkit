@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Any
 
 import pytest
@@ -124,3 +125,84 @@ def test_probe_settings_does_not_suppress_unrelated_driver_errors(
     monkeypatch.setattr(Client, "query", query)
     with pytest.raises(ProgrammingError, match="metadata access denied"):
         sql.read("ch", "SELECT id FROM db.events", retry_cnt=1)
+
+
+@pytest.mark.parametrize("driver", ["http", "native"])
+@pytest.mark.parametrize("matching", [True, False])
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("distributed_foreground_insert", "1", False),
+        ("async_insert", "0", False),
+        ("insert_shard_id", "1", True),
+        ("parallel_distributed_insert_select", "0", True),
+        ("optimize_skip_unused_shards", "0", True),
+        ("optimize_distributed_group_by_sharding_key", "0", True),
+    ],
+)
+def test_immutable_write_safety_settings(
+    outage: Any, driver: str, matching: bool, case: tuple[str, str, bool]
+) -> None:
+    name, desired, partial = case
+    cluster, configure = outage
+    configure(driver=driver, ch_unavailable_shards="healthy_shards" if partial else "stop")
+    if partial:
+        cluster.alive.remove("h2")
+    cluster.probe_settings[name] = (desired if matching else str(1 - int(desired)), 1)
+    client = sql.get_sql_connection("ch")
+    warning = pytest.warns(sql.ClickHouseDegradedClusterWarning) if partial else nullcontext()
+    with warning:
+        if matching:
+            client.insert("db.events", [(9,)], column_names=["id"])
+        else:
+            with pytest.raises(sql.ClickHouseClusterTopologyError, match=name):
+                client.insert("db.events", [(9,)], column_names=["id"])
+    inserted = any((9,) in table.rows for table in cluster.tables.values())
+    assert inserted == matching
+
+
+@pytest.mark.parametrize("driver", ["http", "native"])
+@pytest.mark.parametrize("matching", [True, False])
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("distributed_ddl_task_timeout", "300", "0"),
+        ("distributed_ddl_output_mode", "throw", "none"),
+    ],
+)
+def test_immutable_ddl_safety_settings(
+    outage: Any, driver: str, matching: bool, case: tuple[str, str, str]
+) -> None:
+    name, desired, conflict = case
+    cluster, configure = outage
+    configure(driver=driver)
+    cluster.probe_settings[name] = (desired if matching else conflict, 1)
+    client = sql.get_sql_connection("ch")
+    if matching:
+        client.command("TRUNCATE TABLE db.events_shard ON CLUSTER core")
+    else:
+        with pytest.raises(sql.ClickHouseClusterTopologyError, match=name):
+            client.command("TRUNCATE TABLE db.events_shard ON CLUSTER core")
+    rows = [row for table in cluster.tables.values() for row in table.rows]
+    assert bool(rows) != matching
+
+
+def test_fake_settings_metadata_honors_requested_names(outage: Any) -> None:
+    cluster, _ = outage
+    client = Client(cluster, "h1")
+    result = client.query(
+        "SELECT name, value, readonly FROM system.settings WHERE name IN ('async_insert')"
+    )
+    assert result.result_rows == [("async_insert", "0", 0)]
+
+
+@pytest.mark.parametrize("driver", ["http", "native"])
+def test_missing_required_write_setting_is_explicit(outage: Any, driver: str) -> None:
+    cluster, configure = outage
+    configure(driver=driver)
+    del cluster.probe_settings["async_insert"]
+    client = sql.get_sql_connection("ch")
+    with pytest.raises(
+        sql.ClickHouseClusterTopologyError, match="unavailable setting 'async_insert'"
+    ):
+        client.insert("db.events", [(9,)], column_names=["id"])

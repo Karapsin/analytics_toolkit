@@ -37,6 +37,16 @@ PROBE_SETTINGS = {
     "send_timeout": 5,
     "receive_timeout": 5,
 }
+EXECUTION_SETTINGS = (
+    "distributed_foreground_insert",
+    "async_insert",
+    "insert_shard_id",
+    "parallel_distributed_insert_select",
+    "optimize_skip_unused_shards",
+    "optimize_distributed_group_by_sharding_key",
+    "distributed_ddl_task_timeout",
+    "distributed_ddl_output_mode",
+)
 
 
 @dataclass(frozen=True)
@@ -68,10 +78,12 @@ def query_rows(client: Any, sql: str, *, settings: dict[str, Any] | None = None)
     return list(result.result_rows)
 
 
-def _probe_settings(client: Any) -> tuple[dict[str, Any], dict[str, str]]:
+def _probe_settings(client: Any) -> tuple[dict[str, Any], dict[str, tuple[str, bool]]]:
     """Negotiate internal timeouts without relaxing required shard semantics."""
     mode = "skip_unavailable_shards_mode"
-    names = ", ".join(sql_string_literal(name) for name in [*PROBE_SETTINGS, mode])
+    names = ", ".join(
+        sql_string_literal(name) for name in [*PROBE_SETTINGS, *EXECUTION_SETTINGS, mode]
+    )
     rows = query_rows(
         client,
         f"SELECT name, value, readonly FROM system.settings WHERE name IN ({names})",  # noqa: S608 - fixed setting names escaped as SQL literals
@@ -96,7 +108,7 @@ def _probe_settings(client: Any) -> tuple[dict[str, Any], dict[str, str]]:
                 settings[name] = desired
         elif current is not None and not current[1]:
             settings[name] = desired
-    return settings, {name: value for name, (value, locked) in available.items() if locked}
+    return settings, available
 
 
 def execution_settings(
@@ -106,13 +118,16 @@ def execution_settings(
     result = dict(supplied)
     for scope in scopes:
         for name, desired in required.items():
-            current = scope.immutable_settings.get(name)
+            current = scope.setting_metadata.get(name)
             if current is None:
+                msg = f"Operation requires unavailable setting {name!r}={desired!r}."
+                raise ClickHouseClusterTopologyError(msg)
+            if not current[1]:
                 continue
-            if current != str(desired):
+            if current[0] != str(desired):
                 msg = (
                     f"Operation requires setting {name!r}={desired!r}; "
-                    f"the server profile locks it to {current!r}."
+                    f"the server profile locks it to {current[0]!r}."
                 )
                 raise ClickHouseClusterTopologyError(msg)
             result.pop(name, None)
@@ -224,7 +239,7 @@ class ClusterScope:
         ):
             msg = f"Cluster {self.cluster!r} has no unique hosts."
             raise ClickHouseClusterTopologyError(msg)
-        self.probe_settings, self.immutable_settings = _probe_settings(client)
+        self.probe_settings, self.setting_metadata = _probe_settings(client)
         reached = query_rows(
             client,
             f"SELECT _shard_num, hostName() FROM clusterAllReplicas({literal}, system, one)",  # noqa: S608 - escaped literals or parsed SQL identifiers

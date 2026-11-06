@@ -67,6 +67,14 @@ class Cluster:
             "max_execution_time": ("0", 0),
             "send_timeout": ("300", 0),
             "receive_timeout": ("300", 0),
+            "distributed_foreground_insert": ("0", 0),
+            "async_insert": ("0", 0),
+            "insert_shard_id": ("0", 0),
+            "parallel_distributed_insert_select": ("2", 0),
+            "optimize_skip_unused_shards": ("1", 0),
+            "optimize_distributed_group_by_sharding_key": ("1", 0),
+            "distributed_ddl_task_timeout": ("180", 0),
+            "distributed_ddl_output_mode": ("throw", 0),
         }
         self.probe_requests: list[dict[str, Any]] = []
 
@@ -132,6 +140,23 @@ class Client:
                 msg = f"Setting {name} is unknown or readonly"
                 raise ProgrammingError(msg)
 
+    def _settings_rows(self, statement: Any, filters: dict[str, str]) -> Result:
+        selection = next(statement.find_all(exp.In), None)
+        names = (
+            {str(value.this) for value in selection.expressions}
+            if selection is not None
+            else {filters["name"]}
+            if "name" in filters
+            else set(self.cluster.probe_settings)
+        )
+        return Result(
+            [
+                (name, *values)
+                for name, values in self.cluster.probe_settings.items()
+                if name in names
+            ]
+        )
+
     def query(self, sql: str, **kwargs: Any) -> Result:  # noqa: C901, PLR0911, PLR0912 - fake SQL dispatcher
         self._validate_settings(kwargs.get("settings") or {})
         self.cluster.queries.append(sql)
@@ -184,7 +209,7 @@ class Client:
                 return Result([(table.engine_full,)])
             return Result([(table.engine, table.engine_full, table.ddl, table.uuid)])
         if "FROM SYSTEM.SETTINGS" in upper:
-            return Result([(name, *values) for name, values in self.cluster.probe_settings.items()])
+            return self._settings_rows(statement, filters)
         function = next(
             (
                 item
@@ -423,6 +448,7 @@ class Client:
         return nullcontext(iter([self.query_df(sql, **kwargs)]))
 
     def command(self, sql: str, **kwargs: Any) -> Any:
+        self._validate_settings(kwargs.get("settings") or {})
         self.cluster.commands.append((self.host, sql, dict(kwargs.get("settings") or {})))
         statement = parse_one(sql, read=_RoutingClickHouse)
         if isinstance(statement, exp.Create):
@@ -540,6 +566,7 @@ class Client:
         self.insert(context.table, rows, column_names=["id"], settings=context.settings)
 
     def insert(self, table: str, data: Any, column_names: Any, **kwargs: Any) -> None:
+        self._validate_settings(kwargs.get("settings") or {})
         self.cluster.commands.append(
             (self.host, f"INSERT INTO {table}", kwargs.get("settings") or {})
         )
@@ -547,6 +574,7 @@ class Client:
         self._insert(target, data, kwargs.get("settings") or {})
 
     def insert_df(self, table: str, df: Any, column_names: Any, **kwargs: Any) -> None:
+        self._validate_settings(kwargs.get("settings") or {})
         self.insert(table, list(df.itertuples(index=False, name=None)), column_names, **kwargs)
 
     def close(self) -> None:
