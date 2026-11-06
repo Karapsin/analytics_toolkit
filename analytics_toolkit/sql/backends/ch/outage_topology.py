@@ -68,7 +68,7 @@ def query_rows(client: Any, sql: str, *, settings: dict[str, Any] | None = None)
     return list(result.result_rows)
 
 
-def _probe_settings(client: Any) -> dict[str, Any]:
+def _probe_settings(client: Any) -> tuple[dict[str, Any], dict[str, str]]:
     """Negotiate internal timeouts without relaxing required shard semantics."""
     mode = "skip_unavailable_shards_mode"
     names = ", ".join(sql_string_literal(name) for name in [*PROBE_SETTINGS, mode])
@@ -96,7 +96,27 @@ def _probe_settings(client: Any) -> dict[str, Any]:
                 settings[name] = desired
         elif current is not None and not current[1]:
             settings[name] = desired
-    return settings
+    return settings, {name: value for name, (value, locked) in available.items() if locked}
+
+
+def execution_settings(
+    scopes: Any, supplied: dict[str, Any], required: dict[str, Any]
+) -> dict[str, Any]:
+    """Reject immutable execution conflicts and inherit matching profile values."""
+    result = dict(supplied)
+    for scope in scopes:
+        for name, desired in required.items():
+            current = scope.immutable_settings.get(name)
+            if current is None:
+                continue
+            if current != str(desired):
+                msg = (
+                    f"Operation requires setting {name!r}={desired!r}; "
+                    f"the server profile locks it to {current!r}."
+                )
+                raise ClickHouseClusterTopologyError(msg)
+            result.pop(name, None)
+    return result
 
 
 def warn_degraded(
@@ -204,7 +224,7 @@ class ClusterScope:
         ):
             msg = f"Cluster {self.cluster!r} has no unique hosts."
             raise ClickHouseClusterTopologyError(msg)
-        self.probe_settings = _probe_settings(client)
+        self.probe_settings, self.immutable_settings = _probe_settings(client)
         reached = query_rows(
             client,
             f"SELECT _shard_num, hostName() FROM clusterAllReplicas({literal}, system, one)",  # noqa: S608 - escaped literals or parsed SQL identifiers

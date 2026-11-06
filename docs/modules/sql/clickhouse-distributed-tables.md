@@ -261,6 +261,8 @@ supports changing those settings. Locked or unavailable timeout settings retain
 the server profile and existing client transport timeouts. Required shard-safety
 settings must remain available and compatible with the policy; a locked,
 conflicting value produces a topology error before the operation proceeds.
+The same check applies to the final operation: for example, a complete-cluster
+read requires `skip_unavailable_shards=0` and cannot use a profile locking it to `1`.
 This applies to HTTP and native connections without changing user query settings.
 
 The toolkit probes configured membership and reachable hosts, then inspects

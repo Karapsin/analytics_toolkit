@@ -125,15 +125,15 @@ class Client:
         self.is_native_transport = native
         self.closed = False
 
-    def _validate_probe_settings(self, settings: dict[str, Any]) -> None:
-        self.cluster.probe_requests.append(dict(settings))
+    def _validate_settings(self, settings: dict[str, Any]) -> None:
         for name in settings:
             definition = self.cluster.probe_settings.get(name)
-            if definition is None or definition[1]:
+            if definition is not None and definition[1]:
                 msg = f"Setting {name} is unknown or readonly"
                 raise ProgrammingError(msg)
 
     def query(self, sql: str, **kwargs: Any) -> Result:  # noqa: C901, PLR0911, PLR0912 - fake SQL dispatcher
+        self._validate_settings(kwargs.get("settings") or {})
         self.cluster.queries.append(sql)
         if sql.startswith("EXISTS TABLE "):
             return Result(
@@ -199,7 +199,7 @@ class Client:
         members = self.cluster.members_by_cluster.get(cluster_name, self.cluster.members)
         hosts = [item[2] for item in members]
         if "SYSTEM, ONE" in upper:
-            self._validate_probe_settings(kwargs.get("settings", {}))
+            self.cluster.probe_requests.append(dict(kwargs.get("settings") or {}))
             if self.cluster.probe_failure:
                 raise self.cluster.probe_failure
             alive = [(i + 1, host) for i, host in enumerate(hosts) if host in self.cluster.alive]

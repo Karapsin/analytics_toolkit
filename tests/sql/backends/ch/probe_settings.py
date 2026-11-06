@@ -43,7 +43,6 @@ def test_public_read_negotiates_optional_probe_timeouts(
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("skip_unavailable_shards", "1"),
         ("skip_unavailable_shards_mode", "unavailable_or_table_missing"),
     ],
 )
@@ -56,6 +55,32 @@ def test_public_read_accepts_matching_immutable_probe_safety(
     assert sql.read("ch", "SELECT id FROM db.events", retry_cnt=1).id.tolist() == [1, 2]
     assert cluster.probe_requests
     assert all(name not in settings for settings in cluster.probe_requests)
+
+
+@pytest.mark.parametrize("driver", ["http", "native"])
+def test_complete_read_rejects_immutable_execution_conflict(outage: Any, driver: str) -> None:
+    cluster, configure = outage
+    configure(driver=driver)
+    cluster.probe_settings["skip_unavailable_shards"] = ("1", 1)
+    with pytest.raises(sql.ClickHouseClusterTopologyError, match="Operation requires setting"):
+        sql.read("ch", "SELECT id FROM db.events", retry_cnt=1)
+    assert cluster.probe_requests
+    assert not cluster.selected_reads
+
+
+@pytest.mark.parametrize("driver", ["http", "native"])
+def test_partial_read_inherits_matching_immutable_execution_setting(
+    outage: Any, driver: str
+) -> None:
+    cluster, configure = outage
+    configure(driver=driver)
+    cluster.probe_settings["skip_unavailable_shards"] = ("1", 1)
+    cluster.alive.remove("h2")
+    with pytest.warns(sql.ClickHouseDegradedClusterWarning):
+        result = sql.read(
+            "ch", "SELECT id FROM db.events", retry_cnt=1, ch_unavailable_shards="healthy_shards"
+        )
+    assert result.id.tolist() == [1]
 
 
 @pytest.mark.parametrize("driver", ["http", "native"])
