@@ -29,7 +29,7 @@ from .outage_ddl import (
 from .outage_ownership import assert_new_target, claim_private_create
 from .outage_passthrough import modeled_statement
 from .outage_session import OutageSession, configured_cluster, private_table
-from .outage_topology import warn_degraded
+from .outage_topology import execution_settings, warn_degraded
 from .routing import (
     _LOCAL_SQL_EXECUTION,
     ChClusterRouting,
@@ -789,7 +789,7 @@ class OutageClient:
         }:
             msg = "A permissive shard-exception mode would hide SQL failures."
             raise ClickHouseClusterTopologyError(msg)
-        kwargs["settings"] = supplied
+        kwargs["settings"] = execution_settings(session.scopes.values(), supplied, required)
 
     @staticmethod
     def _check_inline_settings(statement: exp.Expr, required: dict[str, Any]) -> None:
