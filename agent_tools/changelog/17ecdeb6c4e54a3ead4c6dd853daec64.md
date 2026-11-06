@@ -1,1 +1,0 @@
-- Respect ClickHouse profile restrictions on internal probe timeouts and all required read, write, and DDL safety settings.
