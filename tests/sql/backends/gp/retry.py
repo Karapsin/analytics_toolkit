@@ -269,3 +269,83 @@ def test_native_operational_subclass_retains_startup_error_classification() -> N
     error = ConnectionFailure('FATAL: password authentication failed for user "reader"')
 
     assert classify_error(error) == (False, "gp_startup_authentication", None)
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    [
+        "Name or service not known",
+        "Name does not resolve",
+        "nodename nor servname provided, or not known",
+        "No such host is known.",
+    ],
+)
+@pytest.mark.parametrize("newline", ["", "\n", "\r\n"])
+def test_native_libpq_permanent_dns_without_sqlstate_stops(diagnostic: str, newline: str) -> None:
+    error = psycopg2.OperationalError(
+        f'could not translate host name "bad.example" to address: {diagnostic}{newline}'
+    )
+
+    assert error.pgcode is None
+    assert error.__cause__ is None
+    assert classify_error(error) == (False, "gp_permanent_dns", None)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        (
+            'could not translate host name "bad.example" to address: '
+            "Temporary failure in name resolution"
+        ),
+        'could not translate host name "bad.example" to address: Try again',
+        (
+            'could not translate host name "bad.example" to address: '
+            "Non-recoverable failure in name resolution"
+        ),
+        'could not translate host name "bad.example" to address: Non-recoverable error',
+        'could not translate host name "bad.example" to address: Unknown resolver error',
+        'could not translate host name "bad.example" to address: getaddrinfo failed',
+        (
+            'SELECT \'could not translate host name "bad.example" to address: '
+            "Name or service not known'"
+        ),
+        (
+            'SELECT\ncould not translate host name "bad.example" to address: '
+            "Name or service not known"
+        ),
+        (
+            'could not translate host name "bad.example" to address: '
+            "Name or service not known; SELECT 1"
+        ),
+    ],
+)
+def test_temporary_unknown_or_quoted_dns_diagnostics_keep_fallback(message: str) -> None:
+    assert classify_error(psycopg2.OperationalError(message)) is None
+
+
+def test_permanent_dns_text_requires_native_psycopg_identity() -> None:
+    error = RuntimeError(
+        'could not translate host name "bad.example" to address: Name or service not known'
+    )
+
+    assert classify_error(error) is None
+
+
+def test_structured_transient_sqlstate_overrides_permanent_dns_text() -> None:
+    class DnsOperationalError(psycopg2.OperationalError):
+        sqlstate = "08006"
+
+    error = DnsOperationalError(
+        'could not translate host name "bad.example" to address: Name or service not known'
+    )
+
+    assert classify_error(error) == (True, "gp_sqlstate_retryable", "08006")
+
+
+def test_native_transient_class_overrides_permanent_dns_text() -> None:
+    error = errors.SerializationFailure(
+        'could not translate host name "bad.example" to address: Name or service not known'
+    )
+
+    assert classify_error(error) == (True, "gp_exception_class_retryable", "40001")

@@ -27,6 +27,13 @@ _STARTUP_CERTIFICATE_PATTERN = re.compile(
     + r"|server certificate for [^\r\n]+ does not match host name\b)",
     re.MULTILINE,
 )
+_STARTUP_PERMANENT_DNS_PATTERN = re.compile(
+    r'could not translate host name "[^"\r\n]+" to address: '
+    r"(?:Name or service not known|Name does not resolve"
+    r"|nodename nor servname provided, or not known"
+    r"|No such host is known)\.?",
+    re.IGNORECASE,
+)
 _CLASS_SQLSTATES = {
     "FeatureNotSupported": "0A000",
     "CardinalityViolation": "21000",
@@ -133,6 +140,8 @@ def _classify_startup_error(exc: BaseException) -> tuple[bool, str, None] | None
         return False, "gp_startup_configuration", None
     if _STARTUP_CERTIFICATE_PATTERN.search(message):
         return False, "gp_tls_certificate", None
+    if _STARTUP_PERMANENT_DNS_PATTERN.fullmatch(message.strip()):
+        return False, "gp_permanent_dns", None
     return None
 
 

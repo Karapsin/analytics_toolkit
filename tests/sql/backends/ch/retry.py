@@ -3,8 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from analytics_toolkit import sql
 from analytics_toolkit.sql.backends.ch.retry import classify_error
 from analytics_toolkit.sql.execution.retry_errors import classify_sql_error
+
+from tests.sql._support.retries import read_sql_module
 
 # Importing the SDK exceptions also loads its unrelated C extensions. Match the
 # exception identity and hierarchy here without importing that transport stack.
@@ -511,3 +514,81 @@ def test_native_sqlstate_precedes_clickhouse_legacy_name_and_conversion_diagnost
     assert decision.retryable is True
     assert decision.backend == "gp"
     assert decision.code == "40001"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Name or service not known (bad.invalid:9000)",
+        "Name does not resolve (bad.invalid:9000)",
+        "Code: 210. Name or service not known (bad.invalid:9000)",
+        "nodename nor servname provided, or not known (bad.invalid:9440)",
+    ],
+)
+def test_native_connection_dns_diagnostic_stops_without_preserved_gaierror(message: str) -> None:
+    error = _NATIVE_NETWORK_ERROR(message)
+    assert error.__cause__ is None
+    assert error.__context__ is None
+
+    decision = classify_sql_error(error)
+
+    assert decision.retryable is False
+    assert decision.backend == "ch"
+    assert decision.reason == "clickhouse_permanent_dns"
+    assert decision.code == 210
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Temporary failure in name resolution (temporary.invalid:9000)",
+        "getaddrinfo failed (unknown.invalid:9000)",
+        "Connection reset by peer (host:9000)",
+        "DB::Exception: SELECT 'Name or service not known (bad.invalid:9000)'",
+        "Name or service not known in SQL text",
+    ],
+)
+def test_other_native_network_diagnostics_keep_retrying(message: str) -> None:
+    assert classify_sql_error(_NATIVE_NETWORK_ERROR(message)).retryable is True
+
+
+def test_server_network_code_cannot_claim_native_connection_dns_diagnostic() -> None:
+    server_exception = type(
+        "ServerException", (RuntimeError,), {"__module__": "clickhouse_driver.errors", "code": 210}
+    )
+    error = server_exception("Name or service not known (bad.invalid:9000)")
+
+    assert classify_sql_error(error).retryable is True
+
+
+@pytest.mark.parametrize(
+    ("diagnostic", "attempts", "delays"),
+    [
+        ("Name or service not known (bad.invalid:9000)", 1, []),
+        ("Name does not resolve (bad.invalid:9000)", 1, []),
+        ("nodename nor servname provided, or not known (bad.invalid:9440)", 1, []),
+        ("Temporary failure in name resolution (temporary.invalid:9000)", 3, [5, 10]),
+    ],
+)
+def test_public_read_open_retries_distinguish_native_permanent_and_temporary_dns(
+    monkeypatch: pytest.MonkeyPatch, diagnostic: str, attempts: int, delays: list[int]
+) -> None:
+    opened: list[str] = []
+    sleeps: list[float] = []
+    error = _NATIVE_NETWORK_ERROR(diagnostic)
+
+    def fail_open(key: str) -> None:
+        opened.append(key)
+        raise error
+
+    monkeypatch.setattr(read_sql_module, "get_sql_connection", fail_open)
+    monkeypatch.setattr(
+        "analytics_toolkit.sql.dml.transfer.runtime.retry.time.sleep", sleeps.append
+    )
+
+    with pytest.raises(type(error)) as caught:
+        sql.read("ch", "SELECT 1", retry_cnt=3, timeout_increment=5)
+
+    assert caught.value is error
+    assert opened == ["ch"] * attempts
+    assert sleeps == delays

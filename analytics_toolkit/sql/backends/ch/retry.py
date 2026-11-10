@@ -116,14 +116,20 @@ _NATIVE_CERTIFICATE_DIAGNOSTIC = re.compile(
     r"certificate verify failed\b",
     re.IGNORECASE,
 )
+_NATIVE_PERMANENT_DNS_DIAGNOSTIC = re.compile(
+    r"^\s*(?:Code:\s*210\.\s*)?(?:Name or service not known|Name does not resolve"
+    r"|nodename nor servname provided, or not known) \([^()\r\n]+:\d+\)\s*\Z",
+    re.IGNORECASE,
+)
 _HTTP_TERMINAL_REASONS = {401: "clickhouse_authentication", 403: "clickhouse_access"}
 
 
 def classify_error(exc: BaseException) -> tuple[bool, str, str | int | None] | None:
     """Classify one trusted ClickHouse exception; the caller traverses wrappers."""
     message = str(exc)
-    if _is_native_certificate_error(exc, message):
-        return False, "clickhouse_tls_certificate", 210
+    transport_reason = _native_transport_terminal_reason(exc, message)
+    if transport_reason is not None:
+        return False, transport_reason, 210
     structured = _classify_attributes(exc, message)
     if structured is not None:
         return structured
@@ -176,11 +182,17 @@ def _classify_server_diagnostic(message: str) -> tuple[bool, str, str | int | No
     return None
 
 
-def _is_native_certificate_error(exc: BaseException, message: str) -> bool:
-    return any(
+def _native_transport_terminal_reason(exc: BaseException, message: str) -> str | None:
+    if not any(
         cls.__module__ == "clickhouse_driver.errors" and cls.__name__ == "NetworkError"
         for cls in type(exc).__mro__
-    ) and bool(_NATIVE_CERTIFICATE_DIAGNOSTIC.match(message))
+    ):
+        return None
+    if _NATIVE_CERTIFICATE_DIAGNOSTIC.match(message):
+        return "clickhouse_tls_certificate"
+    if _NATIVE_PERMANENT_DNS_DIAGNOSTIC.match(message):
+        return "clickhouse_permanent_dns"
+    return None
 
 
 def _classify_code(code: int, message: str) -> tuple[bool, str, int]:

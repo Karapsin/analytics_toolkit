@@ -125,7 +125,10 @@ Branded ClickHouse HTTP gateway `401` and `403` responses stop even when no
 native server code is present: correct authentication or access policy first.
 Other HTTP status codes retain the historical fallback. Typed certificate
 verification failures in the native driver also stop; an unclassified generic
-network exception remains eligible for retries.
+network exception remains eligible for retries. Native-driver diagnostics that
+identify a permanently unresolved hostname also stop: correct the hostname or
+DNS record before reconnecting. Temporary resolution failures remain eligible
+for retries, including when the native driver retains only diagnostic text.
 
 Legacy ClickHouse wrapper aliases also retain their stop behavior when no
 structured native code overrides them:
@@ -230,10 +233,13 @@ previously unlisted codes within those known families; unrelated unknown codes
 retain the historical fallback.
 
 Libpq startup diagnostics for a rejected password, missing role, `pg_hba`
-access rejection, missing database, or TLS verification failure are also
-recognized when no SQLSTATE is available. Correct the corresponding credentials,
-access rule, database, or certificate configuration before reconnecting. A
-generic `OperationalError` alone retains the historical retry fallback.
+access rejection, missing database, permanent hostname-resolution failure, or
+TLS verification failure are also recognized when no SQLSTATE is available.
+Correct the corresponding credentials,
+access rule, database, hostname/DNS record, or certificate configuration before
+reconnecting. Permanent host-translation diagnostics stop even when libpq has
+discarded the underlying socket exception. Temporary resolution failures and a
+generic `OperationalError` alone retain the historical retry fallback.
 
 The following named cases explain the common stop conditions. Names and codes
 follow the [PostgreSQL error definitions](https://www.postgresql.org/docs/current/errcodes-appendix.html)
