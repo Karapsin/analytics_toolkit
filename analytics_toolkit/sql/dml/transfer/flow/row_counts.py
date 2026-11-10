@@ -32,6 +32,10 @@ from analytics_toolkit.sql.execution.backend_options import (
     current_backend_operation,
     preserve_recovery_artifacts,
 )
+from analytics_toolkit.sql.execution.retry_cleanup import (
+    cleanup_preserving_error,
+    mark_sql_error,
+)
 
 
 class TransferRowCountMismatchError(ValueError):
@@ -179,17 +183,22 @@ def cleanup_materialized_sources(
         stage_table = stage_state.source_stage_tables[-1]
 
         def operation(attempt: int, stage_table: str = stage_table) -> None:
-            del attempt
             try:
+                if attempt > 1:
+                    replace_connection(options.from_db_key, connection_ref)
                 adapter.drop_table(
                     connection_ref["connection"],
                     stage_table,
                     if_exists=True,
                     query_label=options.query_label,
                 )
-            except Exception:
-                rollback_quietly(connection_ref["connection"])
-                replace_connection(options.from_db_key, connection_ref)
+            except Exception as exc:
+                mark_sql_error(exc, options.from_db_backend)
+                cleanup_preserving_error(
+                    lambda: rollback_quietly(connection_ref["connection"]),
+                    error=exc,
+                    phase="rollback after materialized source cleanup",
+                )
                 raise
 
         run_with_retry(
@@ -387,17 +396,22 @@ def _count_source_rows_with_retry(
     source_sql: str,
 ) -> int:
     def operation(attempt: int) -> int:
-        del attempt
         try:
+            if attempt > 1:
+                replace_connection(options.from_db_key, source_ref)
             return count_source_rows(
                 options.from_db_backend,
                 source_ref["connection"],
                 source_sql,
                 query_label=options.query_label,
             )
-        except Exception:
-            rollback_quietly(source_ref["connection"])
-            replace_connection(options.from_db_key, source_ref)
+        except Exception as exc:
+            mark_sql_error(exc, options.from_db_backend)
+            cleanup_preserving_error(
+                lambda: rollback_quietly(source_ref["connection"]),
+                error=exc,
+                phase="rollback after source row count",
+            )
             raise
 
     return run_with_retry(
@@ -437,6 +451,7 @@ def _materialize_source_with_retry(
     def operation(attempt: int) -> None:
         try:
             if attempt > 1:
+                replace_connection(options.from_db_key, source_ref)
                 adapter.drop_table(
                     source_ref["connection"],
                     stage_table,
@@ -451,9 +466,13 @@ def _materialize_source_with_retry(
                     query_label=options.query_label,
                 ),
             )
-        except Exception:
-            rollback_quietly(source_ref["connection"])
-            replace_connection(options.from_db_key, source_ref)
+        except Exception as exc:
+            mark_sql_error(exc, options.from_db_backend)
+            cleanup_preserving_error(
+                lambda: rollback_quietly(source_ref["connection"]),
+                error=exc,
+                phase="rollback after source materialization",
+            )
             raise
 
     run_with_retry(
@@ -475,8 +494,9 @@ def _count_materialized_source_rows_with_retry(
     adapter = get_backend_adapter(options.from_db_backend)
 
     def operation(attempt: int) -> int:
-        del attempt
         try:
+            if attempt > 1:
+                replace_connection(options.from_db_key, source_ref)
             return int(
                 adapter.count_table_rows(
                     source_ref["connection"],
@@ -484,9 +504,13 @@ def _count_materialized_source_rows_with_retry(
                     query_label=options.query_label,
                 )
             )
-        except Exception:
-            rollback_quietly(source_ref["connection"])
-            replace_connection(options.from_db_key, source_ref)
+        except Exception as exc:
+            mark_sql_error(exc, options.from_db_backend)
+            cleanup_preserving_error(
+                lambda: rollback_quietly(source_ref["connection"]),
+                error=exc,
+                phase="rollback after materialized source row count",
+            )
             raise
 
     return int(

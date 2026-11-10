@@ -9,6 +9,10 @@ from sqlglot import exp, parse_one
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.connection.errors import SqlTableReadinessError
+from analytics_toolkit.sql.execution.retry_cleanup import (
+    cleanup_preserving_error,
+    mark_sql_error,
+)
 
 from ...backends import SUPPORTED_BACKENDS, get_backend_adapter
 from ...backends.transfer_stage import (
@@ -197,9 +201,12 @@ def cleanup_stage_table_with_retry(
 ) -> None:
     if connection_type == "ch" and ch_creation_policy is not None:
 
-        def operation(_attempt: int) -> None:
-            connection = ensure_connection_ref(connection_key, connection_ref)
+        def operation(attempt: int) -> None:
+            connection = None
             try:
+                if attempt > 1:
+                    replace_connection_fn(connection_key, connection_ref)
+                connection = ensure_connection_ref(connection_key, connection_ref)
                 cleanup_stage_table(
                     connection_type,
                     connection,
@@ -208,9 +215,14 @@ def cleanup_stage_table_with_retry(
                     if_exists=if_exists,
                     ch_creation_policy=ch_creation_policy,
                 )
-            except Exception:
-                rollback_fn(connection)
-                replace_connection_fn(connection_key, connection_ref)
+            except Exception as exc:
+                mark_sql_error(exc, connection_type)
+                if connection is not None:
+                    cleanup_preserving_error(
+                        lambda: rollback_fn(connection),
+                        error=exc,
+                        phase="rollback after stage cleanup",
+                    )
                 raise
 
         retry_fn(

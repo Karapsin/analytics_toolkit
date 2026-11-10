@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Any
+from typing import Any, NoReturn
 
 import pandas as pd
+
+from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error, mark_sql_error
 
 from ....backends import get_backend_adapter
 from ....connection.errors import sql_preview
 from ....execution.labels import apply_query_label
-from analytics_toolkit.general import time_print
 from ..runtime.models import RowBatch
 from ..runtime.retry import replace_connection, run_with_retry
 
@@ -107,21 +109,25 @@ def _iter_dbapi_batches(
         retry_cnt=retry_cnt,
         timeout_increment=timeout_increment,
     )
+    error: BaseException | None = None
     try:
         while True:
             rows = cursor.fetchmany(get_batch_size())
             if not rows:
                 break
             yield RowBatch(columns=columns, rows=_rows_as_tuples(rows))
-    except Exception:
-        time_print(
-            f"Failed SQL while reading transfer source:\n{query}",
-            connection=connection_key,
-            backend=connection_backend,
-        )
+    except BaseException as exc:
+        error = exc
+        mark_sql_error(exc, connection_backend)
+        if isinstance(exc, Exception):
+            time_print(
+                f"Failed SQL while reading transfer source:\n{query}",
+                connection=connection_key,
+                backend=connection_backend,
+            )
         raise
     finally:
-        cursor.close()
+        cleanup_preserving_error(cursor.close, error=error, phase="close_source_cursor")
 
 
 def _iter_clickhouse_batches(
@@ -136,6 +142,7 @@ def _iter_clickhouse_batches(
     context_manager: Any | None = None
     stream_iterator: Iterator[pd.DataFrame] | None = None
     first_block: pd.DataFrame | None = None
+    error: BaseException | None = None
 
     try:
         context_manager, stream_iterator, first_block = _start_clickhouse_stream_with_retry(
@@ -175,23 +182,17 @@ def _iter_clickhouse_batches(
 
         if pending_rows and columns is not None:
             yield RowBatch(columns=columns, rows=pending_rows)
-    except Exception as exc:
-        time_print(
-            f"Failed SQL while reading transfer source:\n{query}",
-            connection=connection_key,
-            backend="ch",
-        )
-        if _is_clickhouse_stream_transport_error(exc):
-            raise TransferSourceStreamReadError(
-                connection_key=connection_key,
-                backend="ch",
-                query=query,
-                original_exception=exc,
-            ) from exc
-        raise
+    except BaseException as exc:  # noqa: BLE001 - preserve interrupts while closing the stream.
+        error = exc
+        _raise_clickhouse_source_error(exc, connection_key, query)
     finally:
         if context_manager is not None:
-            context_manager.__exit__(None, None, None)
+            close_stream = context_manager.__exit__
+            cleanup_preserving_error(
+                lambda: close_stream(None, None, None),
+                error=error,
+                phase="close_source_stream",
+            )
 
 
 def _start_dbapi_query_with_retry(
@@ -203,17 +204,25 @@ def _start_dbapi_query_with_retry(
     timeout_increment: int | float,
 ) -> tuple[Any, list[str]]:
     def operation(attempt: int) -> tuple[Any, list[str]]:
-        cursor = connection_ref["connection"].cursor()
+        cursor: Any | None = None
         try:
+            if attempt > 1:
+                replace_connection(connection_key, connection_ref)
+            cursor = connection_ref["connection"].cursor()
             cursor.execute(query)
             columns = [column[0] for column in cursor.description or []]
             return cursor, columns
-        except Exception:
-            cursor.close()
-            get_backend_adapter(connection_backend).rollback_quietly(
-                connection_ref["connection"]
+        except Exception as exc:
+            mark_sql_error(exc, connection_backend)
+            if cursor is not None:
+                cleanup_preserving_error(cursor.close, error=exc, phase="close_source_cursor")
+            cleanup_preserving_error(
+                lambda: get_backend_adapter(connection_backend).rollback_quietly(
+                    connection_ref["connection"]
+                ),
+                error=exc,
+                phase="rollback_source",
             )
-            replace_connection(connection_key, connection_ref)
             raise
 
     return run_with_retry(
@@ -233,21 +242,22 @@ def _start_clickhouse_stream_with_retry(
     disable_query_limit: bool,
 ) -> tuple[Any, Iterator[pd.DataFrame], pd.DataFrame | None]:
     def operation(attempt: int) -> tuple[Any, Iterator[pd.DataFrame], pd.DataFrame | None]:
-        connection = connection_ref["connection"]
-        original_query_limit = getattr(connection, "query_limit", None)
-        should_restore_query_limit = (
-            disable_query_limit
-            and hasattr(connection, "query_limit")
-            and original_query_limit
-        )
-        if should_restore_query_limit:
-            connection.query_limit = 0
+        context_manager: Any | None = None
         try:
-            context_manager = connection.query_df_stream(query)
-        finally:
+            if attempt > 1:
+                replace_connection(connection_key, connection_ref)
+            connection = connection_ref["connection"]
+            original_query_limit = getattr(connection, "query_limit", None)
+            should_restore_query_limit = (
+                disable_query_limit and hasattr(connection, "query_limit") and original_query_limit
+            )
             if should_restore_query_limit:
-                connection.query_limit = original_query_limit
-        try:
+                connection.query_limit = 0
+            try:
+                context_manager = connection.query_df_stream(query)
+            finally:
+                if should_restore_query_limit:
+                    connection.query_limit = original_query_limit
             stream = context_manager.__enter__()
             iterator = iter(stream)
             while True:
@@ -258,9 +268,15 @@ def _start_clickhouse_stream_with_retry(
                 if block.empty:
                     continue
                 return context_manager, iterator, block
-        except Exception:
-            context_manager.__exit__(None, None, None)
-            replace_connection(connection_key, connection_ref)
+        except Exception as exc:
+            mark_sql_error(exc, "ch")
+            if context_manager is not None:
+                close_stream = context_manager.__exit__
+                cleanup_preserving_error(
+                    lambda: close_stream(None, None, None),
+                    error=exc,
+                    phase="close_source_stream",
+                )
             raise
 
     return run_with_retry(
@@ -291,6 +307,30 @@ def _drain_full_row_batches(
         batch_rows = pending_rows[:current_batch_size]
         del pending_rows[:current_batch_size]
         yield RowBatch(columns=columns, rows=batch_rows)
+
+
+def _raise_clickhouse_source_error(exc: BaseException, connection_key: str, query: str) -> NoReturn:
+    mark_sql_error(exc, "ch")
+    if isinstance(exc, Exception):
+        time_print(
+            f"Failed SQL while reading transfer source:\n{query}",
+            connection=connection_key,
+            backend="ch",
+        )
+        if _should_wrap_clickhouse_stream_error(exc):
+            raise TransferSourceStreamReadError(
+                connection_key=connection_key,
+                backend="ch",
+                query=query,
+                original_exception=exc,
+            ) from exc
+    raise exc.with_traceback(exc.__traceback__)
+
+
+def _should_wrap_clickhouse_stream_error(exc: Exception) -> bool:
+    return getattr(
+        exc, "analytics_toolkit_sql_retry_safe", True
+    ) is not False and _is_clickhouse_stream_transport_error(exc)
 
 
 def _is_clickhouse_stream_transport_error(exc: Exception) -> bool:

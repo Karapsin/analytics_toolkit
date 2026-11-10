@@ -58,7 +58,7 @@ def test_drop_ch_distributed_table_pair_forwards_wait_and_retry_options(
     assert call[2]["ch_wait_timeout_seconds"] == 7
 
 
-def test_drop_table_with_retry_rolls_back_replaces_and_reraises(
+def test_drop_table_with_retry_rolls_back_without_reconnecting_after_last_attempt(
     monkeypatch: pytest.MonkeyPatch,
     lifecycle_adapter: LifecycleAdapter,
 ) -> None:
@@ -91,7 +91,7 @@ def test_drop_table_with_retry_rolls_back_replaces_and_reraises(
         (connection_ref["connection"],),
         {},
     )
-    assert replacements == [("alias", connection_ref)]
+    assert replacements == []
 
 
 def test_drop_table_with_retry_runs_successful_operation(
