@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from contextlib import nullcontext
+from typing import TYPE_CHECKING, Any, cast
 
 from analytics_toolkit.sql._log_context import (
     current_sql_log_context,
     prefix_sql_log_message,
 )
+from analytics_toolkit.sql.connection.validation import close_validation_resource
+from analytics_toolkit.sql.execution.labels import apply_query_label
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -24,15 +27,15 @@ def get_table_column_names(
     self: Any, connection: Any, table_name: str, *, connection_key: str
 ) -> tuple[str, ...]:
     """Read DBAPI column names from one bounded SELECT, including empty results."""
-    from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- adapter registry cycle.
-        TableIdentifier,
-    )
+    # Identifier parsing obtains adapters from this module's initializing backend registry.
+    from analytics_toolkit.sql.core.identifiers import TableIdentifier  # noqa: PLC0415
 
     resolved = self.resolve_table_info_table_name(table_name, connection_key=connection_key)
     table = TableIdentifier.parse(resolved or table_name, self.backend).render_quoted(self.backend)
     cursor = connection.cursor()
     try:
-        cursor.execute(f"SELECT * FROM {table} LIMIT 1")  # noqa: S608 -- parsed and quoted table identifier.
+        # The table reference was structurally parsed and backend-quoted above.
+        cursor.execute(f"SELECT * FROM {table} LIMIT 1")  # noqa: S608
         columns = cursor.description
         if columns is None:
             message = "Column probe returned no result metadata."
@@ -42,6 +45,30 @@ def get_table_column_names(
         return names
     finally:
         cursor.close()
+
+
+def get_writable_table_column_types(
+    self: Any, connection: Any, table_name: str, *, connection_key: str
+) -> dict[str, str]:
+    """Backends without generated columns accept every declared target column."""
+    return cast(
+        "dict[str, str]",
+        self.get_table_column_types(connection, table_name, connection_key=connection_key),
+    )
+
+
+def resolve_upsert_execution_options(
+    self: Any, connection: Any, table_name: str, **options: Any
+) -> dict[str, Any]:
+    del self, connection, table_name
+    return options
+
+
+def resolve_upsert_execution_sqls(
+    self: Any, connection: Any, table_name: str, sqls: list[str]
+) -> list[str]:
+    del self, connection, table_name
+    return sqls
 
 
 def execute_commands(self: Any, connection: Any, sqls: list[str]) -> None:
@@ -76,7 +103,7 @@ def read_dataframe_impl(
     return read_dbapi_query(connection, query)
 
 
-def read_columns(  # noqa: PLR0913
+def read_columns(  # noqa: PLR0913 - backend API mirrors read_dataframe
     self: Any,
     connection: Any,
     query: str,
@@ -115,3 +142,62 @@ def _sql_failure_message(query: str) -> str:
     if suppress_sql:
         return "Failed SQL (details suppressed)"
     return f"Failed SQL:\n{query}"
+
+
+def validate_connection(self: Any, connection: Any) -> None:
+    """Consume a backend-owned SELECT so lazy clients actually connect."""
+    del self
+    cursor = connection.cursor()
+    try:
+        cursor.execute("SELECT 1")
+        rows = cursor.fetchall()
+        if not rows or rows[0][0] != 1:
+            message = "Connectivity probe returned an unexpected result."
+            raise RuntimeError(message)
+    finally:
+        close_validation_resource(cursor)
+
+
+def build_insert_from_stage_sql(  # noqa: PLR0913 - stable adapter keyword contract
+    self: Any,
+    target_table: str,
+    stage_table: str,
+    *,
+    columns: Sequence[str],
+    column_types: dict[str, str] | None,
+    query_label: str | None,
+) -> str:
+    typed_columns = self.column_types_for_columns(column_types, columns)
+
+    return apply_query_label(
+        self.build_explicit_insert_from_stage_sql(
+            target_table,
+            stage_table,
+            columns=columns,
+            column_types=typed_columns,
+        ),
+        query_label,
+    )
+
+
+def local_creation_context(self: Any, connection: Any, *, local: bool) -> Any:
+    del self, connection, local
+    return nullcontext()
+
+
+def preflight_create_table_replacement(self: Any, connection: Any, options: Any) -> None:
+    del self, connection, options
+
+
+def build_create_table_placeholder_sql(
+    self: Any,
+    table_name: str,
+    *,
+    replace_table: bool = False,
+) -> str:
+    del self
+    if replace_table:
+        message = "This backend does not support replace-style CREATE TABLE generation."
+        raise ValueError(message)
+    # This incomplete diagnostic statement is only rendered into a pending SQL plan.
+    return f"CREATE TABLE {table_name} (<source query schema>)"

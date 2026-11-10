@@ -48,14 +48,20 @@ def plan_topology_conversion(
             replacement_physical,
             target_cluster,
         )
-        copy_create = transform_distributed_create(
-            table_create,
-            table_name=copy_wrapper,
-            execution_cluster=None,
-            target_cluster=source_cluster or distributed_cluster or "{cluster}",
-            shard_table=replacement_physical,
-            ch_sharding_key=None,
+        copy_create = (
+            transform_distributed_create(
+                table_create,
+                table_name=copy_wrapper,
+                execution_cluster=None,
+                target_cluster=target_cluster,
+                shard_table=replacement_physical,
+                ch_sharding_key=None,
+            )
+            if target_cluster is not None
+            else None
         )
+        if copy_create is None:
+            copy_wrapper = replacement_physical
         facade_backup = suffixed_table(table, f"__facade_backup_{token}")
         cutover = [
             f"RENAME TABLE {table} TO {facade_backup}{cluster_clause(distributed_on_cluster)}",
@@ -70,24 +76,30 @@ def plan_topology_conversion(
         create_sqls.extend(
             [
                 replacement_create.sql(dialect="clickhouse", pretty=True),
-                copy_create.sql(dialect="clickhouse", pretty=True),
+                *(
+                    [copy_create.sql(dialect="clickhouse", pretty=True)]
+                    if copy_create is not None
+                    else []
+                ),
             ]
         )
         cleanup_sqls.extend(
             [
-                drop_table_sql(copy_wrapper, None),
+                *([drop_table_sql(copy_wrapper, None)] if copy_create is not None else []),
                 drop_table_sql(facade_backup, distributed_on_cluster),
                 drop_table_sql(source_shard_table, source_cluster),
             ]
         )
         cleanup_tables.extend(
             [
-                (copy_wrapper, None),
+                *([(copy_wrapper, None)] if copy_create is not None else []),
                 (facade_backup, distributed_on_cluster),
                 (source_shard_table, source_cluster),
             ]
         )
-        temporary_scopes.extend([(replacement_physical, target_cluster), (copy_wrapper, None)])
+        temporary_scopes.append((replacement_physical, target_cluster))
+        if copy_create is not None:
+            temporary_scopes.append((copy_wrapper, None))
         strategy = "pair_to_local"
         backup_tables = [facade_backup]
     else:

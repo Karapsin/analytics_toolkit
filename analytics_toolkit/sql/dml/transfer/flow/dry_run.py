@@ -10,6 +10,7 @@ from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 
 from ....backends import get_backend_adapter
 from ....core.identifiers import sqlglot_dialect
+from ....core.type_resolution import native_candidates
 from ....ddl.api import _build_create_table_sqls
 from ....execution.plan_steps import (
     add_analyze_step,
@@ -157,6 +158,15 @@ def dry_run_transfer_options(
         "stage_tables": stage_tables,
         "aggregate_stage_table": stage_tables[0],
         "table_schema": options.table_schema,
+        "type_resolution_pending": options.table_schema is None,
+        "type_resolution": {
+            "precedence": ["explicit_schema", "existing_target", "inferred_schema"],
+            "profiling": "complete_selected_input_when_declared_domain_does_not_fit",
+            "native_candidates": native_candidates(options.to_db_backend),
+            "adaptive_input": "certified_native_snapshot_or_local_exact_replay_spool",
+            "adaptive_key_barrier": options.transfer_slices is not None,
+            "dry_run_profiles_input": False,
+        },
         "partition_by": options.partition_by,
         "order_by": options.order_by,
         "ch_engine": options.ch_engine,
@@ -210,6 +220,12 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         _add_lazy_key_lifecycle_steps(plan, options)
     else:
         _add_static_source_steps(plan, options)
+        if options.table_schema is None:
+            plan.add(
+                "RESOLVE DESTINATION TYPES FROM SOURCE METADATA; IF NEEDED, PROFILE AND "
+                "CERTIFY THE COMPLETE SELECTED INPUT BEFORE CREATING DESTINATION TABLES",
+                alias=options.to_db_key, backend=options.to_db_backend, phase="resolve_types",
+            )
         _add_target_stage_templates(
             plan,
             options,

@@ -1,4 +1,5 @@
-clickhouse-connect==0.5.14
+clickhouse-connect==0.5.14; python_version < '3.13'
+clickhouse-connect==1.4; python_version >= '3.13'
 fsspec==2024.2.0
 lz4==4.3.2
 numpy==1.24.2

@@ -16,9 +16,17 @@ from analytics_toolkit.sql.dml.ddl_options import (
     resolve_cluster_routed_source_staging_ch_policy,
     resolve_operation_ddl,
 )
+from analytics_toolkit.sql.dml.query_input import (
+    cached_query_schema,
+    prepare_generic_query_input,
+    query_input_scope,
+    replay_query_input,
+    validate_query_columns,
+)
 
 from ...backends import get_backend_adapter
 from ...backends.source_script import commit_source_setup
+from ...backends.stage_ownership import drop_owned_resource
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     InvalidSqlInputError,
@@ -31,6 +39,11 @@ from ...connection.get_sql_connection import (
 )
 from ...ddl.api import (
     _create_sql_table_with_connection,
+)
+from ...ddl.ownership import (
+    CreationOwnership,
+    acknowledge_created_resource,
+    capture_creation_ownership,
 )
 from ...ddl.schema import (
     normalize_table_schema,
@@ -53,6 +66,13 @@ from ._basic_ops import (
     table_exists as table_exists,  # noqa: PLC0414
 )
 from .create_from_sql_plan import _build_create_table_from_sql_plan
+from .create_ownership import (
+    can_cleanup_created_target,
+    record_target_recovery,
+    require_created_target_acknowledgement,
+    require_query_target_available,
+)
+from .create_skip import CONTINUE_CREATE, skip_existing_query_target
 from .models import CreateTableFromSqlOptions
 from .source_script import (
     build_script_plan,
@@ -60,11 +80,13 @@ from .source_script import (
     normalize_source_script,
     validate_script_staging,
 )
-from .table_validation import normalize_key_columns, validate_key_columns_in_columns
+from .table_validation import normalize_key_columns
 
 
 def transfer_table(**kwargs: Any) -> int | SqlPlan | SqlOperationResult:
-    from ..transfer.flow.api import transfer_table as _transfer_table
+    from ..transfer.flow.api import (
+        transfer_table as _transfer_table,
+    )
 
     return _transfer_table(**kwargs)
 
@@ -78,6 +100,7 @@ def create_table_from_sql(
     table_db: str | None = None,
     insert_data: bool = True,
     drop_target_if_exists: bool = False,
+    if_not_exists: bool = False,
     gp_distributed_by_key: str | Sequence[str] | None = None,
     gp_partitions: Mapping[str, Any] | None = None,
     partition_by: Sequence[str] | str | None = None,
@@ -93,6 +116,7 @@ def create_table_from_sql(
     ch_ddl_ready_timeout_seconds: float | None = None,
     ch_ddl_wait_policy: str | None = None,
     ch_only_shard: bool = False,
+    ch_replace_table: bool = False,
     ch_retry_per_host_drops: bool = True,
     trino_insert_chunk_size: int | None = None,
     retry_cnt: int = 5,
@@ -113,6 +137,9 @@ def create_table_from_sql(
     source_config = get_connection_config(source_db)
     target_config = source_config if table_db is None else get_connection_config(table_db)
     target_adapter = get_backend_adapter(target_config.backend)
+    if ch_replace_table and not target_adapter.supports_distributed_table_targets():
+        message = "ch_replace_table requires a ClickHouse target."
+        raise ValueError(message)
     validate_script_staging(source_config, setup_sqls, insert_data=insert_data)
     gp_distribution = normalize_key_columns(
         gp_distributed_by_key,
@@ -184,6 +211,8 @@ def create_table_from_sql(
         table_schema=normalize_table_schema(table_schema),
         insert_data=insert_data,
         drop_target_if_exists=drop_target_if_exists,
+        if_not_exists=if_not_exists,
+        ch_replace_table=ch_replace_table,
         gp_distributed_by_key=gp_distribution,
         gp_partitions=normalized_gp_partitions,
         partition_by=partition,
@@ -200,6 +229,7 @@ def create_table_from_sql(
         query_label=query_label,
         ddl_properties=ddl.regular_properties,
         ch_creation_policy=ch_policy,
+        input_resolution={"retry_cnt": retry_cnt, "timeout_increment": timeout_increment},
     )
 
     if options.dry_run or options.return_sql:
@@ -210,8 +240,11 @@ def create_table_from_sql(
             options=options,
         )
         if fast_path_applied:
+            if isinstance(fast_path_result, SqlPlan):
+                fast_path_result.options["if_not_exists"] = options.if_not_exists
+                fast_path_result.options["skip_population_if_target_exists"] = options.if_not_exists
             return cast("int | None | SqlPlan | SqlOperationResult", fast_path_result)
-        return _build_create_table_from_sql_plan(
+        plan = _build_create_table_from_sql_plan(
             source_key=options.source_key,
             source_backend=options.source_backend,
             target_key=options.target_key,
@@ -232,7 +265,11 @@ def create_table_from_sql(
             query_label=options.query_label,
             ddl_properties=options.ddl_properties,
             ch_creation_policy=options.ch_creation_policy,
+            ch_replace_table=options.ch_replace_table,
         )
+        plan.options["if_not_exists"] = options.if_not_exists
+        plan.options["skip_population_if_target_exists"] = options.if_not_exists
+        return plan
 
     def execute_attempt(attempt: int) -> object:
         return _execute_create_table_from_sql_attempt(
@@ -241,36 +278,40 @@ def create_table_from_sql(
             attempt=attempt,
         )
 
-    result = run_retrying_operation(
-        operation_name=(f"creating table {options.target_key}.{options.target_table} from query"),
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        operation=execute_attempt,
-        context_factory=lambda attempt: SqlOperationContext(
-            operation="create_table_from_sql",
-            alias=options.target_key,
-            backend=options.target_backend,
-            phase="create_or_insert",
-            target_table=options.target_table,
-            retry_attempt=attempt,
-            sql_preview=sql_preview(options.source_sql),
-        ),
-    )
-    if isinstance(result, _UnsafeAttemptFailure):
-        annotate_sql_exception(
-            result.error,
-            SqlOperationContext(
+    with query_input_scope(options.input_resolution, [source_config, target_config]):
+        result = run_retrying_operation(
+            operation_name=(
+                f"creating table {options.target_key}.{options.target_table} from query"
+            ),
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
+            operation=execute_attempt,
+            context_factory=lambda attempt: SqlOperationContext(
                 operation="create_table_from_sql",
                 alias=options.target_key,
                 backend=options.target_backend,
                 phase="create_or_insert",
                 target_table=options.target_table,
-                retry_attempt=result.attempt,
+                retry_attempt=attempt,
                 sql_preview=sql_preview(options.source_sql),
             ),
         )
-        raise result.error
-    return cast("int | None | SqlPlan | SqlOperationResult", result)
+        if isinstance(result, _UnsafeAttemptFailure):
+            options.input_resolution["retain_checkpoint"] = True
+            annotate_sql_exception(
+                result.error,
+                SqlOperationContext(
+                    operation="create_table_from_sql",
+                    alias=options.target_key,
+                    backend=options.target_backend,
+                    phase="create_or_insert",
+                    target_table=options.target_table,
+                    retry_attempt=result.attempt,
+                    sql_preview=sql_preview(options.source_sql),
+                ),
+            )
+            raise result.error
+        return cast("int | None | SqlPlan | SqlOperationResult", result)
 
 
 class _UnsafeAttemptFailure:
@@ -306,6 +347,9 @@ def _call_create_table_from_sql_fast_path(
             query_label=options.query_label,
             return_metadata=options.return_metadata,
             table_schema=options.table_schema,
+            ch_creation_policy=options.ch_creation_policy,
+            ch_replace_table=options.ch_replace_table,
+            input_resolution=options.input_resolution,
         ),
     )
 
@@ -316,6 +360,12 @@ def _execute_create_table_from_sql_attempt(
     target_adapter: Any,
     attempt: int,
 ) -> object:
+    if options.if_not_exists:
+        skipped = skip_existing_query_target(
+            options, get_sql_connection, table_exists, _close_connection_quietly, attempt=attempt
+        )
+        if skipped is not CONTINUE_CREATE:
+            return skipped
     if options.setup_sqls:
         return execute_script_attempt(options, target_adapter, attempt)
     if target_adapter.uses_create_table_from_sql_fast_path(
@@ -357,22 +407,34 @@ def _execute_create_table_from_sql_fast_path_attempt(
                 connection_key=options.target_key,
                 backend=options.target_backend,
             )
-    owns_target = options.drop_target_if_exists or not target_existed
+    require_query_target_available(
+        existed=target_existed, target=options.target_table, replace=options.ch_replace_table
+    )
+    ownership = CreationOwnership()
     try:
-        fast_path_applied, fast_path_result = _call_create_table_from_sql_fast_path(
-            target_adapter=target_adapter,
-            options=options,
-        )
+        with capture_creation_ownership(ownership):
+            fast_path_applied, fast_path_result = _call_create_table_from_sql_fast_path(
+                target_adapter=target_adapter,
+                options=options,
+            )
         if not fast_path_applied:
             raise RuntimeError("Expected the ClickHouse create-table fast path to apply.")
         return fast_path_result
     except Exception as exc:
-        if owns_target and _cleanup_attempt_target(
-            options=options,
-            target_adapter=target_adapter,
-            target_connection=None,
+        if not ownership.submitted and options.ch_creation_policy is not None:
+            raise
+        if (
+            not options.ch_replace_table
+            and can_cleanup_created_target(ownership, exc)
+            and _cleanup_attempt_target(
+                options=options,
+                target_adapter=target_adapter,
+                target_connection=None,
+                owned_resources=ownership.resources,
+            )
         ):
             raise
+        record_target_recovery(ownership, exc, options.target_table)
         return _UnsafeAttemptFailure(exc, attempt)
 
 
@@ -387,8 +449,10 @@ def _execute_generic_create_table_from_sql_attempt(
     inserted_rows: int | None = None
     delegate_transfer = False
     target_column_types: dict[str, str] = {}
-    target_owned_by_attempt: bool | None = None
+    ownership = CreationOwnership()
     mutation_started = False
+    query_connection_ref: dict[str, Any] | None = None
+    target_query_ref: dict[str, Any] | None = None
     operation_metadata = SqlOperationMetadata(query_label=options.query_label)
 
     try:
@@ -402,7 +466,10 @@ def _execute_generic_create_table_from_sql_attempt(
             query_label=options.query_label,
             preview_sql=options.source_sql,
         ):
-            if source_connection is None:
+            if source_connection is None and (
+                options.source_key == options.target_key
+                or cached_query_schema(options.input_resolution) is None
+            ):
                 source_connection = get_sql_connection(options.source_key)
             target_connection = (
                 source_connection
@@ -415,27 +482,17 @@ def _execute_generic_create_table_from_sql_attempt(
                 connection=options.source_key,
                 backend=options.source_backend,
             )
-            source_schema = inspect_source_query_schema(
+            source_schema = cached_query_schema(
+                options.input_resolution
+            ) or inspect_source_query_schema(
                 options.source_backend,
                 source_connection,
                 apply_query_label(options.source_sql, options.query_label),
             )
             if options.setup_sqls and not options.insert_data:
                 commit_source_setup(get_backend_adapter(options.source_backend), source_connection)
-            source_columns = [column.name for column in source_schema]
-            _validate_source_columns(source_columns)
-            validate_key_columns_in_columns(options.gp_distributed_by_key, source_columns)
-            target_adapter.validate_ch_columns_in_columns(
-                options.partition_by,
-                source_columns,
-                "partition_by",
-                data_name="source query",
-            )
-            target_adapter.validate_ch_columns_in_columns(
-                options.order_by,
-                source_columns,
-                "order_by",
-                data_name="source query",
+            source_columns = validate_query_columns(
+                options, source_schema, target_adapter, _validate_source_columns
             )
 
             if options.table_schema is None:
@@ -459,7 +516,23 @@ def _execute_generic_create_table_from_sql_attempt(
                     options.target_key,
                 )
             )
-            target_owned_by_attempt = not target_existed_before_attempt
+            require_query_target_available(
+                existed=target_existed_before_attempt,
+                target=options.target_table,
+                replace=options.ch_replace_table,
+            )
+            query_connection_ref = {"connection": source_connection}
+            target_query_ref = (
+                query_connection_ref
+                if options.source_key == options.target_key
+                else {"connection": target_connection}
+            )
+            prepared = prepare_generic_query_input(options, query_connection_ref, source_schema)
+            source_connection = query_connection_ref["connection"]
+            if options.source_key == options.target_key:
+                target_connection = source_connection
+            if prepared is not None:
+                target_column_types = prepared.schema
             mutation_started = options.drop_target_if_exists
             target_exists_before_drop = target_adapter.prepare_existing_target_for_create_from_sql(
                 target_connection,
@@ -492,16 +565,22 @@ def _execute_generic_create_table_from_sql_attempt(
                     target_exists_before_drop=target_exists_before_drop,
                 )
             )
+            # Any authorized old-layout drop already happened above. A new
+            # target must be acquired by plain CREATE, including replacement.
+            create_kwargs["ch_replace_table"] = options.ch_replace_table
+            create_kwargs["on_resource_created"] = acknowledge_created_resource
 
             mutation_started = True
-            _create_sql_table_with_connection(
-                options.target_backend,
-                target_connection,
-                options.target_table,
-                None,
-                connection_key=options.target_key,
-                **create_kwargs,
-            )
+            with capture_creation_ownership(ownership):
+                _create_sql_table_with_connection(
+                    options.target_backend,
+                    target_connection,
+                    options.target_table,
+                    None,
+                    connection_key=options.target_key,
+                    **create_kwargs,
+                )
+            require_created_target_acknowledgement(ownership, replace=options.ch_replace_table)
 
             if not options.insert_data:
                 if options.return_metadata:
@@ -511,7 +590,9 @@ def _execute_generic_create_table_from_sql_attempt(
                     )
                 return None
 
-            if target_adapter.should_insert_create_table_from_sql_directly(
+            if prepared is not None and prepared.frozen:
+                inserted_rows = replay_query_input(prepared, target_query_ref, operation_metadata)
+            elif target_adapter.should_insert_create_table_from_sql_directly(
                 source_backend=options.source_backend,
                 source_key=options.source_key,
                 target_key=options.target_key,
@@ -531,14 +612,24 @@ def _execute_generic_create_table_from_sql_attempt(
             if source_connection is not None:
                 get_backend_adapter(options.source_backend).rollback_quietly(source_connection)
             raise
-        if target_owned_by_attempt and _cleanup_attempt_target(
-            options=options,
-            target_adapter=target_adapter,
-            target_connection=target_connection,
+        if (
+            not options.ch_replace_table
+            and can_cleanup_created_target(ownership, exc)
+            and _cleanup_attempt_target(
+                options=options,
+                target_adapter=target_adapter,
+                target_connection=target_connection,
+                owned_resources=ownership.resources,
+            )
         ):
             raise
+        record_target_recovery(ownership, exc, options.target_table)
         return _UnsafeAttemptFailure(exc, attempt)
     finally:
+        if query_connection_ref is not None:
+            source_connection = query_connection_ref["connection"]
+        if target_query_ref is not None:
+            target_connection = target_query_ref["connection"]
         _close_connections(
             source_connection=source_connection,
             source_key=options.source_key,
@@ -589,12 +680,18 @@ def _execute_generic_create_table_from_sql_attempt(
         try:
             return transfer_table(**transfer_kwargs)
         except Exception as exc:
-            if target_owned_by_attempt and _cleanup_attempt_target(
-                options=options,
-                target_adapter=target_adapter,
-                target_connection=None,
+            if (
+                not options.ch_replace_table
+                and can_cleanup_created_target(ownership, exc)
+                and _cleanup_attempt_target(
+                    options=options,
+                    target_adapter=target_adapter,
+                    target_connection=None,
+                    owned_resources=ownership.resources,
+                )
             ):
                 raise
+            record_target_recovery(ownership, exc, options.target_table)
             return _UnsafeAttemptFailure(exc, attempt)
     if options.return_metadata:
         operation_metadata.source_rows = inserted_rows
@@ -612,7 +709,10 @@ def _cleanup_attempt_target(
     options: CreateTableFromSqlOptions,
     target_adapter: Any,
     target_connection: Any | None,
+    owned_resources: Sequence[str] = (),
 ) -> bool:
+    if not owned_resources:
+        return False
     cleanup_error: Exception | None = None
     if target_connection is not None:
         try:
@@ -621,6 +721,7 @@ def _cleanup_attempt_target(
                 options=options,
                 target_adapter=target_adapter,
                 target_connection=target_connection,
+                owned_resources=owned_resources,
             )
             return True
         except Exception as exc:
@@ -633,6 +734,7 @@ def _cleanup_attempt_target(
             options=options,
             target_adapter=target_adapter,
             target_connection=fresh_connection,
+            owned_resources=owned_resources,
         )
         cleanup_error = None
         return True
@@ -659,23 +761,24 @@ def _drop_attempt_target(
     options: CreateTableFromSqlOptions,
     target_adapter: Any,
     target_connection: Any,
+    owned_resources: Sequence[str] = (),
 ) -> None:
+    if not owned_resources:
+        return
     time_print(
         f"Removing partial target table {options.target_table}",
         connection=options.target_key,
         backend=options.target_backend,
         phase="cleanup",
     )
-    target_adapter.prepare_existing_target_for_create_from_sql(
-        target_connection,
-        options.target_table,
-        drop_target_if_exists=True,
-        ch_cluster=options.ch_cluster,
-        ch_only_shard=options.ch_only_shard,
-        query_label=options.query_label,
-        connection_key=options.target_key,
-        ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-    )
+    for resource in reversed(list(dict.fromkeys(owned_resources))):
+        drop_owned_resource(
+            target_adapter,
+            target_connection,
+            resource,
+            logical_stage=options.target_table,
+            creation_policy=options.ch_creation_policy,
+        )
 
 
 def _normalize_table_name(table_name: str) -> str:

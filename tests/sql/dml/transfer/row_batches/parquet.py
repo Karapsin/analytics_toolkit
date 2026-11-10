@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pyarrow as pa
+
 from tests.sql._support.row_batches import (
     Any,
     RecordingSourceConnection,
@@ -220,18 +222,14 @@ def test_parquet_arrow_conversion_preserves_timezone_in_iso_text() -> None:
         rows=[(pd.Timestamp("2026-01-01 03:04:05.123456", tz="UTC"),)],
     )
 
-    class FakeTable:
-        @staticmethod
-        def from_pydict(values: dict[str, Any]) -> dict[str, Any]:
-            return values
-
     table = parquet_stage_module.row_batch_to_arrow_table(
-        SimpleNamespace(Table=FakeTable),
+        pa,
         batch,
         column_types={"event_ts": "TIMESTAMP(6) WITH TIME ZONE"},
     )
 
-    assert table == {"event_ts": ["2026-01-01 03:04:05.123456+00:00"]}
+    assert table.column("event_ts").type == pa.string()
+    assert table.to_pydict() == {"event_ts": ["2026-01-01T03:04:05.123456+00:00"]}
 
 
 def test_parquet_arrow_conversion_types_all_null_columns() -> None:
@@ -251,19 +249,15 @@ def test_parquet_arrow_conversion_types_all_null_columns() -> None:
         string=lambda: "string",
     )
 
-    table = parquet_stage_module.row_batch_to_arrow_table(
-        fake_pa,
-        batch,
-        column_types={
-            "event_ts": "TIMESTAMP(6) WITH TIME ZONE",
-            "custom_value": "CUSTOM_TYPE",
-        },
-    )
-
-    assert table == {
-        "event_ts": ([None, None], "string"),
-        "custom_value": [None, None],
-    }
+    with pytest.raises(ValueError, match="Unsupported resolved Trino Parquet stage type"):
+        parquet_stage_module.row_batch_to_arrow_table(
+            fake_pa,
+            batch,
+            column_types={
+                "event_ts": "TIMESTAMP(6) WITH TIME ZONE",
+                "custom_value": "CUSTOM_TYPE",
+            },
+        )
 
 
 @pytest.mark.parametrize(

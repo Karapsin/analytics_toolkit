@@ -215,6 +215,27 @@ class ReplacementClient:
     def query(self, sql: str, **_kwargs: Any) -> Any:
         self.queries.append(sql)
         clean = strip_query_label(sql)
+        if clean.startswith("SHOW CREATE TABLE "):
+            name = clean.removeprefix("SHOW CREATE TABLE ").replace("`", "")
+            key = (
+                (LOCAL, name)
+                if (LOCAL, name) in self.tables
+                else next(key for key in self.tables if key[1] == name)
+            )
+            state = self.tables[key]
+            columns = ", ".join(f"`{column}` Int64" for column in state.columns)
+            facade = self.facade_sources.get(key)
+            if facade is not None:
+                cluster, physical = facade
+                database, relation = physical.rsplit(".", 1)
+                engine = f"Distributed('{cluster}', '{database}', '{relation}', rand())"
+                order = ""
+            else:
+                engine = "ReplicatedMergeTree" if state.replicated else "MergeTree"
+                order = " ORDER BY tuple()"
+            return SimpleNamespace(
+                result_rows=[(f"CREATE TABLE {name} ({columns}) ENGINE = {engine}{order}",)]
+            )
         if clean == "SELECT currentDatabase()":
             return SimpleNamespace(result_rows=[(self.current_database,)])
         if clean.startswith("EXISTS TABLE "):
@@ -250,20 +271,9 @@ class ReplacementClient:
         return SimpleNamespace(result_rows=[(rows,)])
 
     def _metadata_rows(self, tree: exp.Expression, scope: str, table: str) -> list[tuple[Any, ...]]:
-        if table == "system.databases":
-            database = next(
-                item.expression.this for item in tree.find_all(exp.EQ) if item.this.name == "name"
-            )
-            return [(self.database_engines.get((scope, database), self.engines[scope]),)]
-        if table == "system.parts":
-            self.fingerprint_calls += 1
-            if self.concurrent_destination_change and self.fingerprint_calls == 2:
-                state = self.tables[self.storage, PHYSICAL]
-                self.tables[self.storage, PHYSICAL] = replace(state, rows=state.rows + 1)
-            filters = {item.this.name: item.expression.this for item in tree.find_all(exp.EQ)}
-            target = f"{filters['database']}.{filters['table']}"
-            state = self.tables.get((scope, target))
-            return [(scope, 1, state.rows, 1, 1)] if state else [(scope, 0, 0, 0, 0)]
+        catalog_rows = self._catalog_rows(tree, scope, table)
+        if catalog_rows is not None:
+            return catalog_rows
         if table in {"system.clusters", "system.one"} and tree.find(exp.Count):
             return [(self.replica_count,)]
         if table == "system.clusters" and any(
@@ -273,6 +283,15 @@ class ReplacementClient:
                 (1, replica, self.internal_replication)
                 for replica in range(1, self.replica_count + 1)
             ]
+        if table == "system.tables" and any(
+            item.name == "create_table_query" for item in tree.expressions
+        ):
+            filters = {item.this.name: item.expression.this for item in tree.find_all(exp.EQ)}
+            target = f"{filters['database']}.{filters['name']}"
+            state = self.tables[scope, target]
+            columns = ", ".join(f"`{column}` Int64" for column in state.columns)
+            engine = "ReplicatedMergeTree" if state.replicated else "MergeTree"
+            return [(f"CREATE TABLE {target} ({columns}) ENGINE={engine} ORDER BY tuple()",)]
         if table == "system.tables" and tree.find(exp.Count):
             relation = next(
                 item.expression.this for item in tree.find_all(exp.EQ) if item.this.name == "name"
@@ -290,6 +309,25 @@ class ReplacementClient:
             "system.one": [(f"ingest{replica}",) for replica in range(1, self.replica_count + 1)],
             "system.processes": [(0,)],
         }[table]
+
+    def _catalog_rows(
+        self, tree: exp.Expression, scope: str, table: str
+    ) -> list[tuple[Any, ...]] | None:
+        if table == "system.databases":
+            database = next(
+                item.expression.this for item in tree.find_all(exp.EQ) if item.this.name == "name"
+            )
+            return [(self.database_engines.get((scope, database), self.engines[scope]),)]
+        if table == "system.parts":
+            self.fingerprint_calls += 1
+            if self.concurrent_destination_change and self.fingerprint_calls == 2:
+                state = self.tables[self.storage, PHYSICAL]
+                self.tables[self.storage, PHYSICAL] = replace(state, rows=state.rows + 1)
+            filters = {item.this.name: item.expression.this for item in tree.find_all(exp.EQ)}
+            target = f"{filters['database']}.{filters['table']}"
+            state = self.tables.get((scope, target))
+            return [(scope, 1, state.rows, 1, 1)] if state else [(scope, 0, 0, 0, 0)]
+        return None
 
     def _artifact_rows(self, tree: exp.Expression, scope: str) -> list[tuple[Any, ...]]:
         database = next(

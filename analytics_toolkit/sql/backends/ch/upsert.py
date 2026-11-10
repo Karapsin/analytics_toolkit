@@ -2,12 +2,44 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from sqlglot import exp, parse_one
+
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.upsert import incoming_stage_source_sql
 from analytics_toolkit.sql.backends.utils import sql_literal
 
+from .dialect import ClickHouseDialect
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+
+def resolve_upsert_execution_options(
+    adapter: Any, connection: Any, table_name: str, **options: Any
+) -> dict[str, Any]:
+    from .layout import inspect_existing_layout  # noqa: PLC0415 -- adapter/layout import cycle.
+
+    del adapter
+    layout = inspect_existing_layout(connection, table_name)
+    return {**options, "ch_only_shard": not layout.create_distributed_pair}
+
+
+def resolve_upsert_execution_sqls(
+    adapter: Any, connection: Any, table_name: str, sqls: list[str]
+) -> list[str]:
+    from .layout import inspect_existing_layout  # noqa: PLC0415 -- backend registry cycle.
+
+    del adapter
+    layout = inspect_existing_layout(connection, table_name)
+    result = []
+    for sql in sqls:
+        tree = parse_one(sql, read=ClickHouseDialect)
+        if isinstance(tree, exp.Alter):
+            tree.set("this", exp.to_table(layout.physical_table, dialect=ClickHouseDialect))
+            result.append(tree.sql(dialect=ClickHouseDialect))
+        else:
+            result.append(sql)
+    return result
 
 
 def build_upsert_stage_sqls(  # noqa: PLR0913 - mirrors the backend adapter protocol.
@@ -87,7 +119,7 @@ def build_preserved_target_rows_insert_sql(  # noqa: PLR0913 - mirrors the backe
     )
     key_predicates = " AND ".join(
         adapter.null_safe_key_equality("target_dst", "stage_src", column_name)
-        for column_name in key_columns
+        for column_name in dict.fromkeys([partition_column, *key_columns])
     )
     return _apply_query_label(
         f"INSERT INTO {final_stage_table} ({target_columns})\n"  # noqa: S608 - identifiers are adapter-quoted.
@@ -177,9 +209,9 @@ def build_drop_upsert_partition_sqls(  # noqa: PLR0913 - mirrors the backend ada
         target_table if ch_only_shard else ch_distributed_table_pair(target_table).shard_table
     )
     cluster_clause = None if ch_only_shard else ch_cluster
-    values = list(partition_values) if partition_values is not None else [
-        "<affected partition value>"
-    ]
+    values = (
+        list(partition_values) if partition_values is not None else ["<affected partition value>"]
+    )
     return [
         _apply_query_label(
             f"ALTER TABLE {drop_table}{ch_cluster_clause(cluster_clause)} "

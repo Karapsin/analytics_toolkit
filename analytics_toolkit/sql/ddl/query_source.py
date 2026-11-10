@@ -1,16 +1,24 @@
 from __future__ import annotations
 
-# ruff: noqa: PLC0415, PLR0913, TC003, TID252
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from ..connection.errors import SqlOperationContext, sql_preview
+from analytics_toolkit.sql.connection.errors import SqlOperationContext, sql_preview
+from analytics_toolkit.sql.core.type_resolution import requires_adaptive_resolution
+from analytics_toolkit.sql.execution.labels import apply_query_label
+from analytics_toolkit.sql.execution.operation_runner import (
+    _close_connection,
+    run_retrying_operation,
+)
+
 from .ch_policy import regular_ddl_properties
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, Sequence
 
-def generate_create_table_from_query_sql(
+
+def generate_create_table_from_query_sql(  # noqa: PLR0913 - Mirrors the public create_table options.
     *,
     source_db: str,
     table_db: str,
@@ -31,23 +39,28 @@ def generate_create_table_from_query_sql(
     get_connection_config_fn: Callable[[str], Any],
     get_backend_adapter_fn: Callable[[str], Any],
     get_sql_connection_fn: Callable[[str], Any],
+    ch_creation_policy: Any = None,
+    ch_replace_table: bool = False,
 ) -> str:
-    from ..dml.table.create_table_from_sql import (
+    # Source creation imports the DDL facade; defer these shared normalizers until execution.
+    # The API calls this helper; import its compatibility builders after initialization.
+    from analytics_toolkit.sql.ddl.api import (  # noqa: PLC0415
+        _build_create_table_sqls,
+        _format_sql_statements,
+    )
+    from analytics_toolkit.sql.dml.table.create_table_from_sql import (  # noqa: PLC0415
         _normalize_only_shard,
         _normalize_single_query,
         _validate_source_columns,
     )
-    from ..dml.table.table_validation import (
+    from analytics_toolkit.sql.dml.table.table_validation import (  # noqa: PLC0415
         normalize_key_columns,
         validate_key_columns_in_columns,
     )
-    from ..dml.transfer.schema import (
+    from analytics_toolkit.sql.dml.transfer.schema import (  # noqa: PLC0415
         inspect_source_query_schema,
         map_source_schema_to_target,
     )
-    from ..execution.labels import apply_query_label
-    from ..execution.operation_runner import run_retrying_operation
-    from .api import _build_create_table_sqls, _format_sql_statements
 
     source_config = get_connection_config_fn(source_db)
     target_config = get_connection_config_fn(table_db)
@@ -99,7 +112,11 @@ def generate_create_table_from_query_sql(
                 apply_query_label(source_sql, query_label),
             )
         finally:
-            source_connection.close()
+            _close_connection(
+                {"connection": source_connection},
+                source_config.connection_key,
+                backend=source_config.backend,
+            )
 
     source_schema = run_retrying_operation(
         operation_name=(
@@ -119,6 +136,12 @@ def generate_create_table_from_query_sql(
         ),
     )
 
+    if requires_adaptive_resolution(source_schema, target_config.backend, source_config.backend):
+        message = (
+            "SQL generation requires adaptive full-input profiling; execute the operation "
+            "to resolve exact types or provide an explicit table_schema."
+        )
+        raise ValueError(message)
     source_columns = [column.name for column in source_schema]
     _validate_source_columns(source_columns)
     validate_key_columns_in_columns(gp_distribution, source_columns)
@@ -151,6 +174,7 @@ def generate_create_table_from_query_sql(
         drop_target_if_exists=drop_target_if_exists,
         target_exists_before_drop=False,
     )
+    create_kwargs["ch_replace_table"] = ch_replace_table
     create_sqls = _build_create_table_sqls(
         target_config.backend,
         table_name,
@@ -159,6 +183,7 @@ def generate_create_table_from_query_sql(
         query_label=query_label,
         option_owner="db_key",
         ddl_properties=regular_ddl_properties(target_config),
+        ch_creation_policy=ch_creation_policy,
         **create_kwargs,
     )
     drop_sqls = (

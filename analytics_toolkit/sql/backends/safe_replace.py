@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.execution_outcome import close_cursor
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
 from analytics_toolkit.sql.ddl.identifiers import (
     _add_table_identifier_suffix,
@@ -113,7 +114,7 @@ def _transactional_cutover(
         request.connection.rollback()
         raise
     finally:
-        cursor.close()
+        close_cursor(cursor, backend=adapter.backend)
     try:
         request.connection.commit()
     except Exception as exc:

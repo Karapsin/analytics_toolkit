@@ -211,7 +211,7 @@ def test_unkeyed_target_open_failure_closes_partial_source_lease(monkeypatch: An
     assert closed == ["source"]
 
     with pytest.raises(OSError, match="target open failed"):
-        staged_attempt._range_worker(
+        staged_attempt._range_worker_with_progress(
             _staged_options(),
             "source.snapshot",
             ["id"],
@@ -220,6 +220,7 @@ def test_unkeyed_target_open_failure_closes_partial_source_lease(monkeypatch: An
             SimpleNamespace(),
             0,
             1,
+            SimpleNamespace(),
         )
     assert active == {"source": 0, "target": 0}
     assert high_water == {"source": 1, "target": 0}

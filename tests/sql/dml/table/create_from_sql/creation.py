@@ -82,7 +82,7 @@ def test_cross_backend_creation_maps_types_to_clickhouse_and_creates_pair(
     assert not any(command.startswith("DROP TABLE") for command in target.commands)
     assert len(target.commands) == 4
     shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = target.commands
-    assert shard_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
+    assert shard_sql.startswith("CREATE TABLE analytics.events_shard")
     assert "ON CLUSTER '{cluster}'" in shard_sql
     assert "`id` Nullable(Int32)" in shard_sql
     assert "`dt` Nullable(Date)" in shard_sql
@@ -91,7 +91,7 @@ def test_cross_backend_creation_maps_types_to_clickhouse_and_creates_pair(
     assert "ORDER BY (`dt`, `id`)" in shard_sql
     assert local_shard_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
     assert "ON CLUSTER" not in local_shard_sql
-    assert distributed_sql.startswith("CREATE TABLE IF NOT EXISTS analytics.events")
+    assert distributed_sql.startswith("CREATE TABLE analytics.events")
     assert "ENGINE = Distributed(" in distributed_sql
     assert "    'events_shard'," in distributed_sql
     assert "    cityHash64(id)" in distributed_sql

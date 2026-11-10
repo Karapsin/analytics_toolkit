@@ -122,11 +122,9 @@ def test_final_upsert_partial_stage_candidate_remains_visible_to_cleanup(
     with pytest.raises(OSError, match="distributed create failed"):
         finalize_module._ensure_final_upsert_stage_table(options, state)
 
-    assert state.final_upsert_stage_table == "stage.partial_upsert"
-    assert finalize_module._stage_tables_to_cleanup(state) == [
-        "stage.primary",
-        "stage.partial_upsert",
-    ]
+    assert state.final_upsert_stage_table is None
+    assert state.stage_table_candidates == ["stage.partial_upsert"]
+    assert finalize_module._stage_tables_to_cleanup(state) == ["stage.primary"]
 
 
 def test_finalize_existing_target_schema_and_cleanup_precedence(

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-# ruff: noqa: C901
-
 import contextvars
 import uuid
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 from tqdm import tqdm
@@ -14,6 +12,7 @@ from tqdm import tqdm
 from analytics_toolkit.general import time_print
 
 from ....backends import get_backend_adapter
+from ....backends.source_estimate import estimate_source_rows
 from ....connection.get_sql_connection import get_sql_connection
 from ....ddl.schema import validate_table_schema_columns
 from ....execution.operation_runner import _format_duration
@@ -36,23 +35,40 @@ from ..runtime.retry import (
     close_connection_ref,
     replace_connection,
     rollback_quietly,
-    run_with_fresh_connection,
     run_with_retry,
 )
 from ..schema import (
     inspect_source_query_schema,
     map_source_schema_to_target,
 )
-from ....backends.source_estimate import estimate_source_rows
-from .finalize import cleanup_stage, finalize_loaded_stage
+from .adaptive_input import (
+    AdaptiveTransferCompleteError,
+    AdaptiveTransferContext,
+    complete_adaptive_attempt,
+    estimated_input_rows,
+    maybe_run_adaptive_transfer,
+    resolved_source_batches,
+    run_certified_transfer_attempt,
+    run_target_operation,
+)
+from .concurrency import run_in_context as _run_in_context
+from .finalize import cleanup_stage as cleanup_stage  # noqa: PLC0414 - compatibility re-export
 from .finalize import cleanup_transfer_attempt_stages as cleanup_attempt_stages
+from .finalize import finalize_loaded_stage
+from .initialization import initialize_stage_state as _initialize_stage_state
 from .keyed import WorkerStageState, build_keyed_worker_stage_states
-from .keyed_pipeline import run_keyed_transfer_pipeline
 from .keyed_phases import finish_keyed_transfer
+from .keyed_pipeline import run_keyed_transfer_pipeline
 from .logging import (
     ProgressTracker,
     format_transfer_key_log_fragment,
     format_transfer_slice_log_label,
+)
+from .parquet_batches import (
+    initialize_parquet_stage_for_first_batch as _initialize_parquet_stage_for_first_batch_impl,
+)
+from .parquet_batches import (
+    load_parquet_stage_batches as _load_parquet_stage_batches_impl,
 )
 from .parquet_stage import (
     create_parquet_stage_table,
@@ -60,13 +76,11 @@ from .parquet_stage import (
     parquet_row_group_size,
     write_batch_to_parquet_stage,
 )
-from .parquet_batches import (
-    initialize_parquet_stage_for_first_batch as _initialize_parquet_stage_for_first_batch_impl,
-    load_parquet_stage_batches as _load_parquet_stage_batches_impl,
-)
 from .progress import format_transfer_progress_count, make_transfer_progress_bar
 from .row_counts import (
     cleanup_materialized_sources as cleanup_sources,
+)
+from .row_counts import (
     cleanup_sources_and_close,
     disable_query_limit_for_transfer_reads,
     prepare_row_count_validated_options,
@@ -76,11 +90,25 @@ from .row_counts import (
 from .stage import (
     _commit_if_supported,
     _with_internal_column_types,
-    create_stage_state,
     ensure_transfer_target_table,
     initialize_stage_for_first_batch,
+    require_stage_table,
+    select_stage_column_types,
+)
+from .stage import (
+    create_stage_state as create_stage_state,  # noqa: PLC0414 - compatibility re-export
 )
 from .stage_identity import resolve_internal_columns
+from .stage_ownership import (
+    cleanup_target_superseded_stages,
+    stage_creation_callbacks,
+)
+from .stage_ownership import (
+    create_keyed_worker_stage_tables as _create_keyed_worker_stage_tables_impl,
+)
+from .stage_ownership import (
+    uses_keyed_worker_stages as _uses_keyed_worker_stages,
+)
 from .staged_attempt import run_staged_source_transfer_attempt
 from .superseded import cleanup_superseded_transfer_stages
 
@@ -90,6 +118,15 @@ def run_transfer_attempt(
     read_retry_cnt: int,
     insert_retry_cnt: int,
 ) -> int:
+    if options.input_resolution.get("spool") is not None:
+        return run_certified_transfer_attempt(
+            options,
+            AdaptiveTransferContext(
+                read_retry_cnt,
+                insert_retry_cnt,
+                open_connection=get_sql_connection,
+            ),
+        )
     if options.source_transfer_staging_schema is not None:
         return run_staged_source_transfer_attempt(
             options,
@@ -109,16 +146,12 @@ def run_transfer_attempt(
     total_rows = 0
     transfer_error: Exception | None = None
     cleanup_error: Exception | None = None
-    stage_state = _run_with_fresh_target_connection(
+    stage_state = _initialize_stage_state(
         options,
-        "target_state",
-        lambda target_ref: create_stage_state(
-            options,
-            TransferConnectionRefs(
-                source=connection_refs.source,
-                target=target_ref,
-            ),
-        ),
+        connection_refs,
+        _run_with_fresh_target_connection,
+        create_stage_state,
+        close_connection_ref,
     )
 
     try:
@@ -136,20 +169,27 @@ def run_transfer_attempt(
             options.from_db_backend,
             table_schema_names=(options.table_schema or {}).keys(),
         )
+        adaptive_rows = maybe_run_adaptive_transfer(
+            options,
+            connection_refs,
+            stage_state,
+            source_schema,
+            AdaptiveTransferContext(
+                read_retry_cnt,
+                insert_retry_cnt,
+                reader=iter_source_batches,
+                open_connection=get_sql_connection,
+            ),
+        )
+        complete_adaptive_attempt(adaptive_rows)
         _cleanup_target_superseded_stages(options, stage_state)
-        if options.table_schema is not None and source_schema:
-            stage_state.stage_column_types = validate_table_schema_columns(
-                options.table_schema,
-                [column.name for column in source_schema],
-            )
-        elif options.table_schema is not None:
-            stage_state.stage_column_types = options.table_schema
-        elif source_schema:
-            stage_state.stage_column_types = map_source_schema_to_target(
-                source_schema,
-                options.to_db_backend,
-                source_backend=options.from_db_backend,
-            )
+        stage_state.stage_column_types = select_stage_column_types(
+            options,
+            stage_state,
+            source_schema,
+            map_source_schema_to_target,
+            validate_table_schema_columns,
+        )
         _run_with_fresh_target_connection(
             options,
             "prepare_target",
@@ -188,6 +228,8 @@ def run_transfer_attempt(
             stage_state=stage_state,
             total_rows=total_rows,
         )
+    except AdaptiveTransferCompleteError as completed:
+        total_rows = completed.rows
     except Exception as exc:
         transfer_error = exc
     finally:
@@ -225,16 +267,12 @@ def run_keyed_transfer_attempt(
     total_rows = 0
     transfer_error: Exception | None = None
     cleanup_error: Exception | None = None
-    stage_state = _run_with_fresh_target_connection(
+    stage_state = _initialize_stage_state(
         options,
-        "target_state",
-        lambda target_ref: create_stage_state(
-            options,
-            TransferConnectionRefs(
-                source=connection_refs.source,
-                target=target_ref,
-            ),
-        ),
+        connection_refs,
+        _run_with_fresh_target_connection,
+        create_stage_state,
+        close_connection_ref,
     )
     worker_stage_states: list[WorkerStageState] | None = None
 
@@ -254,6 +292,19 @@ def run_keyed_transfer_attempt(
             options.from_db_backend,
             table_schema_names=(options.table_schema or {}).keys(),
         )
+        adaptive_rows = maybe_run_adaptive_transfer(
+            options,
+            connection_refs,
+            stage_state,
+            source_schema,
+            AdaptiveTransferContext(
+                read_retry_cnt,
+                insert_retry_cnt,
+                reader=iter_source_batches,
+                open_connection=get_sql_connection,
+            ),
+        )
+        complete_adaptive_attempt(adaptive_rows)
         _cleanup_target_superseded_stages(options, stage_state)
         _run_with_fresh_target_connection(
             options,
@@ -291,6 +342,8 @@ def run_keyed_transfer_attempt(
             validate=validate_loaded_stage_row_count,
             finalize=finalize_loaded_stage,
         )
+    except AdaptiveTransferCompleteError as completed:
+        total_rows = completed.rows
     except Exception as exc:
         transfer_error = exc
     finally:
@@ -328,7 +381,9 @@ def initialize_shared_stage_for_keyed_slices(
     source_schema: list[Any],
 ) -> None:
     source_columns = [column.name for column in source_schema]
-    if options.table_schema is not None and source_schema:
+    if stage_state.input_types_resolved:
+        pass
+    elif options.table_schema is not None and source_schema:
         stage_state.stage_column_types = validate_table_schema_columns(
             options.table_schema,
             source_columns,
@@ -425,17 +480,9 @@ def initialize_shared_stage_for_keyed_slices(
         transfer_staging_username=options.transfer_staging_username,
         ddl_properties=options.staging_ddl_properties,
         ch_creation_policy=options.staging_ch_policy,
+        **stage_creation_callbacks(stage_state),
     )
     stage_state.stage_table_created = True
-
-
-def _uses_keyed_worker_stages(options: TransferOptions) -> bool:
-    return (
-        options.transfer_slices is not None
-        and options.trino_mode != "parquet"
-        and options.transfer_concurrency.effective_write > 1
-        and len(options.transfer_slices) > 1
-    )
 
 
 def _run_with_fresh_target_connection(
@@ -443,8 +490,8 @@ def _run_with_fresh_target_connection(
     role: str,
     operation: Any,
 ) -> Any:
-    return run_with_fresh_connection(
-        options.to_db_key,
+    return run_target_operation(
+        options,
         role,
         operation,
         open_connection=get_sql_connection,
@@ -455,19 +502,11 @@ def _cleanup_target_superseded_stages(
     options: TransferOptions,
     stage_state: TransferStageState,
 ) -> None:
-    if stage_state.internal_columns is None:
-        return
-    _run_with_fresh_target_connection(
+    cleanup_target_superseded_stages(
         options,
-        "cleanup_superseded_stages",
-        lambda target_ref: cleanup_superseded_transfer_stages(
-            options=options,
-            connection=target_ref["connection"],
-            backend=options.to_db_backend,
-            connection_key=options.to_db_key,
-            staging_schema=options.transfer_staging_schema,
-            internal_columns=stage_state.internal_columns,
-        ),
+        stage_state,
+        _run_with_fresh_target_connection,
+        cleanup_superseded_transfer_stages,
     )
 
 
@@ -479,35 +518,15 @@ def _create_keyed_worker_stage_tables(
     sample_batch: pd.DataFrame,
     column_types: dict[str, str] | None,
 ) -> list[str]:
-    transfer_slices = options.transfer_slices or []
-    worker_count = min(
-        options.transfer_concurrency.effective_write,
-        len(transfer_slices),
+    return _create_keyed_worker_stage_tables_impl(
+        options=options,
+        connection_refs=connection_refs,
+        stage_state=stage_state,
+        sample_batch=sample_batch,
+        column_types=column_types,
+        create_stage=create_stage_table,
+        run_token=options.transfer_id or uuid.uuid4().hex[:8],
     )
-    run_token = options.transfer_id or uuid.uuid4().hex[:8]
-    stage_tables: list[str] = []
-    for worker_index in range(worker_count):
-        stage_table = create_stage_table(
-            connection_type=options.to_db_backend,
-            connection=connection_refs.target["connection"],
-            target_table=options.target_table,
-            batch=sample_batch,
-            column_types=column_types,
-            gp_distributed_by_key=options.gp_distributed_by_key,
-            connection_key=options.to_db_key,
-            query_label=options.query_label,
-            transfer_staging_schema=options.transfer_staging_schema,
-            transfer_staging_username=options.transfer_staging_username,
-            random_suffix=f"{run_token}__w{worker_index:05d}",
-            destination_hash=options.destination_hash,
-            ddl_properties=options.staging_ddl_properties,
-            ch_creation_policy=options.staging_ch_policy,
-        )
-        stage_tables.append(stage_table)
-        stage_state.stage_table = stage_tables[0]
-        stage_state.stage_tables = list(stage_tables)
-        stage_state.stage_table_created = True
-    return stage_tables
 
 
 def load_keyed_stage_slices(
@@ -550,14 +569,6 @@ def load_keyed_stage_slices(
                     raise exc
                 total_rows += future.result()
     return total_rows
-
-
-def _run_in_context(
-    context: contextvars.Context,
-    function: Any,
-    **kwargs: Any,
-) -> Any:
-    return context.run(function, **kwargs)
 
 
 def load_keyed_stage_worker(
@@ -617,6 +628,7 @@ def consolidate_keyed_worker_stages(
     worker_stage_states: list[WorkerStageState],
     stage_state: TransferStageState,
 ) -> None:
+    del connection_refs
     if options.write_mode == "upsert":
         return
     if len(worker_stage_states) <= 1:
@@ -662,12 +674,9 @@ def load_stage_batches(
         )
 
     total_rows = 0
-    estimated_total_rows = None
-    if options.progress and options.estimate_total_rows:
-        estimated_total_rows = estimate_source_rows(
-            options,
-            connection_refs.source["connection"],
-        )
+    estimated_total_rows = estimated_input_rows(
+        options, connection_refs.source, estimate_source_rows
+    )
     progress_bar = make_transfer_progress_bar(
         options,
         total=estimated_total_rows,
@@ -709,7 +718,9 @@ def load_stage_batches(
         )
     )
     try:
-        for source_batch in iter_source_batches(
+        for source_batch in resolved_source_batches(
+            options,
+            iter_source_batches,
             options.from_db_key,
             options.from_db_backend,
             connection_refs.source,
@@ -777,9 +788,7 @@ def load_stage_batches(
                 duration_seconds: float,
                 inserted_rows: int,
             ) -> None:
-                if gp_insert_chunk_sizer is None:
-                    return
-                gp_insert_chunk_sizer.update(
+                cast("AdaptiveBatchSizer", gp_insert_chunk_sizer).update(
                     duration_seconds,
                     inserted_rows=inserted_rows,
                 )
@@ -790,7 +799,7 @@ def load_stage_batches(
                 lambda target_ref: insert_rows_batch(
                     options.to_db_backend,
                     target_ref,
-                    stage_state.stage_table,
+                    require_stage_table(stage_state),
                     batch.columns,
                     batch.rows,
                     retry_fn=run_with_retry,
@@ -862,7 +871,12 @@ def load_parquet_stage_batches(
         row_group_size_fn=parquet_row_group_size,
         estimate_rows=estimate_source_rows,
         progress_bar_factory=make_transfer_progress_bar,
-        source_batches=iter_source_batches,
+        source_batches=lambda *args, **kwargs: resolved_source_batches(
+            options,
+            iter_source_batches,
+            *args,
+            **kwargs,
+        ),
     )
 
 

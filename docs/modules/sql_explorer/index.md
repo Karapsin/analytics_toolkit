@@ -457,10 +457,20 @@ are hidden when their logical parent is accessible; parent tables and views
 remain available. Full `sql.show_tables` calls retain their statistics and
 output shape while explicit schema/table filters narrow their base queries.
 
+Metadata names keep their exact case and whitespace; names differing only by case
+remain distinct. Completion quotes reserved words and other identifiers when
+inserting SQL. Unqualified ClickHouse table completion searches only the current
+database; an explicit database prefix searches that database. Database discovery
+uses a SELECT from `system.databases`, including with automatic cluster routing.
+
 Every launch loads saved names immediately. On first activation, a connection's
 background worker discovers visible catalogs, schemas/databases, and table names,
-one namespace at a time. Each successful listing, including an empty listing, is
-marked scanned. Relaunching, reopening tabs, or switching back to a connection
+one namespace at a time. Each complete successful listing, including an empty
+listing, is marked scanned. Partial cluster results never replace or prune complete
+snapshots or mark a scan successful. The last complete names remain available
+with an incomplete notice. Partial scans release their lease and retry with
+bounded backoff, even without another usage event; a complete recovery clears
+the notice. Relaunching, reopening tabs, or switching back to a connection
 resumes incomplete discovery without rescanning completed namespaces.
 
 Successful user queries update a separate metadata ledger using the query
@@ -485,8 +495,9 @@ connection configuration prevents reuse of its old snapshots. Credentials, SQL
 text, and query results are not stored. Unavailable or corrupt storage produces
 a notice while Explorer continues with in-memory metadata.
 
-Existing snapshots retain their completed status and saved refresh timestamps
-when upgraded. Successful refreshes replace names, including dropped objects;
+The metadata identity is versioned. Upgrading from older, potentially normalized
+metadata rebuilds names and scan state while preserving query history. Successful
+refreshes replace names, including dropped objects;
 failed refreshes retain saved names, show a notice, and retry with increasing
 delays from one minute up to one hour. Concurrent workers share scan claims.
 Query activity arriving during a scan is retained for subsequent refresh.

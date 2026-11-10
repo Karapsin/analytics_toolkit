@@ -19,6 +19,8 @@ from analytics_toolkit.sql.execution.backend_options import (
 )
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
+from .cluster_functions import canonicalize_cluster_functions
+from .cluster_functions import cluster_names as _cluster_names
 from .outage_context import INSERT_KEY, INTERNAL_IO, WRITING, internal_io
 from .outage_ddl import (
     _execute_local,
@@ -26,6 +28,7 @@ from .outage_ddl import (
     create_on_healthy_hosts,
     create_target,
 )
+from .outage_layout import inspect_outage_layout
 from .outage_ownership import assert_new_target, claim_private_create
 from .outage_passthrough import modeled_statement
 from .outage_session import OutageSession, configured_cluster, private_table
@@ -69,28 +72,6 @@ def _named_target(statement: exp.Expr, database: str | None) -> tuple[str, str] 
     if isinstance(target, exp.Table) and isinstance(target.this, exp.Identifier):
         return target.db or database or "", target.name
     return None
-
-
-def _cluster_names(statement: exp.Expr) -> list[str]:
-    names = [str(node.this.this) for node in statement.find_all(exp.OnCluster)]
-    for table in statement.find_all(exp.Table):
-        function = table.this
-        if (
-            isinstance(function, exp.Anonymous)
-            and function.name.lower()
-            in {
-                "cluster",
-                "clusterallreplicas",
-            }
-            and function.expressions
-        ):
-            arguments = function.expressions
-            values = [_identifier_value(value) for value in arguments[:_CLUSTER_REQUIRED_ARGS]]
-            if len(values) != _CLUSTER_REQUIRED_ARGS or any(value is None for value in values):
-                msg = "Outage policies require static cluster, database and table arguments."
-                raise ClickHouseClusterTopologyError(msg)
-            names.append(cast("str", values[0]))
-    return list(dict.fromkeys(names))
 
 
 class OutageClient:
@@ -178,6 +159,10 @@ class OutageClient:
                 cluster=cluster,
                 only_shard=only_shard,
             )
+
+    def outage_inspect_existing_layout(self, table_name: str) -> Any:
+        with backend_operation() as state:
+            return inspect_outage_layout(self._get_session(state), table_name)
 
     def sql_preflight_statements(self, sqls: Any) -> None:
         """Validate every required DDL host before a batch's local or remote mutation."""
@@ -267,10 +252,9 @@ class OutageClient:
                 if not is_private:
                     state.live_submitted = True
                 return getattr(delegate, method)(table, data, column_names=columns, **kwargs)
-            except BaseException as exc:
+            except BaseException:
                 if state.live_submitted:
                     state.preserve_recovery = True
-                    exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
                 raise
             finally:
                 WRITING.reset(token)
@@ -285,6 +269,8 @@ class OutageClient:
             if modeled is None:
                 return getattr(self._client, method)(sql, **kwargs)
             statement, special = modeled
+            if canonicalize_cluster_functions(statement, self._config.database):
+                sql = statement.sql(dialect="clickhouse")
             return self._execute_statement(
                 method,
                 sql,
@@ -504,8 +490,11 @@ class OutageClient:
         except BaseException as exc:
             if state.live_submitted:
                 state.preserve_recovery = True
-                exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
-                if destructive and submitted and isinstance(exc, Exception):
+                structural = destructive and not isinstance(statement, (exp.Delete, exp.Update))
+                if structural:
+                    state.structural_replay_blocked = True
+                    exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
+                if structural and submitted and isinstance(exc, Exception):
                     msg = (
                         "ClickHouse destructive DDL may be partially applied; "
                         "no replay or blind rollback "
@@ -634,13 +623,18 @@ class OutageClient:
                     insert_frame = frame.copy()
                     insert_frame.columns = columns
                     writer.insert_df(table_sql, insert_frame, column_names=columns)
-        except BaseException as exc:
+        except BaseException:
             if state.live_submitted:
                 state.preserve_recovery = True
-                exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
             raise
         finally:
-            delivery_connection.close()
+            from analytics_toolkit.sql.dml.transfer.runtime.retry import (  # noqa: PLC0415 - factory imports this client
+                close_connection_ref,
+            )
+
+            close_connection_ref(
+                {"connection": delivery_connection}, self._config.connection_key, "relay"
+            )
 
     def outage_after_create(
         self, table_name: str, *, policy: Any, pair: bool, expected_columns: Any = None
@@ -706,11 +700,12 @@ class OutageClient:
         )
 
     def _require_execution_hosts(self, session: OutageSession, scope: Any, reason: str) -> None:
+        status = scope.record(scope.reachable, coverage_intent="execution_hosts")
         if session.policy == "healthy_shards" and len(scope.reachable) != len(scope.hosts):
             warn_degraded(
                 session.state,
                 self._config,
-                scope.record(scope.reachable),
+                status,
                 "blocked destructive operation",
             )
         scope.require_all(scope.reachable, reason)

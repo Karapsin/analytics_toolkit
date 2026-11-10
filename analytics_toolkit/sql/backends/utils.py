@@ -6,6 +6,11 @@ from typing import Any
 
 
 def extract_row_count(executed: Any) -> int:
+    count = extract_row_count_or_none(executed)
+    return 0 if count is None else count
+
+
+def extract_row_count_or_none(executed: Any) -> int | None:
     row_count = _coerce_row_count(getattr(executed, "rowcount", None))
     if row_count is not None:
         return row_count
@@ -26,7 +31,7 @@ def extract_row_count(executed: Any) -> int:
         if row_count is not None:
             return row_count
 
-    return 0
+    return None
 
 
 def user_filter(column_sql: str, current_user_sql: str, user: str | None) -> str:

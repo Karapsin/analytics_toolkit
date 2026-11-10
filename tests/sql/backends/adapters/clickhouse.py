@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.backends.ch.layout import ExistingClickHouseLayout
+
 from tests.sql._support.adapters import (
     Any,
     Decimal,
@@ -197,12 +199,19 @@ def test_clickhouse_adapter_stage_finalization_and_existing_metadata(
         query_label=None,
         connection_key="ch",
     )
-    assert create_calls[0]["table_schema"] == {"stored_id": "UInt32"}
+    assert create_calls == []  # Existing storage never provisions a policy-derived companion.
 
 
 def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    connection = SimpleNamespace(
+        query=lambda text: SimpleNamespace(
+            result_rows=[
+                ("CREATE TABLE events (id UInt64, month String) ENGINE = MergeTree ORDER BY id",)
+            ]
+        )
+    )
     adapter = get_backend_adapter("ch")
     monkeypatch.setattr(adapter, "ensure_distributed_target_pair", lambda *args, **kwargs: None)
     monkeypatch.setattr(
@@ -215,7 +224,7 @@ def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
     monkeypatch.setattr(adapter, "execute_command", lambda _connection, sql: commands.append(sql))
     adapter.finalize_stage_table(
         StageFinalizationRequest(
-            connection=object(),
+            connection=connection,
             stage_table="events_stage",
             target_table="events",
             replace_target_table=False,
@@ -230,7 +239,7 @@ def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
     with pytest.raises(ValueError, match="upsert_partition_column is required"):
         adapter.finalize_stage_table(
             StageFinalizationRequest(
-                connection=object(),
+                connection=connection,
                 stage_table="stage",
                 target_table="events",
                 replace_target_table=False,
@@ -270,6 +279,17 @@ def test_clickhouse_adapter_write_mode_matrix(
     write_mode, target_exists, only_shard, drop_missing, expected = case
     adapter = get_backend_adapter("ch")
     events: list[str] = []
+    layout = ExistingClickHouseLayout(
+        logical_table="analytics.events",
+        physical_table="analytics.events" if only_shard else "analytics.events_shard",
+        create_distributed_pair=not only_shard,
+        shard_on_cluster=None if only_shard else "core",
+        distributed_on_cluster=None if only_shard else "core",
+        distributed_cluster=None if only_shard else "core",
+        ddl="verified logical table",
+        physical_ddl="verified physical table",
+    )
+    connection = SimpleNamespace(outage_inspect_existing_layout=lambda _table: layout)
     monkeypatch.setattr(adapter, "clear_table", lambda *args, **kwargs: events.append("clear"))
     monkeypatch.setattr(adapter, "drop_table", lambda *args, **kwargs: events.append("drop"))
     monkeypatch.setattr(
@@ -282,9 +302,14 @@ def test_clickhouse_adapter_write_mode_matrix(
         "drop_ch_distributed_table_pair",
         lambda *args, **kwargs: events.append("drop_pair"),
     )
+    monkeypatch.setattr(
+        ch_lifecycle_backend_module,
+        "drop_ch_table",
+        lambda *args, **kwargs: events.append("drop"),
+    )
     result = adapter.apply_target_write_mode(
         TargetWriteModeRequest(
-            connection=object(),
+            connection=connection,
             table_name="analytics.events",
             write_mode=write_mode,
             target_exists=target_exists,
@@ -296,7 +321,9 @@ def test_clickhouse_adapter_write_mode_matrix(
     assert result is expected
     if write_mode == "replace" and target_exists:
         assert events == (["drop"] if only_shard else ["drop_pair"])
-    elif write_mode == "replace":
+    elif write_mode == "truncate_insert" and target_exists:
+        assert events == (["clear"] if only_shard else ["truncate_pair"])
+    else:
         assert events == []
 
 
@@ -346,17 +373,11 @@ def test_clickhouse_ddl_expression_cluster_and_uuid_edges(
 
 
 def test_clickhouse_insert_legacy_collections_types_and_null_edges() -> None:
-    class LegacyFrame:
-        def applymap(self, function: Any) -> pd.DataFrame:
-            return pd.DataFrame({"value": [function(Decimal("1.25")), function(None)]})
-
-    normalized = ch_insert_backend_module.normalize_batch(
-        LegacyFrame()  # type: ignore[arg-type]
-    )
-    assert normalized.to_dict("records") == [{"value": 1.25}, {"value": None}]
-    assert ch_insert_backend_module.normalize_scalar(
-        [Decimal("1.5"), (Decimal("2.5"),), {Decimal("3.5"): Decimal("4.5")}]
-    ) == [1.5, (2.5,), {3.5: 4.5}]
+    batch = pd.DataFrame({"value": pd.Series([Decimal("1.25"), None], dtype=object)})
+    normalized = ch_insert_backend_module.normalize_batch(batch)
+    assert normalized.to_dict("records") == [{"value": Decimal("1.25")}, {"value": None}]
+    nested = [Decimal("1.5"), (Decimal("2.5"),), {Decimal("3.5"): Decimal("4.5")}]
+    assert ch_insert_backend_module.normalize_scalar(nested) == nested
     assert ch_insert_backend_module.column_type_names(["a"], None) is None
     assert ch_insert_backend_module.column_type_names(
         ["a", "b"], {"a": "UInt8", "b": "String"}
@@ -368,7 +389,11 @@ def test_clickhouse_insert_legacy_collections_types_and_null_edges() -> None:
         ["id", "amount", "payload"],
         [1.0, 1.25, {"x": "я"}],
         {"id": "Nullable(Int64)", "amount": "Decimal(10,2)", "payload": "String"},
-    ) == (1, Decimal("1.25"), '{"x":"я"}')
+    ) == (
+        1,
+        Decimal("1.25"),
+        '{"v":1,"backend":"","type":"","value":["map",[[["str","x"],["str","я"]]]]}',
+    )
     assert ch_insert_backend_module.normalize_typed_row(
         ["raw", "mutable"],
         [memoryview(b"\x00\xff"), bytearray(b"\x01\x80")],

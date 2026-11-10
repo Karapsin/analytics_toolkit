@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import pandas as pd
 
+import analytics_toolkit.general as general_utils
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.creation_policy import (
@@ -49,9 +50,18 @@ from analytics_toolkit.sql.dml.transfer.runtime.retry import (
     run_with_retry,
 )
 from analytics_toolkit.sql.dml.transfer.schema import get_existing_target_insert_types
-from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
+from analytics_toolkit.sql.execution.backend_options import (
+    clear_data_replay_retention,
+    preserve_recovery_artifacts,
+)
 
 from .parquet_stage import cleanup_parquet_stage_location
+from .stage_ownership import cleanup_acknowledged_stages, stage_creation_callbacks
+from .upsert_finalization import (
+    finalize_partition_upsert,
+    partition_upsert_enabled,
+    retry_certified_finalization,
+)
 
 
 class FreshTargetFinalizationRowCountMismatchError(ValueError):
@@ -180,15 +190,11 @@ def finalize_loaded_stage(  # noqa: PLR0913
                 )
             raise
 
-    if fresh_clickhouse_target:
-        run_with_retry(
-            operation_name=f"finalizing fresh ClickHouse target {options.target_table}",
-            retry_cnt=options.retry_cnt,
-            timeout_increment=options.timeout_increment,
-            operation=finalize_operation,
-        )
+    if fresh_clickhouse_target or partition_upsert_enabled(options, stage_state):
+        retry_certified_finalization(options, stage_state, finalize_operation, run_with_retry)
     else:
         finalize_operation(1)
+    clear_data_replay_retention()
 
 
 def _creates_fresh_clickhouse_target(
@@ -214,6 +220,14 @@ def _finalize_target_once(  # noqa: PLR0913
     fresh_clickhouse_target: bool,
     target_connection_runner: Any | None,
 ) -> None:
+    if partition_upsert_enabled(options, stage_state):
+        _run_target_operation(
+            options,
+            "finalize_target",
+            lambda ref: finalize_partition_upsert(options, stage_state, ref["connection"]),
+            target_connection_runner=target_connection_runner,
+        )
+        return
     creation_policy = options.regular_ch_policy
     if fresh_clickhouse_target and creation_policy is not None:
         creation_policy = replace_dataclass(
@@ -577,6 +591,7 @@ def finalize_empty_transfer(
                 destination_hash=options.destination_hash,
                 ddl_properties=options.staging_ddl_properties,
                 ch_creation_policy=options.staging_ch_policy,
+                **stage_creation_callbacks(stage_state),
             ),
             target_connection_runner=target_connection_runner,
         )
@@ -635,11 +650,6 @@ def _ensure_final_upsert_stage_table(
 
     create_schema = stage_state.insert_column_types or stage_state.stage_column_types
 
-    def register_candidate(table_name: str) -> None:
-        if table_name not in stage_state.stage_table_candidates:
-            stage_state.stage_table_candidates.append(table_name)
-        stage_state.final_upsert_stage_table = table_name
-
     stage_state.final_upsert_stage_table = _run_target_operation(
         options,
         "create_final_upsert_stage",
@@ -660,7 +670,7 @@ def _ensure_final_upsert_stage_table(
             destination_hash=options.destination_hash,
             ddl_properties=options.staging_ddl_properties,
             ch_creation_policy=options.staging_ch_policy,
-            on_stage_candidate=register_candidate,
+            **stage_creation_callbacks(stage_state),
         ),
         target_connection_runner=target_connection_runner,
     )
@@ -691,6 +701,8 @@ def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
     safe_exception_logging: bool = False,
 ) -> None:
 
+    if not drop_created_target:
+        clear_data_replay_retention()
     if preserve_recovery_artifacts():
         time_print("Preserving transfer recovery stages after an uncertain mutation.")
         return
@@ -698,7 +710,28 @@ def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
     remote_cleanup_error: Exception | None = None
     target_cleanup_error: Exception | None = None
 
-    if stage_state.stage_table_created:
+    if (
+        stage_state.upsert_checkpoint is not None
+        and stage_state.upsert_checkpoint.prepared
+        and drop_created_target
+    ):
+        time_print("Retaining certified partition rebuild payload after failed finalization.")
+        return
+    if stage_state.owned_stage_resources:
+        try:
+            cleanup_acknowledged_stages(
+                options,
+                stage_state,
+                lambda operation: _run_target_operation(
+                    options,
+                    "cleanup_stage",
+                    operation,
+                    target_connection_runner=target_connection_runner,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 -- retain primary cleanup error after all owned drops.
+            stage_cleanup_error = exc
+    if stage_state.stage_table_created and not stage_state.owned_stage_resources:
         for stage_table in _stage_tables_to_cleanup(stage_state):
             try:
                 _run_target_operation(
@@ -772,26 +805,20 @@ def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
 
     if stage_cleanup_error is not None:
         if remote_cleanup_error is not None:
-            from analytics_toolkit.general import time_print
-
-            time_print(
+            general_utils.time_print(
                 "Remote Parquet stage cleanup failed while handling stage table "
                 "cleanup error: "
                 f"{_cleanup_error_label(remote_cleanup_error, safe=safe_exception_logging)}"
             )
         if target_cleanup_error is not None:
-            from analytics_toolkit.general import time_print
-
-            time_print(
+            general_utils.time_print(
                 "Target cleanup failed while handling stage table cleanup error: "
                 f"{_cleanup_error_label(target_cleanup_error, safe=safe_exception_logging)}"
             )
         raise stage_cleanup_error.with_traceback(stage_cleanup_error.__traceback__)
     if remote_cleanup_error is not None:
         if target_cleanup_error is not None:
-            from analytics_toolkit.general import time_print
-
-            time_print(
+            general_utils.time_print(
                 "Target cleanup failed while handling remote Parquet cleanup error: "
                 f"{_cleanup_error_label(target_cleanup_error, safe=safe_exception_logging)}"
             )
@@ -806,7 +833,6 @@ def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
         stage_tables.extend(stage_state.stage_tables)
     elif stage_state.stage_table is not None:
         stage_tables.append(stage_state.stage_table)
-    stage_tables.extend(stage_state.stage_table_candidates)
     if stage_state.final_upsert_stage_table is not None:
         stage_tables.append(stage_state.final_upsert_stage_table)
     return list(dict.fromkeys(stage_tables))

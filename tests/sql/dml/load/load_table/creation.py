@@ -204,7 +204,7 @@ def test_clickhouse_post_create_wait_uses_independent_policy_clusters() -> None:
     )
 
 
-def test_create_sql_table_only_generate_sql_uses_float64_for_decimal_clickhouse_columns() -> None:
+def test_create_sql_table_only_generate_sql_uses_exact_decimal_clickhouse_columns() -> None:
     batch = pd.DataFrame(
         {
             "amount": [Decimal("1.20"), Decimal("2.50"), None],
@@ -219,7 +219,7 @@ def test_create_sql_table_only_generate_sql_uses_float64_for_decimal_clickhouse_
         only_generate_sql=True,
     )
 
-    assert "`amount` Nullable(Float64)" in sql
+    assert "`amount` Nullable(Decimal(3, 2))" in sql
     assert "`label` Nullable(String)" in sql
 
 

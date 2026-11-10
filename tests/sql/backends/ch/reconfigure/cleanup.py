@@ -63,6 +63,7 @@ def test_wait_and_best_effort_cleanup_helpers(monkeypatch: pytest.MonkeyPatch) -
                 message = "best effort"
                 raise RuntimeError(message)
 
+    reconfiguration.owned_table_scopes = list(reconfiguration.temporary_table_scopes)
     cleanup_adapter = CleanupAdapter()
     reconfigure_backend._best_effort_cleanup(cleanup_adapter, None, reconfiguration)
 

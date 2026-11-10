@@ -3,8 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+
 from . import adapter_defaults as _adapter_defaults
 from . import common_methods as _common_methods
+from . import key_literals as _key_literals
 from . import source_count as _source_count
 from . import upsert as _upsert
 from . import validation as _validation
@@ -85,6 +88,7 @@ class BackendAdapter:
 
     validate_airflow_file_overrides = _adapter_defaults.validate_airflow_file_overrides
     prepare_sql = _adapter_defaults.prepare_sql
+    render_transfer_literal = _key_literals.render_transfer_literal
 
     def open_connection(
         self,
@@ -118,11 +122,17 @@ class BackendAdapter:
     def execute_command(self, connection: Any, sql: str) -> Any:
         raise NotImplementedError
 
+    validate_connection = _common_methods.validate_connection
     execute_commands = _common_methods.execute_commands
+    local_creation_context = _common_methods.local_creation_context
+    preflight_create_table_replacement = _common_methods.preflight_create_table_replacement
+    build_create_table_placeholder_sql = _common_methods.build_create_table_placeholder_sql
     read_dataframe = _common_methods.read_dataframe
     get_table_column_names = _common_methods.get_table_column_names
+    get_writable_table_column_types = _common_methods.get_writable_table_column_types
+    resolve_upsert_execution_options = _common_methods.resolve_upsert_execution_options
+    resolve_upsert_execution_sqls = _common_methods.resolve_upsert_execution_sqls
     _read_dataframe_impl = _common_methods.read_dataframe_impl
-
     def table_exists(
         self,
         connection: Any,
@@ -219,7 +229,7 @@ class BackendAdapter:
             row = cursor.fetchone()
             return int(row[0]) if row else 0
         finally:
-            cursor.close()
+            close_cursor(cursor, backend=self.backend)
 
     build_source_count_sql = _source_count.build_source_count_sql
     count_source_rows = _source_count.count_source_rows
@@ -370,25 +380,7 @@ class BackendAdapter:
 
     _incoming_stage_source_sql = _upsert.incoming_stage_source_sql
 
-    def build_insert_from_stage_sql(
-        self,
-        target_table: str,
-        stage_table: str,
-        *,
-        columns: Sequence[str],
-        column_types: Mapping[str, str] | None,
-        query_label: str | None,
-    ) -> str:
-        typed_columns = self.column_types_for_columns(column_types, columns)
-        return _apply_query_label(
-            self.build_explicit_insert_from_stage_sql(
-                target_table,
-                stage_table,
-                columns=columns,
-                column_types=typed_columns,
-            ),
-            query_label,
-        )
+    build_insert_from_stage_sql = _common_methods.build_insert_from_stage_sql
 
     def build_explicit_insert_from_stage_sql(
         self,
@@ -642,7 +634,7 @@ class BackendAdapter:
                     incoming_stage_tables=request.incoming_stage_tables,
                 )
 
-            for sql in self.build_upsert_stage_sqls(
+            self.execute_commands(request.connection, self.build_upsert_stage_sqls(
                 request.target_table,
                 request.stage_table,
                 columns=list(
@@ -662,8 +654,7 @@ class BackendAdapter:
                 trino_partition_drop_sql_template=(
                     request.trino_upsert_partition_drop_sql_template
                 ),
-            ):
-                self.execute_command(request.connection, sql)
+            ))
             return
 
         if request.replace_target_table:

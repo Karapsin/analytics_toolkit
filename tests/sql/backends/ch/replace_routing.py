@@ -9,11 +9,16 @@ from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.creation_policy import ClickHouseCreationPolicy
 from analytics_toolkit.sql.backends.ch.routing import ChClusterRouting, wrap_client
 from analytics_toolkit.sql.backends.ch.safe_replace import (
+    _create_replacement_facade,
     _database_engine_on_scope,
     _validate_nonreplicated_facade_cluster,
 )
 from analytics_toolkit.sql.backends.models import StageFinalizationRequest
-from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError, SqlConfigError
+from analytics_toolkit.sql.connection.errors import (
+    AmbiguousSqlReplaceError,
+    InvalidSqlInputError,
+    SqlConfigError,
+)
 
 from tests.sql._support.ch_replace import (
     LOCAL,
@@ -54,6 +59,52 @@ def _request(connection, *, shard_scope="core", facade_scope="core", only_shard=
             ddl_wait_policy="wait_none",
         ),
     )
+
+
+def test_guarded_replacement_preserves_configured_distributed_template_arguments() -> None:
+    client = ReplacementClient()
+    request = _request(client)
+    request = replace(
+        request,
+        ch_creation_policy=replace(
+            request.ch_creation_policy,
+            distributed_engine_template=(
+                "Distributed({cluster}, {database}, {shard_table}, {sharding_key}, 'async_policy')"
+            ),
+        ),
+    )
+    _create_replacement_facade(
+        get_backend_adapter("ch"),
+        request,
+        replacement_facade="sandbox.new_facade",
+        physical_target=PHYSICAL,
+        facade_cluster="core",
+        distributed_cluster="core",
+    )
+    statement, _ = client.commands[-1]
+    assert "    'async_policy'" in statement
+    assert "    cityHash64(id)," in statement
+
+
+def test_local_policy_controls_guarded_replacement_without_shard_alias() -> None:
+    client = ReplacementClient()
+    request = replace(_request(client, only_shard=True), ch_only_shard=False)
+    get_backend_adapter("ch").finalize_stage_table(request)
+    assert client.tables["core", PHYSICAL].rows == STAGED_ROWS
+    assert all(f"{PHYSICAL}_shard" not in sql for sql, _settings in client.commands)
+
+
+def test_legacy_finalization_preserves_unrelated_companion_before_conversion() -> None:
+    client = ReplacementClient()
+    client.facade_sources.pop(("core", TARGET))
+    client.tables["core", TARGET] = Table(17, ("old_column",))
+    client.tables["core", PHYSICAL] = Table(100, ("unrelated_column",))
+    request = replace(_request(client), ch_creation_policy=None)
+    with pytest.raises(InvalidSqlInputError, match="already contains"):
+        get_backend_adapter("ch").finalize_stage_table(request)
+    assert client.tables["core", PHYSICAL].rows == 100
+    assert client.tables["core", TARGET].rows == 17
+    assert client.commands == []
 
 
 @pytest.mark.parametrize("native", [False, True], ids=["http", "native"])
@@ -99,7 +150,7 @@ def test_replace_loads_remote_storage_from_local_stage(native, only_shard, engin
     counts = [sql for sql in client.queries if sql.startswith("/* analytics_toolkit")]
     assert len(counts) == 2
     assert all(f"FROM {data_function}('core', 'sandbox', 'events_shard" in sql for sql in counts)
-    assert any("DROP TABLE" in sql and "ON CLUSTER" not in sql for sql, _ in client.commands)
+    assert not any("DROP TABLE" in sql and "ON CLUSTER" not in sql for sql, _ in client.commands)
     if not only_shard:
         for replica in (0, 1):
             client.validation_replica = replica
@@ -173,7 +224,7 @@ def test_replace_legacy_cluster_creates_remote_physical_before_loading(only_shar
     assert client.loads[0][0][0] == "core"
     assert all(scope == "core" for scope, _left, _right in client.swaps)
     assert any(
-        "CREATE TABLE IF NOT EXISTS sandbox.events_shard__replace_" in sql and "ON CLUSTER" in sql
+        "CREATE TABLE sandbox.events_shard__replace_" in sql and "ON CLUSTER" in sql
         for sql, _settings in client.commands
     )
     assert not any("__replace_" in table for _scope, table in client.tables)
@@ -208,7 +259,7 @@ def test_remote_replace_failed_rollback_preserves_recovery_artifacts() -> None:
         get_backend_adapter("ch").finalize_stage_table(_request(client))
 
     assert any(scope == "core" and "__replace_" in table for scope, table in client.tables)
-    assert any(scope == LOCAL and "__replace_" in table for scope, table in client.tables)
+    assert not any(scope == LOCAL and "__replace_" in table for scope, table in client.tables)
     assert not any("DROP TABLE" in sql for sql, _ in client.commands)
 
 
@@ -288,9 +339,9 @@ def test_partial_cutover_reverses_only_acknowledged_steps_and_preserves_artifact
     assert any(
         state == original_facade for (scope, _), state in client.tables.items() if scope == "core"
     )
-    if not after_apply:
-        assert client.tables["core", PHYSICAL] == original
-        assert client.tables["core", TARGET] == original_facade
+    # Submission without acknowledgement is uncertain even when this fake
+    # injected the failure before applying it. Never replay structural inverses.
+    assert len(client.swaps) <= boundary
     assert not any("DROP TABLE" in sql for sql, _ in client.commands)
 
 

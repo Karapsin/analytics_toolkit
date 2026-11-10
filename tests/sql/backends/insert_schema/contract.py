@@ -62,7 +62,7 @@ def test_clickhouse_base_type_fallbacks(
         ("SELECT * FROM source", 0, True, "SELECT * FROM source"),
         ("SELECT * FROM source LIMIT 2", 5, True, "SELECT * FROM source LIMIT 2"),
         ("SELECT * FROM source;", 5, True, "SELECT * FROM source\nLIMIT 5"),
-        ("invalid (", 5, True, "invalid (\nLIMIT 5"),
+        ("invalid (", 5, True, "invalid ("),
     ],
 )
 def test_clickhouse_count_limited_read(

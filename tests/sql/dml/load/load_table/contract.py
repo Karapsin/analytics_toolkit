@@ -88,16 +88,7 @@ def test_finalize_stage_table_clickhouse_ensures_existing_pair_before_insert() -
     )
 
     assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE}" not in client.commands
-    assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")
-        and "ON CLUSTER core" in command
-        for command in client.commands
-    )
-    assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
-        and "ON CLUSTER core" in command
-        for command in client.commands
-    )
+    assert not any(command.startswith("CREATE TABLE") for command in client.commands)
     assert client.commands[-1] == (
         f"INSERT INTO {TEST_CH_TABLE} (`month_date`, `users`) "
         f"SELECT CAST(`month_date` AS Nullable(Date)) AS `month_date`, "
@@ -105,18 +96,14 @@ def test_finalize_stage_table_clickhouse_ensures_existing_pair_before_insert() -
         f"FROM {TEST_CH_STAGE_TABLE}"
     )
 
-    insert_index = client.commands.index(client.commands[-1])
-    create_indices = [
-        idx
-        for idx, command in enumerate(client.commands)
-        if command.startswith("CREATE TABLE IF NOT EXISTS")
-    ]
-    assert create_indices
-    assert max(create_indices) < insert_index
+    assert len(client.commands) == 1
 
 
 def test_finalize_stage_table_clickhouse_only_shard_upsert_deletes_target() -> None:
     client = FakeClickHouseClient()
+    client.table_ddls[TEST_CH_TABLE] = (
+        f"CREATE TABLE {TEST_CH_TABLE} (id UInt64, score Int64) ENGINE = MergeTree ORDER BY id"
+    )
     batch = pd.DataFrame({"id": [1], "score": [10]})
 
     table_ops_module.finalize_stage_table(
@@ -169,7 +156,7 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
     assert f"DROP TABLE IF EXISTS {qualified_target}" not in client.commands
     assert f"DROP TABLE IF EXISTS {qualified_shard}" not in client.commands
     assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {qualified_shard}__replace_")
+        command.startswith(f"CREATE TABLE {qualified_shard}__replace_")
         for command in client.commands
     )
     assert any(
@@ -615,6 +602,6 @@ def test_insert_table_batch_normalizes_decimal_for_clickhouse() -> None:
 
     inserted_df = client.calls[0]["df"]
     assert isinstance(inserted_df, pd.DataFrame)
-    assert inserted_df["amount"].tolist() == [1.2, None]
+    assert inserted_df["amount"].tolist() == [Decimal("1.20"), None]
     assert inserted_df["label"].tolist() == ["ok", None]
     assert inserted_df["count"].tolist() == [1, 2]

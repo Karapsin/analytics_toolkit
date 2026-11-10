@@ -6,12 +6,16 @@ from dataclasses import dataclass
 from threading import RLock
 from typing import Any, Literal
 
+from sqlglot import exp, parse_one
+from sqlglot.errors import SqlglotError
+
 from analytics_toolkit.sql.backends.ch.metadata import (
     extract_clickhouse_distributed_shard_table,
 )
 from analytics_toolkit.sql.backends.transfer_stage import is_transfer_stage_identifier
-from analytics_toolkit.sql.backends.utils import sql_string_literal
 from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
+
+from .dialect import ClickHouseDialect, sql_string_literal
 
 FACADE_METADATA_COLUMN_COUNT = 3
 CLUSTER_TABLE_METADATA_COLUMN_COUNT = 5
@@ -339,16 +343,26 @@ def _cluster_object(row: tuple[Any, ...], database: str, table: str) -> _Cluster
 
 
 def _normalized_definition(item: _ClusterObject) -> str:
-    definition = " ".join((item.create_table_query or item.engine_full).split())
-    definition = re.sub(r"\s+UUID\s+'[^']+'", "", definition, flags=re.IGNORECASE)
+    definition = item.create_table_query or item.engine_full
+    try:
+        parsed = parse_one(definition, read=ClickHouseDialect)
+    except SqlglotError as exc:
+        message = "Cannot compare ClickHouse DDL safely."
+        raise ClickHouseClusterTopologyError(message) from exc
+    if parsed is None or isinstance(parsed, exp.Command):
+        message = "Cannot compare ClickHouse DDL safely."
+        raise ClickHouseClusterTopologyError(message)
+    for uuid in list(parsed.find_all(exp.UuidProperty)):
+        uuid.pop()
     if _is_replicated_engine(item.engine):
-        definition = re.sub(
-            r"(Replicated[A-Za-z]*MergeTree\s*\(\s*'[^']*'\s*,\s*)'[^']*'",
-            r"\1'<replica>'",
-            definition,
-            flags=re.IGNORECASE,
-        )
-    return definition
+        engine_property = parsed.find(exp.EngineProperty)
+        engine = engine_property.this if engine_property is not None else parsed
+        if isinstance(engine, exp.Anonymous) and len(engine.expressions) >= SQL_QUOTE_PAIR_LENGTH:
+            arguments = list(engine.expressions)
+            if isinstance(arguments[1], exp.Literal) and arguments[1].is_string:
+                arguments[1] = exp.Literal.string("<replica>")
+                engine.set("expressions", arguments)
+    return parsed.sql(dialect="clickhouse")
 
 
 def _is_replicated_engine(engine: str) -> bool:

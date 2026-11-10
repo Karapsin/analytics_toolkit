@@ -24,6 +24,8 @@ from analytics_toolkit.sql.execution.backend_options import (
 )
 from sqlglot import exp, parse_one
 
+from tests.sql._support.safe_replace import ClickHouseReplacementConnection as _ChConnection
+
 ch_safe_replace = importlib.import_module("analytics_toolkit.sql.backends.ch.safe_replace")
 
 
@@ -283,24 +285,6 @@ def test_replace_artifact_cleanup_failure_preserves_original_error() -> None:
         finalize_existing_stage_replace(adapter, _request(_Connection()))
 
 
-class _ChConnection:
-    def __init__(self, *, recovery_artifacts: bool = True) -> None:
-        self.queries: list[str] = []
-        self.commands: list[str] = []
-        self.recovery_artifacts = recovery_artifacts
-
-    def query(self, sql: str) -> Any:
-        self.queries.append(sql)
-        if "startsWith" in sql and not self.recovery_artifacts:
-            return SimpleNamespace(result_rows=[])
-        if "system.processes" in sql or "system, processes" in sql:
-            return SimpleNamespace(result_rows=[(0,)])
-        return SimpleNamespace(result_rows=[("target__replace_abcd",)])
-
-    def command(self, sql: str, **_kwargs: Any) -> None:
-        self.commands.append(sql)
-
-
 class _ChAdapter:
     def __init__(self) -> None:
         self.commands: list[str] = []
@@ -479,13 +463,17 @@ def test_clickhouse_replace_builds_and_swaps_complete_distributed_pair(
 
     ch_safe_replace._replace_from_stage(adapter, _request(connection))
 
-    assert adapter.created[0].startswith("sandbox.target_shard__replace_")
+    assert any(
+        command.startswith("CREATE TABLE sandbox.target_shard__replace_")
+        for command in connection.commands
+    )
     assert any(
         "INSERT INTO FUNCTION cluster(" in command and "SELECT * FROM stage.incoming" in command
         for command in connection.commands
     )
     assert any(
-        command.startswith("CREATE TABLE sandbox.target__replace_") for command in adapter.commands
+        command.startswith("CREATE TABLE sandbox.target__replace_")
+        for command in connection.commands
     )
     assert any("EXCHANGE TABLES" in command for command in connection.commands)
     assert any("__replace_" in command and "DROP TABLE" in command for command in adapter.commands)
@@ -508,7 +496,7 @@ def test_clickhouse_replace_rolls_back_failed_final_count(
 def test_clickhouse_only_shard_replace_skips_distributed_facade(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    connection = _ChConnection()
+    connection = _ChConnection(pair=False)
     adapter = _ReplaceChAdapter([2, 2, 2])
     request = _request(connection)
     request = StageFinalizationRequest(**{**request.__dict__, "ch_only_shard": True})
@@ -517,8 +505,10 @@ def test_clickhouse_only_shard_replace_skips_distributed_facade(
 
     ch_safe_replace._replace_from_stage(adapter, request)
 
-    assert adapter.created[0].startswith("sandbox.target__replace_")
-    assert not any(command.startswith("CREATE TABLE") for command in adapter.commands)
+    creates = [command for command in connection.commands if command.startswith("CREATE TABLE")]
+    assert len(creates) == 1
+    assert creates[0].startswith("CREATE TABLE sandbox.target__replace_")
+    assert "target_shard" not in creates[0]
 
 
 def test_clickhouse_replace_reports_ambiguous_failed_rollback(
@@ -666,3 +656,33 @@ def test_clickhouse_second_replace_retains_original_rows_after_uncertain_cutover
     assert connection.current_rows == current_before_retry
     assert connection.current_rows["h2"] == [2]
     assert adapter.commands == commands_before_retry
+
+
+@pytest.mark.parametrize("failure_phase", [None, "execute", "commit"])
+def test_transactional_cutover_cursor_close_preserves_commit_and_primary_error(
+    monkeypatch: pytest.MonkeyPatch, failure_phase: str | None
+) -> None:
+    connection = _Connection(
+        fail_commit=failure_phase == "commit",
+        fail_execute_at=1 if failure_phase == "execute" else None,
+    )
+    adapter = _Adapter()
+
+    def close(_cursor: Any) -> None:
+        message = "cursor close failed"
+        raise OSError(message)
+
+    monkeypatch.setattr(_Cursor, "close", close)
+    if failure_phase == "commit":
+        with pytest.raises(AmbiguousSqlReplaceError, match="commit failed"):
+            finalize_existing_stage_replace(adapter, _request(connection))
+        assert connection.commit_calls == 1
+    elif failure_phase == "execute":
+        with pytest.raises(OSError, match="cutover failed"):
+            finalize_existing_stage_replace(adapter, _request(connection))
+        assert connection.rollback_calls == 1
+        assert connection.commit_calls == 0
+    else:
+        assert finalize_existing_stage_replace(adapter, _request(connection)) is True
+        assert connection.commit_calls == 1
+        assert adapter.dropped == []

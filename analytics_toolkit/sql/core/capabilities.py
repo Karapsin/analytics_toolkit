@@ -79,13 +79,10 @@ def format_support_matrix() -> str:
         max(len(headers[index]), *(len(row[index]) for row in rows))
         for index in range(len(headers))
     ]
-    header_line = "  ".join(
-        header.ljust(widths[index]) for index, header in enumerate(headers)
-    )
+    header_line = "  ".join(header.ljust(widths[index]) for index, header in enumerate(headers))
     divider = "  ".join("-" * width for width in widths)
     body = [
-        "  ".join(value.ljust(widths[index]) for index, value in enumerate(row))
-        for row in rows
+        "  ".join(value.ljust(widths[index]) for index, value in enumerate(row)) for row in rows
     ]
     return "\n".join([header_line, divider, *body])
 

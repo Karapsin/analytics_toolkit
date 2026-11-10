@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from numbers import Integral
 from typing import TYPE_CHECKING, Any
 
@@ -58,14 +59,16 @@ def dataframe_from_columns(
 
 
 def _modern_array(values: Sequence[Any]) -> Any:
-    if not values:
-        return _object_array(values)
-
     non_missing = [
         value
         for value in values
         if value is not None and value is not pd.NA and value is not pd.NaT
     ]
+    if not values or any(
+        isinstance(value, (Decimal, list, tuple, dict, bytes, bytearray, memoryview))
+        for value in non_missing
+    ):
+        return _object_array(values)
     if non_missing and all(
         isinstance(value, Integral) and not isinstance(value, bool) for value in non_missing
     ):

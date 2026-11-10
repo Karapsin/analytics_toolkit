@@ -159,6 +159,11 @@ def prepare_row_count_validated_options(
     return replace(options, source_sql=source_sql)
 
 
+def require_partial_source_snapshot(options: TransferOptions) -> None:
+    """Apply the shared source-snapshot guard for adaptive and streaming paths."""
+    _require_partial_source_snapshot(options)
+
+
 def _require_partial_source_snapshot(options: TransferOptions) -> None:
     state = current_backend_operation()
     if state is not None:

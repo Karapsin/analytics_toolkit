@@ -11,6 +11,7 @@ from tests.sql._support.create_from_sql import (
 def test_drop_target_if_exists_drops_clickhouse_distributed_pair(monkeypatch) -> None:
     source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
     target = FakeClickHouseClient()
+    target.created_tables.update({"analytics.events", "analytics.events_shard"})
 
     def fake_get_sql_connection(connection_key: str) -> object:
         if connection_key == "gp":
@@ -32,7 +33,7 @@ def test_drop_target_if_exists_drops_clickhouse_distributed_pair(monkeypatch) ->
 
     assert target.commands[:4] == [
         "DROP TABLE IF EXISTS analytics.events",
-        "DROP TABLE IF EXISTS analytics.events_shard",
+        "DROP TABLE IF EXISTS `analytics`.`events_shard`",
         "DROP TABLE IF EXISTS analytics.events ON CLUSTER '{cluster}'",
-        "DROP TABLE IF EXISTS analytics.events_shard ON CLUSTER '{cluster}'",
+        "DROP TABLE IF EXISTS `analytics`.`events_shard` ON CLUSTER '{cluster}'",
     ]

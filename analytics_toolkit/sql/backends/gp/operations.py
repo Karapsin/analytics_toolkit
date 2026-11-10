@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.common_methods import get_table_column_names as read_names
+from analytics_toolkit.sql.backends.execution_outcome import close_cursor
 from analytics_toolkit.sql.ddl.properties import overlay_with_properties
 
 from ..utils import sql_string_literal
@@ -24,6 +25,37 @@ def get_table_column_names(
     parts = split_gp_table_name(table_name)
     table = TableIdentifier(parts, (True, True)).render_quoted("gp")
     return read_names(adapter, connection, table, connection_key=connection_key)
+
+
+def get_writable_table_column_types(
+    adapter: Any, connection: Any, table_name: str, *, connection_key: str
+) -> dict[str, str]:
+    """Read insertable columns, including defaults, on old and new GP catalogs."""
+    from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- registry cycle.
+        split_gp_table_name,
+    )
+
+    del adapter, connection_key
+    schema, relation = split_gp_table_name(table_name)
+    cursor = connection.cursor()
+    try:
+        # JSON field lookup is safe when older GP catalogs lack generated/identity fields.
+        cursor.execute(
+            "SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod) "
+            "|| pg_catalog.repeat('[]', GREATEST(a.attndims - 1, 0)) "
+            "FROM pg_catalog.pg_attribute AS a "
+            "JOIN pg_catalog.pg_class AS c ON c.oid = a.attrelid "
+            "JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = %s AND c.relname = %s "
+            "AND a.attnum > 0 AND NOT a.attisdropped "
+            "AND COALESCE(row_to_json(a)->>'attgenerated', '') = '' "
+            "AND COALESCE(row_to_json(a)->>'attidentity', '') <> 'a' "
+            "ORDER BY a.attnum",
+            (schema, relation),
+        )
+        return {str(name): str(native_type) for name, native_type in cursor.fetchall()}
+    finally:
+        close_cursor(cursor, backend="gp")
 
 
 def build_execute_create_as_sqls(  # noqa: PLR0913
@@ -64,7 +96,7 @@ def build_upsert_stage_sqls(  # noqa: PLR0913
     *,
     columns: Sequence[str],
     key_columns: Sequence[str],
-    column_types: dict[str, str] | None,
+    column_types: Mapping[str, str] | None,
     query_label: str | None,
     incoming_stage_tables: Sequence[str] | None,
 ) -> list[str]:
@@ -182,3 +214,90 @@ def build_create_partition_sql(
         f"START ({sql_string_literal(start)}) INCLUSIVE "
         f"END ({sql_string_literal(end)}) EXCLUSIVE"
     )
+
+
+def build_upsert_stage_sqls_with_options(  # noqa: PLR0913 -- backend adapter protocol.
+    self: Any,
+    target_table: str,
+    stage_table: str,
+    *,
+    columns: Sequence[str],
+    key_columns: Sequence[str],
+    column_types: Mapping[str, str] | None = None,
+    ch_cluster: str = "{cluster}",
+    ch_only_shard: bool = False,
+    query_label: str | None = None,
+    upsert_partition_column: str | None = None,
+    final_stage_table: str | None = None,
+    incoming_stage_tables: Sequence[str] | None = None,
+    partition_values: Sequence[Any] | None = None,
+    trino_partition_drop_sql_template: str | None = None,
+) -> list[str]:
+    del (
+        ch_cluster,
+        ch_only_shard,
+        final_stage_table,
+        partition_values,
+        trino_partition_drop_sql_template,
+    )
+
+    return build_upsert_stage_sqls(
+        self,
+        target_table,
+        stage_table,
+        columns=columns,
+        key_columns=list(
+            dict.fromkeys(
+                ([upsert_partition_column] if upsert_partition_column else []) + list(key_columns)
+            )
+        ),
+        column_types=column_types,
+        query_label=query_label,
+        incoming_stage_tables=incoming_stage_tables,
+    )
+
+
+def build_upsert_stage_placeholder_sqls(  # noqa: PLR0913 -- backend adapter protocol.
+    self: Any,
+    target_table: str,
+    stage_table: str,
+    *,
+    key_columns: Sequence[str],
+    ch_cluster: str = "{cluster}",
+    ch_only_shard: bool = False,
+    query_label: str | None = None,
+    upsert_partition_column: str | None = None,
+    final_stage_table: str | None = None,
+    incoming_stage_tables: Sequence[str] | None = None,
+    partition_values: Sequence[Any] | None = None,
+    trino_partition_drop_sql_template: str | None = None,
+) -> list[str]:
+    del (
+        ch_cluster,
+        ch_only_shard,
+        final_stage_table,
+        incoming_stage_tables,
+        partition_values,
+        trino_partition_drop_sql_template,
+    )
+
+    return [
+        _apply_query_label(
+            self._build_delete_matching_stage_sql(
+                target_table,
+                stage_table,
+                list(
+                    dict.fromkeys(
+                        ([upsert_partition_column] if upsert_partition_column else [])
+                        + list(key_columns)
+                    )
+                ),
+            ),
+            query_label,
+        ),
+        self.build_insert_from_stage_placeholder_sql(
+            target_table,
+            stage_table,
+            query_label=query_label,
+        ),
+    ]

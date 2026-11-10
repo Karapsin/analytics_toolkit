@@ -16,6 +16,12 @@ write_modes = importlib.import_module("analytics_toolkit.sql.dml.table.write_mod
 
 
 class RecordingAdapter:
+    def resolve_upsert_execution_sqls(self, _connection, _table, sqls):
+        return sqls
+
+    def resolve_upsert_execution_options(self, _connection, _table, **options):
+        return options
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
         self.results: dict[str, Any] = {
@@ -281,7 +287,7 @@ def test_upsert_stage_table_fetches_optional_partitions_and_executes_sqls(
     )
 
     names = [call[0] for call in adapter.calls]
-    assert names.count("execute_command") == 2
+    assert names.count("execute_commands") == 1
     assert ("fetch_upsert_partition_values" in names) is (partition_column is not None)
 
 

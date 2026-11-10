@@ -50,9 +50,15 @@ def add_create_table_placeholder_step(
     table_name: str,
     phase: str = "create_target",
     query_label: str | None = None,
+    replace_table: bool = False,
 ) -> None:
+    # Backend adapters import plan construction during registry initialization.
+    from analytics_toolkit.sql.backends import get_backend_adapter  # noqa: PLC0415
+
     plan.add(
-        f"CREATE TABLE {table_name} (<source query schema>)",
+        get_backend_adapter(backend).build_create_table_placeholder_sql(
+            table_name, replace_table=replace_table
+        ),
         alias=alias,
         backend=backend,
         phase=phase,

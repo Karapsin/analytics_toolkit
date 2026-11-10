@@ -68,7 +68,11 @@ def test_clickhouse_completion_uses_literal_prefixes_and_database_names(
         assert predicate.expression.this.this == prefix
         database = statement.find(exp.EQ)
         if schema is None:
-            assert database is None
+            assert database is not None
+            assert (
+                database.expression.sql(dialect="clickhouse").replace("_", "").lower()
+                == "currentdatabase()"
+            )
         else:
             assert database is not None
             assert database.this.name == "database"
@@ -126,5 +130,5 @@ def test_capability_probe_is_cached_and_missing_catalog_is_reported(
     )
     with pytest.raises(ValueError, match="requires a catalog"):
         completion.TrinoCompletionProvider().list_tables(connection_key="trino", prefix="")
-    assert "database =" not in build_ch_completion_query(None, "")
+    assert "database = currentDatabase()" in build_ch_completion_query(None, "")
     assert "table_schema =" not in build_trino_completion_query("iceberg", None, "")

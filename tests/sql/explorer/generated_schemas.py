@@ -139,7 +139,7 @@ def test_catalog_table_and_column_suggestions_are_not_filtered() -> None:
             editor.text = "select * from " + GENERATED[:8]
             editor.cursor_location = (0, len(editor.text))
             await pilot.press("tab")
-            assert editor.text == "select * from " + GENERATED + "."
+            assert editor.text == 'select * from "' + GENERATED + '".'
 
             stub.table_cache = (GENERATED, "normal")
             editor.text = "select * from iceberg.public."
@@ -147,7 +147,7 @@ def test_catalog_table_and_column_suggestions_are_not_filtered() -> None:
             await pilot.press("tab")
             assert workspace.completion_menu.suggestions == stub.table_cache
             await pilot.press("tab")
-            assert editor.text == "select * from iceberg.public." + GENERATED + " "
+            assert editor.text == 'select * from iceberg.public."' + GENERATED + '" '
 
             editor.text = "select  from iceberg.public.orders"
             editor.cursor_location = (0, 7)

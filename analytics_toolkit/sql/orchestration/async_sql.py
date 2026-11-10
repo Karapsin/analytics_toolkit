@@ -4,11 +4,10 @@ import asyncio
 import contextvars
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from functools import partial
 from queue import Queue
-from threading import Event, Thread
+from threading import Event, Semaphore, Thread
 from typing import Any
 
 from tqdm import tqdm
@@ -30,6 +29,7 @@ from ..dml.load.load_df import load_df
 from ..dml.transfer.flow.api import transfer_table
 from ..execution.operation_runner import timed_public_sql_function
 from .pipeline import _PipelineContext, _is_async_callable
+from .capacity import run_with_capacity, suspend_capacity
 from analytics_toolkit.general import time_print_context
 from .tasks import (
     _PIPELINE_TASK_TYPE,
@@ -63,7 +63,7 @@ class _ConcurrencyState:
     effective_concurrency: int
     hard_cap: int
     soft_cap: int
-    semaphores: tuple[asyncio.Semaphore, ...]
+    semaphores: tuple[Semaphore, ...]
 
 
 @timed_public_sql_function
@@ -79,7 +79,7 @@ def async_sql(
 ) -> dict[str, Any]:
     """Run independent SQL tasks concurrently and return a result dictionary."""
     cancellation_scope = SqlCancellationScope(parent=current_cancellation_scope())
-    with activate_cancellation_scope(cancellation_scope):
+    with activate_cancellation_scope(cancellation_scope), suspend_capacity():
         return _run_coroutine_sync(
             lambda: _async_sql_impl(
                 tasks,
@@ -327,7 +327,7 @@ def _build_concurrency_state(
     if active_state is None:
         hard_cap = hard_concurrency_cap
         soft_cap = concurrency if soft_concurrency_cap is None else soft_concurrency_cap
-        semaphores = (asyncio.Semaphore(soft_cap),)
+        semaphores = (Semaphore(soft_cap),)
         effective_concurrency = concurrency
     else:
         hard_cap = active_state.hard_cap
@@ -341,7 +341,7 @@ def _build_concurrency_state(
         semaphores = active_state.semaphores
         if soft_concurrency_cap is not None and soft_concurrency_cap < soft_cap:
             soft_cap = soft_concurrency_cap
-            semaphores = (*semaphores, asyncio.Semaphore(soft_cap))
+            semaphores = (*semaphores, Semaphore(soft_cap))
 
         effective_concurrency = active_state.effective_concurrency * concurrency
 
@@ -365,7 +365,7 @@ def _build_concurrency_state(
 async def _run_pipeline(
     task_name: str,
     steps: Sequence[Any],
-    soft_semaphores: tuple[asyncio.Semaphore, ...],
+    soft_semaphores: tuple[Semaphore, ...],
     executor: ThreadPoolExecutor,
 ) -> Any:
     context = _PipelineContext(task_name=task_name)
@@ -386,15 +386,12 @@ async def _run_pipeline(
 
 
 async def _run_blocking(
-    soft_semaphores: tuple[asyncio.Semaphore, ...],
+    soft_semaphores: tuple[Semaphore, ...],
     executor: ThreadPoolExecutor,
     func: Any,
     *args: Any,
 ) -> Any:
-    async with AsyncExitStack() as stack:
-        for semaphore in reversed(soft_semaphores):
-            await stack.enter_async_context(semaphore)
-        return await _to_thread(func, *args, _executor=executor)
+    return await _to_thread(run_with_capacity, soft_semaphores, func, *args, _executor=executor)
 
 
 async def _to_thread(

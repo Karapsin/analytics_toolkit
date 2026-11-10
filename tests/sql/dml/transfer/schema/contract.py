@@ -146,7 +146,7 @@ def test_map_source_schema_to_target_preserves_common_types() -> None:
         "is_active": "BOOLEAN",
         "user_id": "INTEGER",
         "amount": "DECIMAL(12, 2)",
-        "created_at": "TIMESTAMP",
+        "created_at": "TIMESTAMP(6)",
         "payload": "VARCHAR",
     }
     assert schema_module.map_source_schema_to_target(source_schema, "ch") == {
@@ -184,7 +184,7 @@ def test_map_source_schema_to_target_preserves_same_trino_native_types() -> None
     assert schema_module.map_source_schema_to_target(source_schema, "trino") == {
         "campaign_codes": "VARCHAR",
         "po_bonus_pk": "VARCHAR",
-        "attributes": "BIGINT",
+        "attributes": "VARCHAR",
         "details": "VARCHAR",
         "untyped_value": "VARCHAR",
     }

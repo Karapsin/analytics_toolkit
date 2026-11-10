@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from analytics_toolkit.sql.connection.validation import validating, validation_timeout
+
 from .storage_config import resolve_storage_config
 
 EXAMPLE_UPSERT_PARTITION_DROP_SQL_TEMPLATE = (
@@ -28,6 +30,7 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
         _reject_removed_fields,
         _require_string,
     )
+
     _reject_removed_fields(
         raw_config,
         connection_key,
@@ -120,7 +123,11 @@ def open_connection(
     if config.auth_mode == "oauth2":
         auth = trino.auth.OAuth2Authentication()
     elif config.auth_mode == "basic":
-        auth = BasicAuthentication(config.user, config.password) if config.password else None
+        auth = (
+            BasicAuthentication(config.user, config.password)
+            if config.password is not None
+            else None
+        )
     else:
         from ...connection.errors import SqlConfigError
 
@@ -141,8 +148,11 @@ def open_connection(
         connect_kwargs["catalog"] = config.catalog
     if config.schema:
         connect_kwargs["schema"] = config.schema
-    if config.request_timeout is not None:
-        connect_kwargs["request_timeout"] = config.request_timeout
+    request_timeout = validation_timeout(config.request_timeout)
+    if request_timeout is not None:
+        connect_kwargs["request_timeout"] = request_timeout
+    if validating():
+        connect_kwargs["max_attempts"] = 1
     if config.source:
         connect_kwargs["source"] = config.source
 

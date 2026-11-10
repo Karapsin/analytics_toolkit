@@ -12,6 +12,7 @@ from analytics_toolkit.sql.execution.backend_options import preserve_recovery_ar
 if TYPE_CHECKING:
     from analytics_toolkit.sql.execution.plans import SqlPlan
 
+from .cutover import StructuralCutoverError, create_replacements, execute_cutover, rollback_cutover
 from .ddl import build_ch_shard_table_name
 from .metadata import extract_clickhouse_distributed_shard_table
 from .reconfigure_conversion import plan_topology_conversion as _plan_topology_conversion
@@ -108,6 +109,7 @@ from .reconfigure_support import (
 from .reconfigure_support import (
     unquoted_table_name as _unquoted_table_name,
 )
+from .reconfigure_topology import DestinationTopology, validate_destination
 from .reconfigure_wait import wait_for_created_replacements
 from .wait import (
     _wait_for_ch_table,
@@ -220,6 +222,19 @@ def plan_ch_table_reconfiguration(
         build_ch_shard_table_name(_qualify_with_database(table, database_name))
         if target_pair
         else _qualify_with_database(table, database_name)
+    )
+
+    validate_destination(
+        connection,
+        DestinationTopology(
+            source_pair=source_pair,
+            target_pair=target_pair,
+            source_cluster=source_cluster_resolved,
+            target_cluster=target_cluster_resolved,
+            distributed_cluster=policy.distributed_cluster,
+            desired_shard_table=desired_shard_table,
+            cross_cluster=cross_cluster,
+        ),
     )
 
     structural_change = any(
@@ -433,7 +448,7 @@ def execute_ch_table_reconfiguration(
     metadata.source_rows = source_count
     cutover_started = False
     try:
-        _execute_phase(adapter, connection, reconfiguration.plan, "create_replacement")
+        create_replacements(adapter, connection, reconfiguration)
         _wait_for_created_replacement(connection, reconfiguration)
         _execute_phase(adapter, connection, reconfiguration.plan, "copy_data")
 
@@ -457,7 +472,7 @@ def execute_ch_table_reconfiguration(
             raise RuntimeError("ClickHouse replacement row count does not match the source table.")
 
         cutover_started = True
-        _execute_phase(adapter, connection, reconfiguration.plan, "cutover")
+        execute_cutover(adapter, connection, reconfiguration)
         final_count = _count_final_rows(
             connection, reconfiguration.table, reconfiguration.final_count_cluster
         )
@@ -468,16 +483,14 @@ def execute_ch_table_reconfiguration(
                 "ClickHouse row count changed during cutover; the original table will be restored."
             )
         metadata.row_count_validated = validate_row_count
-    except Exception:
-        if preserve_recovery_artifacts():
+    except Exception as exc:
+        if isinstance(exc, StructuralCutoverError) or preserve_recovery_artifacts():
             raise
-        if cutover_started and reconfiguration.rollback_sqls:
+        if cutover_started and reconfiguration.cutover_journal:
             try:
-                _execute_sqls(adapter, connection, reconfiguration.rollback_sqls)
-            except Exception as rollback_exc:
-                raise RuntimeError(
-                    "ClickHouse reconfiguration failed and automatic rollback also failed."
-                ) from rollback_exc
+                rollback_cutover(adapter, connection, reconfiguration)
+            except StructuralCutoverError as rollback_exc:
+                raise rollback_exc from exc
         _best_effort_cleanup(adapter, connection, reconfiguration)
         raise
 
@@ -867,10 +880,7 @@ def _best_effort_cleanup(
     connection: Any,
     reconfiguration: ChReconfiguration,
 ) -> None:
-    scopes = getattr(reconfiguration, "temporary_table_scopes", None) or [
-        (table_name, reconfiguration.source_cluster)
-        for table_name in reconfiguration.temporary_tables
-    ]
+    scopes = reconfiguration.owned_table_scopes
     for table_name, cluster in scopes:
         try:
             adapter.execute_command(connection, _drop_table_sql(table_name, cluster))

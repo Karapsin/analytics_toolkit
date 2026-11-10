@@ -4,12 +4,13 @@ import contextvars
 import inspect
 from collections.abc import Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from threading import Semaphore
 from typing import Any
 
 from tqdm import tqdm
+
+from analytics_toolkit.general import time_print_context
 
 from ..dml.io.execute_read import execute_read
 from ..dml.io.execute_sql import execute_sql
@@ -17,22 +18,31 @@ from ..dml.io.read_sql import read_sql
 from ..dml.load.load_df import load_df
 from ..dml.transfer.flow.api import transfer_table
 from ..execution.operation_runner import timed_public_sql_function
-from .pipeline import _PipelineContext, _is_async_callable
-from analytics_toolkit.general import time_print_context
+from . import capacity as _capacity
+from .capacity import (
+    run_with_capacity as _run_with_thread_semaphores,
+)
+from .capacity import (
+    suspend_capacity as _release_held_parallel_semaphores,
+)
+from .pipeline import _is_async_callable, _PipelineContext
 from .tasks import (
     _PIPELINE_TASK_TYPE,
     _PROGRESS_TASK_TYPES,
     _annotate_task_exception,
     _log_failed_sql_task,
     _normalize_task_result,
-    _run_sync_task as _dispatch_sync_task,
     _validate_concurrency,
     _validate_hard_concurrency_cap,
     _validate_optional_soft_concurrency_cap,
     _validate_progress,
     _validate_tasks,
 )
+from .tasks import (
+    _run_sync_task as _dispatch_sync_task,
+)
 
+_PARALLEL_HELD_SEMAPHORES = _capacity.HELD_CAPACITY
 _DEFAULT_HARD_CONCURRENCY_CAP = 5
 _SYNC_TASK_RUNNERS = {
     "read": lambda kwargs: read_sql(**kwargs),
@@ -41,11 +51,8 @@ _SYNC_TASK_RUNNERS = {
     "load_df": lambda kwargs: load_df(**kwargs),
     "transfer": lambda kwargs: transfer_table(**kwargs),
 }
-_PARALLEL_CONCURRENCY_STATE: contextvars.ContextVar[
-    "_ParallelConcurrencyState | None"
-] = contextvars.ContextVar("analytics_toolkit_parallel_sql_concurrency", default=None)
-_PARALLEL_HELD_SEMAPHORES: contextvars.ContextVar[tuple[Semaphore, ...]] = (
-    contextvars.ContextVar("analytics_toolkit_parallel_sql_held_semaphores", default=())
+_PARALLEL_CONCURRENCY_STATE: contextvars.ContextVar["_ParallelConcurrencyState | None"] = (
+    contextvars.ContextVar("analytics_toolkit_parallel_sql_concurrency", default=None)
 )
 
 
@@ -280,44 +287,6 @@ def _run_parallel_pipeline(
         context.results.append(result)
 
     return context.last_result
-
-
-def _run_with_thread_semaphores(
-    soft_semaphores: tuple[Semaphore, ...],
-    func: Any,
-    *args: Any,
-) -> Any:
-    with ExitStack() as stack:
-        acquired: list[Semaphore] = []
-        for semaphore in reversed(soft_semaphores):
-            semaphore.acquire()
-            acquired.append(semaphore)
-            stack.callback(semaphore.release)
-        token = _PARALLEL_HELD_SEMAPHORES.set(
-            (*_PARALLEL_HELD_SEMAPHORES.get(), *acquired)
-        )
-        try:
-            return func(*args)
-        finally:
-            _PARALLEL_HELD_SEMAPHORES.reset(token)
-
-
-@contextmanager
-def _release_held_parallel_semaphores() -> Any:
-    held_semaphores = _PARALLEL_HELD_SEMAPHORES.get()
-    if not held_semaphores:
-        yield
-        return
-
-    token = _PARALLEL_HELD_SEMAPHORES.set(())
-    for semaphore in held_semaphores:
-        semaphore.release()
-    try:
-        yield
-    finally:
-        for semaphore in held_semaphores:
-            semaphore.acquire()
-        _PARALLEL_HELD_SEMAPHORES.reset(token)
 
 
 def _run_sync_task(task_type: str, kwargs: dict[str, Any]) -> Any:

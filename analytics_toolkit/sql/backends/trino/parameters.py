@@ -1,0 +1,256 @@
+"""Exact native parameter values for Trino's ARRAY/MAP/ROW driver contract."""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+from decimal import Decimal
+from enum import Enum
+from functools import lru_cache
+from numbers import Integral
+from typing import Any
+from uuid import UUID
+
+import numpy as np
+import pandas as pd
+
+_MICROSECOND_PRECISION = 6
+_NANOSECOND_PRECISION = 9
+
+
+@lru_cache(maxsize=1)
+def _policies() -> Any:
+    # The registry imports insertion helpers before core.capabilities exists.
+    from analytics_toolkit.sql.backends import nested_types, type_resolution  # noqa: PLC0415
+    from analytics_toolkit.sql.core import exact_values  # noqa: PLC0415
+
+    return nested_types, type_resolution, exact_values
+
+
+def is_null(value: Any) -> bool:
+    return bool(_policies()[2].is_null(value))
+
+
+def _validate(value: Any, native: str) -> None:
+    nested, types, _exact = _policies()
+    profile = types.ColumnProfile(native_type=native or None, source_backend="trino")
+    profile.add(value)
+    if native:
+        nested.validate_nested(profile, native, "trino")
+    elif profile.map_duplicate_keys or profile.map_null_keys or not profile.map_comparable_keys:
+        message = "Trino map parameters require distinct, non-NULL, comparable keys."
+        raise ValueError(message)
+
+
+def normalize_value(value: Any, target_type: str | None) -> Any:
+    nested, _types, _exact = _policies()
+    kind, _children = nested.nested_descriptor(target_type or "")
+    if not is_null(value) and (
+        kind
+        or (
+            not target_type and isinstance(value, (dict, _exact.OrderedMap, _exact.OrderedMapPairs))
+        )
+    ):
+        _validate(value, (target_type or "") if kind else "")
+    return _normalize(value, target_type)
+
+
+def _normalize(value: Any, target_type: str | None) -> Any:  # noqa: PLR0911 -- driver value families.
+    nested, _types, exact = _policies()
+    if is_null(value):
+        return None
+    kind, children = nested.nested_descriptor(target_type or "")
+    if kind in {"array", "gp_array"}:
+        return [_normalize(item, children[0][1]) for item in value]
+    if kind in {"row", "tuple"}:
+        items = [value[name] for name, _native in children] if isinstance(value, dict) else value
+        return tuple(_normalize(item, native) for item, (_name, native) in zip(items, children))
+    if kind == "map":
+        pairs = [
+            (_normalize(key, children[0][1]), _normalize(item, children[1][1]))
+            for key, item in value.items()
+        ]
+        _validate(exact.OrderedMapPairs(tuple(pairs)), "")
+        return dict(pairs)
+    if isinstance(value, (dict, exact.OrderedMap, exact.OrderedMapPairs)) and not target_type:
+        _validate(value, "")
+        pairs = [(_normalize(key, None), _normalize(item, None)) for key, item in value.items()]
+        _validate(exact.OrderedMapPairs(tuple(pairs)), "")
+        return dict(pairs)
+    if isinstance(value, list) and not target_type:
+        return [_normalize(item, None) for item in value]
+    if isinstance(value, tuple) and not target_type:
+        return tuple(_normalize(item, None) for item in value)
+    return _scalar(value, target_type)
+
+
+def _scalar(value: Any, target_type: str | None) -> Any:  # noqa: PLR0911 -- scalar driver families.
+    _nested, types, exact = _policies()
+    family = types.parse_native_type(target_type).base.name
+    if family in {"varchar", "char", "string", "text"}:
+        return (
+            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            if isinstance(value, (dict, list))
+            else str(value)
+        )
+    if isinstance(value, (dt.datetime, pd.Timestamp, np.datetime64, exact.ExactTemporal)):
+        return _temporal_parameter(value, target_type, family)
+    if family == "bigint":
+        value = int(value)  # Retain the historical explicit BIGINT conversion.
+    if target_type:
+        value = types.ResolvedColumn(target_type, target_backend="trino").convert(value)
+    if isinstance(value, Enum):
+        value = value.value
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, (np.float32, np.float64)):
+        return float(value)
+    if isinstance(value, np.ndarray):
+        return _normalize(value.tolist(), target_type)
+    return value
+
+
+def _temporal_parameter(value: Any, target_type: str | None, family: str) -> Any:
+    _nested, types, exact = _policies()
+    if isinstance(value, np.datetime64):
+        value = pd.Timestamp(value)
+    if family == "date":
+        return (
+            value.calendar_datetime()
+            if isinstance(value, exact.ExactTemporal)
+            else pd.Timestamp(value)
+        ).date()
+    precision = types.timestamp_scale(target_type) if target_type else _MICROSECOND_PRECISION
+    if not target_type and _submicrosecond(value):
+        message = (
+            "Sub-microsecond Trino parameters require an explicit TIMESTAMP precision "
+            "in table_schema or resolved target metadata."
+        )
+        raise ValueError(message)
+    if precision > _MICROSECOND_PRECISION:
+        return timestamp_text(value, precision)
+    truncated = exact.truncate_temporal(value, precision)
+    if isinstance(truncated, exact.ExactTemporal):
+        truncated = truncated.calendar_datetime(utc=True)
+    return truncated.astimezone(dt.timezone.utc) if truncated.tzinfo is not None else truncated
+
+
+def _submicrosecond(value: Any) -> bool:
+    _nested, _types, exact = _policies()
+    if isinstance(value, exact.ExactTemporal):
+        return bool(
+            value.scale > _MICROSECOND_PRECISION
+            and value.ticks % 10 ** (value.scale - _MICROSECOND_PRECISION)
+        )
+    return bool(pd.Timestamp(value).nanosecond)
+
+
+def timestamp_text(value: Any, precision: int) -> str:
+    _nested, _types, exact = _policies()
+    if isinstance(value, np.datetime64):
+        value = pd.Timestamp(value)
+    value = exact.truncate_temporal(value, precision)
+    if isinstance(value, exact.ExactTemporal):
+        calendar = value.calendar_datetime(utc=True)
+        fraction = value.ticks % 10**value.scale
+        digits = f"{fraction:0{value.scale}d}" if value.scale else ""
+    else:
+        calendar = (
+            value.tz_convert("UTC")
+            if isinstance(value, pd.Timestamp) and value.tzinfo is not None
+            else value
+        )
+        if calendar.tzinfo is not None:
+            calendar = calendar.astimezone(dt.timezone.utc)
+        digits = f"{calendar.microsecond:06d}{getattr(calendar, 'nanosecond', 0):03d}"
+    digits = digits[:precision].ljust(precision, "0")
+    base = str(calendar.date().isoformat()) + str(calendar.strftime(" %H:%M:%S"))
+    return (
+        base + ("." + digits if precision else "") + (" UTC" if calendar.tzinfo is not None else "")
+    )
+
+
+def literal(value: Any, target_type: str | None) -> str:  # noqa: C901, PLR0911, PLR0912 -- exact SQL value families.
+    nested, types, exact = _policies()
+    if is_null(value):
+        return "NULL"
+    kind, children = nested.nested_descriptor(target_type or "")
+    if kind:
+        _validate(value, target_type or "")
+        if kind in {"array", "gp_array"}:
+            body = "ARRAY[" + ", ".join(literal(item, children[0][1]) for item in value) + "]"
+        elif kind in {"row", "tuple"}:
+            items = (
+                [value[name] for name, _native in children] if isinstance(value, dict) else value
+            )
+            body = (
+                "ROW("
+                + ", ".join(literal(item, native) for item, (_name, native) in zip(items, children))
+                + ")"
+            )
+        else:
+            body = (
+                "MAP(ARRAY["
+                + ", ".join(literal(key, children[0][1]) for key, _item in value.items())
+                + "], ARRAY["
+                + ", ".join(literal(item, children[1][1]) for _key, item in value.items())
+                + "])"
+            )
+        return f"CAST({body} AS {target_type})"
+    family = types.parse_native_type(target_type).base.name
+    if isinstance(value, (dt.datetime, pd.Timestamp, np.datetime64, exact.ExactTemporal)):
+        if family == "date":
+            calendar = (
+                value.calendar_datetime()
+                if isinstance(value, exact.ExactTemporal)
+                else pd.Timestamp(value)
+            )
+            return "DATE '" + str(calendar.date().isoformat()) + "'"
+        precision = (
+            types.timestamp_scale(target_type)
+            if target_type
+            else (_NANOSECOND_PRECISION if _submicrosecond(value) else _MICROSECOND_PRECISION)
+        )
+        return "TIMESTAMP '" + timestamp_text(value, precision) + "'"
+    if not target_type:
+        container = _untyped_container_literal(value)
+        if container is not None:
+            return container
+    value = normalize_value(value, target_type)
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, Decimal):
+        return "DECIMAL '" + format(value, "f") + "'"
+    if isinstance(value, UUID):
+        return "UUID '" + str(value) + "'"
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return "X'" + bytes(value).hex() + "'"
+    if isinstance(value, dt.date):
+        return "DATE '" + value.isoformat() + "'"
+    container = _untyped_container_literal(value)
+    if container is not None:
+        return f"CAST({container} AS {target_type})" if target_type else container
+    escaped = str(value).replace("'", "''")
+    if isinstance(value, str) or not target_type:
+        return f"'{escaped}'"
+    return f"CAST('{escaped}' AS {target_type})"
+
+
+def _untyped_container_literal(value: Any) -> str | None:
+    _nested, _types, exact = _policies()
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+    if isinstance(value, (dict, exact.OrderedMap, exact.OrderedMapPairs)):
+        _validate(value, "")
+        keys = "ARRAY[" + ", ".join(literal(key, None) for key, _item in value.items()) + "]"
+        values = "ARRAY[" + ", ".join(literal(item, None) for _key, item in value.items()) + "]"
+        return f"MAP({keys}, {values})"
+    if isinstance(value, list):
+        return "ARRAY[" + ", ".join(literal(item, None) for item in value) + "]"
+    if isinstance(value, tuple):
+        return "ROW(" + ", ".join(literal(item, None) for item in value) + ")"
+    return None

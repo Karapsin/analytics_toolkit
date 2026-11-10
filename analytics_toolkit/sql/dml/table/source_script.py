@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from analytics_toolkit._sql_statements import terminal_parts
 from analytics_toolkit.sql.backends import get_backend_adapter
@@ -10,6 +10,7 @@ from analytics_toolkit.sql.backends.source_script import (
     execute_source_setup,
     source_materialization_sqls,
 )
+from analytics_toolkit.sql.backends.stage_ownership import single_resource_policy
 from analytics_toolkit.sql.backends.transfer_stage import execute_transfer_materialization
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
@@ -135,7 +136,7 @@ def build_script_plan(options: CreateTableFromSqlOptions) -> SqlPlan:
         cleanup_sqls = (
             adapter.build_creation_policy_cleanup_sqls(
                 stage,
-                options.source_staging_ch_policy,
+                single_resource_policy(options.source_staging_ch_policy),
                 query_label=options.query_label,
                 if_exists=True,
             )
@@ -158,10 +159,18 @@ def execute_script_attempt(
 ) -> object:
     from . import create_table_from_sql as creation  # noqa: PLC0415
 
+    prepared_input = options.input_resolution.get("prepared_query_input")
+    if prepared_input is not None and prepared_input.frozen:
+        return creation._execute_generic_create_table_from_sql_attempt(  # noqa: SLF001
+            options=replace(options, source_sql=prepared_input.options.source_sql, setup_sqls=()),
+            target_adapter=target_adapter,
+            attempt=attempt,
+        )
     source_adapter = get_backend_adapter(options.source_backend)
     config = get_connection_config(options.source_key)
     connection = creation.get_sql_connection(options.source_key)
     stage: str | None = None
+    owned_stages: list[str] = []
     delegated = False
     result: object = None
     failure: BaseException | None = None
@@ -184,9 +193,14 @@ def execute_script_attempt(
             execute_source_setup(source_adapter, connection, prepared)
             source_sql = source_adapter.prepare_sql(config, options.source_sql)
             if options.insert_data:
-                # Register ownership before CTAS so partial creation is also cleaned up.
                 stage = _allocate_stage(options, connection)
-                _materialize_source(options, source_adapter, connection, stage, source_sql)
+                _materialize_source(
+                    options,
+                    connection,
+                    stage,
+                    source_sql,
+                    on_resource_created=owned_stages.append,
+                )
                 source_sql = f"SELECT * FROM {stage}"  # noqa: S608
         delegated = True
         result = creation._execute_generic_create_table_from_sql_attempt(  # noqa: SLF001
@@ -205,18 +219,43 @@ def execute_script_attempt(
                 connection, connection_key=options.source_key, backend=options.source_backend
             )
 
-    if stage:
+    result = _finish_source_attempt(
+        options, result, failure, (stage, stage in owned_stages), attempt
+    )
+    return _add_script_metadata(result, metadata, stage, attempt)
+
+
+def _finish_source_attempt(
+    options: CreateTableFromSqlOptions,
+    result: object,
+    failure: BaseException | None,
+    source_stage: tuple[str | None, bool],
+    attempt: int,
+) -> object:
+    from . import create_table_from_sql as creation  # noqa: PLC0415
+
+    stage, owned = source_stage
+    if isinstance(result, creation._UnsafeAttemptFailure):  # noqa: SLF001
+        if stage:
+            cast("Any", result.error).analytics_toolkit_sql_retained_source_stage = stage
+        return result
+    if stage and not owned and failure is not None:
+        cast("Any", failure).analytics_toolkit_sql_unacknowledged_source_stage = stage
+    if stage is not None and owned:
         try:
             _cleanup_stage(options, stage, attempt)
         except Exception as exc:
             if failure is not None:
                 if not isinstance(failure, Exception):
                     raise failure from exc
-                exc.__cause__ = failure
+                cast("Any", failure).analytics_toolkit_sql_cleanup_error = str(exc)
+                cast("Any", failure).analytics_toolkit_sql_retained_source_stage = stage
+                return creation._UnsafeAttemptFailure(failure, attempt)  # noqa: SLF001
+            cast("Any", exc).analytics_toolkit_sql_retained_source_stage = stage
             return creation._UnsafeAttemptFailure(exc, attempt)  # noqa: SLF001
     if failure is not None:
         raise failure
-    return _add_script_metadata(result, metadata, stage, attempt)
+    return result
 
 
 def _add_script_metadata(
@@ -251,7 +290,7 @@ def _cleanup_stage(options: CreateTableFromSqlOptions, stage: str, attempt: int)
                 connection,
                 stage,
                 query_label=options.query_label,
-                ch_creation_policy=options.source_staging_ch_policy,
+                ch_creation_policy=single_resource_policy(options.source_staging_ch_policy),
             )
     finally:
         creation._close_connection_quietly(  # noqa: SLF001
@@ -270,8 +309,14 @@ def _allocate_stage(options: CreateTableFromSqlOptions, connection: Any) -> str:
 
 
 def _materialize_source(
-    options: CreateTableFromSqlOptions, adapter: Any, connection: Any, stage: str, source_sql: str
+    options: CreateTableFromSqlOptions,
+    connection: Any,
+    stage: str,
+    source_sql: str,
+    *,
+    on_resource_created: Callable[[str], None] | None = None,
 ) -> None:
+    adapter = get_backend_adapter(options.source_backend)
     create_sql, populate_sql = source_materialization_sqls(
         adapter,
         stage,
@@ -280,6 +325,8 @@ def _materialize_source(
         query_label=options.query_label,
     )
     execute_transfer_materialization(adapter, options.source_backend, connection, create_sql)
+    if on_resource_created is not None:
+        on_resource_created(stage)
     if populate_sql is not None:
         adapter.after_create_table(
             connection,

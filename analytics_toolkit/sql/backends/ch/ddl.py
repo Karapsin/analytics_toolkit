@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 # ruff: noqa: FBT001, FBT002
-
 import re
 import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from ..registry import get_backend_adapter
 from ...ddl.identifiers import (
     _add_table_identifier_suffix,
     _identifier_name,
     _parse_table_name,
     quote_identifier,
 )
+from ..registry import get_backend_adapter
+from .dialect import sql_string_literal
 
 
 def _build_ch_create_table_sqls(
@@ -207,7 +207,7 @@ def _normalize_non_empty_string(value: str, option_name: str) -> str:
 
 
 def _sql_string_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+    return sql_string_literal(value)
 
 
 def _format_ch_cluster_name(cluster_name: str) -> str:

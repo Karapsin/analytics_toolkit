@@ -10,7 +10,6 @@ from html import escape
 from importlib import import_module
 from typing import Any
 
-from analytics_toolkit.sql.backends.utils import sql_string_literal
 from analytics_toolkit.sql.connection.errors import (
     ClickHouseClusterTopologyError,
     ClickHouseClusterUnavailableError,
@@ -22,6 +21,7 @@ from analytics_toolkit.sql.execution.backend_options import (
 )
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
+from .dialect import sql_string_literal
 from .managed_routing import _ClusterObject, _normalized_definition, _resolve_cluster_name
 
 _PROBE_FIELDS = 2
@@ -262,20 +262,37 @@ class ClusterScope:
         if not self.reachable:
             msg = f"No hosts of {self.cluster!r} are reachable."
             raise ClickHouseClusterUnavailableError(msg)
-        self.record(self.reachable)
 
-    def record(self, selected: list[Host], table: str | None = None) -> dict[str, Any]:
+    def record(
+        self,
+        selected: list[Host],
+        table: str | None = None,
+        *,
+        coverage_intent: str = "physical_hosts",
+    ) -> dict[str, Any]:
         chosen = {host.position for host in selected}
         status = {
             "alias": self.config.connection_key,
             "cluster": self.cluster,
             "table": table,
             "policy": self.policy,
-            "complete": len(selected) == len(self.hosts),
+            "coverage_intent": coverage_intent,
+            "host_coverage_complete": len(selected) == len(self.hosts),
+            "logical_coverage_complete": {host.shard for host in selected}
+            == {host.shard for host in self.hosts},
+            "complete": (
+                {host.shard for host in selected} == {host.shard for host in self.hosts}
+                if coverage_intent == "logical_shards"
+                else len(selected) == len(self.hosts)
+            ),
             "expected_hosts": [host.identity for host in self.hosts],
             "selected_hosts": [host.identity for host in selected],
             "excluded_hosts": [host.identity for host in self.hosts if host.position not in chosen],
+            "expected_shards": sorted({host.shard for host in self.hosts}),
             "selected_shards": sorted({host.shard for host in selected}),
+            "excluded_shards": sorted(
+                {host.shard for host in self.hosts} - {host.shard for host in selected}
+            ),
         }
         with self.state.lock:
             self.state.statuses[(self.config.connection_key, f"{self.cluster}:{table or ''}")] = (
@@ -344,10 +361,25 @@ class ClusterScope:
         )
         raise ClickHouseClusterUnavailableError(msg)
 
-    def usable(self, objects: list[TableObject], table: str, *, write: bool = False) -> list[Host]:  # noqa: C901 - keep the safety decision and submission in one boundary
+    def usable(  # noqa: C901 - one verified coverage and replica decision boundary
+        self,
+        objects: list[TableObject],
+        table: str,
+        *,
+        write: bool = False,
+        identity: tuple[str, str] | None = None,
+        coverage_intent: str | None = None,
+    ) -> list[Host]:
         if not objects:
             msg = f"No table-ready hosts for {table}."
             raise ClickHouseClusterUnavailableError(msg)
+        if identity is None:
+            # Compatibility for exported internal callers. Internal paths pass components.
+            from .routing import _parse_table_name  # noqa: PLC0415
+
+            identifier = _parse_table_name(table)
+            identity = (identifier.db, identifier.name)
+        database, relation = identity
         selected = [item.host for item in objects if item.host in self.reachable]
         replicated = objects[0].engine.lower().startswith(("replicated", "shared"))
         if replicated:
@@ -356,8 +388,8 @@ class ClusterScope:
                 self.client,
                 "SELECT _shard_num, zookeeper_path, replica_name, is_readonly, is_session_expired "  # noqa: S608 - escaped literals or parsed SQL identifiers
                 f"FROM clusterAllReplicas({sql_string_literal(self.cluster)}, system, replicas) "
-                f"WHERE database = {sql_string_literal(table.split('.', 1)[0])} "
-                f"AND table = {sql_string_literal(table.split('.', 1)[1])}",
+                f"WHERE database = {sql_string_literal(database)} "
+                f"AND table = {sql_string_literal(relation)}",
                 settings=self.probe_settings,
             )
             # Shared engines have different coordination metadata.
@@ -401,15 +433,11 @@ class ClusterScope:
         if not selected:
             msg = f"No usable hosts for {table}."
             raise ClickHouseClusterUnavailableError(msg)
-        status = self.record(selected, table)
-        if replicated:
-            status["host_coverage_complete"] = status["complete"]
-            status["complete"] = {host.shard for host in selected} == {
-                host.shard for host in self.hosts
-            }
+        intent = coverage_intent or ("logical_shards" if replicated else "physical_hosts")
+        status = self.record(selected, table, coverage_intent=intent)
         if self.policy == "stop":
             expected_shards = {host.shard for host in self.hosts}
-            if not replicated or {host.shard for host in selected} != expected_shards:
+            if intent != "logical_shards" or {host.shard for host in selected} != expected_shards:
                 self.require_all(selected, f"Table {table}")
         elif not status["complete"]:
             warn_degraded(self.state, self.config, status, "append" if write else "read")

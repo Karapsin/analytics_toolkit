@@ -17,7 +17,7 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `from_sql` - source SQL query used by a transfer; provide exactly one of `from_sql` or `from_table`
 - `from_table` - source table name for simple `SELECT * FROM <from_table>` transfers; provide exactly one of `from_sql` or `from_table`
 - `to_table` - target table name
-- `write_mode` - write behavior: replace (default), append, truncate_insert, or upsert; `replace` rebuilds the destination from the staged schema, while `truncate_insert` preserves the existing schema; `None` also resolves to replace
+- `write_mode` - write behavior: replace (default), append, truncate_insert, or upsert; `replace` rebuilds the destination from the resolved staged schema, retaining existing destination types unless an explicit `table_schema` requests a different replacement schema; `truncate_insert` preserves the existing schema; `None` also resolves to replace
 - `empty_source_policy` - zero-row behavior: `replace`, `keep`, or `error`; omission resolves to `replace` for replace/truncate modes and `keep` for append/upsert
 - `batch_size` - initial number of rows fetched and inserted per transfer batch
 - `adaptive_batch_size` - whether transfer batch size should adapt after successful inserts
@@ -291,9 +291,43 @@ rows = sql.transfer(
   Without a soft cap, requested counts are the ceilings checked against
   `hard_concurrency_cap`. All cap and concurrency values must be built-in
   positive integers; booleans are rejected.
-- A configured source `transfer_staging_schema` creates one immutable source
+- Destination types use explicit `table_schema` first, then the existing target
+  schema, then inference. Explicit and existing schemas are authoritative and
+  are never widened automatically. An explicit `table_schema` with
+  `write_mode="replace"` authorizes the requested replacement schema. Other
+  write modes continue to enforce the unchanged destination's constraints.
+  When source metadata proves that the entire
+  declared type fits, transfer keeps its streaming path. Otherwise it profiles
+  every selected row before destination creation or mutation, trying exact
+  integer, decimal and temporal representations before text. Every keyed slice
+  contributes to this one resolved schema; the adaptive path has an all-key
+  barrier and uses one target stage.
+- Adaptive profiling freezes the selected rows in a native source snapshot when
+  source staging is configured, then certifies a bounded-memory local replay
+  spool. Without native staging it streams directly into that spool. The spool
+  uses a versioned tagged format, retains exact numbers and nested values, and
+  is reused through destination retries without rerunning the source query.
+  A native snapshot is released only after its replacement spool is certified.
+  Interrupted or changed-scope generations cannot be published. The existing
+  source-staging and row-count requirements for partial ClickHouse coverage
+  still apply.
+- Configuration identity is fixed for the operation, including namespace and
+  credential values. A changed alias configuration stops replay before a
+  replacement client can open against different storage. Cleanup retains
+  resources when the original endpoint cannot be proved; guards are removed
+  when the operation ends, including cancellation.
+- Text fallback preserves NULL, fixed-point decimal text, base-10 integer text,
+  ISO dates and full-precision timestamps (aware instants normalized to UTC).
+  Structured values use versioned typed JSON with ordered map pairs. Supported
+  binary representations stay binary; otherwise bytes use a `base64:` prefix.
+  Optional metadata reports the types, conversion reason, encoding version and
+  certified input count without reporting private values. Dry-run plans never
+  profile or spool query results: `type_resolution_pending` and native
+  candidates describe unresolved execution-time inference.
+- On the metadata-proven streaming path, a configured source
+  `transfer_staging_schema` creates one immutable source
   stage per key with CTAS and drops it only after that key is committed and
-  validated in the target database. There is no all-keys phase barrier. Target
+  validated in the target database. This streaming path has no all-keys phase barrier. Target
   stages are private per writer and are created lazily on that writer's first
   non-empty key for SQL/VALUES staging. Parquet mode instead shares one external
   target stage across writers while preserving those source stages and their
@@ -387,14 +421,22 @@ rows = sql.transfer(
 - `transfer_keys` string and list forms accept only simple placeholder names
   such as `"event_date"`. Use mapping form for SQL expressions, for example
   `{"user_id_suffix": "right(user_id, 1)"}`.
-- Each keyed transfer requires at least one `{placeholder_name}` occurrence in
-  `from_sql` for every transfer key. The same placeholder may appear multiple
-  times, and every occurrence receives the active slice predicate. `from_table`
+- Each keyed transfer requires at least one executable `{placeholder_name}` occurrence in
+  `from_sql` for every transfer key. Strings, quoted identifiers, comments and
+  dollar-quoted bodies are preserved and do not satisfy that requirement. The
+  same placeholder may appear multiple times; every executable occurrence
+  receives the active slice predicate in one pass. Inserted values are never
+  scanned for more placeholders. `from_table`
   keyed transfers do not need placeholders. If `from_sql` is an f-string,
   escape braces as `{{event_date}}`.
 - Key placeholders are replaced by predicates such as
   `(event_date) = DATE '2026-04-01'` or `(event_date) IS NULL`; they are not
-  value-only placeholders.
+  value-only placeholders. Literals use the source backend's syntax. ClickHouse
+  strings escape both backslashes and apostrophes, and datetime keys use
+  `toDateTime64` with their full fractional precision. Aware datetime keys
+  normalize to UTC; naive keys retain the connection's timezone semantics.
+  Exact temporal values returned by ClickHouse reads retain their raw instant
+  and fractional scale when reused as transfer keys.
 - Values are always explicit; the helper does not query distinct key values
   automatically.
 - Keyed transfers render each source slice by replacing placeholders inline.

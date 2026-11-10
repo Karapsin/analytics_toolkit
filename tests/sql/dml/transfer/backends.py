@@ -4,6 +4,7 @@ import importlib
 from types import SimpleNamespace
 from typing import Any
 
+import pandas as pd
 import pytest
 from analytics_toolkit.general import logging as general_logging
 from analytics_toolkit.sql.backends import adapter_defaults
@@ -166,17 +167,16 @@ def test_clickhouse_operation_lazy_helpers_and_invalid_drop(
         "apply_clickhouse_shard_stats",
         lambda key, tables, *, read_sql: observed.append((key, tables, read_sql)) or tables,
     )
-    tables = object()
-    assert (
-        ch_operations.postprocess_show_tables(
-            object(),
-            "target",
-            tables,
-            ch_distributed_table_stats=True,
-        )
-        is tables
+    tables = pd.DataFrame({"schema": ["db"], "table_name": ["events"]})
+    result = ch_operations.postprocess_show_tables(
+        object(),
+        "ch",
+        tables,
+        ch_distributed_table_stats=True,
     )
-    assert observed[0][:2] == ("target", tables)
+    pd.testing.assert_frame_equal(result, tables)
+    assert observed[0][0] == "ch"
+    pd.testing.assert_frame_equal(observed[0][1], tables)
     assert callable(observed[0][2])
 
     with pytest.raises(ValueError, match="At least one"):

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-# ruff: noqa: BLE001, EM101, EM102, I001, PLR0913, PLR0915, PLR2004, S608, TC006, TID252, TRY003, TRY300, TRY301
+from analytics_toolkit.sql.backends.stage_ownership import single_resource_policy
+
+# ruff: noqa: BLE001, EM101, EM102, I001, PLR0913, PLR0915, PLR2004, TC006, TID252, TRY003, TRY300, TRY301
 
 import contextvars
 import math
@@ -42,6 +44,7 @@ from ..runtime.retry import (
     run_with_retry,
 )
 from ..schema import inspect_source_query_schema, map_source_schema_to_target
+from .adaptive_input import AdaptiveTransferContext, maybe_run_adaptive_transfer
 from .finalize import cleanup_stage, finalize_loaded_stage
 from .progress import make_transfer_progress_bar
 from .range_scheduler import AdaptiveRangeScheduler, OrdinalRange
@@ -51,6 +54,7 @@ from .source_snapshot import (
     build_snapshot_range_sql,
     build_snapshot_select_sql,
     execute_source_snapshot_materialization,
+    snapshot_slice_counts,
 )
 from .stage import _with_internal_column_types, create_stage_state, ensure_transfer_target_table
 from .stage_identity import resolve_internal_columns
@@ -77,6 +81,14 @@ def run_staged_source_transfer_attempt(
             options,
             insert_retry_cnt=insert_retry_cnt,
         )
+    return _run_unkeyed_staged_source_transfer_attempt(options, insert_retry_cnt=insert_retry_cnt)
+
+
+def _run_unkeyed_staged_source_transfer_attempt(
+    options: TransferOptions,
+    *,
+    insert_retry_cnt: int,
+) -> int:
     attempt_started_at = time.monotonic()
     source_ref: dict[str, Any] = {}
     target_ref: dict[str, Any] = {}
@@ -115,6 +127,20 @@ def run_staged_source_transfer_attempt(
             options.from_db_backend,
             table_schema_names=(options.table_schema or {}).keys(),
         )
+        adaptive_rows = maybe_run_adaptive_transfer(
+            options,
+            refs,
+            stage_state,
+            source_schema,
+            AdaptiveTransferContext(
+                options.retry_cnt,
+                insert_retry_cnt,
+                open_connection=get_sql_connection,
+            ),
+        )
+        if adaptive_rows is not None:
+            transfer_completed = True
+            return adaptive_rows
         cleanup_superseded_transfer_stages(
             options=options,
             connection=source_ref["connection"],
@@ -132,12 +158,16 @@ def run_staged_source_transfer_attempt(
             internal_columns=stage_state.internal_columns,
         )
         source_types = (
-            validate_table_schema_columns(options.table_schema, source_columns)
-            if options.table_schema is not None
-            else map_source_schema_to_target(
-                source_schema,
-                options.to_db_backend,
-                source_backend=options.from_db_backend,
+            stage_state.stage_column_types
+            if stage_state.input_types_resolved
+            else (
+                validate_table_schema_columns(options.table_schema, source_columns)
+                if options.table_schema is not None
+                else map_source_schema_to_target(
+                    source_schema,
+                    options.to_db_backend,
+                    source_backend=options.from_db_backend,
+                )
             )
         )
         stage_state.stage_column_types = _with_internal_column_types(
@@ -340,7 +370,9 @@ def _cleanup_unkeyed_attempt(  # noqa: C901
                 source_ref["connection"],
                 snapshot_table,
                 query_label=options.query_label,
-                ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
+                ch_creation_policy=single_resource_policy(
+                    getattr(options, "source_staging_ch_policy", None)
+                ),
             )
         except BaseException as exc:
             cleanup_error = cleanup_error or exc
@@ -413,9 +445,10 @@ def _materialize_snapshot(
     )
     adapter = get_backend_adapter(options.from_db_backend)
     created = False
-    creation_started = False
+    snapshot_owned: list[str] = []
     cluster_routed = False
     post_create_sqls: tuple[str, ...] = ()
+
     try:
         for slice_id, source_sql in source_sqls:
             select_sql = build_snapshot_select_sql(
@@ -428,7 +461,6 @@ def _materialize_snapshot(
                 internal_columns=internal,
             )
             if not created:
-                creation_started = True
                 snapshot_sql = execute_source_snapshot_materialization(
                     backend=options.from_db_backend,
                     connection=source_ref["connection"],
@@ -441,7 +473,9 @@ def _materialize_snapshot(
                         None,
                     ),
                     run_post_create_sqls=False,
+                    on_resource_created=snapshot_owned.append,
                 )
+                snapshot_owned.append(snapshot_table)
                 cluster_routed = snapshot_sql.populate_sql is not None
                 post_create_sqls = snapshot_sql.post_create_sqls
                 created = True
@@ -467,15 +501,19 @@ def _materialize_snapshot(
             snapshot_table,
             internal.slice_id,
         )
-    except BaseException:
-        if creation_started:
+    except BaseException as exc:
+        if not snapshot_owned:
+            exc.__dict__["analytics_toolkit_sql_source_stage_candidate"] = snapshot_table
+        if snapshot_owned:
             try:
                 cleanup_stage_table(
                     options.from_db_backend,
                     source_ref["connection"],
                     snapshot_table,
                     query_label=options.query_label,
-                    ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
+                    ch_creation_policy=single_resource_policy(
+                        getattr(options, "source_staging_ch_policy", None)
+                    ),
                 )
             except BaseException:
                 time_print(
@@ -520,29 +558,11 @@ def _allocate_snapshot_name(
 
 
 def _snapshot_slice_counts(
-    options: TransferOptions,
-    connection: Any,
-    snapshot_table: str,
-    slice_column_name: str,
+    options: TransferOptions, connection: Any, snapshot_table: str, slice_column_name: str
 ) -> dict[int, int]:
-    adapter = get_backend_adapter(options.from_db_backend)
-    slice_column = adapter.quote_identifier(slice_column_name)
-    result = _read_backend(
-        options.from_db_backend,
-        connection,
-        f"SELECT {slice_column}, COUNT(*) FROM {snapshot_table} GROUP BY {slice_column}",
-        print_queries=False,
-        output_type="dict",
-        action_name="snapshot counting",
-        phase="count_snapshot",
+    return snapshot_slice_counts(
+        options, connection, snapshot_table, slice_column_name, read_backend=_read_backend
     )
-    counts = {
-        int(slice_id): int(count) for slice_id, count in zip(result.columns[0], result.columns[1])
-    }
-    expected_slices = (
-        [item.index for item in options.transfer_slices] if options.transfer_slices else [0]
-    )
-    return {slice_id: counts.get(slice_id, 0) for slice_id in expected_slices}
 
 
 def _effective_transfer_worker_count(

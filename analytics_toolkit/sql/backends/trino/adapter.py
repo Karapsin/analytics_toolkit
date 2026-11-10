@@ -4,18 +4,19 @@ from collections.abc import Callable, Sequence
 from string import Formatter
 from typing import Any
 
-from . import operations as _operations
-from . import insert as _insert
-from . import parquet_stage as _parquet_stage
+from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+
 from .. import dataframe_types as _dataframe_types
 from .. import source_schema as _source_schema
 from ..base import _apply_query_label
-from ..models import SourceColumn
-from ..utils import sql_literal
-from ..utils import sql_in_list as _sql_in_list
-from ..utils import user_filter as _user_filter
 from ..dbapi import DbApiBackendAdapter
-
+from ..models import SourceColumn
+from ..utils import sql_in_list as _sql_in_list
+from ..utils import sql_literal
+from ..utils import user_filter as _user_filter
+from . import insert as _insert
+from . import operations as _operations
+from . import parquet_stage as _parquet_stage
 
 _TRINO_MAX_DECIMAL_PRECISION = 38
 
@@ -47,7 +48,7 @@ class TrinoAdapter(DbApiBackendAdapter):
             cursor.execute(sql)
             cursor.fetchall()
         finally:
-            cursor.close()
+            close_cursor(cursor, backend="trino")
 
     def explicit_create_property_overrides(
         self,
@@ -157,7 +158,7 @@ class TrinoAdapter(DbApiBackendAdapter):
             cursor.execute(
                 f"""
                 SELECT 1
-                FROM {catalog}.information_schema.tables
+                FROM {self.quote_identifier(catalog)}.information_schema.tables
                 WHERE table_schema = ?
                   AND table_name = ?
                 """.strip(),
@@ -263,7 +264,7 @@ class TrinoAdapter(DbApiBackendAdapter):
             cursor.execute(
                 f"""
                 SELECT column_name, data_type
-                FROM {catalog}.information_schema.columns
+                FROM {self.quote_identifier(catalog)}.information_schema.columns
                 WHERE table_schema = ?
                   AND table_name = ?
                 ORDER BY ordinal_position
@@ -294,9 +295,12 @@ class TrinoAdapter(DbApiBackendAdapter):
         return _map_to_trino_type(kind, source_type, precision, scale)
 
     def map_same_backend_source_type_to_target(self, column: SourceColumn) -> str:
+        native_type = (column.native_type or "").strip()
         source_type = _source_schema.normalize_type_name(column.native_type)
+        if source_type.startswith("timestamp"):
+            return self.map_source_type_to_target(column)
         if source_type and source_type != "unknown":
-            return source_type
+            return native_type
         return self.map_source_type_to_target(column)
 
     def build_upsert_stage_sqls(
@@ -486,37 +490,19 @@ class TrinoAdapter(DbApiBackendAdapter):
         gp_commit_each_statement: bool,
         progress: bool,
     ) -> Any:
-        del gp_break_query, gp_commit_each_statement
-        from analytics_toolkit.general import time_print
-        from ...execution.query_timing import run_timed_query
-        from ...dml.io.execute_sql import (
-            _iterate_statements_with_progress,
-            _maybe_print_query,
-            _split_sql_statements,
-        )
+        from .execution import execute_sql
 
-        cursor = connection.cursor()
-        statements = _split_sql_statements(sql)
-        time_print(f"Executing {len(statements)} statement(s)", backend=self.backend)
-        statement: str | None = None
-        try:
-            for statement in _iterate_statements_with_progress(
-                statements,
-                self.backend,
-                progress=progress,
-            ):
-                _maybe_print_query(statement, print_queries, split_preview=True)
-                run_timed_query(
-                    self.backend,
-                    lambda statement=statement: cursor.execute(statement),
-                )
-        except Exception:
-            failed_query = statement if statement is not None else sql
-            time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
-            raise
-        finally:
-            cursor.close()
-        return None
+        return execute_sql(
+            self,
+            connection,
+            sql,
+            {
+                "print_queries": print_queries,
+                "gp_break_query": gp_break_query,
+                "gp_commit_each_statement": gp_commit_each_statement,
+                "progress": progress,
+            },
+        )
 
     def execute_read_sql(
         self,
@@ -530,6 +516,7 @@ class TrinoAdapter(DbApiBackendAdapter):
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
         from analytics_toolkit.general import time_print
+
         from ...dml.io.execute_read import (
             _execute_setup_statements,
             _read_dbapi_cursor,
@@ -559,7 +546,7 @@ class TrinoAdapter(DbApiBackendAdapter):
             time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
             raise
         finally:
-            cursor.close()
+            close_cursor(cursor, backend="trino")
 
     def insert_dataframe_batch(
         self,
@@ -840,14 +827,15 @@ def _map_to_trino_type(
     if kind == "boolean":
         return "BOOLEAN"
     if kind == "integer":
+        exact_type = _source_schema.exact_integer_target(source_type, "trino")
+        if exact_type is not None:
+            return exact_type
         if "tiny" in source_type or source_type in {"int8", "uint8"}:
             return "TINYINT"
         if "small" in source_type or source_type in {"int16", "uint16"}:
             return "SMALLINT"
         if source_type in {"integer", "int", "int4", "int32", "uint32"}:
             return "INTEGER" if source_type != "uint32" else "BIGINT"
-        if source_type == "uint64":
-            return "DECIMAL(20, 0)"
         return "BIGINT"
     if kind == "float":
         if source_type in {"real", "float4", "float32"}:
@@ -864,9 +852,9 @@ def _map_to_trino_type(
     if kind == "date":
         return "DATE"
     if kind == "timestamp":
-        if "with time zone" in source_type or "timestamptz" in source_type:
-            return "TIMESTAMP WITH TIME ZONE"
-        return "TIMESTAMP"
+        if _source_schema.type_has_timezone(source_type):
+            return "TIMESTAMP(6) WITH TIME ZONE"
+        return "TIMESTAMP(6)"
     return "UUID" if kind == "uuid" else "VARCHAR"
 
 

@@ -5,6 +5,26 @@ from __future__ import annotations
 import json
 from typing import Any
 
+_DESCRIBE_TYPE_FIELDS = 2
+_DESCRIBE_DEFAULT_FIELDS = 3
+_NONINSERTABLE_KINDS = {"ALIAS", "MATERIALIZED", "EPHEMERAL"}
+
+
+def get_writable_table_column_types(
+    adapter: Any, connection: Any, table_name: str, *, connection_key: str
+) -> dict[str, str]:
+    from .routing import query_local  # noqa: PLC0415 -- backend registry cycle.
+
+    del adapter, connection_key
+    result = query_local(connection, f"DESCRIBE TABLE {table_name}")
+    rows = getattr(result, "result_rows", None) or []
+    return {
+        str(row[0]): str(row[1])
+        for row in rows
+        if len(row) >= _DESCRIBE_TYPE_FIELDS
+        and (len(row) < _DESCRIBE_DEFAULT_FIELDS or str(row[2]).upper() not in _NONINSERTABLE_KINDS)
+    }
+
 
 def get_table_column_names(
     adapter: Any, connection: Any, table_name: str, *, connection_key: str

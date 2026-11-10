@@ -133,7 +133,7 @@ def build_preserved_target_rows_insert_sql(
     )
     key_predicates = " AND ".join(
         adapter.null_safe_key_equality("target_dst", "stage_src", column_name)
-        for column_name in key_columns
+        for column_name in dict.fromkeys([partition_column, *key_columns])
     )
     partition_sql = adapter.quote_identifier(partition_column)
     return _apply_query_label(

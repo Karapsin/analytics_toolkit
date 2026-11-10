@@ -8,6 +8,37 @@ from analytics_toolkit.sql.backends import get_backend_adapter, is_simple_identi
 from analytics_toolkit.sql.execution.backend_options import require_complete_operation
 
 
+def effective_upsert_key_columns(
+    key_columns: Sequence[str] | None,
+    partition_column: str | None = None,
+) -> list[str] | None:
+    """Return the ordered partition-scoped key without changing append keys."""
+    if not key_columns:
+        return None
+    return list(dict.fromkeys(([partition_column] if partition_column else []) + list(key_columns)))
+
+
+def validate_complete_upsert_columns(
+    columns: Sequence[str],
+    writable_column_types: dict[str, str],
+) -> list[str]:
+    """Validate complete input rows and return authoritative target order."""
+    incoming = [str(column) for column in columns]
+    expected = list(writable_column_types)
+    missing = [column for column in expected if column not in incoming]
+    extra = [column for column in incoming if column not in writable_column_types]
+    if missing or extra or len(incoming) != len(set(incoming)):
+        details = []
+        if missing:
+            details.append("missing writable columns: " + ", ".join(missing))
+        if extra:
+            details.append("extra columns: " + ", ".join(extra))
+        if len(incoming) != len(set(incoming)):
+            details.append("duplicate input columns")
+        raise ValueError("Existing-target upserts require complete rows; " + "; ".join(details))
+    return expected
+
+
 def normalize_key_columns(
     key_columns: str | Sequence[str] | None,
     option_name: str = "key_columns",

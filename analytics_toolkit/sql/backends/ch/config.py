@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal
 
+from analytics_toolkit.sql.connection.errors import SqlConfigError
+from analytics_toolkit.sql.connection.validation import validating, validation_timeout
 from analytics_toolkit.sql.execution.backend_options import validate_ch_unavailable_shards
 from analytics_toolkit.sql.execution.observation import observed_connection
 
 from .outage_client import OutageClient
-from .outage_context import INTERNAL_IO
+from .outage_context import INTERNAL_IO, internal_io
 from .routing import parse_cluster_routing
 from .wait_policy import parse_connection_ch_ddl_wait_policy
 
@@ -38,7 +40,6 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
     from analytics_toolkit.sql.connection.config import (
         ChConfig,
         _optional_bool,
-        _optional_bool_or_string_as_string,
         _optional_int,
         _optional_mapping,
         _optional_non_negative_int,
@@ -51,7 +52,6 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
     from analytics_toolkit.sql.connection.ddl_defaults import (  # noqa: PLC0415
         parse_ddl_defaults,
     )
-    from analytics_toolkit.sql.connection.errors import SqlConfigError  # noqa: PLC0415
 
     _reject_removed_fields(
         raw_config,
@@ -97,11 +97,7 @@ def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
         password=_require_string(raw_config, connection_key, "password"),
         database=_optional_string(raw_config, connection_key, "database"),
         secure=_optional_bool(raw_config, connection_key, "secure", False),
-        verify_value=_optional_bool_or_string_as_string(
-            raw_config,
-            connection_key,
-            "verify",
-        ),
+        verify_value=_parse_ch_verify(raw_config, connection_key),
         ca_certs=ca_certs,
         ca_certs_variable=ca_certs_variable,
         connect_timeout=_optional_positive_int(
@@ -245,22 +241,33 @@ def _open_http_connection(
     ca_certs = resolve_ch_ca_certs(config)
     if ca_certs is not None:
         client_kwargs["ca_cert"] = ca_certs
-    if config.connect_timeout is not None:
-        client_kwargs["connect_timeout"] = config.connect_timeout
-    if config.send_receive_timeout is not None:
-        client_kwargs["send_receive_timeout"] = config.send_receive_timeout
+    connect_timeout = validation_timeout(config.connect_timeout)
+    read_timeout = validation_timeout(config.send_receive_timeout)
+    if connect_timeout is not None:
+        client_kwargs["connect_timeout"] = connect_timeout
+    if read_timeout is not None:
+        client_kwargs["send_receive_timeout"] = read_timeout
     if config.settings is not None:
         client_kwargs["settings"] = config.settings
+    if validating():
+        client_kwargs["settings"] = {
+            **(config.settings or {}),
+            "max_execution_time": min(
+                float((config.settings or {}).get("max_execution_time", 5) or 5), 5
+            ),
+        }
     if config.interface is not None:
         client_kwargs["interface"] = config.interface
     if config.query_limit is not None:
         client_kwargs["query_limit"] = config.query_limit
-    if config.query_retries is not None:
-        client_kwargs["query_retries"] = config.query_retries
+    if validating() or config.query_retries is not None:
+        client_kwargs["query_retries"] = 0 if validating() else config.query_retries
     if config.client_name is not None:
         client_kwargs["client_name"] = config.client_name
 
-    return clickhouse_connect.get_client(**client_kwargs)
+    from .http_codec import ExactHTTPClient  # noqa: PLC0415
+
+    return ExactHTTPClient(clickhouse_connect.get_client(**client_kwargs))
 
 
 def _open_native_connection(
@@ -294,12 +301,48 @@ def _open_native_connection(
     ca_certs = resolve_ch_ca_certs(config)
     if ca_certs is not None:
         client_kwargs["ca_certs"] = ca_certs
-    if config.connect_timeout is not None:
-        client_kwargs["connect_timeout"] = config.connect_timeout
-    if config.send_receive_timeout is not None:
-        client_kwargs["send_receive_timeout"] = config.send_receive_timeout
+    connect_timeout = validation_timeout(config.connect_timeout)
+    read_timeout = validation_timeout(config.send_receive_timeout)
+    if connect_timeout is not None:
+        client_kwargs["connect_timeout"] = connect_timeout
+    if read_timeout is not None:
+        client_kwargs["send_receive_timeout"] = read_timeout
     if config.settings is not None:
         client_kwargs["settings"] = config.settings
+    if validating():
+        client_kwargs["settings"] = {
+            **(config.settings or {}),
+            "max_execution_time": min(
+                float((config.settings or {}).get("max_execution_time", 5) or 5), 5
+            ),
+        }
     if config.client_name is not None:
         client_kwargs["client_name"] = config.client_name
+    if validating():
+        client_kwargs["disable_reconnect"] = True
     return NativeClickHouseClient(Client(**client_kwargs))
+
+
+def _parse_ch_verify(raw_config: dict[str, Any], connection_key: str) -> str | None:
+    value = raw_config.get("verify")
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+        return value.strip().lower()
+    message = (
+        f"SQL connection '{connection_key}' field 'verify' must be true or false; "
+        "use ca_certs for certificate paths."
+    )
+    raise SqlConfigError(message)
+
+
+def validate_connection(adapter: Any, connection: Any) -> None:
+    del adapter
+    with internal_io():
+        result = connection.query("SELECT 1")
+        rows = result.result_rows
+        if not rows or rows[0][0] != 1:
+            message = "Connectivity probe returned an unexpected result."
+            raise RuntimeError(message)

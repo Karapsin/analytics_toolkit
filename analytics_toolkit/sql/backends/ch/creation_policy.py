@@ -284,7 +284,9 @@ def build_policy_create_sqls(
     if policy.shard_on_cluster is not None:
         commands.append(
             _physical_sql(
-                "CREATE TABLE IF NOT EXISTS",
+                "CREATE OR REPLACE TABLE"
+                if ch_replace_table and not policy.create_distributed_pair
+                else "CREATE TABLE IF NOT EXISTS",
                 shard_name,
                 joined_columns,
                 partition_by,
@@ -302,7 +304,13 @@ def build_policy_create_sqls(
     commands.append(distributed_sql)
     if policy.distributed_on_cluster is not None:
         commands.append(
-            _create_sql("CREATE TABLE IF NOT EXISTS", table_name, joined_columns, engine, None)
+            _create_sql(
+                "CREATE OR REPLACE TABLE" if ch_replace_table else "CREATE TABLE IF NOT EXISTS",
+                table_name,
+                joined_columns,
+                engine,
+                None,
+            )
         )
     return commands
 

@@ -164,7 +164,7 @@ class MetadataLedger:
         with self.transaction() as connection:
             row = connection.execute(
                 "SELECT * FROM scan_state WHERE identity=? AND lease_until<=? AND retry_at<=? "
-                "AND (scanned_at IS NULL OR urgent_sequence>covered_sequence "
+                "AND (scanned_at IS NULL OR failures>0 OR urgent_sequence>covered_sequence "
                 "OR (used_sequence>covered_sequence AND scanned_at+?<=?)) "
                 "ORDER BY (urgent_sequence>covered_sequence) DESC, "
                 "CASE kind WHEN 'catalog' THEN 0 WHEN 'schema' THEN 1 ELSE 2 END, "

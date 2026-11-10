@@ -22,8 +22,10 @@ class FakeNativeClient:
         self.execute_calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
         self.dataframe = pd.DataFrame({"value": [1, 2]})
         self.stream_blocks: list[Any] = [
-            ([(1, "a")], [("value", "Int64"), ("label", "Nullable(String)")]),
-            [(2, "b"), (3, "c")],
+            [("value", "Int64"), ("label", "Nullable(String)")],
+            (1, "a"),
+            (2, "b"),
+            (3, "c"),
         ]
         self.disconnects = 0
         self.insert_dataframe_calls: list[tuple[str, pd.DataFrame, dict[str, Any]]] = []
@@ -43,7 +45,7 @@ class FakeNativeClient:
 
     def execute_iter(self, sql: str, **kwargs: Any) -> Any:
         assert sql == "select stream"
-        assert kwargs == {"with_column_types": True, "chunk_size": 65_536}
+        assert kwargs == {"with_column_types": True, "chunk_size": 1}
         return iter(self.stream_blocks)
 
     def insert_dataframe(self, sql: str, df: pd.DataFrame, **kwargs: Any) -> int:
@@ -123,28 +125,31 @@ def test_dataframe_read_and_streaming() -> None:
     raw = FakeNativeClient()
     client = NativeClickHouseClient(raw)
 
-    assert client.query_df("select dataframe") is raw.dataframe
+    assert client.query_df("select dataframe").to_dict("list") == {
+        "value": [1, 2],
+        "label": ["a", "b"],
+    }
     with client.query_df_stream("select stream") as stream:
         blocks = list(stream)
 
     assert [block.to_dict("records") for block in blocks] == [
-        [{"value": 1, "label": "a"}],
-        [{"value": 2, "label": "b"}, {"value": 3, "label": "c"}],
+        [{"value": 1, "label": "a"}, {"value": 2, "label": "b"}, {"value": 3, "label": "c"}],
     ]
     assert raw.disconnects == 0
 
 
 def test_empty_stream_and_early_exit_cleanup() -> None:
     raw = FakeNativeClient()
-    raw.stream_blocks = [([], [("value", "Array(Tuple(String, UInt64))")])]
+    raw.stream_blocks = [[("value", "Array(Tuple(String, UInt64))")]]
     client = NativeClickHouseClient(raw)
     with client.query_df_stream("select stream") as stream:
         assert list(stream) == []
     assert raw.disconnects == 0
 
     raw.stream_blocks = [
-        ([(1,)], [("value", "Int64")]),
-        [(2,)],
+        [("value", "Int64")],
+        (1,),
+        (2,),
     ]
     with client.query_df_stream("select stream") as stream:
         assert next(stream).iloc[0, 0] == 1
@@ -165,8 +170,8 @@ def test_stream_with_no_driver_items_is_empty() -> None:
 def test_stream_ignores_empty_followup_blocks() -> None:
     raw = FakeNativeClient()
     raw.stream_blocks = [
-        ([(1,)], [("value", "Int64")]),
-        [],
+        [("value", "Int64")],
+        (1,),
     ]
     client = NativeClickHouseClient(raw)
 
@@ -180,7 +185,8 @@ def test_stream_exception_disconnects() -> None:
     raw = FakeNativeClient()
 
     def failing_blocks() -> Any:
-        yield ([(1,)], [("value", "Int64")])
+        yield [("value", "Int64")]
+        yield (1,)
         message = "stream failed"
         raise RuntimeError(message)
 

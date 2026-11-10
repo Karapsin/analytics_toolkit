@@ -94,10 +94,8 @@ class ReconfigureClient:
 
     def query(self, query: str) -> FakeClickHouseResult:  # noqa: PLR0911
         self.queries.append(query)
-        if query == "SHOW CREATE TABLE analytics.events":
-            return FakeClickHouseResult([(TABLE_DDL,)])
-        if query == "SHOW CREATE TABLE analytics.events_shard":
-            return FakeClickHouseResult([(SHARD_DDL,)])
+        if (ddl := self._show_create_ddl(query)) is not None:
+            return FakeClickHouseResult([(ddl,)])
         if query.startswith("SELECT engine FROM system.databases"):
             return FakeClickHouseResult([(self.database_engine,)])
         if "getMacro('cluster')" in query:
@@ -106,13 +104,22 @@ class ReconfigureClient:
             return FakeClickHouseResult(list(self.source_hosts))
         if "FROM system.clusters" in query and "'archive'" in query:
             return FakeClickHouseResult(list(self.target_hosts))
-        if "clusterAllReplicas('archive', system, tables)" in query:
+        if query.startswith("SELECT create_table_query FROM clusterAllReplicas("):
+            return FakeClickHouseResult([(SHARD_DDL,)])
+        if "clusterAllReplicas(" in query and "system, tables)" in query:
             return FakeClickHouseResult([(0,)])
         if query.startswith("SELECT count() FROM "):
             return FakeClickHouseResult([(3,)])
         if query.startswith("EXISTS TABLE "):
             return FakeClickHouseResult([(1,)])
         return FakeClickHouseResult([])
+
+    @staticmethod
+    def _show_create_ddl(query: str) -> str | None:
+        return {
+            "SHOW CREATE TABLE analytics.events": TABLE_DDL,
+            "SHOW CREATE TABLE analytics.events_shard": SHARD_DDL,
+        }.get(query)
 
     def command(self, query: str, settings: object = None) -> None:
         self.commands.append(query)

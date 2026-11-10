@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
+from analytics_toolkit.sql.backends.models import SourceColumn
+
 from tests.sql._support.create_from_sql import (
     SOURCE_DESCRIPTION,
     FakeClickHouseClient,
     FakeDbapiConnection,
     SimpleNamespace,
     _candidate_create_options,
+    acknowledged_create,
     ch_fast_path_module,
     create_module,
     importlib,
@@ -127,7 +132,7 @@ def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
     monkeypatch.setattr(
         create_module,
         "inspect_source_query_schema",
-        lambda *_a, **_k: [SimpleNamespace(name="id")],
+        lambda *_a, **_k: [SourceColumn("id", "BIGINT")],
     )
     monkeypatch.setattr(
         create_module,
@@ -135,7 +140,11 @@ def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
         lambda *_a, **_k: {"id": "BIGINT"},
     )
     monkeypatch.setattr(create_module, "table_exists", lambda *_a, **_k: False)
-    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        create_module,
+        "_create_sql_table_with_connection",
+        acknowledged_create(lambda *_a, **_k: None),
+    )
     monkeypatch.setattr(create_module, "insert_from_query", lambda *_a, **_k: 3)
 
     no_insert = create_module._execute_generic_create_table_from_sql_attempt(
@@ -162,8 +171,8 @@ def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
     )
     delegated = create_module._execute_generic_create_table_from_sql_attempt(
         options=_candidate_create_options(
-            source_key="gp_source",
-            target_key="trino_target",
+            source_key="gp",
+            target_key="trino",
             target_backend="trino",
             table_schema={"id": "BIGINT"},
             query_label="candidate-9",
@@ -251,10 +260,11 @@ def test_create_table_from_sql_passes_only_shard_to_cross_backend_transfer(
     assert not any("ENGINE = Distributed(" in command for command in target.commands)
 
 
-def test_create_table_from_sql_passes_table_schema_to_cross_backend_transfer(
+def test_create_table_from_sql_profiles_explicit_cross_backend_schema_before_creation(
     monkeypatch,
 ) -> None:
-    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
+    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION, insert_rowcount=5)
+    source.source_rows = [(index, Decimal("1.25")) for index in range(5)]
     target = FakeClickHouseClient()
     transfer_calls: list[dict[str, object]] = []
 
@@ -279,13 +289,16 @@ def test_create_table_from_sql_passes_table_schema_to_cross_backend_transfer(
         table_db="ch",
         insert_data=True,
         table_schema={"id": "String", "amount": "Float64"},
+        ch_ddl_ready_timeout_seconds=0.01,
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 5
-    assert transfer_calls[0]["table_schema"] == {
-        "id": "String",
-        "amount": "Float64",
-    }
+    assert not transfer_calls
+    assert target.data_inserts == [
+        ("analytics.events", ["id", "amount"], [(str(index), 1.25) for index in range(5)])
+    ]
     assert any(
         command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
         and "`id` String" in command
@@ -327,6 +340,13 @@ def test_create_table_from_sql_same_clickhouse_delegates_to_adapter_fast_path(
 
     assert result == "delegated"
     assert probe_connection.close_calls == 1
+    policy = calls[0].pop("ch_creation_policy")
+    assert calls[0].pop("ch_replace_table") is False
+    resolution = calls[0].pop("input_resolution")
+    assert resolution["retry_cnt"] == 5
+    assert resolution["transfer_input_resolution"]["configuration_digest"]
+    assert policy.create_distributed_pair is True
+    assert policy.shard_on_cluster == "{cluster}"
     assert calls == [
         {
             "source_backend": "ch",
@@ -382,9 +402,7 @@ def test_create_table_from_sql_table_schema_overrides_source_types(
     )
     assert connection.executed[-1] == (
         'INSERT INTO sandbox.target_table ("id", "amount") '
-        'SELECT CAST("id" AS TEXT) AS "id", '
-        'CAST("amount" AS DOUBLE PRECISION) AS "amount" '
-        "FROM (select id, amount from source_table) AS source_query"
+        "VALUES (NULL,NULL),(NULL,NULL),(NULL,NULL)"
     )
 
 

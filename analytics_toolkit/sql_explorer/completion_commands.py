@@ -18,6 +18,8 @@ from .completion import (
     schema_completion_values,
 )
 from .editor_actions import completion_text
+from .identifier_completion import quote_completion_name
+from .metadata_listing import IncompleteMetadataError
 
 if TYPE_CHECKING:
     from .workspace import SqlExplorerWorkspace
@@ -42,6 +44,9 @@ class SqlExplorerCompletionCommandsMixin:
             database.connection_key,
             database.backend,
             workspace.tab_id,
+            on_complete=lambda: app._post_metadata(
+                app._receive_metadata_complete, workspace.tab_id
+            ),
             on_error=lambda result, exc: app._metadata_error_from_thread(
                 workspace.tab_id,
                 result,
@@ -258,10 +263,23 @@ class SqlExplorerCompletionCommandsMixin:
         workspace = app._workspaces.get(tab_id)
         if workspace is not None and (epoch is None or epoch == workspace.completion_epoch):
             workspace.completion_loading_notice = None
+            if isinstance(exc, IncompleteMetadataError):
+                workspace.metadata_incomplete_notice = True
             app._set_notice(
                 f"Metadata completion unavailable: {type(exc).__name__}: {exc}",
                 workspace,
             )
+
+    def _receive_metadata_complete(self, tab_id: str) -> None:
+        app = cast("Any", self)
+        workspace = app._workspaces.get(tab_id)
+        if (
+            workspace is not None
+            and workspace.metadata_incomplete_notice
+            and not getattr(workspace.completion, "metadata_incomplete", False)
+        ):
+            workspace.metadata_incomplete_notice = False
+            app._set_notice("", workspace)
 
     def _receive_completion(
         self,
@@ -285,6 +303,11 @@ class SqlExplorerCompletionCommandsMixin:
         if context.request.scope != result.request.scope:
             return
         app._finish_completion_loading(workspace)
+        if workspace.metadata_incomplete_notice and not getattr(
+            workspace.completion, "metadata_incomplete", False
+        ):
+            workspace.metadata_incomplete_notice = False
+            app._set_notice("", workspace)
         if context.local_relations and app._open_local_relations(
             context, workspace, accept_single=False
         ):
@@ -421,9 +444,17 @@ class SqlExplorerCompletionCommandsMixin:
         editor = workspace.editor
         start = app._offset_to_location(editor.text, context.replacement_start)
         end_offset = context.replacement_end
-        namespace = context.namespace or suggestion.endswith(".")
+        namespace = context.namespace or (
+            bool(context.local_relations) and suggestion.endswith(".")
+        )
+        if context.request.kind not in {"keyword", "column"}:
+            raw_name = suggestion[:-1] if namespace and suggestion.endswith(".") else suggestion
+            if suggestion not in context.local_relations:
+                suggestion = quote_completion_name(raw_name, context.request.backend)
+            else:
+                suggestion = raw_name
         if namespace:
-            suggestion = suggestion.rstrip(".") + "."
+            suggestion = suggestion + "."
             if editor.text[end_offset : end_offset + 1] == ".":
                 end_offset += 1
         end = app._offset_to_location(editor.text, end_offset)

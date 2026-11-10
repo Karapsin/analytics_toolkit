@@ -82,7 +82,10 @@ Statements:
 - `to_defaults=True` treats the connection's regular ClickHouse DDL defaults as authoritative and fails before DDL when required defaults are missing
 - local/pair conversion and physical-cluster relocation must be performed as separate operations
 - cross-cluster migration requires a managed Distributed/`_shard` pair and both cluster names must be visible from the configured connection
-- Atomic and Shared databases use `EXCHANGE TABLES`; other database engines use a rename fallback with automatic rollback
+- Atomic and Shared databases use `EXCHANGE TABLES`; other database engines use a rename fallback. Each submitted cutover records its inverse and acknowledgement; rollback reverses only acknowledged steps
+- an uncertain cutover or rollback stops structural replay and retains replacements and backups for recovery, with the original error and resource scopes reported
+- local-to-pair conversion rejects an existing deterministic companion before DDL; a name ending in `_shard` alone never establishes resource ownership
+- physical placement, facade placement and Distributed routing are independent. Copy routing must reach the verified replacement storage and must not reach the original storage during a relocation
 - successful validation removes the old table data; cleanup failures are reported through `SqlOperationResult.data`
 - dry runs query ClickHouse metadata because the plan depends on the current table DDL and topology
 

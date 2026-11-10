@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
-from typing import Any, Callable, cast
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Tuple, cast
 
 import pandas as pd
 
-from ..utils import sql_string_literal
+from analytics_toolkit.sql.execution.backend_options import backend_operation
 
+from .dialect import sql_string_literal
+from .outage_context import logical_statistics
 
 _ROW_COUNT_COLUMN = "row_count"
 _TABLE_SIZE_BYTES_COLUMN = "table_size_bytes"
@@ -20,6 +22,50 @@ class ClickHouseShardTable:
     table: str
 
 
+class _LogicalStats(Dict[ClickHouseShardTable, Tuple[object, object]]):
+    """Values retain the coverage evidence of their complete collection scope."""
+
+    data_complete = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.cluster_status: list[dict[str, Any]] = []
+
+
+def apply_clickhouse_logical_stats(
+    connection_key: str,
+    tables: pd.DataFrame,
+    *,
+    cluster: str,
+    read_sql: Callable[[str, str], Any],
+) -> pd.DataFrame:
+    refs = {
+        index: ClickHouseShardTable(cluster, row["schema"], row["table_name"])
+        for index, row in tables.iterrows()
+        if isinstance(row.get("engine"), str) and row["engine"].lower() != "distributed"
+    }
+    if not refs:
+        return tables
+    stats = read_clickhouse_shard_stats(connection_key, set(refs.values()), read_sql=read_sql)
+    result = tables.copy()
+    result[_ROW_COUNT_COLUMN] = result[_ROW_COUNT_COLUMN].astype(object)
+    for index, ref in refs.items():
+        if ref in stats:
+            result.loc[index, _ROW_COUNT_COLUMN] = stats[ref][0]
+            result.loc[index, _TABLE_SIZE_BYTES_COLUMN] = stats[ref][1]
+    _attach_stats_coverage(result, stats)
+    return result
+
+
+def _attach_stats_coverage(tables: pd.DataFrame, stats: Any) -> None:
+    if not getattr(stats, "data_complete", True):
+        tables.attrs["data_complete"] = False
+    tables.attrs["ch_cluster_status"] = [
+        *tables.attrs.get("ch_cluster_status", []),
+        *getattr(stats, "cluster_status", []),
+    ]
+
+
 def apply_clickhouse_shard_stats(
     connection_key: str,
     tables: pd.DataFrame,
@@ -30,6 +76,7 @@ def apply_clickhouse_shard_stats(
         return tables
 
     shard_refs_by_index: dict[object, ClickHouseShardTable] = {}
+    unresolved = False
     for index, row in tables.iterrows():
         engine = row.get("engine")
         if not isinstance(engine, str) or engine.lower() != "distributed":
@@ -41,6 +88,11 @@ def apply_clickhouse_shard_stats(
         )
         if shard_ref is not None:
             shard_refs_by_index[index] = shard_ref
+        else:
+            unresolved = True
+
+    if unresolved:
+        tables.attrs["data_complete"] = False
 
     if not shard_refs_by_index:
         return tables
@@ -51,9 +103,11 @@ def apply_clickhouse_shard_stats(
         read_sql=read_sql,
     )
     if not stats:
+        _attach_stats_coverage(tables, stats)
         return tables
 
     resolved = tables.copy()
+    resolved[_ROW_COUNT_COLUMN] = resolved[_ROW_COUNT_COLUMN].astype(object)
     for index, shard_ref in shard_refs_by_index.items():
         stat = stats.get(shard_ref)
         if stat is None:
@@ -61,6 +115,7 @@ def apply_clickhouse_shard_stats(
         row_count, table_size_bytes = stat
         resolved.at[index, _ROW_COUNT_COLUMN] = row_count
         resolved.at[index, _TABLE_SIZE_BYTES_COLUMN] = table_size_bytes
+    _attach_stats_coverage(resolved, stats)
     return resolved
 
 
@@ -70,7 +125,7 @@ def read_clickhouse_shard_stats(
     *,
     read_sql: Callable[[str, str], Any],
 ) -> dict[ClickHouseShardTable, tuple[object, object]]:
-    stats: dict[ClickHouseShardTable, tuple[object, object]] = {}
+    stats = _LogicalStats()
     refs_by_cluster: dict[str, set[ClickHouseShardTable]] = {}
     original_refs_by_resolved_ref: dict[
         ClickHouseShardTable,
@@ -93,9 +148,15 @@ def read_clickhouse_shard_stats(
     for cluster, cluster_refs in refs_by_cluster.items():
         query = build_clickhouse_shard_stats_query(cluster, cluster_refs)
         try:
-            result = cast(pd.DataFrame, read_sql(connection_key, query))
+            with logical_statistics(), backend_operation() as state:
+                result = cast("pd.DataFrame", read_sql(connection_key, query))
+                result.attrs["data_complete"] = not state.partial
+                result.attrs["ch_cluster_status"] = list(state.statuses.values())
         except Exception:
+            stats.data_complete = False
             continue
+        stats.data_complete = stats.data_complete and result.attrs.get("data_complete", True)
+        stats.cluster_status.extend(result.attrs.get("ch_cluster_status", []))
         for _, row in result.iterrows():
             database = row.get("shard_database")
             table = row.get("shard_table")
@@ -113,6 +174,8 @@ def read_clickhouse_shard_stats(
             stats[resolved_ref] = stat
             for original_ref in original_refs_by_resolved_ref.get(resolved_ref, ()):
                 stats[original_ref] = stat
+    if not shard_refs.issubset(stats):
+        stats.data_complete = False
     return stats
 
 
@@ -121,21 +184,38 @@ def build_clickhouse_shard_stats_query(
     shard_refs: set[ClickHouseShardTable],
 ) -> str:
     table_filters = ", ".join(
-        f"({sql_string_literal(shard_ref.database)}, "
-        f"{sql_string_literal(shard_ref.table)})"
+        f"({sql_string_literal(shard_ref.database)}, {sql_string_literal(shard_ref.table)})"
         for shard_ref in sorted(
             shard_refs,
             key=lambda value: (value.database, value.table),
         )
     )
     return f"""
+WITH host_scope AS (
+    SELECT row_number() OVER (ORDER BY shard_num, replica_num) AS position, shard_num
+    FROM system.clusters
+    WHERE cluster = {sql_string_literal(cluster)}
+)
 SELECT
     database AS shard_database,
     name AS shard_table,
-    sum(ifNull(total_rows, 0)) AS row_count,
-    sum(ifNull(total_bytes, 0)) AS table_size_bytes
-FROM cluster({sql_string_literal(cluster)}, system, tables)
-WHERE (database, name) IN ({table_filters})
+    sum(row_count) AS row_count,
+    sum(table_size_bytes) AS table_size_bytes
+FROM (
+    SELECT database, name, host_scope.shard_num, engine,
+        if(startsWith(engine, 'Replicated') OR startsWith(engine, 'Shared'),
+           tupleElement(argMin(tuple(ifNull(total_rows, 0), ifNull(total_bytes, 0)),
+                               _shard_num), 1),
+           sum(ifNull(total_rows, 0))) AS row_count,
+        if(startsWith(engine, 'Replicated') OR startsWith(engine, 'Shared'),
+           tupleElement(argMin(tuple(ifNull(total_rows, 0), ifNull(total_bytes, 0)),
+                               _shard_num), 2),
+           sum(ifNull(total_bytes, 0))) AS table_size_bytes
+    FROM clusterAllReplicas({sql_string_literal(cluster)}, system, tables)
+    INNER JOIN host_scope ON _shard_num = host_scope.position
+    WHERE (database, name) IN ({table_filters})
+    GROUP BY database, name, host_scope.shard_num, engine
+)
 GROUP BY database, name
 ORDER BY database, name
 """.strip()
@@ -151,12 +231,9 @@ def resolve_clickhouse_cluster_macro(
     if macro_name is None:
         return cluster
 
-    query = (
-        "SELECT "
-        f"getMacro({sql_string_literal(macro_name)}) AS cluster_name"
-    )
+    query = f"SELECT getMacro({sql_string_literal(macro_name)}) AS cluster_name"
     try:
-        result = cast(pd.DataFrame, read_sql(connection_key, query))
+        result = cast("pd.DataFrame", read_sql(connection_key, query))
     except Exception:
         return cluster
 
@@ -361,8 +438,12 @@ def skip_whitespace(sql: str, position: int) -> int:
 
 
 def is_clickhouse_identifier_boundary(sql: str, position: int) -> bool:
-    return position < 0 or position >= len(sql) or not is_clickhouse_identifier_char(
-        sql[position],
+    return (
+        position < 0
+        or position >= len(sql)
+        or not is_clickhouse_identifier_char(
+            sql[position],
+        )
     )
 
 

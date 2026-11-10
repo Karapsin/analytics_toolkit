@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.backends.ch.layout import ExistingClickHouseLayout
+
 from tests.sql._support.backend_helpers import (
     Any,
     RecordingConnection,
@@ -55,17 +57,20 @@ def test_clickhouse_operations_dispatches_missing_modes(
         lambda *_args, **_kwargs: None,
     )
 
-    with pytest.raises(ValueError, match="ch_drop_shard must be True"):
-        ch_operations.drop_table_with_options(
-            object(),
-            object(),
-            "analytics.events_shard",
-            connection_key="ch",
-            ch_drop_shard=False,
-        )
+    local = ExistingClickHouseLayout(
+        "analytics.events_shard", "analytics.events_shard", False, None, None, None, "", ""
+    )
+    connection = SimpleNamespace(outage_inspect_existing_layout=lambda _: local)
+    ch_operations.drop_table_with_options(
+        object(), connection, "analytics.events_shard", connection_key="ch", ch_drop_shard=False
+    )
+    pair = ExistingClickHouseLayout(
+        "analytics.events", "analytics.events_shard", True, "core", "core", "core", "", ""
+    )
+    connection.outage_inspect_existing_layout = lambda _: pair
     ch_operations.drop_table_with_options(
         object(),
-        object(),
+        connection,
         "analytics.events",
         connection_key="ch",
         ch_drop_shard=False,
@@ -73,13 +78,14 @@ def test_clickhouse_operations_dispatches_missing_modes(
     )
     ch_operations.drop_table_with_options(
         object(),
-        object(),
+        connection,
         "analytics.events",
         connection_key="ch",
         ch_drop_shard=True,
         ch_drop_distributed=False,
     )
     assert [call[:2] for call in calls] == [
+        ("table", "analytics.events_shard"),
         ("table", "analytics.events"),
         ("table", "analytics.events_shard"),
     ]

@@ -83,6 +83,11 @@ def test_load_df_drops_overlap_stage_table_on_error(monkeypatch) -> None:
             self.close_calls += 1
 
     connection = FakeConnection()
+    monkeypatch.setattr(
+        load_df_module,
+        "get_table_column_types",
+        lambda *_a, **_k: {"id": "BIGINT", "value": "INTEGER"},
+    )
     config = SimpleNamespace(
         connection_key="gp",
         backend="gp",
@@ -193,6 +198,11 @@ def test_load_df_upsert_existing_target_cleans_stage_on_finalization_error(
     cleanups: list[str] = []
 
     monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
+    monkeypatch.setattr(
+        load_df_module.get_backend_adapter("gp"),
+        "get_writable_table_column_types",
+        lambda *_a, **_k: {"id": "BIGINT", "score": "INTEGER"},
+    )
     monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         load_df_module,

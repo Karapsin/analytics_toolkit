@@ -74,4 +74,11 @@ values = sql.insert(
 # values: [1, 1] when the backend reports one affected row per item
 ```
 
+
+The integer result is the final INSERT's backend count, or historical `0` when
+unavailable. Setup statement counts are excluded. With `return_metadata=True`,
+`metadata.affected_rows` and `metadata.inserted_rows` retain `None` for an unknown
+count, distinguishing it from a genuine zero. Transient retries can repeat
+accepted writes; use `retry_cnt=1` when duplicate effects are unacceptable.
+
 [SQL functions index](index.md)

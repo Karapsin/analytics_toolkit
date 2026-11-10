@@ -259,7 +259,7 @@ def test_outage_schema_inference_preserves_server_default_engine(outage: Any) ->
     assert query == "SELECT id FROM db.events"
 
 
-def test_outage_ctas_lost_acknowledgement_is_never_replayed_as_if_not_exists(
+def test_outage_ctas_lost_acknowledgement_uses_data_write_retry_budget(
     outage: Any, monkeypatch: Any
 ) -> None:
     cluster, _ = outage
@@ -283,7 +283,7 @@ def test_outage_ctas_lost_acknowledgement_is_never_replayed_as_if_not_exists(
             retry_cnt=3,
             timeout_increment=0,
         )
-    assert len(cluster.commands) == 1
+    assert len(cluster.commands) == 3
     assert cluster.tables[("h1", "db.ctas_accepted")].rows == [(9,)]
 
 

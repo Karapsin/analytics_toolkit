@@ -33,7 +33,9 @@ def test_finalize_stage_table_clickhouse_upsert_drops_shard_partitions() -> None
     )
 
     drop_sql = next(sql for sql in client.commands if "DROP PARTITION" in sql)
-    assert drop_sql == f"ALTER TABLE {TEST_CH_SHARD_TABLE} ON CLUSTER core DROP PARTITION 1"
+    assert drop_sql == (
+        f'ALTER TABLE "default"."{TEST_CH_SHARD_TABLE}" ON CLUSTER core DROP PARTITION 1'
+    )
     assert client.commands[-1].startswith(f"INSERT INTO {TEST_CH_TABLE} (`id`, `score`) ")
 
 
@@ -46,6 +48,11 @@ def test_load_df_drops_overlap_stage_table_after_success(monkeypatch) -> None:
             self.close_calls += 1
 
     connection = FakeConnection()
+    monkeypatch.setattr(
+        load_df_module,
+        "get_table_column_types",
+        lambda *_a, **_k: {"id": "BIGINT", "value": "INTEGER"},
+    )
     config = SimpleNamespace(
         connection_key="gp",
         backend="gp",

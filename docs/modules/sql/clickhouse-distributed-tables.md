@@ -78,7 +78,7 @@ For a toolkit-standard managed pair, routing verifies that the local
 Distributed facade points to the same-database `<table>_shard` relation. If
 that shard exists at every expected routing-cluster position, named reads and
 all insert paths route the physical shard directly. The availability policy
-below runs before submission: `stop` rejects incomplete physical coverage, while
+below runs before submission: `stop` rejects incomplete effective coverage, while
 `healthy_shards` explicitly selects the usable subset. Inserts use foreground
 Distributed delivery so success means acknowledged delivery. Metadata errors
 remain errors under either policy.
@@ -90,8 +90,16 @@ Single-replica non-replicated tables use `cluster(...)`. Views and non-standard
 Distributed facades stay local; a view's own SQL remains responsible for its
 sources. Toolkit stages and `system` tables use all replicas. Exact explicit
 `cluster(...)`/`clusterAllReplicas(...)` wrappers around a named table are
-normalized to the same engine-dependent choice; unrelated table functions are
-left unchanged.
+normalized to the same engine-dependent choice when automatic routing is enabled.
+Without automatic routing, an explicit `clusterAllReplicas(...)` request retains
+physical-host coverage, even for replicated tables. Both three-argument
+`cluster('core', 'db', 'events')` and static two-argument
+`cluster('core', 'db.events')` forms are supported; quote individual identifier
+components inside the latter when names contain dots. Dynamic identities fail
+before submission. Extra supported function arguments are retained. Bound
+qualified columns, qualified stars, aliases, CTEs and correlated references keep
+their source identity when a named table becomes a cluster function. Unrelated
+table functions are left unchanged.
 
 Consequently, `wait_shard` is compatible with routing when the physical shard
 has full routing-cluster coverage and consistent metadata. The confirmed
@@ -313,8 +321,12 @@ identity is cleared. Recreating it populates the observed source again before
 counting and delivery. Finalization inserts into an empty target created by the
 same operation; it does not require a replacement of that newly created target.
 
-Degraded writes require the effective sharding key to be exactly `rand()`.
-Deterministic keys, parameterized random expressions, unknown dependencies, and
+Writes with degraded logical destination coverage require the effective sharding
+key to be exactly `rand()`. A surviving usable replica in every logical shard
+preserves coverage and permits the normal deterministic key. Independent host
+data and explicit all-replica requests require physical host coverage.
+Deterministic keys under degraded logical coverage, parameterized random
+expressions, unknown dependencies, and
 nonstandard managed pairs are rejected when safe routing cannot be established.
 Cross-cluster facade/data routing remains supported in strict mode; ad hoc
 routing requires their routing clusters to agree. Batch selection uses original
@@ -324,11 +336,16 @@ skipping is kept separate: ad hoc `INSERT SELECT` uses a client dataframe stream
 and therefore has additional network and memory cost per batch.
 
 A successful acknowledgement cannot make an operation atomic across shards.
-If a connection fails after submission, some rows or DDL may already have been
-accepted. Such mutations are not automatically replayed, including driver
-`TypeError` failures after submission. Stages and backups are retained when the
-outcome is uncertain. Destructive DDL uncertainty raises
-`AmbiguousSqlReplaceError`; inspect the retained state before manual recovery.
+Transient data-write failures retry the whole operation with fresh connections,
+including native `INSERT FORMAT` and lost acknowledgements. A partial chunk or
+an accepted write may therefore be submitted again and duplicate rows. This is
+at-least-once delivery; set `retry_cnt=1` when replay is unacceptable. Deterministic
+SQL, configuration and topology errors remain non-retryable.
+
+Toolkit-managed structural cutovers follow a separate recovery journal.
+Uncertain rename/exchange submission or rollback raises `AmbiguousSqlReplaceError`
+and retains stages, replacements and backups for reconciliation. Those structural
+steps are never blindly restarted. Inspect the retained state before recovery.
 Raw settings that contradict the selected policy are rejected. Neither mode
 turns authentication, schema, or query errors into an empty successful result.
 

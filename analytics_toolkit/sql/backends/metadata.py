@@ -67,6 +67,7 @@ def build_trino_show_tables_query(
     conditions: str | None,
 ) -> str:
     filters = metadata_filters(schema, table_names, conditions)
+    catalog = _trino_catalog_sql(catalog)
     inner_query = f"""
     SELECT
         table_catalog AS db,
@@ -169,6 +170,8 @@ def build_ch_completion_query(schema: str | None, prefix: str) -> str:
     if schema is not None:
         database = exp.Literal.string(schema).sql(dialect="clickhouse")
         filters.append(f"database = {database}")
+    else:
+        filters.append("database = currentDatabase()")
     return "SELECT name FROM system.tables WHERE " + " AND ".join(filters) + " ORDER BY name"
 
 
@@ -203,6 +206,7 @@ def build_gp_reference_query(name: str, search_path: list[str] | None = None) ->
 
 
 CH_CURRENT_DATABASE_QUERY = "SELECT currentDatabase()"
+CH_DATABASES_QUERY = "SELECT name FROM system.databases ORDER BY name"
 TRINO_CURRENT_NAMESPACE_QUERY = "SELECT current_catalog, current_schema"
 
 
@@ -216,6 +220,7 @@ def build_gp_search_path_query(search_path: list[str] | None = None) -> str:
 
 
 def build_trino_completion_query(catalog: str, schema: str | None, prefix: str) -> str:
+    catalog = _trino_catalog_sql(catalog)
     filters = [completion_prefix_filter("table_name", prefix)]
     if schema is not None:
         filters.append(f"table_schema = {sql_string_literal(schema)}")
@@ -235,3 +240,18 @@ def _base_filters(
     if names is not None:
         filters.append(table_names_filter(name_column, names))
     return format_filter_lines(filters)
+
+
+def _trino_catalog_sql(catalog: str) -> str:
+    # Earlier internal completion callers pass an already quoted SQL identifier.
+    # Preserve that surface while treating ordinary configuration values as one
+    # catalog identity, even when they contain dots, spaces or reserved words.
+    if catalog.startswith('"') and catalog.endswith('"'):
+        from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- adapter cycle.
+            TableIdentifier,
+        )
+
+        identifier = TableIdentifier.parse(catalog, "trino")
+        if len(identifier.parts) == 1 and identifier.quoted[0]:
+            catalog = identifier.parts[0]
+    return exp.to_identifier(catalog, quoted=True).sql(dialect="trino")

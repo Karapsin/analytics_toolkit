@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import json
 import re
-from collections.abc import Sequence
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def insert_dataframe_batch(
@@ -39,15 +40,14 @@ def insert_dataframe_batch(
 
 
 def normalize_batch(batch: pd.DataFrame) -> pd.DataFrame:
-    map_values = getattr(batch, "map", None)
-    if map_values is None:
-        normalized = batch.applymap(normalize_scalar)
-    else:
-        normalized = map_values(normalize_scalar)
-    for column_name in normalized.columns:
-        series = normalized[column_name]
-        normalized[column_name] = series.astype(object).where(series.notna(), None)
-    return normalized
+    return _object_dataframe(
+        [
+            [normalize_scalar(_normalize_nullable_scalar(value)) for value in batch.iloc[:, index]]
+            for index in range(len(batch.columns))
+        ],
+        list(batch.columns),
+        batch.index,
+    )
 
 
 def normalize_typed_batch(
@@ -57,14 +57,29 @@ def normalize_typed_batch(
     normalized = normalize_batch(batch)
     if not column_types:
         return normalized
-    for column_name in normalized.columns:
-        type_name = column_types.get(column_name, "")
-        normalized[column_name] = pd.Series(
-            [_normalize_typed_scalar(value, type_name) for value in normalized[column_name]],
-            index=normalized.index,
-            dtype=object,
-        )
-    return normalized
+    return _object_dataframe(
+        [
+            [
+                _normalize_typed_scalar(value, column_types.get(column_name, ""))
+                for value in normalized.iloc[:, index]
+            ]
+            for index, column_name in enumerate(normalized.columns)
+        ],
+        list(normalized.columns),
+        normalized.index,
+    )
+
+
+def _object_dataframe(columns: Any, names: Any, index: Any) -> pd.DataFrame:
+    frame = pd.DataFrame(
+        {
+            position: pd.Series(values, index=index, dtype=object)
+            for position, values in enumerate(columns)
+        },
+        index=index,
+    )
+    frame.columns = names
+    return frame
 
 
 def normalize_row(row: Sequence[Any]) -> tuple[Any, ...]:
@@ -95,31 +110,76 @@ def normalize_rows(
     return [normalize_row(row) for row in rows]
 
 
-def _normalize_typed_scalar(value: Any, type_name: str) -> Any:
-    if value is None:
+def _normalize_typed_scalar(value: Any, type_name: str) -> Any:  # noqa: C901, PLR0911 - exact recursive native types
+    if _is_null_like(value):
         return None
-    normalized_type = re.sub(r"^(?:Nullable|LowCardinality)\((.*)\)$", r"\1", type_name)
+    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 - backend registry import cycle
+        parse_native_type,
+    )
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - backend registry import cycle
+        OrderedMapPairs,
+    )
+
+    parsed = parse_native_type(type_name).base
+    normalized_type = parsed.original
+    if parsed.name == "array":
+        return [_normalize_typed_scalar(item, parsed.arguments[0]) for item in value]
+    if parsed.name == "tuple" and not isinstance(value, dict):
+        return tuple(
+            _normalize_typed_scalar(item, item_type)
+            for item, item_type in zip(value, parsed.arguments)
+        )
+    if parsed.name == "map":
+        pairs = [
+            (
+                _normalize_typed_scalar(key, parsed.arguments[0]),
+                _normalize_typed_scalar(item, parsed.arguments[1]),
+            )
+            for key, item in value.items()
+        ]
+        return dict(pairs) if isinstance(value, dict) else OrderedMapPairs(pairs)
     if re.fullmatch(r"U?Int(?:8|16|32|64|128|256)", normalized_type):
         return int(value)
-    if normalized_type.startswith("Decimal"):
+    if parsed.name.startswith("decimal"):
         return Decimal(str(value))
-    if normalized_type == "String":
+    if parsed.name.startswith("float"):
+        return float(value)
+    if parsed.name == "string":
+        from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - avoid backend registry import cycles
+            typed_text,
+        )
+
         if isinstance(value, (memoryview, bytearray)):
             value = bytes(value)
-        elif isinstance(value, (dict, list)):
-            value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        elif not isinstance(value, (bytes, str)):
+            value = typed_text(value)
     return value
 
 
 def normalize_scalar(value: object) -> object:
-    if isinstance(value, Decimal):
-        return float(value)
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - avoid backend registry import cycles
+        OrderedMapPairs,
+    )
+
+    if isinstance(value, OrderedMapPairs):
+        return OrderedMapPairs(
+            (
+                normalize_scalar(_normalize_nullable_scalar(key)),
+                normalize_scalar(_normalize_nullable_scalar(item)),
+            )
+            for key, item in value
+        )
     if isinstance(value, list):
-        return [normalize_scalar(item) for item in value]
+        return [normalize_scalar(_normalize_nullable_scalar(item)) for item in value]
     if isinstance(value, tuple):
-        return tuple(normalize_scalar(item) for item in value)
+        return tuple(normalize_scalar(_normalize_nullable_scalar(item)) for item in value)
     if isinstance(value, dict):
-        return {normalize_scalar(key): normalize_scalar(item) for key, item in value.items()}
+        return {
+            normalize_scalar(_normalize_nullable_scalar(key)): normalize_scalar(
+                _normalize_nullable_scalar(item)
+            )
+            for key, item in value.items()
+        }
     return value
 
 
@@ -132,9 +192,8 @@ def column_type_names(
     try:
         return [column_types[column_name] for column_name in columns]
     except KeyError as exc:
-        raise ValueError(
-            f"Missing explicit SQL type for column {exc.args[0]!r}."
-        ) from exc
+        msg = f"Missing explicit SQL type for column {exc.args[0]!r}."
+        raise ValueError(msg) from exc
 
 
 def _normalize_nullable_scalar(value: Any) -> Any:
@@ -144,9 +203,8 @@ def _normalize_nullable_scalar(value: Any) -> Any:
 
 
 def _is_null_like(value: Any) -> bool:
-    if value is None:
-        return True
-    try:
-        return bool(pd.isna(value))
-    except (TypeError, ValueError):
-        return False
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - avoid backend registry import cycles
+        is_null,
+    )
+
+    return is_null(value)

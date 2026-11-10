@@ -124,7 +124,7 @@ def test_final_count_failure_restores_existing_target_through_finalization(
     assert client.swaps[2:] == list(reversed(client.swaps[:2]))
     assert all(scope == "core" for scope, _left, _right in client.swaps)
     drops = [sql for sql, _settings in client.commands if "DROP TABLE" in sql]
-    assert len(drops) == 3
+    assert len(drops) == 2
     assert all("__replace_" in sql for sql in drops)
     assert sum("ON CLUSTER" in sql for sql in drops) == 2
     counts = [sql for sql in client.queries if "query_label=replacement recovery" in sql]
@@ -144,8 +144,9 @@ def test_failed_rollback_preserves_artifacts_through_finalization(
     with pytest.raises(AmbiguousSqlReplaceError, match="automatic rollback") as exc_info:
         _finalize(client, options, state)
 
-    assert isinstance(exc_info.value.__cause__, OSError)
-    assert str(exc_info.value.__cause__) == "rollback unavailable"
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert "final target row count" in str(exc_info.value.__cause__)
+    assert str(exc_info.value.rollback_error) == "rollback unavailable"
     remote_artifacts = {
         name: table
         for (scope, name), table in client.tables.items()
@@ -159,8 +160,7 @@ def test_failed_rollback_preserves_artifacts_through_finalization(
         for (scope, name), table in client.tables.items()
         if scope == LOCAL and "__replace_" in name
     }
-    assert len(local_artifacts) == 1
-    assert all(table.rows == 0 for table in local_artifacts.values())
+    assert local_artifacts == {}
     assert client.tables["core", PHYSICAL].rows == STAGED_ROWS
     assert client.tables[LOCAL, STAGE].rows == STAGED_ROWS
     assert len(client.loads) == 1

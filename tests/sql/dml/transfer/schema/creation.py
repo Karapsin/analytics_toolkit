@@ -132,6 +132,7 @@ def test_create_stage_table_uses_batch_when_schema_is_not_supplied(
 
     assert result == "analytics.target__stage__fixed"
     assert captured["args"][3] is batch
+    assert callable(captured["kwargs"].pop("on_resource_created"))
     assert captured["kwargs"] == {
         "connection_key": "ch",
         "ddl_scope": "staging",

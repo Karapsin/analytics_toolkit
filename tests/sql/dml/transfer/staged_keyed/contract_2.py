@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.sql._support.adaptive_transfer import fake_target_schema
 from tests.sql._support.staged_keyed import (
     Any,
     BoundedConnectionManager,
@@ -163,6 +164,7 @@ def test_mid_attempt_schema_drift_fails_cached_contract_without_refresh(
 
 
 def test_prepare_keyed_attempt_caches_one_immutable_schema_contract(monkeypatch: Any) -> None:
+    fake_target_schema(monkeypatch, "gp", {"id": "BIGINT"})
     options = _options()
     refs = TransferConnectionRefs(
         source={"connection": object()},
@@ -217,13 +219,14 @@ def test_prepare_keyed_attempt_caches_one_immutable_schema_contract(monkeypatch:
 
 
 def test_prepare_keyed_attempt_honors_explicit_schema(monkeypatch: Any) -> None:
+    fake_target_schema(monkeypatch, "gp", {"id": "INTEGER"})
     options = _options(table_schema={"id": "INTEGER"})
     state = TransferStageState(target_exists=True)
     refs = TransferConnectionRefs(source={"connection": object()}, target={"connection": object()})
     monkeypatch.setattr(
         staged_keyed_pipeline,
         "inspect_source_query_schema",
-        lambda *_args: [SourceColumn("id", "bigint")],
+        lambda *_args: [SourceColumn("id", "integer")],
     )
     monkeypatch.setattr(
         staged_keyed_pipeline, "cleanup_superseded_transfer_stages", lambda **_: None

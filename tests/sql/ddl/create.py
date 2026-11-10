@@ -174,8 +174,8 @@ def test_ch_create_table_as_dry_run_uses_lifecycle_drop_order() -> None:
 
     assert plan.sqls[:4] == [
         "DROP TABLE IF EXISTS analytics.events",
-        "DROP TABLE IF EXISTS analytics.events_shard",
         "DROP TABLE IF EXISTS analytics.events ON CLUSTER analytics",
+        "DROP TABLE IF EXISTS analytics.events_shard",
         "DROP TABLE IF EXISTS analytics.events_shard ON CLUSTER analytics",
     ]
 
@@ -198,7 +198,7 @@ def test_ch_create_table_as_only_shard_dry_run_uses_local_target() -> None:
         "insert_target",
     ]
     assert plan.sqls[0] == "DROP TABLE IF EXISTS analytics.events"
-    assert plan.sqls[1].startswith("CREATE OR REPLACE TABLE analytics.events")
+    assert plan.sqls[1].startswith("CREATE TABLE analytics.events")
     assert "ENGINE = ReplicatedMergeTree" in plan.sqls[1]
     assert "_shard" not in "\n".join(plan.sqls)
     assert "ON CLUSTER" not in "\n".join(plan.sqls)

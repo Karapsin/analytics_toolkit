@@ -211,7 +211,7 @@ def _discover(options: _Options, parent_table: str) -> list[str]:
     if not {"schema_name", "relation_name"}.issubset(partitions.columns):
         raise RuntimeError("Greenplum partition discovery returned an invalid result.")
     return [
-        TableIdentifier.parse(f"{row.schema_name}.{row.relation_name}", "gp").render_quoted("gp")
+        TableIdentifier((row.schema_name, row.relation_name), (True, True)).render_quoted("gp")
         for row in partitions[["schema_name", "relation_name"]].itertuples(index=False)
     ]
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
+from analytics_toolkit.sql.dml.transfer.flow.stage_ownership import stage_creation_callbacks
+from analytics_toolkit.sql.dml.transfer.schema import refine_stage_column_types_from_rows
 from analytics_toolkit.sql.execution.backend_options import require_complete_operation
 
 from ....backends import get_backend_adapter
@@ -11,6 +13,7 @@ from ....ddl.schema import validate_table_schema_columns
 from ...load.stage import create_stage_table
 from ...table._basic_ops import table_exists
 from ...table.table_validation import (
+    validate_complete_upsert_columns,
     validate_key_columns_in_columns,
     validate_upsert_partition_column_in_columns,
 )
@@ -21,7 +24,6 @@ from ..runtime.models import (
     TransferOptions,
     TransferStageState,
 )
-from ..schema import refine_stage_column_types_from_rows
 
 
 def create_stage_state(
@@ -60,6 +62,14 @@ def ensure_transfer_target_table(
             require_complete_operation(
                 "Destructive transfers require complete source and target coverage."
             )
+        if options.write_mode == "upsert":
+            writable = get_backend_adapter(options.to_db_backend).get_writable_table_column_types(
+                connection_refs.target["connection"],
+                options.target_table,
+                connection_key=options.to_db_key,
+            )
+            canonical = validate_complete_upsert_columns(source_columns, writable)
+            stage_state.insert_column_types = {name: writable[name] for name in canonical}
         return
     if not get_backend_adapter(
         options.to_db_backend,
@@ -114,7 +124,9 @@ def initialize_stage_for_first_batch(
 ) -> None:
     source_columns = stage_state.source_columns or list(batch.columns)
     stage_state.source_columns = list(source_columns)
-    if options.table_schema is not None:
+    if stage_state.input_types_resolved:
+        source_stage_types = stage_state.stage_column_types or {}
+    elif options.table_schema is not None:
         source_stage_types = validate_table_schema_columns(
             options.table_schema,
             source_columns,
@@ -182,6 +194,7 @@ def initialize_stage_for_first_batch(
         destination_hash=options.destination_hash,
         ddl_properties=options.staging_ddl_properties,
         ch_creation_policy=options.staging_ch_policy,
+        **stage_creation_callbacks(stage_state),
     )
     stage_state.stage_table_created = True
     stage_state.stage_column_types = get_backend_adapter(
@@ -207,3 +220,42 @@ def _commit_if_supported(connection: Any) -> None:
     commit = getattr(connection, "commit", None)
     if callable(commit):
         commit()
+
+
+def require_stage_table(stage_state: TransferStageState) -> str:
+    table = stage_state.stage_table
+    if table is None:
+        message = "Expected the transfer stage to be initialized before insertion."
+        raise RuntimeError(message)
+    return table
+
+
+def select_stage_column_types(
+    options: TransferOptions,
+    state: TransferStageState,
+    source_schema: list[Any],
+    map_types: Any,
+    validate_schema: Any,
+) -> dict[str, str] | None:
+    if state.input_types_resolved:
+        return state.stage_column_types
+    if options.table_schema is not None:
+        if source_schema:
+            return cast(
+                "dict[str, str]",
+                validate_schema(
+                    options.table_schema,
+                    [column.name for column in source_schema],
+                ),
+            )
+        return options.table_schema
+    if source_schema:
+        return cast(
+            "dict[str, str]",
+            map_types(
+                source_schema,
+                options.to_db_backend,
+                source_backend=options.from_db_backend,
+            ),
+        )
+    return state.stage_column_types

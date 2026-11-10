@@ -67,6 +67,19 @@ tables[["schema", "table_name"]]
 # 1   sandbox    events
 ```
 
+ClickHouse listings deduplicate exact database/table identities. Case-distinct
+names remain distinct. With automatic cluster routing, row counts and byte sizes
+are logical cluster estimates: replicated/shared data is counted once per shard
+using a deterministic available replica, while independent host data is summed
+across hosts. `ch_distributed_table_stats=True` additionally resolves Distributed
+facades from their underlying storage; the flag does not change ordinary local
+table aggregation. Counts are metadata estimates rather than transactional counts.
+
+Incomplete collection never certifies a partial total as complete. Inspect
+`tables.attrs["data_complete"]` and `tables.attrs["ch_cluster_status"]` for coverage;
+unavailable facade statistics keep their existing unknown/default values with
+`data_complete=False`.
+
 Invalid identifiers and other deterministic metadata-query errors fail
 immediately without retrying the same query.
 

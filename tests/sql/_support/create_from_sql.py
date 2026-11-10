@@ -19,6 +19,19 @@ ch_fast_path_module = importlib.import_module(
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
+def acknowledged_create(operation: Any) -> Any:
+    """Model a successful target CREATE acknowledgement at the domain boundary."""
+
+    def create(*args: Any, **kwargs: Any) -> Any:
+        result = operation(*args, **kwargs)
+        callback = kwargs.get("on_resource_created")
+        if callback is not None:
+            callback(str(args[2]))
+        return result
+
+    return create
+
+
 class FakeResult:
     def __init__(self, rows: list[tuple[Any, ...]]) -> None:
         self.result_rows = rows
@@ -30,12 +43,26 @@ class FakeDbapiCursor:
         self.description = connection.description
         self.rowcount = -1
         self.close_calls = 0
+        self.read_offset = 0
 
     def execute(self, sql: str, params: tuple[Any, ...] | None = None) -> None:
+        if isinstance(sql, bytes):
+            sql = sql.decode("utf-8")
         self.connection.executed.append(sql)
         self.connection.executed_params.append(params)
         if sql.startswith("INSERT INTO "):
             self.rowcount = self.connection.insert_rowcount
+
+    def mogrify(self, statement: Any, values: Any = None) -> bytes:
+        text = statement.decode("utf-8") if isinstance(statement, bytes) else statement
+        for value in values or ():
+            text = text.replace("%s", "NULL" if value is None else repr(value), 1)
+        return text.encode("utf-8")
+
+    def fetchmany(self, size: int) -> list[tuple[Any, ...]]:
+        rows = self.connection.source_rows[self.read_offset : self.read_offset + size]
+        self.read_offset += len(rows)
+        return rows
 
     def fetchone(self) -> tuple[Any, ...] | None:
         return None
@@ -54,7 +81,11 @@ class FakeDbapiConnection:
         insert_rowcount: int = 0,
     ) -> None:
         self.description = description or []
+        self.encoding = "UTF8"
         self.insert_rowcount = insert_rowcount
+        self.source_rows = [
+            tuple(None for _column in self.description) for _row in range(insert_rowcount)
+        ]
         self.executed: list[str] = []
         self.executed_params: list[tuple[Any, ...] | None] = []
         self.cursors: list[FakeDbapiCursor] = []
@@ -80,7 +111,8 @@ class FakeDbapiConnection:
 class CloseFailDbapiConnection(FakeDbapiConnection):
     def close(self) -> None:
         self.close_calls += 1
-        raise RuntimeError("connection close failed")
+        message = "connection close failed"
+        raise RuntimeError(message)
 
 
 class FakeClickHouseClient:
@@ -91,6 +123,11 @@ class FakeClickHouseClient:
         self.queries: list[str] = []
         self.created_tables: set[str] = set()
         self.close_calls = 0
+        self.data_inserts: list[Any] = []
+        self.table_ddls: dict[str, str] = {}
+
+    def insert(self, table: str, data: Any, column_names: Any, **_kwargs: Any) -> None:
+        self.data_inserts.append((table, list(column_names), list(data)))
 
     def command(
         self,
@@ -106,22 +143,51 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> FakeResult:
         self.queries.append(sql)
-        if sql.startswith("SELECT getMacro("):
-            return FakeResult([("core",)])
-        if "clusterAllReplicas" in sql and "system, one" in sql:
-            return FakeResult([(1,)])
-        if "FROM system.clusters" in sql:
-            return FakeResult([(1,)])
-        if "clusterAllReplicas" in sql and "system, tables" in sql:
-            return FakeResult([(self._cluster_table_count(sql),)])
-        if "clusterAllReplicas" in sql and "system, columns" in sql:
-            return FakeResult([(sql.count("name = ") or 1,)])
-        if "clusterAllReplicas" in sql:
-            return FakeResult([(len(self.created_tables),)])
-        if sql.startswith("EXISTS TABLE "):
-            table_name = sql[len("EXISTS TABLE ") :].strip()
-            return FakeResult([(int(table_name in self.created_tables),)])
-        return FakeResult([])
+        if sql.startswith("SELECT create_table_query FROM clusterAllReplicas("):
+            rows = [
+                (
+                    "CREATE TABLE analytics.events_shard (id UInt64, amount Decimal(12, 2)) "
+                    "ENGINE=MergeTree ORDER BY id",
+                )
+            ]
+            saved = next(
+                (ddl for name, ddl in self.table_ddls.items() if name.endswith("_shard")), None
+            )
+            if saved is not None:
+                rows = [(saved,)]
+        elif sql.startswith("SHOW CREATE TABLE "):
+            rows = [(self._show_create_ddl(sql),)]
+        elif sql.startswith("SELECT getMacro("):
+            rows = [("core",)]
+        elif (
+            "clusterAllReplicas" in sql and "system, one" in sql
+        ) or "FROM system.clusters" in sql:
+            rows = [(1,)]
+        elif "clusterAllReplicas" in sql and "system, tables" in sql:
+            rows = [(self._cluster_table_count(sql),)]
+        elif "clusterAllReplicas" in sql and "system, columns" in sql:
+            rows = [(sql.count("name = ") or 1,)]
+        elif "clusterAllReplicas" in sql:
+            rows = [(len(self.created_tables),)]
+        elif sql.startswith("EXISTS TABLE "):
+            table_name = sql[len("EXISTS TABLE ") :].strip().replace("`", "")
+            rows = [(int(table_name in self.created_tables),)]
+        else:
+            rows = []
+        return FakeResult(rows)
+
+    def _show_create_ddl(self, sql: str) -> str:
+        table = sql.removeprefix("SHOW CREATE TABLE ").replace("`", "")
+        if table in self.table_ddls:
+            return self.table_ddls[table]
+        columns = "(id UInt64, amount Decimal(12, 2))"
+        if table.endswith("_shard"):
+            return f"CREATE TABLE {table} {columns} ENGINE = MergeTree ORDER BY id"
+        database, relation = table.rsplit(".", 1)
+        return (
+            f"CREATE TABLE {table} {columns} "
+            f"ENGINE = Distributed('core', '{database}', '{relation}_shard', rand())"
+        )
 
     def close(self) -> None:
         self.close_calls += 1
@@ -129,12 +195,20 @@ class FakeClickHouseClient:
     def _track_table_ddl(self, sql: str) -> None:
         body = _strip_query_label(sql)
         if body.startswith("CREATE TABLE IF NOT EXISTS "):
-            table_name = body[len("CREATE TABLE IF NOT EXISTS ") :].split()[0]
+            table_name = body[len("CREATE TABLE IF NOT EXISTS ") :].split()[0].replace("`", "")
             self.created_tables.add(table_name)
+            self.table_ddls.setdefault(
+                table_name, "CREATE TABLE " + body[len("CREATE TABLE IF NOT EXISTS ") :]
+            )
+            return
+        if body.startswith("CREATE TABLE "):
+            table_name = body[len("CREATE TABLE ") :].split()[0].replace("`", "")
+            self.created_tables.add(table_name)
+            self.table_ddls[table_name] = body
             return
         if body.startswith("DROP TABLE IF EXISTS "):
-            table_name = body[len("DROP TABLE IF EXISTS ") :].split()[0]
-            self.created_tables.discard(table_name)
+            table_name = body[len("DROP TABLE IF EXISTS ") :].split()[0].replace("`", "")
+            self.created_tables.discard(table_name.replace("`", ""))
 
     def _cluster_table_count(self, sql: str) -> int:
         marker = "AND name = '"
@@ -179,6 +253,7 @@ __all__ = [
     "SimpleNamespace",
     "_candidate_create_options",
     "_strip_query_label",
+    "acknowledged_create",
     "ch_fast_path_module",
     "create_module",
     "importlib",

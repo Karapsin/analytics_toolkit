@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -9,67 +8,47 @@ import pandas as pd
 
 def infer_gp_dataframe_column_type(adapter: Any, series: pd.Series) -> str:
     del adapter
-    return _infer_common_sql_type(series)
+    return _infer_column_type(series, "gp")
 
 
 def infer_trino_dataframe_column_type(adapter: Any, series: pd.Series) -> str:
     del adapter
-    common_type = _infer_common_sql_type(series)
-    if common_type == "DOUBLE PRECISION":
-        return "DOUBLE"
-    if common_type == "TEXT":
-        return "VARCHAR"
-    return common_type
+    return _infer_column_type(series, "trino")
 
 
 def infer_ch_dataframe_column_type(adapter: Any, series: pd.Series) -> str:
     del adapter
-    if pd.api.types.is_bool_dtype(series):
-        base_type = "Bool"
-    elif pd.api.types.is_integer_dtype(series):
-        base_type = "Int64"
-    elif pd.api.types.is_float_dtype(series):
-        base_type = "Float64"
-    elif pd.api.types.is_datetime64_any_dtype(series):
-        base_type = "DateTime64(6)"
-    else:
-        non_null = series.dropna()
-        if _is_uuid_series(non_null):
-            base_type = "UUID"
-        elif not non_null.empty and all(isinstance(value, Decimal) for value in non_null):
-            base_type = "Float64"
-        elif not non_null.empty and all(
-            hasattr(value, "year")
-            and hasattr(value, "month")
-            and hasattr(value, "day")
-            for value in non_null
-        ):
-            base_type = "Date"
-        else:
-            base_type = "String"
+    return _infer_column_type(series, "ch")
 
-    if series.isna().any():
-        return f"Nullable({base_type})"
-    return base_type
+
+def _infer_column_type(series: pd.Series, backend: str) -> str:
+    from analytics_toolkit.sql.core.type_resolution import (  # noqa: PLC0415 - avoid backend registry import cycles
+        ColumnProfile,
+        resolve_profile,
+    )
+
+    profile = ColumnProfile()
+    for value in series:
+        profile.add(value)
+    declared = None
+    if pd.api.types.is_unsigned_integer_dtype(series):
+        declared = "UInt" + str(series.dtype.itemsize * 8)
+    elif pd.api.types.is_integer_dtype(series):
+        declared = "Int" + str(series.dtype.itemsize * 8)
+    if not profile.families:
+        if pd.api.types.is_bool_dtype(series):
+            profile.families.add("boolean")
+        elif pd.api.types.is_float_dtype(series):
+            profile.families.add("float")
+        elif pd.api.types.is_datetime64_any_dtype(series):
+            profile.families.add("timestamp")
+            profile.aware = getattr(series.dtype, "tz", None) is not None
+            profile.naive = not profile.aware
+    return resolve_profile(profile, backend, source_type=declared, source_backend="ch").target_type
 
 
 def _infer_common_sql_type(series: pd.Series) -> str:
-    if pd.api.types.is_bool_dtype(series):
-        return "BOOLEAN"
-    if pd.api.types.is_integer_dtype(series):
-        return "BIGINT"
-    if pd.api.types.is_float_dtype(series):
-        return "DOUBLE PRECISION"
-    if pd.api.types.is_datetime64_any_dtype(series):
-        return "TIMESTAMP"
-
-    non_null = series.dropna()
-    if not non_null.empty and all(
-        hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day")
-        for value in non_null
-    ):
-        return "DATE"
-    return "UUID" if _is_uuid_series(non_null) else "TEXT"
+    return _infer_column_type(series, "gp")
 
 
 def _is_uuid_series(non_null: pd.Series) -> bool:

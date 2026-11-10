@@ -3,17 +3,21 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from . import operations as _operations
-from . import partitions as _partitions
-from . import insert as _insert
-from . import stage as _stage
+from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+
 from .. import dataframe_types as _dataframe_types
 from .. import source_schema as _source_schema
 from ..base import _apply_query_label
+from ..dbapi import DbApiBackendAdapter
 from ..models import SourceColumn, TransferAttemptPolicy, TransferInsertPageSizing
 from ..utils import user_filter as _user_filter
-from ..dbapi import DbApiBackendAdapter
-
+from . import insert as _insert
+from . import metadata_types as _metadata_types
+from . import native_types as _native_types
+from . import operations as _operations
+from . import partitions as _partitions
+from . import stage as _stage
+from .connectivity import validate_connection
 
 _GP_OID_TYPES = {
     16: "boolean",
@@ -33,12 +37,31 @@ _GP_OID_TYPES = {
     1700: "numeric",
     2950: "uuid",
     3802: "jsonb",
+    1000: "boolean[]",
+    1001: "bytea[]",
+    1005: "smallint[]",
+    1007: "integer[]",
+    1009: "text[]",
+    1014: "character[]",
+    1015: "character varying[]",
+    1016: "bigint[]",
+    1021: "real[]",
+    1022: "double precision[]",
+    1115: "timestamp[]",
+    1182: "date[]",
+    1183: "time[]",
+    1185: "timestamp with time zone[]",
+    1231: "numeric[]",
+    199: "json[]",
+    2951: "uuid[]",
+    3807: "jsonb[]",
 }
 _GP_MAX_NUMERIC_PRECISION = 1000
 GP_IDENTIFIER_MAX_BYTES = _stage.GP_IDENTIFIER_MAX_BYTES
 
 
 class GreenplumAdapter(DbApiBackendAdapter):
+    validate_connection = validate_connection
     display_name = "Greenplum"
     sqlglot_dialect = "postgres"
     identifier_quote = '"'
@@ -53,6 +76,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
     requires_execute_create_schema_inference = True
     build_execute_create_as_sqls = _operations.build_execute_create_as_sqls
     get_table_column_names = _operations.get_table_column_names
+    get_writable_table_column_types = _operations.get_writable_table_column_types
 
     def __init__(self) -> None:
         super().__init__(backend="gp", commit_commands=True)
@@ -249,49 +273,13 @@ class GreenplumAdapter(DbApiBackendAdapter):
         query_label: str | None = None,
     ) -> str:
         del row_count
-        return _apply_query_label(
-            f"INSERT INTO {table_name} ({self.column_list_sql(columns)}) VALUES %s",
-            query_label,
-        )
+        # execute_values parses percent markers throughout the template.
+        prefix = _apply_query_label(
+            f"INSERT INTO {table_name} ({self.column_list_sql(columns)})", query_label
+        ).replace("%", "%%")
+        return f"{prefix} VALUES %s"
 
-    def get_table_column_types(
-        self,
-        connection: Any,
-        table_name: str,
-        *,
-        connection_key: str,
-    ) -> dict[str, str]:
-        del connection_key
-        schema_name, relation_name = split_gp_table_name(table_name)
-        cursor = connection.cursor()
-        try:
-            cursor.execute(
-                """
-                SELECT column_name, data_type, udt_name, numeric_precision, numeric_scale
-                FROM information_schema.columns
-                WHERE table_schema = %s
-                  AND table_name = %s
-                ORDER BY ordinal_position
-                """.strip(),
-                (schema_name, relation_name),
-            )
-            return {
-                str(column_name): format_gp_information_schema_type(
-                    str(data_type),
-                    udt_name,
-                    numeric_precision,
-                    numeric_scale,
-                )
-                for (
-                    column_name,
-                    data_type,
-                    udt_name,
-                    numeric_precision,
-                    numeric_scale,
-                ) in cursor.fetchall()
-            }
-        finally:
-            cursor.close()
+    get_table_column_types = _metadata_types.get_table_column_types
 
     def inspect_source_query_schema(
         self,
@@ -310,83 +298,10 @@ class GreenplumAdapter(DbApiBackendAdapter):
         kind = _source_schema.classify_source_type(source_type)
         return _map_to_gp_type(kind, source_type, precision, scale)
 
-    def build_upsert_stage_sqls(
-        self,
-        target_table: str,
-        stage_table: str,
-        *,
-        columns: Sequence[str],
-        key_columns: Sequence[str],
-        column_types: dict[str, str] | None = None,
-        ch_cluster: str = "{cluster}",
-        ch_only_shard: bool = False,
-        query_label: str | None = None,
-        upsert_partition_column: str | None = None,
-        final_stage_table: str | None = None,
-        incoming_stage_tables: Sequence[str] | None = None,
-        partition_values: Sequence[Any] | None = None,
-        trino_partition_drop_sql_template: str | None = None,
-    ) -> list[str]:
-        del (
-            ch_cluster,
-            ch_only_shard,
-            upsert_partition_column,
-            final_stage_table,
-            partition_values,
-            trino_partition_drop_sql_template,
-        )
+    map_same_backend_source_type_to_target = _native_types.map_same_backend_source_type_to_target
 
-        return _operations.build_upsert_stage_sqls(
-            self,
-            target_table,
-            stage_table,
-            columns=columns,
-            key_columns=key_columns,
-            column_types=column_types,
-            query_label=query_label,
-            incoming_stage_tables=incoming_stage_tables,
-        )
-
-    def build_upsert_stage_placeholder_sqls(
-        self,
-        target_table: str,
-        stage_table: str,
-        *,
-        key_columns: Sequence[str],
-        ch_cluster: str = "{cluster}",
-        ch_only_shard: bool = False,
-        query_label: str | None = None,
-        upsert_partition_column: str | None = None,
-        final_stage_table: str | None = None,
-        incoming_stage_tables: Sequence[str] | None = None,
-        partition_values: Sequence[Any] | None = None,
-        trino_partition_drop_sql_template: str | None = None,
-    ) -> list[str]:
-        del (
-            ch_cluster,
-            ch_only_shard,
-            upsert_partition_column,
-            final_stage_table,
-            incoming_stage_tables,
-            partition_values,
-            trino_partition_drop_sql_template,
-        )
-
-        return [
-            _apply_query_label(
-                self._build_delete_matching_stage_sql(
-                    target_table,
-                    stage_table,
-                    key_columns,
-                ),
-                query_label,
-            ),
-            self.build_insert_from_stage_placeholder_sql(
-                target_table,
-                stage_table,
-                query_label=query_label,
-            ),
-        ]
+    build_upsert_stage_sqls = _operations.build_upsert_stage_sqls_with_options
+    build_upsert_stage_placeholder_sqls = _operations.build_upsert_stage_placeholder_sqls
 
     def _build_delete_matching_stage_sql(
         self,
@@ -426,52 +341,19 @@ class GreenplumAdapter(DbApiBackendAdapter):
         gp_commit_each_statement: bool,
         progress: bool,
     ) -> Any:
-        from analytics_toolkit.general import time_print
-        from ...execution.query_timing import run_timed_query
-        from ...dml.io.execute_sql import (
-            _iterate_statements_with_progress,
-            _maybe_print_query,
-            _split_sql_statements,
-        )
+        from .execution import execute_sql
 
-        statement: str | None = None
-        try:
-            with connection.cursor() as cursor:
-                should_commit_at_end = True
-                if not gp_break_query:
-                    time_print("Executing 1 statement set", backend=self.backend)
-                    statement = sql
-                    _maybe_print_query(statement, print_queries, split_preview=False)
-                    run_timed_query(
-                        self.backend,
-                        lambda: cursor.execute(statement),
-                    )
-                else:
-                    statements = _split_sql_statements(sql)
-                    time_print(
-                        f"Executing {len(statements)} statement(s)",
-                        backend=self.backend,
-                    )
-                    for statement in _iterate_statements_with_progress(
-                        statements,
-                        self.backend,
-                        progress=progress,
-                    ):
-                        _maybe_print_query(statement, print_queries, split_preview=True)
-                        run_timed_query(
-                            self.backend,
-                            lambda statement=statement: cursor.execute(statement),
-                        )
-                        if gp_commit_each_statement:
-                            connection.commit()
-                            should_commit_at_end = False
-                if should_commit_at_end:
-                    connection.commit()
-                return None
-        except Exception:
-            failed_query = statement if statement is not None else sql
-            time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
-            raise
+        return execute_sql(
+            self,
+            connection,
+            sql,
+            {
+                "print_queries": print_queries,
+                "gp_break_query": gp_break_query,
+                "gp_commit_each_statement": gp_commit_each_statement,
+                "progress": progress,
+            },
+        )
 
     def execute_read_sql(
         self,
@@ -484,12 +366,13 @@ class GreenplumAdapter(DbApiBackendAdapter):
         progress: bool,
     ) -> Any:
         from analytics_toolkit.general import time_print
-        from ...execution.query_timing import run_timed_query
+
         from ...dml.io.execute_read import _read_dbapi_cursor
         from ...dml.io.execute_sql import (
             _iterate_statements_with_progress,
             _maybe_print_query,
         )
+        from ...execution.query_timing import run_timed_query
 
         time_print(
             f"Executing {max(len(statements) - 1, 0)} setup statement(s) and reading final query",
@@ -532,7 +415,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
             time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
             raise
         finally:
-            cursor.close()
+            close_cursor(cursor, backend="gp")
 
     def normalize_insert_batch(self, batch: Any) -> Any:
         return _insert.normalize_insert_batch(self, batch)
@@ -616,12 +499,13 @@ class GreenplumAdapter(DbApiBackendAdapter):
         query_label: str | None,
         on_progress: Callable[[int], None] | None,
     ) -> None:
-        del target_column_types, trino_insert_chunk_size, connection_type
+        del trino_insert_chunk_size, connection_type
 
         self._insert_dataframe_batch(
             connection,
             table_name,
             batch,
+            target_column_types=target_column_types,
             gp_insert_chunk_size=gp_insert_chunk_size,
             query_label=query_label,
             on_progress=on_progress,
@@ -645,12 +529,12 @@ class GreenplumAdapter(DbApiBackendAdapter):
     ) -> None:
         del trino_insert_chunk_size, connection_type
 
-        rows = _insert.normalize_json_columns(columns, rows, target_column_types)
         self._insert_rows(
             connection,
             table_name,
             columns,
             rows,
+            target_column_types=target_column_types,
             gp_insert_chunk_size=gp_insert_chunk_size,
             query_label=query_label,
             on_progress=on_progress,
@@ -664,6 +548,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
         table_name: str,
         batch: Any,
         *,
+        target_column_types: dict[str, str] | None = None,
         gp_insert_chunk_size: int | None = None,
         query_label: str | None = None,
         on_progress: Callable[[int], None] | None = None,
@@ -674,6 +559,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
             table_name,
             batch.columns,
             rows,
+            target_column_types=target_column_types,
             gp_insert_chunk_size=gp_insert_chunk_size,
             query_label=query_label,
             on_progress=on_progress,
@@ -686,6 +572,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
         columns: Sequence[str],
         rows: Sequence[Sequence[Any]],
         *,
+        target_column_types: dict[str, str] | None = None,
         gp_insert_chunk_size: int | None = None,
         query_label: str | None = None,
         on_progress: Callable[[int], None] | None = None,
@@ -698,6 +585,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
             table_name,
             columns,
             rows,
+            target_column_types=target_column_types,
             gp_insert_chunk_size=gp_insert_chunk_size,
             query_label=query_label,
             on_progress=on_progress,
@@ -715,8 +603,15 @@ class GreenplumAdapter(DbApiBackendAdapter):
             return None
         if isinstance(type_code, int):
             base_type = _GP_OID_TYPES.get(type_code, str(type_code))
-            if base_type == "numeric" and precision is not None and scale is not None:
-                return f"numeric({precision},{scale})"
+            if (
+                base_type in {"numeric", "numeric[]"}
+                and precision is not None
+                and scale is not None
+            ):
+                suffix = "[]" if base_type.endswith("[]") else ""
+                if suffix and not 0 < precision <= _GP_MAX_NUMERIC_PRECISION:
+                    return base_type  # DB-API uses an out-of-domain sentinel for unbounded numeric.
+                return f"numeric({precision},{scale}){suffix}"
             return base_type
         return super().type_code_name(type_code, precision, scale)
 
@@ -807,36 +702,7 @@ def split_gp_table_name(table_name: str) -> tuple[str, str]:
     return _split_gp_table_name(table_name)
 
 
-def format_gp_information_schema_type(
-    data_type: str,
-    udt_name: Any,
-    numeric_precision: Any,
-    numeric_scale: Any,
-) -> str:
-    normalized = data_type.lower()
-    if normalized == "numeric" and numeric_precision is not None:
-        if numeric_scale is None:
-            return f"NUMERIC({numeric_precision})"
-        return f"NUMERIC({numeric_precision}, {numeric_scale})"
-    if normalized == "character varying":
-        return "VARCHAR"
-    if normalized == "timestamp without time zone":
-        return "TIMESTAMP"
-    if normalized == "timestamp with time zone":
-        return "TIMESTAMP WITH TIME ZONE"
-    if normalized == "integer":
-        return "INTEGER"
-    if normalized == "bigint":
-        return "BIGINT"
-    if normalized == "smallint":
-        return "SMALLINT"
-    if normalized == "boolean":
-        return "BOOLEAN"
-    if normalized == "date":
-        return "DATE"
-    if normalized == "text":
-        return "TEXT"
-    return str(udt_name or data_type).upper()
+format_gp_information_schema_type = _metadata_types.format_gp_information_schema_type
 
 
 def _build_gp_partition_by_sql(partition_by: Sequence[str] | str | None) -> str:
@@ -870,14 +736,13 @@ def _map_to_gp_type(
     if kind == "boolean":
         return "BOOLEAN"
     if kind == "integer":
+        exact_type = _source_schema.exact_integer_target(source_type, "gp")
+        if exact_type is not None:
+            return exact_type
         if "small" in source_type or source_type in {"int16", "uint8"}:
             return "SMALLINT"
         if source_type in {"integer", "int", "int4", "int32", "uint16"}:
             return "INTEGER"
-        if source_type in {"uint32"}:
-            return "BIGINT"
-        if source_type in {"uint64"}:
-            return "NUMERIC(20, 0)"
         return "BIGINT"
     if kind == "float":
         if source_type in {"real", "float4", "float32"}:
@@ -894,7 +759,7 @@ def _map_to_gp_type(
     if kind == "date":
         return "DATE"
     if kind == "timestamp":
-        if "with time zone" in source_type or "timestamptz" in source_type:
+        if _source_schema.type_has_timezone(source_type):
             return "TIMESTAMP WITH TIME ZONE"
         return "TIMESTAMP"
     return "UUID" if kind == "uuid" else "TEXT"

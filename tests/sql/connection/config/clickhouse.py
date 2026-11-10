@@ -81,10 +81,10 @@ def test_clickhouse_ca_certs_list_uses_generated_bundle(
 
     result = connection_module.get_sql_connection("ch_ssl")
 
-    assert result._client is client
+    assert result._client._client is client
     bundle_path = Path(str(client_calls[0]["ca_cert"]))
-    expected_bundle_path = Path.cwd() / ".certs" / ".generated" / "ch_ssl-ca-bundle.pem"
-    assert bundle_path == expected_bundle_path
+    assert bundle_path.parent == Path.cwd() / ".certs" / ".generated"
+    assert bundle_path.name.startswith("ch_ssl-ca-bundle-")
     assert bundle_path.read_text(encoding="utf-8") == "CLICKHOUSE ROOT\nCLICKHOUSE INTERMEDIATE\n"
 
 
@@ -144,7 +144,7 @@ def test_clickhouse_connection_disables_auto_session_ids(
 
     result = connection_module.get_sql_connection("ch")
 
-    assert result._client is client
+    assert result._client._client is client
     assert setting_calls == [("autogenerate_session_id", False)]
     assert client_calls == [
         {
@@ -210,7 +210,7 @@ def test_clickhouse_connection_passes_optional_connector_settings(
 
     result = connection_module.get_sql_connection("ch_custom")
 
-    assert result._client is client
+    assert result._client._client is client
     assert config_module.get_connection_config("ch_custom").ddl_ready_timeout_seconds == 900
     assert config_module.get_connection_config("ch_custom").ddl_ready_timeout_extension_cnt == 4
     assert client_calls == [

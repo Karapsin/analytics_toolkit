@@ -172,7 +172,7 @@ def test_trino_operation_cursor_and_error_paths() -> None:
     cursor = RecordingCursor(rows=[("tmp_a",), (2,)])
     connection = RecordingConnection(cursor)
     assert trino_operations.query_transfer_stage_table_names(
-        object(),
+        SimpleNamespace(quote_identifier=lambda value: f'"{value}"'),
         connection,
         connection_key="trino",
         transfer_staging_schema="hive.stage",
@@ -188,7 +188,7 @@ def test_trino_operation_cursor_and_error_paths() -> None:
             "iceberg.integration_stage",
             numeric_stage,
         )
-        == f'iceberg.integration_stage."{numeric_stage}"'
+        == f'"iceberg"."integration_stage"."{numeric_stage}"'
     )
 
     with pytest.raises(ValueError, match="No DDL"):

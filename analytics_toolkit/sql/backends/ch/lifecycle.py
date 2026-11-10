@@ -12,6 +12,7 @@ from .ddl import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
 )
+from .recovery_endpoints import RecoveryEndpoint, endpoint_identity
 from .routing import local_sql, query_local
 from .wait import (
     _normalize_non_empty_string,
@@ -93,11 +94,16 @@ def build_drop_ch_creation_policy_table_sqls(
 ) -> list[str]:
     """Build exact local/cluster cleanup for a policy-created table resource."""
     resources = [(table_name, creation_policy.shard_on_cluster)]
-    if creation_policy.create_distributed_pair:
+    if creation_policy.create_distributed_pair and getattr(creation_policy, "owns_physical", True):
         resources = [
             (table_name, creation_policy.distributed_on_cluster),
-            (build_ch_shard_table_name(table_name), creation_policy.shard_on_cluster),
+            (
+                getattr(creation_policy, "physical_table", build_ch_shard_table_name(table_name)),
+                creation_policy.shard_on_cluster,
+            ),
         ]
+    elif creation_policy.create_distributed_pair:
+        resources = [(table_name, creation_policy.distributed_on_cluster)]
     sqls: list[str] = []
     for resource, cluster in resources:
         sqls.append(
@@ -353,7 +359,11 @@ def _drop_pair_on_bounded_hosts(
             if error is not None:
                 error_by_host[host] = f"{host}: {error!r}"
     if error_by_host:
-        errors = [error_by_host[host] for host in hosts if host in error_by_host]
+        errors = [
+            error_by_host[endpoint_identity(host)]
+            for host in hosts
+            if endpoint_identity(host) in error_by_host
+        ]
         message = (
             "ch_retry_per_host_drops=True failed to locally drop ClickHouse "
             f"table pair {pair.distributed_table} / {pair.shard_table} on "
@@ -560,6 +570,20 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
             f"ClickHouse hosts for cluster {ch_cluster!r}."
         )
 
+    names = [str(host) for host in hosts]
+    if not getattr(connection, "is_native_transport", False) and len(set(names)) != len(names):
+        from analytics_toolkit.sql.execution.backend_options import (  # noqa: PLC0415
+            current_backend_operation,
+        )
+
+        state = current_backend_operation()
+        if state is not None:
+            state.preserve_recovery = True
+        message = (
+            "HTTP recovery cannot distinguish multiple native instances on the same hostname; "
+            "cleanup is incomplete and recovery artifacts are retained."
+        )
+        raise TimeoutError(message)
     max_workers = min(per_host_drop_workers, len(hosts))
     error_by_host: dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -580,9 +604,13 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
             except Exception as exc:
                 error = f"{host}: {exc!r}"
             if error is not None:
-                error_by_host[host] = error
+                error_by_host[endpoint_identity(host)] = error
 
-    errors = [error_by_host[host] for host in hosts if host in error_by_host]
+    errors = [
+        error_by_host[endpoint_identity(host)]
+        for host in hosts
+        if endpoint_identity(host) in error_by_host
+    ]
     if errors:
         raise TimeoutError(
             "ch_retry_per_host_drops=True failed to locally drop ClickHouse "
@@ -603,24 +631,34 @@ def _drop_ch_distributed_table_pair_on_host(
         host_connection = per_host_connection_factory(host)
         _execute_ch_sqls(
             host_connection,
-            [
-                _build_drop_ch_table_sql(
-                    pair.distributed_table,
-                    query_label=query_label,
-                ),
-                _build_drop_ch_table_sql(
-                    pair.shard_table,
-                    query_label=query_label,
-                ),
-            ],
+            list(
+                dict.fromkeys(
+                    [
+                        _build_drop_ch_table_sql(
+                            pair.distributed_table,
+                            query_label=query_label,
+                        ),
+                        _build_drop_ch_table_sql(
+                            pair.shard_table,
+                            query_label=query_label,
+                        ),
+                    ]
+                )
+            ),
         )
     except Exception as exc:
-        return f"{host}: {exc!r}"
+        return f"{endpoint_identity(host)}: {exc!r}"
     finally:
         if host_connection is not None:
             close = getattr(host_connection, "close", None)
             if callable(close):
-                close()
+                from analytics_toolkit.sql.dml.transfer.runtime.retry import (  # noqa: PLC0415
+                    close_connection_ref,
+                )
+
+                close_connection_ref(
+                    {"connection": host_connection}, endpoint_identity(host), "host"
+                )
     return None
 
 
@@ -631,7 +669,7 @@ def _query_ch_configured_cluster_hosts(
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
     sql = (
-        "SELECT DISTINCT host_name\n"
+        "SELECT DISTINCT host_name, port\n"
         "FROM system.clusters\n"
         f"WHERE cluster = {_sql_string_literal(cluster_name)}\n"
         "ORDER BY host_name"
@@ -644,7 +682,7 @@ def _query_ch_configured_cluster_hosts(
             continue
         host = str(row[0]).strip()
         if host:
-            hosts.append(host)
+            hosts.append(RecoveryEndpoint(host, int(row[1])) if len(row) > 1 else host)
     return hosts
 
 

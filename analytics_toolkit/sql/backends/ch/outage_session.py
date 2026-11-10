@@ -8,26 +8,26 @@ from sqlglot import exp, parse_one
 from sqlglot.optimizer.scope import traverse_scope
 
 from analytics_toolkit.sql.backends.transfer_stage import is_transfer_stage_identifier
-from analytics_toolkit.sql.backends.utils import sql_string_literal
 from analytics_toolkit.sql.connection.ddl_defaults import _MISSING
 from analytics_toolkit.sql.connection.errors import (
     ClickHouseClusterTopologyError,
     ClickHouseClusterUnavailableError,
 )
 
+from .cluster_functions import cluster_arguments
+from .dialect import sql_string_literal
 from .managed_routing import ManagedTableRoute
 from .metadata import extract_clickhouse_distributed_shard_table, extract_clickhouse_function_args
-from .outage_context import INSERT_KEY, WRITING
+from .outage_context import INSERT_KEY, LOGICAL_STATISTICS, WRITING
 from .outage_ddl import provision_missing
 from .outage_topology import ClusterScope, Host, TableObject, query_rows, warn_degraded
-from .routing import ChClusterRouting, _identifier_value, _RoutingClickHouse
+from .routing import ChClusterRouting, _RoutingClickHouse
 
 if TYPE_CHECKING:
     from analytics_toolkit.sql.execution.backend_options import BackendOperationState
 
 
 _DISTRIBUTED_KEY_ARGUMENTS = 4
-_CLUSTER_ARGUMENTS = 3
 
 
 def configured_cluster(config: Any) -> str | None:
@@ -97,16 +97,17 @@ class OutageSession:
             self.infer_routing(exp.select("*").from_(table.copy()))
         return exists
 
-    def resolve(self, *, cluster: str, database: str, table: str) -> ManagedTableRoute:  # noqa: C901, PLR0912, PLR0915 - keep the safety decision and submission in one boundary
+    def resolve(  # noqa: C901, PLR0912, PLR0915 - one verified route decision boundary
+        self, *, cluster: str, database: str, table: str, coverage_intent: str | None = None
+    ) -> ManagedTableRoute:
         scope = self.scope(cluster)
         writing = WRITING.get()
         if database.lower() == "system":
+            status = scope.record(scope.reachable, f"{database}.{table}")
             if self.policy == "stop":
                 scope.require_all(scope.reachable, "System metadata")
-            elif len(scope.reachable) != len(scope.hosts):
-                warn_degraded(
-                    self.state, self.config, scope.record(scope.reachable), "read metadata"
-                )
+            elif not status["complete"]:
+                warn_degraded(self.state, self.config, status, "read metadata")
             return ManagedTableRoute(database, table, "all_replicas")
         objects = scope.objects(database, table)
         local_facade = False
@@ -134,7 +135,13 @@ class OutageSession:
                     raise ClickHouseClusterTopologyError(msg)
                 destination = self.scope(shard.cluster)
                 physical = destination.objects(shard.database, shard.table)
-                destination.usable(physical, f"{shard.database}.{shard.table}", write=writing)
+                destination.usable(
+                    physical,
+                    f"{shard.database}.{shard.table}",
+                    write=writing,
+                    identity=(shard.database, shard.table),
+                    coverage_intent=coverage_intent,
+                )
                 if physical[0].engine.lower() == "distributed":
                     msg = "Nested Distributed destinations cannot be verified safely."
                     raise ClickHouseClusterTopologyError(msg)
@@ -176,7 +183,13 @@ class OutageSession:
         if engine.lower() in {"view", "materializedview", "liveview", "windowview"}:
             scope.require_all(scope.reachable, "View dependencies cannot be degraded safely")
             return ManagedTableRoute(database, table, "local", engine)
-        hosts = scope.usable(objects, f"{database}.{routed_table}", write=writing)
+        hosts = scope.usable(
+            objects,
+            f"{database}.{routed_table}",
+            write=writing,
+            identity=(database, routed_table),
+            coverage_intent=coverage_intent or ("physical_hosts" if private_table(table) else None),
+        )
         if (
             self.policy == "healthy_shards"
             and writing
@@ -231,7 +244,12 @@ class OutageSession:
         scope = self.insert_scope
         if scope is None or self.policy != "healthy_shards":
             return settings
-        if len(self.insert_hosts) == len(scope.hosts):
+        complete = (
+            len(self.insert_hosts) == len(scope.hosts)
+            if self.insert_all_replicas
+            else {host.shard for host in self.insert_hosts} == {host.shard for host in scope.hosts}
+        )
+        if complete:
             return settings
         try:
             key = parse_one(self.insert_key, read=_RoutingClickHouse)
@@ -262,9 +280,18 @@ class OutageSession:
         return settings
 
     def infer_routing(self, statement: exp.Expr) -> ChClusterRouting | None:
+        if LOGICAL_STATISTICS.get():
+            for table in _native_tables(statement):
+                if isinstance(table.this, exp.Anonymous):
+                    self._preflight_function(table.this)
+            return None
         configured = getattr(self.config, "cluster_routing", None)
         if configured is not None:
             return cast("ChClusterRouting", configured)
+        self._infer_native_sources(statement)
+        return None
+
+    def _infer_native_sources(self, statement: exp.Expr) -> None:
         for table in _native_tables(statement):
             if isinstance(table.this, exp.Anonymous):
                 self._preflight_function(table.this)
@@ -284,15 +311,16 @@ class OutageSession:
                 shard = extract_clickhouse_distributed_shard_table(str(rows[0][0]), database)
                 if shard is not None:
                     self.resolve(cluster=shard.cluster, database=database, table=table.name)
-        return None
 
     def _preflight_function(self, function: exp.Anonymous) -> None:
         if function.name.lower() not in {"cluster", "clusterallreplicas"}:
             return
-        args = [_identifier_value(value) for value in function.expressions[:_CLUSTER_ARGUMENTS]]
-        if len(args) != _CLUSTER_ARGUMENTS or not all(args):
-            msg = "Cluster source arguments must be static identifiers."
-            raise ClickHouseClusterTopologyError(msg)
+        cluster, database, table, _trailing = cluster_arguments(function, self.config.database)
         self.resolve(
-            cluster=cast("str", args[0]), database=cast("str", args[1]), table=cast("str", args[2])
+            cluster=cluster,
+            database=database,
+            table=table,
+            coverage_intent="physical_hosts"
+            if function.name.lower() == "clusterallreplicas"
+            else None,
         )

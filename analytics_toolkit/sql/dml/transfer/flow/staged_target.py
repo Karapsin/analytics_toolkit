@@ -15,6 +15,7 @@ from .parquet_stage import (
     parquet_row_group_size,
     write_batch_to_parquet_stage,
 )
+from .stage_ownership import stage_creation_callbacks
 
 
 def prepare_shared_parquet_stage(
@@ -45,15 +46,7 @@ def create_sql_worker_stages(
     sample = pd.DataFrame(columns=stage_state.source_columns)
     stage_state.first_non_empty_batch = pd.DataFrame(columns=stage_state.source_columns)
     worker_tables: list[str] = []
-    registered_candidates: list[str] = []
-
-    def register_candidate(stage_table: str) -> None:
-        if stage_table in registered_candidates:
-            return
-        registered_candidates.append(stage_table)
-        stage_state.stage_table = registered_candidates[0]
-        stage_state.stage_tables = list(registered_candidates)
-        stage_state.stage_table_created = True
+    del cleanup_fn
 
     for worker_id in range(worker_count):
         stage_table = create_fn(
@@ -68,23 +61,15 @@ def create_sql_worker_stages(
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=f"{options.transfer_id}__w{worker_id:05d}",
             destination_hash=options.destination_hash,
-            on_stage_candidate=register_candidate,
+            **stage_creation_callbacks(stage_state),
             ddl_properties=options.staging_ddl_properties,
             ch_creation_policy=options.staging_ch_policy,
         )
-        register_candidate(stage_table)
         worker_tables.append(stage_table)
+        stage_state.stage_table = worker_tables[0]
+        stage_state.stage_tables = list(worker_tables)
+        stage_state.stage_table_created = True
 
-    for candidate in registered_candidates:
-        if candidate in worker_tables:
-            continue
-        cleanup_fn(
-            options.to_db_backend,
-            target_ref["connection"],
-            candidate,
-            query_label=options.query_label,
-            ch_creation_policy=options.staging_ch_policy,
-        )
     stage_state.stage_table = worker_tables[0]
     stage_state.stage_tables = list(worker_tables)
     stage_state.stage_table_created = True

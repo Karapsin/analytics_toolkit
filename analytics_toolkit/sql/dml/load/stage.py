@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 
+CLICKHOUSE_TABLE_ALREADY_EXISTS_CODE = 57
 STAGE_TABLE_NAME_MAX_ATTEMPTS = 10
 STAGE_TABLE_RANDOM_SUFFIX_LENGTH = 8
 
@@ -45,6 +46,8 @@ def create_stage_table(
     random_suffix: str | None = None,
     destination_hash: str | None = None,
     on_stage_candidate: Callable[[str], None] | None = None,
+    on_stage_owned: Callable[[str], None] | None = None,
+    on_resource_created: Callable[[str], None] | None = None,
     log_prefix: str = "",
     ddl_properties: Mapping[str, Any] | None = None,
     ch_creation_policy: Any = None,
@@ -95,6 +98,11 @@ def create_stage_table(
             # distributed table fails. Register the collision-free name before
             # executing DDL so policy-aware cleanup can remove either partial.
             on_stage_candidate(stage_table)
+        acknowledged: list[str] = []
+
+        register_resource = _ownership_callback(acknowledged, on_resource_created)
+
+        create_kwargs["on_resource_created"] = register_resource
         try:
             _create_sql_table_with_connection(
                 connection_type,
@@ -106,20 +114,15 @@ def create_stage_table(
                 gp_distributed_by_key=gp_distributed_by_key,
                 **create_kwargs,
             )
-        except Exception as exc:
-            _raise_if_readiness_failure(exc)
-            if not table_exists(
-                connection_type,
-                connection,
-                stage_table,
-                connection_key=connection_key or connection_type,
-            ):
-                raise
+        except Exception as exc:  # noqa: BLE001 -- classify driver collisions, rethrow every other failure.
+            _require_confirmed_collision(exc, acknowledged, stage_table)
             time_print(
                 f"{log_prefix}Stage table creation raced for {stage_table}; retrying with "
                 f"a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
             )
             continue
+        if on_stage_owned is not None:
+            on_stage_owned(stage_table)
         return stage_table
 
     raise RuntimeError(
@@ -129,9 +132,37 @@ def create_stage_table(
     )
 
 
+def _ownership_callback(acknowledged: list[str], callback: Any) -> Any:
+    def register(resource: str) -> None:
+        acknowledged.append(resource)
+        if callback is not None:
+            callback(resource)
+
+    return register
+
+
+def _require_confirmed_collision(exc: Exception, acknowledged: list[str], stage: str) -> None:
+    _raise_if_readiness_failure(exc)
+    if acknowledged or not _is_confirmed_create_collision(exc):
+        exc.__dict__["analytics_toolkit_sql_stage_candidate"] = stage
+        exc.__dict__["analytics_toolkit_sql_acknowledged_resources"] = tuple(acknowledged)
+        raise exc
+
+
 def _raise_if_readiness_failure(exc: Exception) -> None:
     if isinstance(exc, SqlTableReadinessError):
         raise exc
+
+
+def _is_confirmed_create_collision(exc: Exception) -> bool:
+    code = getattr(exc, "code", None)
+    sqlstate = getattr(exc, "pgcode", None) or getattr(exc, "sqlstate", None)
+    error_name = getattr(exc, "error_name", None)
+    return (
+        code == CLICKHOUSE_TABLE_ALREADY_EXISTS_CODE
+        or sqlstate == "42P07"
+        or error_name == "TABLE_ALREADY_EXISTS"
+    )
 
 
 def _collision_stage_suffix(

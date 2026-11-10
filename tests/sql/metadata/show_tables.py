@@ -86,7 +86,7 @@ def test_clickhouse_shard_stats_missing_metadata_and_partial_results() -> None:
     )
 
     def read_sql(_key: str, query: str) -> pd.DataFrame:
-        assert "cluster('core'" in query
+        assert "clusterAllReplicas('core'" in query
         return pd.DataFrame(
             {
                 "shard_database": ["db", None],
@@ -242,7 +242,7 @@ def test_show_tables_clickhouse_distributed_tables_use_shard_stats(
                     ],
                 }
             )
-        if "FROM cluster('core', system, tables)" in query:
+        if "FROM clusterAllReplicas('core', system, tables)" in query:
             return pd.DataFrame(
                 {
                     "shard_database": ["pa_core_stage"],
@@ -264,19 +264,11 @@ def test_show_tables_clickhouse_distributed_tables_use_shard_stats(
 
     assert [call[0] for call in calls] == ["ch", "ch"]
     assert "engine_full" in calls[0][1]
-    assert _compact(calls[1][1]) == _compact(
-        """
-        SELECT
-            database AS shard_database,
-            name AS shard_table,
-            sum(ifNull(total_rows, 0)) AS row_count,
-            sum(ifNull(total_bytes, 0)) AS table_size_bytes
-        FROM cluster('core', system, tables)
-        WHERE (database, name) IN (('pa_core_stage', 'events_shard'))
-        GROUP BY database, name
-        ORDER BY database, name
-        """
-    )
+    stats_query = calls[1][1]
+    assert "clusterAllReplicas('core', system, tables)" in stats_query
+    assert "argMin" in stats_query
+    assert "host_scope.shard_num" in stats_query
+    assert "WHERE (database, name) IN (('pa_core_stage', 'events_shard'))" in stats_query
     assert result["row_count"].tolist() == [1200, 1200, 7]
     assert result["table_size"].tolist() == ["2.00 KiB", "2.00 KiB", "32 B"]
     assert list(result.columns) == [
@@ -311,7 +303,7 @@ def test_show_tables_clickhouse_distributed_stats_support_current_database_macro
             )
         if "getMacro('cluster')" in query:
             return pd.DataFrame({"cluster_name": ["core"]})
-        if "FROM cluster('core', system, tables)" in query:
+        if "FROM clusterAllReplicas('core', system, tables)" in query:
             return pd.DataFrame(
                 {
                     "shard_database": ["analytics"],
@@ -401,7 +393,7 @@ def test_show_tables_trino_uses_catalog_and_schema_filter(
 
     assert calls[0][0] == "trino"
     query = _compact(calls[0][1])
-    assert "FROM iceberg.information_schema.tables" in query
+    assert 'FROM "iceberg".information_schema.tables' in query
     assert query.endswith(
         ") AS table_metadata WHERE 1 = 1 AND schema = 'sandbox' ORDER BY schema, table_name"
     )
@@ -411,7 +403,7 @@ def test_show_tables_trino_uses_catalog_and_schema_filter(
     ("db_key", "schema", "inner_source"),
     [
         ("gp", "public", "FROM (SELECT * FROM information_schema.tables"),
-        ("trino", "sandbox", "FROM iceberg.information_schema.tables"),
+        ("trino", "sandbox", 'FROM "iceberg".information_schema.tables'),
         ("ch", "analytics", "FROM system.tables"),
     ],
 )
@@ -448,8 +440,8 @@ def test_show_tables_trino_catalog_argument_overrides_config(
     show_tables_module.show_tables("trino", schema="sandbox", trino_catalog="hive")
 
     assert calls[0][0] == "trino"
-    assert "FROM hive.information_schema.tables" in calls[0][1]
-    assert "FROM iceberg.information_schema.tables" not in calls[0][1]
+    assert 'FROM "hive".information_schema.tables' in calls[0][1]
+    assert 'FROM "iceberg".information_schema.tables' not in calls[0][1]
 
 
 def test_show_tables_trino_catalog_argument_allows_missing_config_catalog(
@@ -477,7 +469,7 @@ def test_show_tables_trino_catalog_argument_allows_missing_config_catalog(
     )
 
     assert calls[0][0] == "trino_no_catalog"
-    assert "FROM iceberg.information_schema.tables" in calls[0][1]
+    assert 'FROM "iceberg".information_schema.tables' in calls[0][1]
 
 
 def test_show_tables_returns_expected_columns_for_empty_columnless_result(

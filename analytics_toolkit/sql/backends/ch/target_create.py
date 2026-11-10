@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import nullcontext
 from typing import Any
+
+from .routing import local_sql
 
 
 def should_ensure_load_target_table(
@@ -105,3 +108,65 @@ def build_create_from_sql_target_create_kwargs(
             not ch_only_shard and drop_target_if_exists and target_exists_before_drop
         ),
     }
+
+
+def local_creation_context(adapter: Any, connection: Any, *, local: bool) -> Any:
+    del adapter
+    return local_sql(connection) if local else nullcontext()
+
+
+def apply_target_write_mode(adapter: Any, request: Any) -> bool:
+    from .layout import inspect_existing_layout  # noqa: PLC0415 - adapter initialization cycle
+    from .lifecycle import truncate_ch_distributed_table_pair  # noqa: PLC0415 - adapter cycle
+    from .operations import drop_table_with_options  # noqa: PLC0415 - adapter cycle
+
+    if request.write_mode in {"append", "upsert"} or not request.target_exists:
+        return bool(request.target_exists)
+    layout = inspect_existing_layout(
+        request.connection, request.table_name, distributed_on_cluster=request.ch_cluster
+    )
+    if request.write_mode == "truncate_insert":
+        if layout.create_distributed_pair:
+            truncate_ch_distributed_table_pair(
+                request.connection,
+                request.table_name,
+                shard_table=layout.physical_table,
+                ch_cluster=layout.shard_on_cluster,
+                query_label=request.query_label,
+            )
+        else:
+            adapter.clear_table(
+                request.connection, request.table_name, query_label=request.query_label
+            )
+        return True
+    drop_table_with_options(
+        adapter,
+        request.connection,
+        request.table_name,
+        connection_key=request.connection_key or "ch",
+        ch_cluster=request.ch_cluster,
+        ch_wait_for_absence=True,
+        ch_retry_per_host_drops=request.ch_retry_per_host_drops,
+        if_exists=True,
+        query_label=request.query_label,
+    )
+    return False
+
+
+def preflight_create_table_replacement(adapter: Any, connection: Any, options: Any) -> None:
+    from .creation_preflight import (  # noqa: PLC0415 - adapter cycle
+        preflight_create_table_replacement as preflight,
+    )
+
+    preflight(adapter, connection, options)
+
+
+def build_create_table_placeholder_sql(
+    adapter: Any,
+    table_name: str,
+    *,
+    replace_table: bool = False,
+) -> str:
+    del adapter
+    statement = "CREATE OR REPLACE TABLE" if replace_table else "CREATE TABLE"
+    return f"{statement} {table_name} (<source query schema>)"

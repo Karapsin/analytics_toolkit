@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
 
+from analytics_toolkit.sql.backends.stage_ownership import single_resource_policy
+
 from ...._log_context import sql_log_context
 from ....backends import get_backend_adapter
 from ....backends.transfer_stage import collision_stage_suffix
@@ -24,6 +26,7 @@ from .source_snapshot import (
     build_snapshot_select_sql,
     execute_source_snapshot_materialization,
 )
+from .stage_ownership import stage_creation_callbacks
 from .stage_validation import validate_transfer_stage_slice
 from .staged_keyed_logging import slice_tag
 from .staged_target import prepare_shared_parquet_stage, write_source_staged_batch
@@ -159,6 +162,7 @@ def materialize_source_key(
             snapshot_select_sql=select_sql,
             internal_columns=metadata.internal_columns,
             source_staging_ch_policy=getattr(options, "source_staging_ch_policy", None),
+            on_resource_created=source_ref.get("on_source_resource_created"),
         )
         return count_source_slice(
             options,
@@ -298,8 +302,20 @@ def create_target_writer_stage(
     writer_index: int,
     *,
     on_stage_candidate: Callable[[str], None] | None = None,
+    ownership_state: Any = None,
     log_prefix: str = "",
 ) -> str:
+
+    callbacks = stage_creation_callbacks(ownership_state) if ownership_state is not None else {}
+    original_candidate = callbacks.get("on_stage_candidate")
+
+    def register_candidate(name: str) -> None:
+        if original_candidate is not None:
+            original_candidate(name)
+        if on_stage_candidate is not None:
+            on_stage_candidate(name)
+
+    callbacks["on_stage_candidate"] = register_candidate
     columns = list(metadata.source_columns)
     with sql_log_context(log_prefix, suppress_sql=True):
         return create_stage_table(
@@ -315,7 +331,7 @@ def create_target_writer_stage(
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=f"{options.transfer_id}__w{writer_index:05d}",
             destination_hash=options.destination_hash,
-            on_stage_candidate=on_stage_candidate,
+            **callbacks,
             log_prefix=log_prefix,
             ddl_properties=options.staging_ddl_properties,
             ch_creation_policy=options.staging_ch_policy,
@@ -399,7 +415,9 @@ def drop_source_stage(
                 connection,
                 task.source_stage,
                 query_label=options.query_label,
-                ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
+                ch_creation_policy=single_resource_policy(
+                    getattr(options, "source_staging_ch_policy", None)
+                ),
             )
         except Exception:
             rollback_quietly(connection)
@@ -438,7 +456,9 @@ def cleanup_source_stages(
                 source_ref["connection"],
                 stage_table,
                 query_label=options.query_label,
-                ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
+                ch_creation_policy=single_resource_policy(
+                    getattr(options, "source_staging_ch_policy", None)
+                ),
             )
         except Exception as exc:  # noqa: BLE001, PERF203
             first_error = first_error or exc

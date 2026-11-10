@@ -4,6 +4,8 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+
 from . import common_methods as _common_methods
 from .base import BackendAdapter, BackendName, _apply_query_label
 from .utils import extract_row_count
@@ -28,7 +30,7 @@ class DbApiBackendAdapter(BackendAdapter):
                 connection.rollback()
             raise
         finally:
-            cursor.close()
+            close_cursor(cursor, backend=self.backend)
 
     def execute_commands(self, connection: Any, sqls: list[str]) -> None:
         cursor = connection.cursor()
@@ -42,7 +44,7 @@ class DbApiBackendAdapter(BackendAdapter):
                 connection.rollback()
             raise
         finally:
-            cursor.close()
+            close_cursor(cursor, backend=self.backend)
 
     def insert_from_query(
         self,
@@ -69,7 +71,7 @@ class DbApiBackendAdapter(BackendAdapter):
                 connection.rollback()
             raise
         finally:
-            cursor.close()
+            close_cursor(cursor, backend=self.backend)
 
     def iter_source_batches(
         self,

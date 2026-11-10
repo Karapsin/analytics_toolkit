@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +14,7 @@ import pytest
 
 from tests.sql._support.fakes import FakeDbapiConnection
 
-CURRENT_DT = date.today().strftime("%Y%m%d")
+CURRENT_DT = datetime.now(tz=timezone.utc).astimezone().strftime("%Y%m%d")
 
 TEST_CH_TABLE = f"test_table_{CURRENT_DT}"
 
@@ -80,6 +80,7 @@ class FakeClickHouseClient:
         self.queries: list[str] = []
         self.created_tables: set[str] = set()
         self.close_calls = 0
+        self.table_ddls: dict[str, str] = {}
 
     def command(self, sql: str, settings: dict[str, Any] | None = None) -> None:
         self.commands.append(sql)
@@ -88,36 +89,55 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> object:
         self.queries.append(sql)
-        if sql == "SELECT currentDatabase()":
-            return type("FakeResult", (), {"result_rows": [("default",)]})()
-        if "system, databases" in sql or "system.databases" in sql:
-            return type("FakeResult", (), {"result_rows": [("Ordinary",)]})()
-        if sql.startswith("SELECT getMacro("):
-            return type("FakeResult", (), {"result_rows": [("core",)]})()
-        if "clusterAllReplicas" in sql and "system, one" in sql:
-            return type("FakeResult", (), {"result_rows": [(1,)]})()
-        if "FROM system.clusters" in sql:
-            return type("FakeResult", (), {"result_rows": [(1,)]})()
-        if "clusterAllReplicas" in sql and "system, tables" in sql:
-            return type(
-                "FakeResult",
-                (),
-                {"result_rows": [(self._cluster_table_count(sql),)]},
-            )()
-        if "clusterAllReplicas" in sql and "system, columns" in sql:
-            return type(
-                "FakeResult",
-                (),
-                {"result_rows": [(sql.count("name = ") or 1,)]},
-            )()
-        if sql.startswith("EXISTS TABLE "):
+        if sql.startswith("SELECT create_table_query FROM clusterAllReplicas("):
+            rows = [
+                (
+                    f"CREATE TABLE default.{TEST_CH_SHARD_TABLE} (id UInt64, score Int64) "
+                    "ENGINE=MergeTree ORDER BY id",
+                )
+            ]
+        elif sql.startswith("SHOW CREATE TABLE "):
+            rows = [(self._show_create_ddl(sql),)]
+        elif (metadata_rows := self._metadata_rows(sql)) is not None:
+            rows = metadata_rows
+        elif "clusterAllReplicas" in sql and "system, tables" in sql:
+            rows = [(self._cluster_table_count(sql),)]
+        elif "clusterAllReplicas" in sql and "system, columns" in sql:
+            rows = [(sql.count("name = ") or 1,)]
+        elif sql.startswith("EXISTS TABLE "):
             table_name = sql[len("EXISTS TABLE ") :].strip()
-            return type(
-                "FakeResult",
-                (),
-                {"result_rows": [(int(table_name in self.created_tables),)]},
-            )()
-        return type("FakeResult", (), {"result_rows": [(1,)]})()
+            rows = [(int(table_name in self.created_tables),)]
+        else:
+            rows = [(1,)]
+        return type("FakeResult", (), {"result_rows": rows})()
+
+    def _show_create_ddl(self, sql: str) -> str:
+        table = sql.removeprefix("SHOW CREATE TABLE ").replace("`", "")
+        ddl = self.table_ddls.get(table)
+        if ddl is not None:
+            return ddl
+        columns = "(id UInt64, score Int64)"
+        if table.endswith("_shard"):
+            return f"CREATE TABLE {table} {columns} ENGINE = MergeTree ORDER BY id"
+        relation = table.rsplit(".", 1)[-1]
+        return (
+            f"CREATE TABLE {table} {columns} ENGINE = "
+            f"Distributed('core', 'default', '{relation}_shard', rand())"
+        )
+
+    @staticmethod
+    def _metadata_rows(sql: str) -> list[tuple[object, ...]] | None:
+        if sql == "SELECT currentDatabase()":
+            return [("default",)]
+        if "system, databases" in sql or "system.databases" in sql:
+            return [("Ordinary",)]
+        if sql.startswith("SELECT getMacro("):
+            return [("core",)]
+        if "clusterAllReplicas" in sql and "system, one" in sql:
+            return [(1,)]
+        if "FROM system.clusters" in sql:
+            return [(1,)]
+        return None
 
     def insert_df(
         self,
@@ -165,7 +185,7 @@ class FakeClickHouseClient:
             return
         if sql.startswith("DROP TABLE IF EXISTS "):
             table_name = sql[len("DROP TABLE IF EXISTS ") :].split(maxsplit=1)[0]
-            self.created_tables.discard(table_name)
+            self.created_tables.discard(table_name.replace("`", ""))
 
     def _cluster_table_count(self, sql: str) -> int:
         marker = "AND name = '"

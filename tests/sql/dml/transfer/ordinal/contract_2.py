@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.sql._support.adaptive_transfer import fake_target_schema
 from tests.sql._support.transfer_ordinal import (
     AdaptiveRangeScheduler,
     Any,
@@ -276,9 +277,30 @@ def test_stage_identifiers_use_exact_gp_style_on_every_backend(
     assert len(identifiers["gp"].encode()) <= 63
 
 
+def _install_staged_snapshot_boundaries(monkeypatch: Any, state: TransferStageState) -> None:
+    monkeypatch.setattr(staged_attempt, "get_sql_connection", lambda _key: object())
+    monkeypatch.setattr(staged_attempt, "create_stage_state", lambda *_args: state)
+    monkeypatch.setattr(
+        staged_attempt,
+        "inspect_source_query_schema",
+        lambda *_args: [SourceColumn("id", "bigint")],
+    )
+    monkeypatch.setattr(
+        staged_attempt, "cleanup_superseded_transfer_stages", lambda **_kwargs: None
+    )
+    monkeypatch.setattr(
+        staged_attempt,
+        "map_source_schema_to_target",
+        lambda *_args, **_kwargs: {"id": "BIGINT"},
+    )
+    monkeypatch.setattr(staged_attempt, "ensure_transfer_target_table", lambda *_args: None)
+    monkeypatch.setattr(staged_attempt, "_materialize_snapshot", lambda *_args: ("snap", {0: 6}))
+
+
 def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
     monkeypatch: Any,
 ) -> None:
+    fake_target_schema(monkeypatch, "gp", {"id": "BIGINT"})
     options = _staged_options(
         concurrency=8,
         transfer_concurrency=TransferConcurrency(
@@ -302,23 +324,7 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
         def validate_complete(self) -> None:
             finalized.append((-1, []))
 
-    monkeypatch.setattr(staged_attempt, "get_sql_connection", lambda _key: object())
-    monkeypatch.setattr(staged_attempt, "create_stage_state", lambda *_args: state)
-    monkeypatch.setattr(
-        staged_attempt,
-        "inspect_source_query_schema",
-        lambda *_args: [SourceColumn("id", "bigint")],
-    )
-    monkeypatch.setattr(
-        staged_attempt, "cleanup_superseded_transfer_stages", lambda **_kwargs: None
-    )
-    monkeypatch.setattr(
-        staged_attempt,
-        "map_source_schema_to_target",
-        lambda *_args, **_kwargs: {"id": "BIGINT"},
-    )
-    monkeypatch.setattr(staged_attempt, "ensure_transfer_target_table", lambda *_args: None)
-    monkeypatch.setattr(staged_attempt, "_materialize_snapshot", lambda *_args: ("snap", {0: 6}))
+    _install_staged_snapshot_boundaries(monkeypatch, state)
 
     refreshed_target = object()
     refreshes: list[str] = []
@@ -396,6 +402,18 @@ def test_staged_attempt_orchestrates_snapshot_ranges_and_finalization(
     assert summary["phase"] == "destination finalization"
     assert summary["committed_rows"] == 6
     assert summary["elapsed_seconds"] >= 0
+
+    monkeypatch.setattr(staged_attempt, "cleanup_stage_table", lambda *_a, **_k: None)
+    monkeypatch.setattr(staged_attempt, "finalize_loaded_stage", lambda *_a, **_k: None)
+
+    def fail_progress(*_args, **_kwargs):
+        message = "completed transfer progress could not be flushed"
+        raise OSError(message)
+
+    monkeypatch.setattr(staged_attempt, "_finish_unkeyed_progress", fail_progress)
+    with pytest.raises(OSError, match="progress could not be flushed") as caught_progress:
+        staged_attempt.run_staged_source_transfer_attempt(options, insert_retry_cnt=1)
+    assert caught_progress.value.analytics_toolkit_transfer_attempt_summary["committed_rows"] == 6
 
 
 def test_transfer_parquet_filename_contains_runtime_range(monkeypatch: Any) -> None:

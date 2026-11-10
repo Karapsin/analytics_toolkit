@@ -18,8 +18,8 @@ load_df(db_key: 'str', destination_table: 'str', df: 'pd.DataFrame', append: 'bo
 - `append` - historical dataframe loading flag; `True` appends and `False` replaces unless `write_mode` is supplied
 - `write_mode` - explicit write behavior: append, replace, truncate_insert, or upsert
 - `empty_source_policy` - zero-row behavior: `replace`, `keep`, or `error`; omission resolves to `replace` for replace/truncate modes and `keep` for append/upsert
-- `key_columns` - key column or columns used to validate staged rows and required when `write_mode="upsert"`
-- `upsert_partition_column` - single staged column that defines affected partitions for Trino and ClickHouse upsert replacement; required for those backends when `write_mode="upsert"`
+- `key_columns` - key column or columns used to validate staged rows and required when `write_mode="upsert"`; upserts prepend the partition column when supplied
+- `upsert_partition_column` - staged column added to the effective upsert key on every backend; also defines affected partitions and is required for Trino and ClickHouse upserts
 - `retry_cnt` - number of operation retries with fresh connections
 - `timeout_increment` - delay increment used between operation retries
 - `dry_run` - when `True`, return a plan without mutating the database
@@ -86,17 +86,27 @@ rows
 - An empty dataframe follows `empty_source_policy`. Empty replacement creates a zero-row table with the requested schema. Pass `table_schema` when an empty object-typed column has no unambiguous backend type.
 - `write_mode="upsert"` stages incoming rows and rejects duplicate staged keys
   before any target mutation.
-- When an upsert target already exists, the existing target schema is used for
-  final insert column types; otherwise the target is created from `table_schema`
-  or inferred dataframe types.
+- Existing-target upserts require every writable column, including columns with
+  defaults. Generated and noninsertable columns are excluded. Missing or extra
+  columns fail before stage creation or target mutation; reordered complete rows
+  are loaded in target order. Explicit `table_schema` and existing target types
+  remain authoritative and are validated against the complete dataframe.
+- When `upsert_partition_column` is supplied, the effective key is that column
+  followed by `key_columns`, with duplicates removed. ID 7 in January and ID 7
+  in February are separate records. Without a partition column, `key_columns`
+  retains its usual meaning. Ordinary append key validation is unchanged.
 - When `load_df` creates a target table that did not exist at the start and the
   load later fails, it drops that newly created target during cleanup.
 - Upsert requires `key_columns`. Greenplum uses staged key delete-and-insert and
-  does not require `upsert_partition_column`.
+  does not require `upsert_partition_column`; when supplied, it augments the
+  transactional delete-and-insert key.
 - Trino and ClickHouse upsert require `upsert_partition_column`. They build a
   final increment for affected partitions, drop those partitions, and insert
   the final increment. Arbitrary key deletes and merge-style updates are avoided
-  because they are slow, connector-dependent, or mutation-heavy.
+  because they are slow, connector-dependent, or mutation-heavy. The complete
+  preserved/incoming payload is certified before partition deletion and reused
+  across transient retries; preservation is never recomputed from a partially
+  replaced target. An exhausted retry retains the recovery stage names.
 - Trino partition upsert also requires `upsert_partition_drop_sql_template` in
   the target connection config so connector-specific partition drop SQL is
   explicit.
@@ -108,7 +118,10 @@ rows
 - If the S3 pair is not configured, Trino `load_df` is not Parquet-based and
   uses direct dataframe inserts controlled by `trino_insert_chunk_size`.
   `transfer_staging_schema` remains available for ordinary SQL staging.
-- ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
+- ClickHouse target creation follows the resolved connection creation policy;
+  existing append/upsert targets retain their verified physical layout. Stage
+  cleanup drops only resources acknowledged as created by the current run. A
+  visible collision or uncertain CREATE result does not establish ownership.
 - SQL stage identifiers use one maximum-63-byte naming policy on Greenplum,
   Trino, and ClickHouse. Backend-specific catalog/schema qualification and
   quoting are preserved.

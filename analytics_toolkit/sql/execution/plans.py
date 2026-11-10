@@ -28,6 +28,10 @@ class SqlOperationMetadata:
     transfer_slice_counts: list[dict[str, Any]] | None = None
     inserted_rows: int | None = None
     affected_rows: int | None = None
+    type_resolutions: list[dict[str, Any]] | None = None
+    input_count: int | None = None
+    data_write_replay_possible: bool | None = None
+    write_submission_state: str | None = None
     final_target_rows: int | None = None
     stage_table: str | None = None
     elapsed_seconds: float | None = None
@@ -73,6 +77,10 @@ class SqlOperationMetadata:
             "transfer_slice_counts": self.transfer_slice_counts,
             "inserted_rows": self.inserted_rows,
             "affected_rows": self.affected_rows,
+            "type_resolutions": self.type_resolutions,
+            "input_count": self.input_count,
+            "data_write_replay_possible": self.data_write_replay_possible,
+            "write_submission_state": self.write_submission_state,
             "final_target_rows": self.final_target_rows,
             "stage_table": self.stage_table,
             "elapsed_seconds": self.elapsed_seconds,

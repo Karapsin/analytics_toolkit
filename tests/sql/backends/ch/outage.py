@@ -139,7 +139,7 @@ def test_degraded_writes_reject_non_random_effective_key(outage: Any, key: str) 
 @pytest.mark.parametrize(
     "failure", [ConnectionError("lost acknowledgment"), TypeError("driver failed after acceptance")]
 )
-def test_uncertain_live_insert_is_never_replayed(outage: Any, failure: Exception) -> None:
+def test_uncertain_live_insert_accepts_bounded_data_replay(outage: Any, failure: Exception) -> None:
     cluster, _ = outage
     cluster.failure = failure
     cluster.alive.remove("h2")
@@ -151,8 +151,8 @@ def test_uncertain_live_insert_is_never_replayed(outage: Any, failure: Exception
             retry_cnt=3,
             timeout_increment=0,
         )
-    assert cluster.tables[("h1", "db.events_shard")].rows.count((9,)) == 1
-    assert len(cluster.commands) == 1
+    assert cluster.tables[("h1", "db.events_shard")].rows.count((9,)) == 3
+    assert len(cluster.commands) == 3
 
 
 def test_recovery_read_leaves_schema_absent_write_adds_empty_schema(outage: Any) -> None:
@@ -299,7 +299,7 @@ def test_dataframe_append_uses_policy_through_creation_and_delivery(outage: Any)
     assert cluster.tables[("h1", "db.events_shard")].rows == [(1,), (9,), (10,)]
 
 
-def test_dataframe_append_does_not_replay_wrapped_ambiguous_error(outage: Any) -> None:
+def test_dataframe_append_accepts_replay_after_lost_acknowledgement(outage: Any) -> None:
     cluster, _ = outage
     cluster.alive.remove("h2")
     cluster.failure = ConnectionError("lost after acceptance")
@@ -316,7 +316,7 @@ def test_dataframe_append_does_not_replay_wrapped_ambiguous_error(outage: Any) -
             retry_cnt=3,
             timeout_increment=0,
         )
-    assert cluster.tables[("h1", "db.events_shard")].rows.count((9,)) == 1
+    assert cluster.tables[("h1", "db.events_shard")].rows.count((9,)) == 3
 
 
 @pytest.mark.parametrize("mode", [None, "truncate_insert"])

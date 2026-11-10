@@ -60,6 +60,9 @@ orders.head()
   the same database user are not targeted. Toolkit SQL called from custom
   pipeline steps participates automatically; raw driver calls made directly by
   user code do not.
+- Nested batches share thread-safe capacity permits. A parent lends its permit
+  while waiting for children, including cap-one batches and stricter child caps;
+  each batch keeps its event-loop scheduling local.
 - Task names must be unique. This includes collisions with generated names such
   as `task_1` for an unnamed task at index `1`; duplicates are rejected before
   any task starts.

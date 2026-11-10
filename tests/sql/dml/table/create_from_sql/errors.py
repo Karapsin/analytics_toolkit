@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.backends.models import SourceColumn
+
 from tests.sql._support.create_from_sql import (
     SOURCE_DESCRIPTION,
     CloseFailDbapiConnection,
@@ -7,6 +9,7 @@ from tests.sql._support.create_from_sql import (
     FakeDbapiConnection,
     SimpleNamespace,
     _candidate_create_options,
+    acknowledged_create,
     create_module,
     pytest,
 )
@@ -25,7 +28,7 @@ def test_create_from_sql_delegated_failure_retains_unsafe_attempt(
     monkeypatch.setattr(
         create_module,
         "inspect_source_query_schema",
-        lambda *_a, **_k: [SimpleNamespace(name="id")],
+        lambda *_a, **_k: [SourceColumn("id", "BIGINT")],
     )
     monkeypatch.setattr(
         create_module,
@@ -33,7 +36,11 @@ def test_create_from_sql_delegated_failure_retains_unsafe_attempt(
         lambda *_a, **_k: {"id": "BIGINT"},
     )
     monkeypatch.setattr(create_module, "table_exists", lambda *_a, **_k: False)
-    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        create_module,
+        "_create_sql_table_with_connection",
+        acknowledged_create(lambda *_a, **_k: None),
+    )
     monkeypatch.setattr(
         create_module,
         "transfer_table",
@@ -90,7 +97,9 @@ def test_create_table_from_sql_cleans_cross_backend_transfer_before_retry(
         "table_exists",
         lambda *args, **kwargs: target_exists,
     )
-    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", fake_create)
+    monkeypatch.setattr(
+        create_module, "_create_sql_table_with_connection", acknowledged_create(fake_create)
+    )
     monkeypatch.setattr(create_module, "transfer_table", flaky_transfer)
     monkeypatch.setattr(create_module, "_drop_attempt_target", fake_drop)
 
@@ -153,7 +162,9 @@ def test_create_table_from_sql_cleans_direct_insert_before_retry(
         "table_exists",
         lambda *args, **kwargs: target_exists,
     )
-    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", fake_create)
+    monkeypatch.setattr(
+        create_module, "_create_sql_table_with_connection", acknowledged_create(fake_create)
+    )
     monkeypatch.setattr(create_module, "insert_from_query", flaky_insert)
     monkeypatch.setattr(create_module, "_drop_attempt_target", fake_drop)
 
@@ -192,6 +203,7 @@ def test_create_table_from_sql_cleans_fast_path_before_retry(
         nonlocal fast_path_calls, target_exists
         fast_path_calls += 1
         target_exists = True
+        create_module.acknowledge_created_resource(str(kwargs["target_table"]))
         if fast_path_calls == 1:
             raise RuntimeError("temporary ClickHouse insert failure")
         return True, "created"
@@ -367,7 +379,7 @@ def test_create_table_from_sql_does_not_retry_or_drop_preexisting_target(
         lambda **kwargs: pytest.fail("pre-existing target must not be dropped"),
     )
 
-    with pytest.raises(RuntimeError, match="target already exists"):
+    with pytest.raises(create_module.InvalidSqlInputError, match="already exists"):
         create_module.create_table_from_sql(
             "gp",
             "sandbox.target_table",
@@ -376,7 +388,7 @@ def test_create_table_from_sql_does_not_retry_or_drop_preexisting_target(
             timeout_increment=0,
         )
 
-    assert create_calls == 1
+    assert create_calls == 0
     assert connection.close_calls == 1
 
 
@@ -456,7 +468,9 @@ def test_create_table_from_sql_stops_retry_when_partial_target_cleanup_fails(
 
     monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
     monkeypatch.setattr(create_module, "table_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", fake_create)
+    monkeypatch.setattr(
+        create_module, "_create_sql_table_with_connection", acknowledged_create(fake_create)
+    )
     monkeypatch.setattr(create_module, "insert_from_query", fail_insert)
     monkeypatch.setattr(create_module, "_drop_attempt_target", fail_cleanup)
 
@@ -507,7 +521,9 @@ def test_create_table_from_sql_stops_retry_when_partial_target_cleanup_fails(
 
     monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
     monkeypatch.setattr(create_module, "table_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", fake_create)
+    monkeypatch.setattr(
+        create_module, "_create_sql_table_with_connection", acknowledged_create(fake_create)
+    )
     monkeypatch.setattr(create_module, "insert_from_query", fail_insert)
     monkeypatch.setattr(create_module, "_drop_attempt_target", fail_cleanup)
 

@@ -5,10 +5,10 @@ from typing import Any
 
 import pytest
 
+from tests.sql._support.fakes import FakeClickHouseResult, FakeDbapiConnection
+
 drop_module = importlib.import_module("analytics_toolkit.sql.dml.table.drop_tables")
 sql_module = importlib.import_module("analytics_toolkit.sql")
-
-from tests.sql._support.fakes import FakeDbapiConnection
 
 TARGET_TABLE = "analytics.events"
 TARGET_TABLE_2 = "analytics.events_archive"
@@ -32,7 +32,27 @@ class FakeClickHouseClient:
 
     def query(self, sql: str) -> Any:
         self.queries.append(sql)
-        return []
+        if sql.startswith("EXISTS TABLE "):
+            return FakeClickHouseResult([(1,)])
+        if sql == "SHOW CREATE TABLE analytics.events":
+            return FakeClickHouseResult(
+                [
+                    (
+                        "CREATE TABLE analytics.events (id Int64) ENGINE = "
+                        "Distributed('core', 'analytics', 'events_shard', rand())",
+                    )
+                ]
+            )
+        if sql.startswith("SELECT create_table_query FROM clusterAllReplicas("):
+            return FakeClickHouseResult(
+                [("CREATE TABLE analytics.events_shard (id Int64) ENGINE=MergeTree ORDER BY id",)]
+            )
+        if sql.startswith("SHOW CREATE TABLE "):
+            table = sql.removeprefix("SHOW CREATE TABLE ")
+            return FakeClickHouseResult(
+                [(f"CREATE TABLE {table} (id Int64) ENGINE = MergeTree ORDER BY id",)]
+            )
+        return FakeClickHouseResult([])
 
     def close(self) -> None:
         self.close_calls += 1
@@ -183,9 +203,9 @@ def test_drop_tables_executes_pair_drop_sqls(
 
     assert fake_client.commands == [
         "DROP TABLE IF EXISTS analytics.events",
-        "DROP TABLE IF EXISTS analytics.events_shard",
+        "DROP TABLE IF EXISTS `analytics`.`events_shard`",
         "DROP TABLE IF EXISTS analytics.events ON CLUSTER '{cluster}'",
-        "DROP TABLE IF EXISTS analytics.events_shard ON CLUSTER '{cluster}'",
+        "DROP TABLE IF EXISTS `analytics`.`events_shard` ON CLUSTER '{cluster}'",
     ]
     assert fake_client.command_settings[2] == {
         "distributed_ddl_task_timeout": 0,
@@ -195,7 +215,12 @@ def test_drop_tables_executes_pair_drop_sqls(
         "distributed_ddl_task_timeout": 0,
         "distributed_ddl_output_mode": "none",
     }
-    assert fake_client.queries == []
+    assert fake_client.queries == [
+        "EXISTS TABLE analytics.events",
+        "SHOW CREATE TABLE analytics.events",
+        "SELECT create_table_query FROM clusterAllReplicas('core', system, tables) "
+        "WHERE database = 'analytics' AND name = 'events_shard'",
+    ]
     assert fake_client.close_calls == 1
 
 
@@ -212,7 +237,10 @@ def test_drop_tables_executes_shard_table_target_as_single_local_drop(
         "DROP TABLE IF EXISTS analytics.events_shard",
     ]
     assert fake_client.command_settings == [None]
-    assert fake_client.queries == []
+    assert fake_client.queries == [
+        "EXISTS TABLE analytics.events_shard",
+        "SHOW CREATE TABLE analytics.events_shard",
+    ]
     assert fake_client.close_calls == 1
 
 
@@ -237,7 +265,7 @@ def test_drop_tables_return_metadata_tracks_operation(
     assert fake_client.commands == [
         "/* analytics_toolkit query_label=drop-meta */\nDROP TABLE IF EXISTS analytics.events",
         "/* analytics_toolkit query_label=drop-meta */\n"
-        "DROP TABLE IF EXISTS analytics.events_shard",
+        "DROP TABLE IF EXISTS `analytics`.`events_shard`",
     ]
 
 

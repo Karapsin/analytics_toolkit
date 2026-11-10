@@ -5,9 +5,12 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from analytics_toolkit.general import time_print
-from analytics_toolkit.sql.connection.errors import SqlConfigError
+from analytics_toolkit.sql.connection.errors import InvalidSqlInputError, SqlConfigError
 from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
-from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
+from analytics_toolkit.sql.execution.backend_options import (
+    current_backend_operation,
+    preserve_recovery_artifacts,
+)
 from analytics_toolkit.sql.execution.cancellation import (
     current_cancellation_scope,
     raise_if_cancelled,
@@ -29,6 +32,7 @@ _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES = {
     "SCHEMA_NOT_FOUND",
     "SYNTAX_ERROR",
     "TABLE_NOT_FOUND",
+    "TABLE_ALREADY_EXISTS",
     "TYPE_MISMATCH",
     "UNKNOWN_IDENTIFIER",
     "UNKNOWN_TABLE",
@@ -77,6 +81,9 @@ def run_with_retry(  # noqa: PLR0913
                 )
                 break
 
+            state = current_backend_operation()
+            if state is not None and state.live_submitted:
+                state.data_write_replay_possible = True
             sleep_seconds = attempt * timeout_increment
             time_print(
                 f"{log_prefix}Failed on attempt {attempt}/{retry_cnt}: "
@@ -118,10 +125,13 @@ def _logged_exception(exc: Exception, *, safe: bool) -> str:
 def is_non_retryable_sql_error(exc: Exception) -> bool:
     """Return True for deterministic SQL errors that another attempt won't fix."""
 
+    # Retaining a recovery checkpoint is independent of data-write replay.
+    preserve_recovery_artifacts(failed=True)
+    state = current_backend_operation()
     if (
-        preserve_recovery_artifacts(failed=True)
+        (state is not None and state.structural_replay_blocked)
         or getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False
-        or isinstance(exc, SqlConfigError)
+        or isinstance(exc, (InvalidSqlInputError, SqlConfigError))
     ):
         return True
     class_names = _exception_class_names(exc)

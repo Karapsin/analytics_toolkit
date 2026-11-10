@@ -325,8 +325,8 @@ def test_create_table_from_sql_only_generate_inspects_and_maps_schema(
     ) -> list[types.SimpleNamespace]:
         events.append(("inspect", backend, connection, query))
         return [
-            types.SimpleNamespace(name="id"),
-            types.SimpleNamespace(name="amount"),
+            types.SimpleNamespace(name="id", native_type="BIGINT"),
+            types.SimpleNamespace(name="amount", native_type="BIGINT"),
         ]
 
     monkeypatch.setattr(create_sql_table_module, "get_connection_config", fake_config)

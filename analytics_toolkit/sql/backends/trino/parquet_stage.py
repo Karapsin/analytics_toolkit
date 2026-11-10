@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 # ruff: noqa: PLR0913
-import re
-from collections.abc import Mapping
-from datetime import date, datetime
-from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import pandas as pd
 from sqlglot import exp, parse_one
 
+from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.ddl.properties import merge_ddl_properties, overlay_with_properties
 
-from ..base import _apply_query_label
+from .arrow_types import hive_stage_type
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 FORBIDDEN_CREDENTIAL_FIELDS = frozenset(
     {
@@ -78,22 +77,7 @@ def build_parquet_stage_table_sql(
 
 
 def _hive_parquet_stage_type(column_type: str) -> str:
-    normalized_type = column_type.strip()
-    if normalized_type.lower() == "uuid":
-        return "VARCHAR"
-    if re.fullmatch(
-        r"timestamp(?:\s*\(\s*\d+\s*\))?\s+with\s+time\s+zone",
-        normalized_type,
-        flags=re.IGNORECASE,
-    ):
-        return "VARCHAR"
-    if re.fullmatch(
-        r"timestamp(?:\s*\(\s*\d+\s*\))?",
-        normalized_type,
-        flags=re.IGNORECASE,
-    ):
-        return "TIMESTAMP(6)"
-    return column_type
+    return hive_stage_type(column_type)
 
 
 def infer_parquet_stage_column_types_from_rows(
@@ -110,7 +94,8 @@ def infer_parquet_stage_column_types_from_rows(
 def parquet_stage_target_table_base(adapter: Any, target_table: str) -> str:
     table = parse_one(target_table, read=adapter.sqlglot_dialect, into=exp.Table)
     if not isinstance(table, exp.Table) or not isinstance(table.this, exp.Identifier):
-        raise ValueError(f"Invalid target table name: {target_table}")
+        msg = f"Invalid target table name: {target_table}"
+        raise ValueError(msg)
     return str(table.this.this)
 
 
@@ -119,31 +104,12 @@ def trino_string_literal(value: str) -> str:
 
 
 def _infer_trino_type_from_values(values: Any) -> str:
+    from analytics_toolkit.sql.core.type_resolution import (  # noqa: PLC0415 - avoid backend registry import cycles
+        ColumnProfile,
+        resolve_profile,
+    )
+
+    profile = ColumnProfile()
     for value in values:
-        if value is None:
-            continue
-        try:
-            if bool(pd.isna(value)):
-                continue
-        except (TypeError, ValueError):
-            pass
-        if isinstance(value, bool):
-            return "BOOLEAN"
-        if isinstance(value, int):
-            return "BIGINT"
-        if isinstance(value, float):
-            return "DOUBLE"
-        if isinstance(value, Decimal):
-            sign, digits, exponent = value.as_tuple()
-            del sign
-            precision = min(max(len(digits), 1), 38)
-            scale = min(max(-exponent, 0), precision)
-            return f"DECIMAL({precision}, {scale})"
-        if isinstance(value, datetime):
-            return "TIMESTAMP"
-        if isinstance(value, date):
-            return "DATE"
-        if isinstance(value, (bytes, bytearray, memoryview)):
-            return "VARBINARY"
-        return "VARCHAR"
-    return "VARCHAR"
+        profile.add(value)
+    return resolve_profile(profile, "trino").target_type

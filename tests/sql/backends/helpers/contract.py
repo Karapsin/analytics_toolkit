@@ -18,6 +18,7 @@ from tests.sql._support.backend_helpers import (
     pytest,
     sys,
 )
+from tests.sql._support.reconfigure import ReconfigureClient
 
 
 def test_clickhouse_engine_argument_and_parser_edges() -> None:
@@ -141,17 +142,17 @@ def test_clickhouse_operations_prepare_existing_target(
     assert (
         ch_operations.prepare_existing_target_for_create_from_sql(
             adapter,
-            object(),
+            ReconfigureClient(),
             "analytics.events",
             drop_target_if_exists=True,
             ch_only_shard=True,
         )
-        is False
+        is True
     )
     assert (
         ch_operations.prepare_existing_target_for_create_from_sql(
             adapter,
-            object(),
+            ReconfigureClient(),
             "analytics.events",
             drop_target_if_exists=True,
             connection_key=None,
@@ -159,6 +160,7 @@ def test_clickhouse_operations_prepare_existing_target(
         is True
     )
     assert pair_calls[0]["per_host_connection_factory"] is None
+    assert len(pair_calls) == 2
 
 
 def test_clickhouse_operations_small_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -348,7 +350,7 @@ def test_clickhouse_wait_schema_diagnostics_and_cluster_resolution() -> None:
         ("boolean", "bool", None, None, "BOOLEAN"),
         ("date", "date", None, None, "DATE"),
         ("text", "text", None, None, "TEXT"),
-        ("ARRAY", "_int4", None, None, "_INT4"),
+        ("ARRAY", "_int4", None, None, "INTEGER[]"),
     ],
 )
 def test_format_gp_information_schema_type_branches(

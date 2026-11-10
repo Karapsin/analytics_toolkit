@@ -23,7 +23,7 @@ DOC_PATH = Path("docs/PYTHON_SUPPORT.md")
 EXTRAS = ("airflow", "clickhouse-native", "tui", "datalens")
 NORMAL_WINDOW = 7
 EXTENDED_WINDOW = 8
-MATRIX_EXTRAS = ("tui", "datalens")
+MATRIX_EXTRAS = ("tui", "datalens", "clickhouse-native")
 POLICY_FIELDS = {
     "schema_version",
     "normal_window",

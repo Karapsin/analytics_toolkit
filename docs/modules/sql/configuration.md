@@ -362,6 +362,12 @@ Older ClickHouse entries that relied on helper defaults must add explicit
 template) or pass all required helper overrides. Missing required effective
 settings fail before dry-run SQL generation or database access.
 
+Passwords preserve their exact string contents after direct, secret, environment,
+or Airflow resolution, including empty strings and leading/trailing whitespace.
+Ordinary connection names and namespace fields retain their normal trimming.
+Trino Basic authentication is enabled when a password is present, including an
+explicit empty password.
+
 ## Validation
 
 Use [sql.validate_connections](functions/validate_connections.md) to validate
@@ -428,6 +434,32 @@ protocol through the optional `clickhouse-driver` package; its default port is
 `9000`. Install it with `pip install 'analytics-toolkit[clickhouse-native]'`.
 The native extra does not install Airflow; DAG environments that need both use
 `analytics-toolkit[airflow,clickhouse-native]`.
+It includes the driver's CityHash and `zstd` compression dependencies; the
+separate `zstandard` package used by the HTTP transport does not replace them.
+
+Python 3.13 and newer use `clickhouse-connect>=1.4,<2`; older Python versions
+retain the supported `0.x` range. Version 1.4 includes the
+[upstream compiled-buffer fix](https://github.com/ClickHouse/clickhouse-connect/pull/822)
+for deprecated Unicode array initialization on Python 3.13+. The C accelerator
+remains enabled.
+
+Both transports preserve `DateTime64` fractional ticks at scales 0 through 9,
+including nested values, using `pandas.Timestamp` when Python `datetime` would
+lose precision. Dataframe reads use positional column blocks and preserve
+duplicate labels, nullable large integers, decimals and nested values. Streaming
+native reads consume the driver's metadata header once and batch subsequent
+rows locally; HTTP streaming uses non-NumPy column blocks so intermediate
+timestamp scales do not require rounding.
+For dates beyond pandas' timestamp range, microsecond-aligned values use Python
+`datetime`. A value that also needs finer precision, such as a fractional
+`DateTime64(8)` in 2299, remains an internal `ExactTemporal` scalar containing
+`ticks`, `scale` and `timezone`. Its `isoformat()` preserves every fractional
+digit, and transfer, typed text and replay checkpoints retain those fields.
+Its `offset_naive` flag also preserves the native driver's server/client-local
+wallclock policy: the source zone remains available for exact tick replay while
+calendar and text results retain their original naive timezone semantics.
+Rows, dictionaries and dataframes keep their usual outer return shapes; native
+and HTTP writes accept this scalar without passing through floating point.
 
 Both transports map `secure`, `verify`, CA certificate settings, connection and
 send/receive timeouts, query `settings`, `client_name`, staging schema, and DDL
@@ -569,7 +601,11 @@ name/path or a list of certificate file names/paths. A bare name such as
 `trino-ca.pem` resolves to `.certs/trino-ca.pem` next to `.connections`; a
 relative path such as `.certs/trino-ca.pem` resolves relative to the
 `.connections` directory; an absolute path is used as-is. Multiple CA files are
-bundled into a generated PEM bundle under `.certs/.generated/`. Missing
+bundled atomically into an immutable, content-addressed PEM file under
+`.certs/.generated/`. Changing a certificate creates a new bundle without replacing
+one another connection may still be using. ClickHouse `verify` accepts only
+booleans or `"true"`/`"false"` strings; use `ca_certs` for CA paths. Trino retains
+its supported `verify` CA-path form. Missing
 certificate files are reported when the connection is opened.
 
 Authentication is established by the backend driver, not by accepting a

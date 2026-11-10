@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from tests.sql._support.create_from_sql import (
     FakeDbapiConnection,
-    SimpleNamespace,
     _candidate_create_options,
     create_module,
     pytest,
@@ -20,17 +19,22 @@ def test_create_from_sql_cleanup_validation_bool_and_close_dedup(
         create_module._normalize_only_shard(1)
 
     options = _candidate_create_options(query_label="candidate-9")
-    drop_calls: list[dict[str, object]] = []
-    adapter = SimpleNamespace(
-        rollback_quietly=lambda _connection: None,
-        prepare_existing_target_for_create_from_sql=lambda *_a, **kwargs: drop_calls.append(kwargs),
-    )
+    adapter = create_module.get_backend_adapter("gp")
+    connection = FakeDbapiConnection()
     create_module._drop_attempt_target(
         options=options,
         target_adapter=adapter,
-        target_connection=object(),
+        target_connection=connection,
+        owned_resources=["sandbox.target"],
     )
-    assert drop_calls[0]["drop_target_if_exists"] is True
+    assert connection.executed == ['DROP TABLE IF EXISTS "sandbox"."target"']
+    untouched = FakeDbapiConnection()
+    create_module._drop_attempt_target(
+        options=options,
+        target_adapter=adapter,
+        target_connection=untouched,
+    )
+    assert untouched.executed == []
 
     monkeypatch.setattr(
         create_module,
@@ -42,6 +46,7 @@ def test_create_from_sql_cleanup_validation_bool_and_close_dedup(
             options=options,
             target_adapter=adapter,
             target_connection=None,
+            owned_resources=["sandbox.target"],
         )
 
     connection = FakeDbapiConnection()

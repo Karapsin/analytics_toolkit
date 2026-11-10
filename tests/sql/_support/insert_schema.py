@@ -42,6 +42,10 @@ class FakeCursor:
 class FakeTrinoAdapter:
     backend = "trino"
 
+    @staticmethod
+    def column_list_sql(columns: Any) -> str:
+        return ", ".join('"' + name.replace('"', '""') + '"' for name in columns)
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[str, ...], int, str | None]] = []
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.backends import get_backend_adapter
+
 from tests.sql._support.load_table import (
     Any,
     FakeClickHouseClient,
@@ -46,110 +48,28 @@ def test_load_dataframe_passes_explicit_schema_to_direct_insert(
     assert insert_kwargs[0]["target_column_types"] == column_types
 
 
-def test_load_df_clickhouse_upsert_existing_target_uses_target_types_and_df_columns(
-    monkeypatch,
-) -> None:
-    client = FakeClickHouseClient()
-
-    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: client)
-    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
+@pytest.mark.parametrize("backend", ["gp", "ch"])
+def test_load_df_upsert_rejects_missing_existing_writable_columns(monkeypatch, backend) -> None:
+    client = FakeClickHouseClient() if backend == "ch" else FakeDbapiConnection()
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda _key: client)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *_a, **_k: True)
     monkeypatch.setattr(
-        load_df_module,
-        "get_table_column_types",
-        lambda *args, **kwargs: {
-            "score": "Int64",
-            "id": "UInt64",
-            "extra_col": "String",
-        },
+        get_backend_adapter(backend),
+        "get_writable_table_column_types",
+        lambda *_a, **_k: {"score": "INTEGER", "id": "BIGINT", "extra_col": "TEXT"},
     )
-    monkeypatch.setattr(
-        load_df_module,
-        "_create_sql_table_with_connection",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "create_stage_table",
-        lambda **kwargs: "analytics.target__stage__upsert",
-    )
-    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
-    monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
-    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None
-    )
-
-    result = load_df_module.load_df(
-        "ch",
-        "analytics.target",
-        pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
-        write_mode="upsert",
-        key_columns=["id"],
-        upsert_partition_column="id",
-        retry_cnt=1,
-        timeout_increment=0,
-    )
-
-    assert result == 2
-    assert any(
-        "INSERT INTO analytics.target__stage__upsert (`id`, `score`) "
-        "SELECT CAST(`id` AS UInt64) AS `id`, CAST(`score` AS Int64) AS `score` "
-        "FROM analytics.target__stage__upsert" in sql
-        for sql in client.commands
-    )
-
-
-def test_load_df_gp_upsert_existing_target_uses_target_types_and_df_columns(
-    monkeypatch,
-) -> None:
-    connection = FakeDbapiConnection()
-
-    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
-    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
-    monkeypatch.setattr(
-        load_df_module,
-        "get_table_column_types",
-        lambda *args, **kwargs: {
-            "score": "INTEGER",
-            "id": "BIGINT",
-            "extra_col": "TEXT",
-        },
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "_create_sql_table_with_connection",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "create_stage_table",
-        lambda **kwargs: "sandbox.target__stage__upsert",
-    )
-    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
-    monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
-    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None
-    )
-
-    result = load_df_module.load_df(
-        "gp",
-        "sandbox.target",
-        pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
-        write_mode="upsert",
-        key_columns=["id"],
-        retry_cnt=1,
-        timeout_increment=0,
-    )
-
-    assert result == 2
-    assert any(
-        'INSERT INTO sandbox.target ("id", "score") '
-        'SELECT CAST("id" AS BIGINT) AS "id", '
-        'CAST("score" AS INTEGER) AS "score" '
-        "FROM sandbox.target__stage__upsert" in sql
-        for sql in connection.executed
-    )
+    with pytest.raises(ValueError, match="missing writable columns: extra_col"):
+        load_df_module.load_df(
+            backend,
+            "sandbox.target",
+            pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
+            write_mode="upsert",
+            key_columns=["id"],
+            upsert_partition_column="id",
+            retry_cnt=1,
+            timeout_increment=0,
+        )
+    assert not (client.commands if backend == "ch" else client.executed)
 
 
 def test_load_df_parquet_runtime_passes_only_parquet_properties(
@@ -354,8 +274,8 @@ def test_load_df_trino_parquet_upsert_uses_merge_from_stage(
         ),
     )
     monkeypatch.setattr(
-        load_df_module,
-        "get_table_column_types",
+        load_df_module.get_backend_adapter("trino"),
+        "get_writable_table_column_types",
         lambda *args, **kwargs: {"id": "BIGINT", "score": "INTEGER"},
     )
     monkeypatch.setattr(

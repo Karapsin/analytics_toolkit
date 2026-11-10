@@ -28,12 +28,21 @@ from ....execution.operation_runner import (
 from ....execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ...load.load_sql_table import AmbiguousTableLoadError
 from ...table._basic_ops import count_table_rows
-from ...table.table_validation import normalize_key_columns, normalize_upsert_partition_column
+from ...table.table_validation import (
+    effective_upsert_key_columns,
+    normalize_key_columns,
+    normalize_upsert_partition_column,
+)
 from ..io.source import TransferSourceStreamReadError
 from ..runtime.models import TransferOptions, TrinoTransferMode
 from ..runtime.retry import run_with_retry
 from ..staging import _sanitize_transfer_staging_username
 from . import options as transfer_options
+from .adaptive_input import (
+    close_frozen_input,
+    configuration_identity_from_configs,
+    install_configuration_guard,
+)
 from .attempt import run_transfer_attempt
 from .concurrency import resolve_transfer_concurrency
 from .dry_run import build_transfer_table_plan as build_dry_run_transfer_table_plan
@@ -297,37 +306,40 @@ def transfer_table(
     def transfer_context(attempt: int) -> Any:
         return build_transfer_operation_context(options, attempt)
 
-    if options.replace_target_table:
-        total_rows = run_retrying_operation(
-            operation_name=(
-                f"restarting full transfer from {options.from_db_key} "
-                f"to {options.to_db_key}: {options.target_table}"
-            ),
-            retry_cnt=options.full_retry_cnt,
-            timeout_increment=options.full_timeout_increment,
-            operation=transfer_operation,
-            context_factory=transfer_context,
-            safe_exception_logging=source_staged_transfer,
+    install_configuration_guard(options, configured_only=True)
+    try:
+        if options.replace_target_table:
+            total_rows = run_retrying_operation(
+                operation_name=(
+                    f"restarting full transfer from {options.from_db_key} "
+                    f"to {options.to_db_key}: {options.target_table}"
+                ),
+                retry_cnt=options.full_retry_cnt,
+                timeout_increment=options.full_timeout_increment,
+                operation=transfer_operation,
+                context_factory=transfer_context,
+                safe_exception_logging=source_staged_transfer,
+            )
+        else:
+            total_rows = run_annotated_once(
+                operation=lambda: transfer_operation(1),
+                context=transfer_context(1),
+            )
+        time_print(
+            f"Finished table transfer from {options.from_db_key} "
+            f"to {options.to_db_key}: {total_rows} row(s) "
+            f"(transfer_id={transfer_id})"
         )
-    else:
-        total_rows = run_annotated_once(
-            operation=lambda: transfer_operation(1),
-            context=transfer_context(1),
-        )
-
-    time_print(
-        f"Finished table transfer from {options.from_db_key} "
-        f"to {options.to_db_key}: {total_rows} row(s) "
-        f"(transfer_id={transfer_id})"
-    )
-    if return_metadata:
-        return _build_transfer_metadata_result(
-            total_rows=total_rows,
-            options=options,
-            completed_attempt_options=completed_attempt_options,
-            metadata=operation_metadata,
-        )
-    return total_rows
+        if return_metadata:
+            return _build_transfer_metadata_result(
+                total_rows=total_rows,
+                options=options,
+                completed_attempt_options=completed_attempt_options,
+                metadata=operation_metadata,
+            )
+        return total_rows
+    finally:
+        close_frozen_input(options)
 
 
 def _build_transfer_metadata_result(
@@ -340,7 +352,20 @@ def _build_transfer_metadata_result(
     runtime_concurrency = completed_attempt_options.transfer_concurrency
     metadata.effective_read_concurrency = runtime_concurrency.effective_read
     metadata.effective_write_concurrency = runtime_concurrency.effective_write
+    if completed_attempt_options.input_resolution.get("used"):
+        metadata.source_stage_count = int(
+            completed_attempt_options.source_transfer_staging_schema is not None
+        )
+        metadata.live_source_stage_limit = metadata.source_stage_count or None
     metadata.source_rows = total_rows
+    metadata.type_resolutions = [
+        {"column": column.name, **resolution.metadata()}
+        for column, resolution in zip(
+            completed_attempt_options.input_resolution.get("source_schema", []),
+            completed_attempt_options.input_resolution.get("resolutions", []),
+        )
+    ]
+    metadata.input_count = completed_attempt_options.input_resolution.get("input_count")
     row_count_result = completed_attempt_options.row_count_result
     if row_count_result is not None:
         metadata.expected_source_rows = row_count_result.expected_source_rows
@@ -536,6 +561,7 @@ def build_transfer_options(
         normalized_legacy_concurrency,
     ) = normalize_transfer_slices(
         source_sql=source_sql,
+        source_backend=from_config.backend,
         source_table=source_table,
         transfer_keys=transfer_keys,
         transfer_key_values=transfer_key_values,
@@ -581,6 +607,7 @@ def build_transfer_options(
         ch_ddl_wait_policy=ch_ddl_wait_policy,
     )
     options = TransferOptions(
+        input_resolution=configuration_identity_from_configs([from_config, to_config]),
         from_db_key=from_config.connection_key,
         from_db_backend=from_config.backend,
         to_db_key=to_config.connection_key,
@@ -621,7 +648,14 @@ def build_transfer_options(
             if ddl.regular_ch_policy is not None
             else 1
         ),
-        key_columns=normalize_key_columns(key_columns),
+        key_columns=(
+            effective_upsert_key_columns(
+                normalize_key_columns(key_columns),
+                normalize_upsert_partition_column(upsert_partition_column),
+            )
+            if resolved_write_mode == "upsert"
+            else normalize_key_columns(key_columns)
+        ),
         upsert_partition_column=normalize_upsert_partition_column(upsert_partition_column),
         trino_upsert_partition_drop_sql_template=(
             target_defaults.upsert_partition_drop_sql_template

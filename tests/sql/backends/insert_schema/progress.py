@@ -27,7 +27,7 @@ def test_insert_rows_chunks_parameters_reports_progress_and_closes_cursor() -> N
     )
 
     assert progress == [2, 1]
-    assert [call[2] for call in adapter.calls] == [2, 1]
+    assert [len(params) // 2 for _sql, params in cursor.calls] == [2, 1]
     assert cursor.calls[0][1] == [1, "a", 2, "b"]
     assert cursor.calls[1][1] == [3, "c"]
     assert cursor.closed is True

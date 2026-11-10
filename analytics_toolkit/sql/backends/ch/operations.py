@@ -89,7 +89,7 @@ def build_show_tables_query(
     trino_catalog: str | None = None,
     ch_distributed_table_stats: bool = False,
 ) -> str:
-    del adapter, config
+    del adapter, config, ch_distributed_table_stats
     if trino_catalog is not None:
         from ...connection.errors import InvalidSqlInputError
 
@@ -100,7 +100,7 @@ def build_show_tables_query(
         schema,
         table_names,
         conditions,
-        include_distributed_metadata=ch_distributed_table_stats,
+        include_distributed_metadata=True,
     )
 
 
@@ -113,20 +113,32 @@ def postprocess_show_tables(
     read_sql: Callable[[str, str], Any] | None = None,
 ) -> Any:
     del adapter
-    if not ch_distributed_table_stats:
-        return tables
-    from .metadata import apply_clickhouse_shard_stats
+    from analytics_toolkit.sql.connection.config import get_connection_config
+
+    from .metadata import apply_clickhouse_logical_stats, apply_clickhouse_shard_stats
 
     if read_sql is None:
         from ...dml.io.read_sql import read_sql as read_sql_impl
     else:
         read_sql_impl = read_sql
+    tables = tables.drop_duplicates(subset=["schema", "table_name"]).copy()
+    from analytics_toolkit.sql.execution.backend_options import current_backend_operation
 
-    return apply_clickhouse_shard_stats(
-        connection_key,
-        tables,
-        read_sql=read_sql_impl,
-    )
+    state = current_backend_operation()
+    if state is not None:
+        tables.attrs["data_complete"] = not state.partial
+        tables.attrs["ch_cluster_status"] = list(state.statuses.values())
+    routing = getattr(get_connection_config(connection_key), "cluster_routing", None)
+    if routing is not None:
+        tables = apply_clickhouse_logical_stats(
+            connection_key,
+            tables,
+            cluster=routing.cluster,
+            read_sql=read_sql_impl,
+        )
+    if ch_distributed_table_stats:
+        tables = apply_clickhouse_shard_stats(connection_key, tables, read_sql=read_sql_impl)
+    return tables
 
 
 def extract_table_ddl(
@@ -281,7 +293,7 @@ def drop_table_with_options(
     connection: Any,
     table_name: str,
     *,
-    connection_key: str,
+    connection_key: str | None,
     ch_cluster: str | None = "{cluster}",
     ch_drop_shard: bool = True,
     ch_drop_distributed: bool = True,
@@ -292,25 +304,35 @@ def drop_table_with_options(
     if_exists: bool = False,
     query_label: str | None = None,
 ) -> None:
-    del adapter
-    from analytics_toolkit.general import time_print
+    from .layout import inspect_existing_layout
+    from .lifecycle import drop_ch_table
 
-    from ...connection.get_sql_connection import get_ch_connection_for_host
-    from .ddl import build_ch_shard_table_name
-    from .lifecycle import drop_ch_distributed_table_pair, drop_ch_table
-
-    if _is_default_ch_shard_table_name(table_name):
-        if not ch_drop_shard:
-            raise ValueError("ch_drop_shard must be True when dropping a ClickHouse shard table.")
-        time_print(
-            f"Dropping ClickHouse table {table_name}",
-            connection=connection_key,
-            backend="ch",
-        )
+    if not ch_drop_shard and not ch_drop_distributed:
+        raise ValueError("At least one of ch_drop_shard or ch_drop_distributed must be True.")
+    layout_hook = getattr(connection, "outage_inspect_existing_layout", None)
+    if callable(layout_hook):
+        layout = layout_hook(table_name)
+    elif adapter.table_exists(connection, table_name, connection_key=connection_key or "ch"):
+        layout = inspect_existing_layout(connection, table_name, distributed_on_cluster=ch_cluster)
+    else:
+        layout = None
+    if layout is None:
         drop_ch_table(
             connection,
             table_name,
-            ch_cluster=None,
+            ch_cluster=ch_cluster,
+            if_exists=if_exists,
+            query_label=query_label,
+        )
+        return
+    if layout.create_distributed_pair and not layout.owns_physical:
+        if not ch_drop_distributed:
+            message = "External physical storage must be named explicitly to authorize its removal."
+            raise ValueError(message)
+        drop_ch_table(
+            connection,
+            table_name,
+            ch_cluster=ch_cluster,
             query_label=query_label,
             if_exists=if_exists,
             wait_for_absence=ch_wait_for_absence,
@@ -318,23 +340,16 @@ def drop_table_with_options(
             wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
         )
         return
+    resources: list[tuple[str, str | None]] = [(table_name, None)]
+    if layout.create_distributed_pair and ch_drop_distributed and ch_drop_shard:
+        from ...connection.get_sql_connection import get_ch_connection_for_host
+        from .lifecycle import drop_ch_distributed_table_pair
 
-    if ch_drop_distributed and ch_drop_shard:
-        shard_table = build_ch_shard_table_name(table_name)
-        time_print(
-            f"Dropping ClickHouse table {table_name}",
-            connection=connection_key,
-            backend="ch",
-        )
-        time_print(
-            f"Dropping paired ClickHouse shard table {shard_table}",
-            connection=connection_key,
-            backend="ch",
-        )
         drop_ch_distributed_table_pair(
             connection,
             table_name,
             ch_cluster=ch_cluster,
+            shard_table=layout.physical_table,
             query_label=query_label,
             if_exists=if_exists,
             wait_for_absence=ch_wait_for_absence,
@@ -342,49 +357,29 @@ def drop_table_with_options(
             wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
             ch_retry_per_host_drops=ch_retry_per_host_drops,
             per_host_connection_factory=(
-                lambda host: get_ch_connection_for_host(connection_key, host)
+                (lambda host: get_ch_connection_for_host(connection_key, host))
+                if connection_key is not None
+                else None
             ),
         )
         return
-
-    if ch_drop_distributed:
-        time_print(
-            f"Dropping ClickHouse table {table_name}",
-            connection=connection_key,
-            backend="ch",
+    if layout.create_distributed_pair:
+        resources = (
+            [(layout.logical_table, ch_cluster)]
+            if ch_drop_distributed
+            else [(layout.physical_table, ch_cluster)]
         )
+    for resource, scope in resources:
         drop_ch_table(
             connection,
-            table_name,
-            ch_cluster=ch_cluster,
+            resource,
+            ch_cluster=scope,
             query_label=query_label,
             if_exists=if_exists,
             wait_for_absence=ch_wait_for_absence,
             wait_timeout_seconds=ch_wait_timeout_seconds,
             wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
         )
-        return
-
-    if ch_drop_shard:
-        shard_table = build_ch_shard_table_name(table_name)
-        time_print(
-            f"Dropping ClickHouse shard table {shard_table} for {table_name}",
-            connection=connection_key,
-            backend="ch",
-        )
-        drop_ch_table(
-            connection,
-            shard_table,
-            ch_cluster=ch_cluster,
-            query_label=query_label,
-            if_exists=if_exists,
-            wait_for_absence=ch_wait_for_absence,
-            wait_timeout_seconds=ch_wait_timeout_seconds,
-            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
-        )
-        return
-
-    raise ValueError("At least one of ch_drop_shard or ch_drop_distributed must be True.")
 
 
 def build_clear_target_sqls(
@@ -397,7 +392,7 @@ def build_clear_target_sqls(
     ch_only_shard: bool = False,
 ) -> list[str]:
     if not include_ch_shard or ch_only_shard:
-        return adapter.clear_table_sqls(table_name, query_label=query_label)
+        return list(adapter.clear_table_sqls(table_name, query_label=query_label))
 
     from .lifecycle import build_truncate_ch_distributed_table_pair_sqls
 
@@ -449,50 +444,26 @@ def prepare_existing_target_for_create_from_sql(
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
 ) -> bool:
+    del ch_only_shard
     if not drop_target_if_exists:
         return False
-
-    from analytics_toolkit.general import time_print
-
-    from ...connection.get_sql_connection import get_ch_connection_for_host
-    from .lifecycle import drop_ch_distributed_table_pair
-
-    target_existed_before_drop = False
-    if not ch_only_shard:
-        target_existed_before_drop = bool(
-            adapter.table_exists(
-                connection,
-                table_name,
-                connection_key=connection_key or "ch",
-            )
-        )
-
-    if ch_only_shard:
-        time_print(f"Dropping existing ClickHouse table {table_name}")
-        adapter.drop_table(
-            connection,
-            table_name,
-            ch_cluster=None,
-            query_label=query_label,
-        )
-        return False
-
-    time_print(f"Dropping existing ClickHouse distributed table pair {table_name}")
-    per_host_connection_factory = (
-        (lambda host: get_ch_connection_for_host(connection_key, host))
-        if connection_key is not None
-        else None
+    exists = bool(
+        adapter.table_exists(connection, table_name, connection_key=connection_key or "ch")
     )
-    drop_ch_distributed_table_pair(
+    if not exists:
+        return False
+    drop_table_with_options(
+        adapter,
         connection,
         table_name,
+        connection_key=connection_key,
         ch_cluster=ch_cluster,
-        query_label=query_label,
-        wait_for_absence=True,
+        ch_wait_for_absence=True,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
-        per_host_connection_factory=per_host_connection_factory,
+        if_exists=True,
+        query_label=query_label,
     )
-    return target_existed_before_drop
+    return True
 
 
 def wait_for_table_absence(

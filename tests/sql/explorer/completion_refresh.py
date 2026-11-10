@@ -10,6 +10,33 @@ from tests.sql._support.completion import _install_stub
 from tests.sql._support.explorer import FakeSession
 
 
+def test_completion_popup_hides_when_editor_is_too_short_to_fit_options() -> None:
+    async def exercise() -> None:
+        app = SqlExplorerApp(FakeSession())
+        async with app.run_test(size=(80, 16)) as pilot:
+            _install_stub(app)
+            workspace = app.active_workspace
+            editor = workspace.editor
+            editor.text = "select * from sa"
+            editor.cursor_location = (0, len(editor.text))
+            editor.styles.min_height = 1
+            editor.styles.height = 2
+            editor.styles.max_height = 2
+            await pilot.pause()
+            assert 0 < editor.scrollable_content_region.height <= 2
+            app._open_completion(
+                app._completion_at_cursor(workspace),
+                ("sales", "sandbox"),
+                accept_single=False,
+                workspace=workspace,
+            )
+            app._position_completion(workspace)
+            assert workspace.completion_menu.styles.display == "none"
+            assert editor.text == "select * from sa"
+
+    asyncio.run(exercise())
+
+
 def test_namespace_menu_filters_its_own_candidates_and_shrinks() -> None:
     async def exercise() -> None:
         app = SqlExplorerApp(FakeSession())

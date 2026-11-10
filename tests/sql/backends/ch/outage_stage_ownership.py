@@ -100,7 +100,7 @@ def test_outage_stop_if_not_exists_claims_only_verified_absent_stages(
             client.insert(name, [(9,)], column_names=["id"])
         assert state.live_submitted is preexisting
         assert state.preserve_recovery is preexisting
-        assert is_non_retryable_sql_error(error.value) is preexisting
+        assert is_non_retryable_sql_error(error.value) is False
         assert cluster.tables[("h1", name)].rows == ([(77,), (9,)] if preexisting else [(9,)])
         if not preexisting:
             cluster.failure = None

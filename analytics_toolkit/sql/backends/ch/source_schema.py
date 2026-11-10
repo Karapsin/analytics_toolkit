@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .. import source_schema as _source_schema
-from ..models import SourceColumn
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from ..models import SourceColumn
 
 _CLICKHOUSE_MAX_DECIMAL_PRECISION = 76
 _CLICKHOUSE_DATETIME_TIMEZONE = re.compile(
@@ -22,6 +25,38 @@ def inspect_source_query_schema(adapter: Any, connection: Any, query: str) -> li
 
 def map_source_type_to_target(adapter: Any, column: SourceColumn) -> str:
     del adapter
+    from analytics_toolkit.sql.core.type_resolution import (  # noqa: PLC0415 - avoid backend registry import cycles
+        parse_native_type,
+    )
+
+    parsed = parse_native_type(column.native_type).base
+    integer = re.fullmatch(r"(u?)int(8|16|32|64|128|256)", parsed.name)
+    if integer:
+        return _source_schema.nullable_clickhouse_type(
+            ("UInt" if integer.group(1) else "Int") + integer.group(2)
+        )
+    if parsed.name in {
+        "date32",
+        "datetime",
+        "datetime64",
+        "array",
+        "tuple",
+        "map",
+        "nested",
+        "uuid",
+    }:
+        canonical = {
+            "date32": "Date32",
+            "datetime": "DateTime",
+            "datetime64": "DateTime64",
+            "uuid": "UUID",
+        }.get(parsed.name)
+        native_type = (
+            parsed.original
+            if canonical is None
+            else canonical + ("(" + ", ".join(parsed.arguments) + ")" if parsed.arguments else "")
+        )
+        return _source_schema.nullable_clickhouse_type(native_type)
     source_type = _source_schema.normalize_type_name(column.native_type)
     precision, scale = _source_schema.type_precision_scale(column, source_type)
     kind = _source_schema.classify_source_type(source_type)
@@ -32,6 +67,12 @@ def map_source_type_to_target(adapter: Any, column: SourceColumn) -> str:
         scale,
     )
     return _source_schema.nullable_clickhouse_type(base_type)
+
+
+def map_same_backend_source_type_to_target(adapter: Any, column: SourceColumn) -> str:
+    if column.native_type and column.native_type.strip().lower() != "unknown":
+        return column.native_type.strip()
+    return map_source_type_to_target(adapter, column)
 
 
 def refine_stage_column_types_from_rows(
@@ -91,21 +132,16 @@ def _map_to_ch_base_type(
     if kind == "boolean":
         return "Bool"
     if kind == "integer":
-        if source_type.startswith("u"):
-            if "8" in source_type:
-                return "UInt8"
-            if "16" in source_type:
-                return "UInt16"
-            if "32" in source_type:
-                return "UInt32"
-            return "UInt64"
-        if "8" in source_type and "64" not in source_type:
-            return "Int8"
-        if "16" in source_type or "small" in source_type:
-            return "Int16"
-        if "32" in source_type or source_type in {"integer", "int", "int4"}:
-            return "Int32"
-        return "Int64"
+        exact = re.fullmatch(r"(u?)int(8|16|32|64|128|256)", source_type)
+        if exact:
+            return ("UInt" if exact.group(1) else "Int") + exact.group(2)
+        return {
+            "smallint": "Int16",
+            "int2": "Int16",
+            "integer": "Int32",
+            "int": "Int32",
+            "int4": "Int32",
+        }.get(source_type, "Int64")
     if kind == "float":
         if source_type in {"real", "float4", "float32"}:
             return "Float32"

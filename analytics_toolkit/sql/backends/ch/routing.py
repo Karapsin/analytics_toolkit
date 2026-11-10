@@ -9,7 +9,6 @@ from typing import Any, cast
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.dialects.clickhouse import ClickHouse
 from sqlglot.errors import ErrorLevel, SqlglotError
 from sqlglot.optimizer.scope import traverse_scope
 
@@ -21,28 +20,16 @@ from analytics_toolkit.sql.connection.errors import (
 )
 from analytics_toolkit.sql.execution.backend_options import preflight_sql_statements
 
+from .cluster_functions import cluster_arguments
+from .dialect import ClickHouseDialect
 from .managed_routing import ManagedPairResolver, ManagedTableRoute
-from .outage_context import WRITING
+from .outage_context import LOGICAL_STATISTICS, WRITING
+from .source_binding import preserve_source_bindings
 
-
-class _RoutingClickHouse(ClickHouse):
-    """Keep integer RAND distinct from SQLGlot's floating-point Rand expression."""
-
-    # SQLGlot exposes this parser dynamically across its module reorganizations.
-    Parser: Any = type(
-        "Parser",
-        (ClickHouse.parser_class,),
-        {
-            "FUNCTIONS": {
-                **ClickHouse.parser_class.FUNCTIONS,
-                "RAND": lambda args: exp.Anonymous(this="rand", expressions=args),
-            },
-        },
-    )
-
+_RoutingClickHouse = ClickHouseDialect
 
 DEFAULT_CLUSTER_SHARDING_KEY = "rand()"
-MIN_CLUSTER_TABLE_FUNCTION_ARGS = 3
+MIN_CLUSTER_TABLE_FUNCTION_ARGS = 2
 SHARDING_KEY_CLUSTER_TABLE_FUNCTION_ARGS = 4
 ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
@@ -131,6 +118,8 @@ def route_sql(
     cluster_override: str | None = None,
     managed_pair_resolver: ManagedPairResolver | None = None,
 ) -> str:
+    if LOGICAL_STATISTICS.get():
+        return sql
     try:
         parsed = sqlglot.parse(sql, read=_RoutingClickHouse, error_level=ErrorLevel.RAISE)
     except SqlglotError as exc:
@@ -526,6 +515,7 @@ def _rewrite_query_sources(
     *,
     managed_pair_resolver: ManagedPairResolver | None = None,
 ) -> None:
+    preserve_source_bindings(statement)
     _normalize_explicit_cluster_tables(
         statement,
         cluster,
@@ -553,8 +543,7 @@ def _normalize_explicit_cluster_tables(
     *,
     managed_pair_resolver: ManagedPairResolver | None,
 ) -> None:
-    if managed_pair_resolver is None:
-        return
+    del cluster  # The source function's explicit cluster is authoritative.
     for table in list(statement.find_all(exp.Table)):
         function = table.this
         if not isinstance(function, exp.Anonymous) or str(function.this).lower() not in {
@@ -562,14 +551,20 @@ def _normalize_explicit_cluster_tables(
             "clusterallreplicas",
         }:
             continue
-        arguments = list(function.expressions)
-        if len(arguments) < MIN_CLUSTER_TABLE_FUNCTION_ARGS:
+        explicit_function_cluster, database, relation, trailing = cluster_arguments(
+            function, default_database
+        )
+        function.set(
+            "expressions",
+            [
+                exp.Literal.string(explicit_function_cluster),
+                exp.Literal.string(database),
+                exp.Literal.string(relation),
+                *trailing,
+            ],
+        )
+        if managed_pair_resolver is None:
             continue
-        database = _identifier_value(arguments[1]) or default_database
-        relation = _identifier_value(arguments[2])
-        if database is None or relation is None:
-            continue
-        explicit_function_cluster = _identifier_value(arguments[0]) or cluster
         managed_route = _resolve_managed_route(
             managed_pair_resolver,
             cluster=explicit_function_cluster,
@@ -584,11 +579,7 @@ def _normalize_explicit_cluster_tables(
                 db=exp.to_identifier(database),
             )
         else:
-            sharding_key = (
-                arguments[3].sql(dialect="clickhouse")
-                if len(arguments) >= SHARDING_KEY_CLUSTER_TABLE_FUNCTION_ARGS
-                else None
-            )
+            sharding_key = trailing[0].sql(dialect="clickhouse") if trailing else None
             replacement = _cluster_table(
                 explicit_function_cluster,
                 managed_route.database,
@@ -600,6 +591,8 @@ def _normalize_explicit_cluster_tables(
                     managed_route.database,
                 ),
             )
+            if trailing:
+                replacement.this.set("expressions", [*replacement.this.expressions[:3], *trailing])
         _copy_table_decorations(table, replacement)
         table.replace(replacement)
 
@@ -833,7 +826,7 @@ def _identifier_value(value: Any) -> str | None:
     if isinstance(value, exp.Column) and not value.table and not value.db:
         value = value.this
     if isinstance(value, (exp.Identifier, exp.Literal)):
-        normalized = str(value.this).strip()
+        normalized = str(value.this)
         return normalized or None
     return None
 

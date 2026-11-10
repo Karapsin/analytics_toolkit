@@ -110,51 +110,27 @@ def test_target_stage_candidate_precedes_partial_clickhouse_create(
     assert candidates == ["partial"]
 
 
-def test_target_stage_candidates_include_ambiguous_create_outcomes(
-    monkeypatch: Any,
-) -> None:
+def test_target_stage_candidates_include_ambiguous_create_outcomes(monkeypatch: Any) -> None:
     candidates: list[str] = []
-    logs: list[str] = []
-    existence = iter([False, True, False])
-    creates = iter([OSError("ambiguous create"), None])
+    owned: list[str] = []
+    monkeypatch.setattr(load_stage, "build_stage_table_name", lambda *_a, **_k: "first")
+    monkeypatch.setattr(load_stage, "table_exists", lambda *_a, **_k: False)
     monkeypatch.setattr(
         load_stage,
-        "build_stage_table_name",
-        lambda _backend, _target, **kwargs: str(kwargs["random_suffix"]),
+        "_create_sql_table_with_connection",
+        lambda *_a, **_k: (_ for _ in ()).throw(OSError("ambiguous create")),
     )
-    monkeypatch.setattr(
-        load_stage,
-        "table_exists",
-        lambda *_args, **_kwargs: next(existence),
-    )
-    monkeypatch.setattr(load_stage, "_collision_stage_suffix", lambda *_args, **_kwargs: "next")
-
-    def create(*_args: Any, **_kwargs: Any) -> None:
-        outcome = next(creates)
-        if outcome is not None:
-            raise outcome
-
-    monkeypatch.setattr(load_stage, "_create_sql_table_with_connection", create)
-    monkeypatch.setattr(
-        load_stage,
-        "time_print",
-        lambda message, **_kwargs: logs.append(message),
-    )
-
-    result = load_stage.create_stage_table(
-        "gp",
-        object(),
-        "public.target",
-        pd.DataFrame(columns=["id"]),
-        random_suffix="first",
-        on_stage_candidate=candidates.append,
-        log_prefix="[slice=1/1] ",
-    )
-
-    assert result == "next"
-    assert candidates == ["first", "next"]
-    assert logs
-    assert all(message.startswith("[slice=1/1] ") for message in logs)
+    with pytest.raises(OSError, match="ambiguous create"):
+        load_stage.create_stage_table(
+            "gp",
+            object(),
+            "public.target",
+            pd.DataFrame(columns=["id"]),
+            on_stage_candidate=candidates.append,
+            on_stage_owned=owned.append,
+        )
+    assert candidates == ["first"]
+    assert owned == []
 
 
 def test_writer_creates_target_stage_on_first_nonempty_key_and_reuses_it(

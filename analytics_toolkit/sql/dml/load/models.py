@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping
 
+from analytics_toolkit.sql.dml.table.upsert_checkpoint import UpsertCheckpoint
+
 if TYPE_CHECKING:
     from analytics_toolkit.sql.dml.empty_source import EmptySourcePolicy
 
@@ -56,3 +58,6 @@ class LoadState:
     final_upsert_stage_table: str | None = None
     stage_external_location: str | None = None
     target_column_types: dict[str, str] | None = None
+    upsert_checkpoint: UpsertCheckpoint = field(default_factory=UpsertCheckpoint)
+    owned_stage_resources: list[tuple[str, str, Any]] = field(default_factory=list)
+    stage_candidates: list[str] = field(default_factory=list)

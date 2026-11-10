@@ -10499,6 +10499,83 @@
         "ch"
       ],
       "node_id": "tests/sql/integration/fault/clickhouse_outage.py::test_clickhouse_native_new_target_during_shard_outage"
+    },
+    "audit.exact_values.http": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_exact_values_roundtrip[audit.exact_values.http]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/exact_transport.py::test_binary_temporal_ticks_remain_exact_for_both_transports",
+        "tests/sql/backends/ch/exact_transport.py::test_http_stream_uses_column_blocks_and_preserves_duplicate_names"
+      ]
+    },
+    "audit.exact_values.native": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_exact_values_roundtrip[audit.exact_values.native]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/exact_transport.py::test_native_stream_header_is_consumed_once_and_tuple_cells_are_rows",
+        "tests/sql/backends/ch/exact_transport.py::test_full_binary_native_block_uses_exact_column_factory"
+      ]
+    },
+    "audit.upsert.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_complete_reordered_upserts_use_partition_scoped_keys[audit.upsert.gp]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped",
+        "tests/sql/dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage"
+      ]
+    },
+    "audit.upsert.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_complete_reordered_upserts_use_partition_scoped_keys[audit.upsert.trino]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped",
+        "tests/sql/dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage"
+      ]
+    },
+    "audit.upsert.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_complete_reordered_upserts_use_partition_scoped_keys[audit.upsert.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped",
+        "tests/sql/dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage"
+      ]
+    },
+    "audit.clickhouse.local_creation": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/structural_safety.py::test_local_layout_never_owns_a_suffix_companion",
+        "tests/sql/backends/ch/reconfigure/structural_safety.py::test_local_to_pair_rejects_a_preexisting_companion_before_ddl"
+      ]
+    },
+    "audit.clickhouse.routing_metadata": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_routing_bindings_and_current_database_metadata",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/routing_contract.py::test_routing_preserves_bound_qualified_columns_and_stars",
+        "tests/sql/explorer/metadata_identity.py::test_persisted_unqualified_clickhouse_completion_uses_current_database"
+      ]
     }
   },
   "unsupported_authentication": {

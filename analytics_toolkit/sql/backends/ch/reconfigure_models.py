@@ -53,6 +53,7 @@ class ChReconfiguration:
     after_ddl: dict[str, str]
     temporary_tables: list[str] = field(default_factory=list)
     temporary_table_scopes: list[tuple[str, str | None]] = field(default_factory=list)
+    owned_table_scopes: list[tuple[str, str | None]] = field(default_factory=list)
     temporary_table_roles: list[tuple[str, str | None, str]] = field(default_factory=list)
     backup_tables: list[str] = field(default_factory=list)
     cleanup_tables: list[tuple[str, str | None]] = field(default_factory=list)
@@ -64,6 +65,7 @@ class ChReconfiguration:
     final_count: int | None = None
     cleanup_complete: bool = False
     cleanup_error: str | None = None
+    cutover_journal: list[dict[str, Any]] = field(default_factory=list)
 
     def result_data(self) -> dict[str, Any]:
         return {
@@ -87,6 +89,7 @@ class ChReconfiguration:
             "row_count_validated": self.plan.metadata.row_count_validated,
             "cleanup_complete": self.cleanup_complete,
             "cleanup_error": self.cleanup_error,
+            "cutover_journal": [dict(step) for step in self.cutover_journal],
         }
 
 

@@ -217,8 +217,10 @@ def test_target_stage_collision_retry_fits_hashed_writer_name(
     backend: str,
 ) -> None:
     preferred = f"{'a' * 32}__w00000"
-    existence = iter([False, True, False])
-    creates = iter([OSError("ambiguous create"), None])
+    existence = iter([False, False])
+    collision = RuntimeError("table exists")
+    collision.error_name = "TABLE_ALREADY_EXISTS"
+    creates = iter([collision, None])
 
     monkeypatch.setattr(
         load_stage,

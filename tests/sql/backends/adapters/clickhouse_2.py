@@ -116,13 +116,15 @@ def test_clickhouse_lifecycle_per_host_error_and_close_paths(
         )
         is None
     )
-    with pytest.raises(RuntimeError, match="close failed"):
+    assert (
         ch_lifecycle_backend_module._drop_ch_distributed_table_pair_on_host(
             "host-a",
             pair=pair,
             query_label=None,
             per_host_connection_factory=lambda _host: ClosingConnection(),
         )
+        is None
+    )
 
 
 def test_clickhouse_lifecycle_retries_all_hosts_when_leftover_host_unmapped() -> None:

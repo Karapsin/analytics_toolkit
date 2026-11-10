@@ -143,9 +143,21 @@ rows = sql.create_table(
 
 ## Notes
 
-- The default is a plain `CREATE TABLE`, so an existing target raises a backend
-  error. Choose `drop_if_exists=True` to replace it or `if_not_exists=True` to
-  leave it unchanged.
+- The default is a plain `CREATE TABLE`. An existing target is rejected before
+  population, including SQL sources. Choose `drop_if_exists=True` to replace it
+  or `if_not_exists=True` to skip both creation and population.
+- Query inputs whose declared types cannot prove an exact fit are scanned completely
+  before target creation or replacement. The certified rows are replayed from a local
+  exact-value checkpoint; target retries do not rerun the mutable source query.
+  Replacements also freeze queries bound to the existing target before destructive
+  DDL; ClickHouse includes its verified physical storage. Uncertain source namespace
+  bindings are frozen conservatively. Metadata-proven, disjoint
+  native copies retain their server-side streaming path. Dry-run plans mark pending
+  validation and source-overlap checks without scanning data or creating snapshots.
+- ClickHouse query, dataframe and schema creation use the same resolved creation
+  policy, including independent physical, facade and Distributed routing scopes.
+  Existing local tables own only their named storage; companion ownership requires
+  a verified Distributed reference and compatible physical table.
 - `sql.create_sql_table` remains as a compatibility alias and emits a
   `DeprecationWarning`; new code should call `sql.create_table`.
 - The legacy `drop_target_if_exists` keyword is accepted with a
@@ -154,8 +166,8 @@ rows = sql.create_table(
 - The public helper opens and closes its own connections and retries the whole
   create operation. With `drop_if_exists=True`, every attempt safely
   drops the target before creating it, including dataframe and explicit-schema
-  creation. SQL schema sources also repeat source schema inspection and the
-  optional insert.
+  creation. SQL schema sources retain certified adaptive input across retries;
+  metadata-proven direct copies repeat source inspection and the optional insert.
 - Cross-backend SQL inserts use a single inner transfer attempt so
   `retry_cnt` controls the total number of whole-operation attempts rather than
   multiplying nested retry counts.

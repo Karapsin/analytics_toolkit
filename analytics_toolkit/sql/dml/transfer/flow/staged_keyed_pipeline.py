@@ -20,13 +20,18 @@ from ..runtime.models import (
     AdaptiveBatchSizer,
     TransferConnectionRefs,
     TransferOptions,
-    TransferSliceRowCount,
     TransferStageState,
 )
 from ..schema import (
     get_existing_target_insert_types,
     inspect_source_query_schema,
     map_source_schema_to_target,
+)
+from .adaptive_input import (
+    AdaptiveInputReady,
+    AdaptiveTransferContext,
+    resolve_adaptive_input,
+    run_resolved_transfer,
 )
 from .finalize import cleanup_stage, finalize_loaded_stage
 from .lazy_keyed_runtime import (
@@ -78,6 +83,7 @@ from .staged_keyed_logging import (
 )
 from .staged_keyed_stream import KeyStreamCallbacks, KeyStreamContext, stream_ready_key
 from .superseded import cleanup_superseded_transfer_stages
+from .stage_ownership import sync_stage_state as _sync_stage_state
 from .transfer_progress import (
     BatchTiming,
     TransferProgressTracker,
@@ -138,7 +144,21 @@ def run_keyed_staged_source_transfer_attempt(  # noqa: C901, PLR0912 -- attempt 
             stage_state = create_stage_state(options, refs)
             with sql_log_context(suppress_sql=True):
                 metadata = _prepare_attempt(options, refs, stage_state)
-                prepare_keyed_target_stage(options, refs, stage_state, runtime, progress)
+                if not isinstance(metadata, AdaptiveInputReady):
+                    prepare_keyed_target_stage(options, refs, stage_state, runtime, progress)
+        if isinstance(metadata, AdaptiveInputReady):
+            source_connections.close()
+            metadata.context.target_connection_runner = target_connections.run
+            metadata.context.target_host_connection_runner = make_target_host_connection_runner(
+                options,
+                target_connections,
+            )
+            return run_resolved_transfer(
+                options,
+                TransferConnectionRefs(),
+                stage_state,
+                metadata.context,
+            )
         log_pipeline_start(options, runtime)
         time_print(
             f"Inspected transfer metadata for attempt {options.attempt_number}: "
@@ -256,7 +276,8 @@ def run_keyed_staged_source_transfer_attempt(  # noqa: C901, PLR0912 -- attempt 
         post_attempt_error: BaseException | None = None
         try:
             if stage_state is not None:
-                _sync_stage_state(options, stage_state, runtime, require_complete=False)
+                if not options.input_resolution.get("used"):
+                    _sync_stage_state(options, stage_state, runtime, require_complete=False)
                 preserve_verified_stages = isinstance(
                     transfer_error,
                     AcknowledgedSourceStageDropError,
@@ -308,9 +329,8 @@ def run_keyed_staged_source_transfer_attempt(  # noqa: C901, PLR0912 -- attempt 
             target_connections.close_preserving(transfer_error or post_attempt_error)
         if post_attempt_error is not None:
             raise post_attempt_error.with_traceback(post_attempt_error.__traceback__)
-        elapsed = time.monotonic() - attempt_started
-        if transfer_error is None:
-            log_transfer_complete(options, progress.snapshot(), runtime, elapsed)
+    elapsed = time.monotonic() - attempt_started
+    log_transfer_complete(options, progress.snapshot(), runtime, elapsed)
     return total_rows
 
 
@@ -318,7 +338,9 @@ def _prepare_attempt(
     options: TransferOptions,
     refs: TransferConnectionRefs,
     stage_state: TransferStageState,
-) -> AttemptMetadata:
+    *,
+    insert_retry_cnt: int | None = None,
+) -> AttemptMetadata | AdaptiveInputReady:
     representative_sql = (options.transfer_slices or [])[0].source_sql
     source_schema = inspect_source_query_schema(
         options.from_db_backend,
@@ -336,6 +358,17 @@ def _prepare_attempt(
         options.from_db_backend,
         table_schema_names=(options.table_schema or {}).keys(),
     )
+    stage_state.source_columns = source_columns
+    stage_state.source_column_types = source_column_types
+    stage_state.internal_columns = internal_columns
+    adaptive_context = AdaptiveTransferContext(
+        options.retry_cnt,
+        options.retry_cnt if insert_retry_cnt is None else insert_retry_cnt,
+        existing_types_reader=get_existing_target_insert_types,
+        open_connection=get_sql_connection,
+    )
+    if resolve_adaptive_input(options, refs, stage_state, source_schema, adaptive_context):
+        return AdaptiveInputReady(adaptive_context)
     cleanup_superseded_transfer_stages(
         options=options,
         connection=refs.source["connection"],
@@ -355,12 +388,16 @@ def _prepare_attempt(
         include_current_transfer_id=True,
     )
     source_types = (
-        validate_table_schema_columns(options.table_schema, source_columns)
-        if options.table_schema is not None
-        else map_source_schema_to_target(
-            source_schema,
-            options.to_db_backend,
-            source_backend=options.from_db_backend,
+        stage_state.stage_column_types
+        if stage_state.input_types_resolved
+        else (
+            validate_table_schema_columns(options.table_schema, source_columns)
+            if options.table_schema is not None
+            else map_source_schema_to_target(
+                source_schema,
+                options.to_db_backend,
+                source_backend=options.from_db_backend,
+            )
         )
     )
     stage_state.source_columns = source_columns
@@ -372,14 +409,16 @@ def _prepare_attempt(
         stage_state,
     )
     ensure_transfer_target_table(options, refs, stage_state, source_columns)
-    if stage_state.target_exists and (
-        not options.replace_target_table or options.write_mode == "upsert"
+    if (
+        stage_state.insert_column_types is None
+        and stage_state.target_exists
+        and (not options.replace_target_table or options.write_mode == "upsert")
     ):
         stage_state.insert_column_types = get_existing_target_insert_types(
             options.to_db_backend,
             refs.target["connection"],
             options.target_table,
-            source_types,
+            source_types or {},
             connection_key=options.to_db_key,
         )
     return freeze_attempt_metadata(
@@ -451,7 +490,7 @@ def _run_lazy_workers(
     except BaseException as exc:
         runtime.fail(exc)
     runtime.raise_first_error()
-    if runtime.source_stage_tables:
+    if runtime.live_source_stage_count:
         raise RuntimeError("Acknowledged source stages remain after the mandatory final drain.")
 
 
@@ -498,6 +537,7 @@ def _reader_worker(
                     f"{tag} Source reader {reader_index + 1}/"
                     f"{options.transfer_concurrency.effective_read} started source-stage CTAS"
                 )
+                source_ref["on_source_resource_created"] = runtime.mark_source_stage_owned
                 try:
                     expected_rows = materialize_source_key(
                         options,
@@ -506,7 +546,11 @@ def _reader_worker(
                         transfer_slice,
                         source_stage,
                     )
-                except BaseException:
+                except BaseException as exc:
+                    if not runtime.source_stage_is_owned(source_stage):
+                        runtime.abandon_unowned_source_stage(source_stage)
+                        exc.__dict__["analytics_toolkit_sql_source_stage_candidate"] = source_stage
+                        raise
                     try:
                         with sql_log_context(f"{tag} ", suppress_sql=True):
                             cleanup_source_stages(options, source_ref, [source_stage])
@@ -517,6 +561,8 @@ def _reader_worker(
                             "could not be removed; startup cleanup will retry it"
                         )
                     raise
+                finally:
+                    source_ref.pop("on_source_resource_created", None)
             task = ReadyKeyTask(
                 transfer_slice=transfer_slice,
                 source_stage=source_stage,
@@ -613,6 +659,7 @@ def _writer_worker(
                         metadata,
                         writer_index,
                         on_stage_candidate=runtime.register_target_stage_candidate,
+                        ownership_state=stage_state,
                         log_prefix=f"{task.tag} ",
                     )
                 runtime.register_target_stage(writer_index, stage_table)
@@ -847,41 +894,3 @@ def _validate_target_stages(
         internal_columns=stage_state.internal_columns,
         expected_slice_counts=source_counts,
     )
-
-
-def _sync_stage_state(
-    options: TransferOptions,
-    stage_state: TransferStageState,
-    runtime: LazyKeyedRuntime,
-    *,
-    require_complete: bool,
-) -> None:
-    verified = runtime.verified
-    expected_ids = {item.index for item in options.transfer_slices or []}
-    if require_complete and set(verified) != expected_ids:
-        raise RuntimeError("Not every transfer key reached a verified checkpoint.")
-    stage_state.source_stage_tables = runtime.source_stage_tables
-    stage_map = runtime.target_stages
-    registered_stage_tables = [stage_map[index] for index in sorted(stage_map)]
-    stage_tables = list(registered_stage_tables)
-    if not require_complete:
-        registered = set(stage_tables)
-        stage_tables.extend(sorted(runtime.target_stage_candidates - registered))
-    stage_state.stage_tables = stage_tables
-    stage_state.stage_table = (
-        registered_stage_tables[0]
-        if registered_stage_tables
-        else (stage_tables[0] if stage_tables else None)
-    )
-    stage_state.stage_table_created = bool(stage_tables)
-    stage_state.expected_source_rows = sum(item.expected_rows for item in verified.values())
-    stage_state.slice_counts = [
-        TransferSliceRowCount(
-            index=transfer_slice.index,
-            label=_slice_tag(options, transfer_slice),
-            expected_rows=verified[transfer_slice.index].expected_rows,
-            streamed_rows=verified[transfer_slice.index].streamed_rows,
-        )
-        for transfer_slice in options.transfer_slices or []
-        if transfer_slice.index in verified
-    ]

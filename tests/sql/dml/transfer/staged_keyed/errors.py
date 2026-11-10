@@ -152,9 +152,9 @@ def test_failed_attempt_cleanup_drops_published_zero_row_source_stages(
         _LeaseManager(),  # type: ignore[arg-type]
     )
 
-    assert dropped == ["source.reserved", "source.zero"]
+    assert dropped == ["source.zero"]
     assert runtime.source_stage_tables == ["source.nonempty"]
-    assert runtime.source_stages_dropped == 2
+    assert runtime.source_stages_dropped == 1
 
 
 def test_keyed_io_opts_all_batch_retries_into_safe_exception_logging(

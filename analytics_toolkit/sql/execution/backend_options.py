@@ -59,6 +59,8 @@ class BackendOperationState:
     incomplete_aliases: set[str] = field(default_factory=set)
     live_submitted: bool = False
     preserve_recovery: bool = False
+    structural_replay_blocked: bool = False
+    data_write_replay_possible: bool = False
     lock: Any = field(default_factory=RLock, repr=False)
 
     @property
@@ -98,6 +100,8 @@ class BackendOperationState:
 
     def attach(self, result: Any, *, source_alias: Any = None, target_alias: Any = None) -> None:
         metadata = getattr(result, "metadata", None)
+        if metadata is not None and self.live_submitted:
+            metadata.data_write_replay_possible = self.data_write_replay_possible
         if metadata is not None and self.statuses:
             metadata.ch_cluster_status = list(self.statuses.values())
             metadata.data_complete = not self.partial
@@ -219,6 +223,13 @@ def preserve_recovery_artifacts(*, failed: bool = False) -> bool:
     if state is not None and failed and state.live_submitted:
         state.preserve_recovery = True
     return state is not None and state.preserve_recovery
+
+
+def clear_data_replay_retention() -> None:
+    """Release data checkpoints after certified success, retaining uncertain structure."""
+    state = _STATE.get()
+    if state is not None and not state.structural_replay_blocked:
+        state.preserve_recovery = False
 
 
 def preflight_sql_statements(connection: Any, statements: Any) -> None:

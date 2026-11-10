@@ -36,6 +36,16 @@ as native `UUID` on Greenplum, Trino, and ClickHouse. ClickHouse uses
 mixed object columns, and all-null object columns remain string types unless an
 explicit `table_schema` selects `UUID`.
 
+Inference inspects all dataframe values. Decimal columns use exact decimal types,
+unsigned ClickHouse integer dtypes retain their unsigned family, and object
+datetime columns retain timestamp precision and awareness. Trino inference uses
+explicit `TIMESTAMP(6)` when every value aligns exactly; values needing more
+precision use exact text unless the destination has an explicitly selected
+supported native type. Native integer/decimal alternatives are tried before
+text, and numeric values never pass through a floating-point intermediate.
+Parquet staging uses the resolved physical schema for every column and file;
+UUIDs and aware timestamps use the text representation required by Hive stages.
+
 `key_columns` lets the load validate staged rows against an existing target
 before final insertion. Use it when duplicate keys in append-like flows would be
 more expensive to fix after the load finishes.
@@ -54,11 +64,20 @@ creation shape.
 ## Backend Notes
 
 Greenplum dataframe inserts use chunked `execute_values` statements. Tune the
-insert chunk size for very wide rows or constrained VMEM environments.
+insert chunk size for very wide rows or constrained VMEM environments. Native
+array columns retain their element precision and declared dimensions when
+appending to an existing table. Nested UUIDs, exact decimals and nulls remain
+native; array parameters use the resolved destination type. Quoted custom type
+names retain their exact identity during table introspection.
 
 Trino sends parameterized multi-row insert statements. A connection-level insert
 chunk size can be set in `.connections`, and call-level settings can override
-it. Trino upsert builds a final increment for affected partitions and requires
+it. Native `ARRAY`, `MAP`, and `ROW` values retain nested UUID, Decimal and null
+values. Named `ROW` fields follow the declared schema order; map keys must remain
+unique and non-null after conversion. Existing or explicit `TIMESTAMP(p)`
+destinations above precision six preserve every available fractional digit when
+the connector supports that precision. Inference retains its supported connector
+precision. Trino upsert builds a final increment for affected partitions and requires
 `upsert_partition_drop_sql_template` in `.connections` so connector-specific
 partition drop SQL is explicit.
 

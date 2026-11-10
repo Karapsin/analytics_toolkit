@@ -22,6 +22,7 @@ from analytics_toolkit.sql.execution.cancellation import (
 
 from .journal_workers import cancel_metadata
 from .metadata_ledger import MetadataLedger, ScanTicket
+from .metadata_listing import IncompleteMetadataError, listing_result
 from .metadata_store import MetadataStore, SnapshotKey, Snapshots
 from .metadata_usage import event_usage
 
@@ -47,6 +48,7 @@ class BackgroundMetadata:
         journal: QueryJournal | None = None,
         on_error: Callable[[Exception], None],
         context: dict[str, Any] | None = None,
+        on_complete: Callable[[], None] | None = None,
     ) -> None:
         self.connection_key = connection_key
         self.journal = journal
@@ -55,6 +57,7 @@ class BackgroundMetadata:
         self.store = store
         self.default_catalog = default_catalog
         self.on_error = on_error
+        self.on_complete = on_complete
         self.context = context or {"catalog": default_catalog}
         self.on_ddl: Callable[[dict[SnapshotKey, str]], None] | None = None
         self._lock = Lock()
@@ -65,6 +68,7 @@ class BackgroundMetadata:
         self._scope = SqlCancellationScope()
         self._cancellations: list[Thread] = []
         self._snapshots: Snapshots = {}
+        self.incomplete: set[SnapshotKey] = set()
         if store is not None:
             try:
                 self._snapshots = store.load()
@@ -96,6 +100,10 @@ class BackgroundMetadata:
         from .completion import normalize_completion_values  # noqa: PLC0415 -- provider protocol.
 
         catalog = (catalog or self.default_catalog or "") if kind != "catalog" else ""
+        if kind == "table" and schema is None and self.backend in {"ch", "clickhouse"}:
+            schema = self.context.get("database")
+            if schema is None:
+                return None
         with self._lock:
             if kind != "table" or schema is not None:
                 return self._snapshots.get((kind, catalog, schema or ""))
@@ -273,37 +281,24 @@ class BackgroundMetadata:
                     self.on_error(exc)
 
     def _discover(self, generation: int) -> bool:
-        from .completion import normalize_completion_values  # noqa: PLC0415 -- provider protocol.
-
         if self.store is not None:
             with self._lock:
                 self._snapshots = self.store.load()
+        if self.backend in {"ch", "clickhouse"} and not self.context.get("database"):
+            namespace = self._resolve("", {})
+            if namespace is not None:
+                self.context["database"] = namespace[1]
         self._consume_history()
         self._seed()
         ticket = self.ledger.claim(time())
         if ticket is None:
             return False
         self._ticket = ticket
-        kind, catalog, schema = ticket.key
         try:
-            if kind == "catalog":
-                result = self.provider.list_catalogs(connection_key=self.connection_key)
-            elif kind == "schema":
-                result = self.provider.list_schemas(
-                    connection_key=self.connection_key, catalog=catalog or None
-                )
-            else:
-                result = self.provider.list_tables(
-                    connection_key=self.connection_key,
-                    catalog=catalog or None,
-                    schema=schema,
-                    prefix="",
-                )
+            result = self._read_listing(ticket)
             raise_if_cancelled()
             self._consume_history()
-            names = normalize_completion_values(result)
-            if self.ledger.finish(ticket, names, time()):
-                self._publish(ticket.key, names, generation, persist=False)
+            self._finish_listing(ticket, result, generation)
         except AsyncSqlCancelled:
             self.ledger.failed(ticket, time(), cancelled=True)
             raise
@@ -317,6 +312,44 @@ class BackgroundMetadata:
         finally:
             self._ticket = None
         return True
+
+    def _read_listing(self, ticket: ScanTicket) -> tuple[str, ...]:
+        kind, catalog, schema = ticket.key
+        if kind == "catalog":
+            return self.provider.list_catalogs(connection_key=self.connection_key)
+        if kind == "schema":
+            return self.provider.list_schemas(
+                connection_key=self.connection_key, catalog=catalog or None
+            )
+        return self.provider.list_tables(
+            connection_key=self.connection_key,
+            catalog=catalog or None,
+            schema=schema,
+            prefix="",
+        )
+
+    def _finish_listing(self, ticket: ScanTicket, result: tuple[str, ...], generation: int) -> None:
+        from .completion import normalize_completion_values  # noqa: PLC0415 -- provider protocol.
+
+        listing = listing_result(result)
+        if not listing.complete:
+            self.incomplete.add(ticket.key)
+            message = "Metadata is incomplete; retaining the last complete names."
+            raise IncompleteMetadataError(message)
+        names = normalize_completion_values(listing)
+        with self._lock:
+            current = (
+                not self._stopping and not self._scope.cancelled and generation == self._generation
+            )
+            finished = current and self.ledger.finish(ticket, names, time())
+        if not current:
+            self.ledger.failed(ticket, time(), cancelled=True)
+        elif finished:
+            recovered = ticket.key in self.incomplete
+            self.incomplete.discard(ticket.key)
+            if recovered and not self.incomplete and self.on_complete is not None:
+                self.on_complete()
+            self._publish(ticket.key, names, generation, persist=False)
 
     def _worker(self) -> None:
         try:
@@ -358,6 +391,7 @@ def persistent_discovery(  # noqa: PLR0913 -- provider, cache and journal depend
     on_error: Callable[[Exception], None],
     *,
     journal: QueryJournal | None = None,
+    on_complete: Callable[[], None] | None = None,
 ) -> BackgroundMetadata:
     """Bind snapshots to resolved configuration without writing credentials."""
     config = get_connection_config(connection_key)
@@ -367,10 +401,11 @@ def persistent_discovery(  # noqa: PLR0913 -- provider, cache and journal depend
         connection_key,
         backend,
         provider,
-        MetadataStore(directory, identity),
+        MetadataStore(directory, "metadata-v2:" + identity),
         default_catalog=getattr(config, "catalog", None),
         on_error=on_error,
         journal=journal,
+        on_complete=on_complete,
         context={
             "identity": identity,
             "catalog": getattr(config, "catalog", None),

@@ -136,7 +136,20 @@ def _verify_installed_artifact(artifact: pathlib.Path, workspace: pathlib.Path) 
         ],
         cwd=install_root,
     )
-    _run([python, "-c", "import clickhouse_driver"], cwd=install_root)
+    _run(
+        [
+            python,
+            "-c",
+            "from clickhouse_driver import Client; "
+            "from clickhouse_driver.compression import get_compressor_cls; "
+            "from clickhouse_cityhash.cityhash import CityHash128; "
+            "assert isinstance(CityHash128(b'exact-native'), int); "
+            "get_compressor_cls('lz4')(); get_compressor_cls('zstd')(); "
+            "Client(host='127.0.0.1', compression='lz4'); "
+            "Client(host='127.0.0.1', compression='zstd')",
+        ],
+        cwd=install_root,
+    )
     _run(
         [python, "-m", "pip", "install", f"{artifact}[tui]"],
         cwd=install_root,
