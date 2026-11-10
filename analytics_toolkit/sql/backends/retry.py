@@ -42,7 +42,8 @@ def classify_backend_error(
     gp_result = classify_gp_error(exc)
     if gp_result is not None:
         return "gp", gp_result
-    origin = _native_backend(exc) or _backend_hint(exc, backend)
+    # Shared symbolic names cannot override the operation's recorded engine.
+    origin = _native_backend(exc) or _backend_hint(exc, backend) or _symbolic_backend(exc)
     if origin is None:
         return None
     result = _CLASSIFIERS[origin](exc)
@@ -64,8 +65,6 @@ def _native_backend(exc: BaseException) -> str | None:
             origin = "ch"
         elif getattr(exc, "error_type", None):
             origin = "trino"
-        else:
-            origin = _symbolic_backend(exc)
     return origin
 
 
