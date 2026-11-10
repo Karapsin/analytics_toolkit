@@ -80,7 +80,7 @@ except sql.SqlBatchExecutionError as exc:
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.
-- Transient failures retry the whole operation with a fresh connection, including after mutation submission or a lost commit acknowledgement. Attempts are bounded by `retry_cnt`; deterministic SQL errors are not retried. Set `retry_cnt=1` for one attempt. Replaying mutations can repeat effects that already committed.
+- Generic transient failures retry the whole operation with a fresh connection, including after mutation submission or a lost commit acknowledgement. Replaying mutations can repeat effects that already committed. Recognized permanent errors and explicit native unknown-outcome errors stop; unrecognized errors retain the existing retry fallback. See the [retry policy](../retry-policy.md). Set `retry_cnt=1` for one toolkit attempt; driver request retries may still occur.
 - List entries use independent connections and retry lifecycles. After one item fails, work that has not started is cancelled and running work reports its real outcome. `SqlBatchExecutionError.items` records every input as `success`, `failed`, `ambiguous`, or `cancelled`; completed items are never replayed as a batch.
 - List results preserve input order. `dry_run=True` or `return_sql=True` returns one `SqlPlan` per query, and `return_metadata=True` returns one `SqlOperationResult` per query.
 - For Trino and ClickHouse, multi-statement SQL is split and submitted sequentially.

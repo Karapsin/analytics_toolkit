@@ -63,7 +63,11 @@ clean attempt; their existing finalization and ambiguity safeguards still apply.
 operation on transient failures with fresh connections, including after mutation
 submission or a lost commit acknowledgement. Replays can repeat already committed
 effects. `retry_cnt` bounds attempts, `timeout_increment` controls backoff, and
-`retry_cnt=1` requests one attempt. Deterministic SQL errors are not retried.
+`retry_cnt=1` requests one toolkit attempt; driver request retries may still
+occur. Recognized permanent SQL errors are not retried; unrecognized errors
+retain the historical retry fallback. The [retry policy](retry-policy.md)
+lists backend stop conditions, including explicit native unknown-outcome
+errors that stop automatic replay.
 A cleanup error is reported alongside the primary operation error rather
 than replacing it.
 

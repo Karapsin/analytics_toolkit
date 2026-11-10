@@ -6,6 +6,8 @@ from analytics_toolkit.sql._log_context import (
     current_sql_log_context,
     prefix_sql_log_message,
 )
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -30,8 +32,7 @@ def get_table_column_names(
 
     resolved = self.resolve_table_info_table_name(table_name, connection_key=connection_key)
     table = TableIdentifier.parse(resolved or table_name, self.backend).render_quoted(self.backend)
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(f"SELECT * FROM {table} LIMIT 1")  # noqa: S608 -- parsed and quoted table identifier.
         columns = cursor.description
         if columns is None:
@@ -40,8 +41,6 @@ def get_table_column_names(
         names = tuple(str(column[0]) for column in columns)
         cursor.fetchall()  # Consume at most one row; never retain or display its values.
         return names
-    finally:
-        cursor.close()
 
 
 def execute_commands(self: Any, connection: Any, sqls: list[str]) -> None:
@@ -115,3 +114,33 @@ def _sql_failure_message(query: str) -> str:
     if suppress_sql:
         return "Failed SQL (details suppressed)"
     return f"Failed SQL:\n{query}"
+
+
+def vacuum_table(  # noqa: PLR0913 - inherited adapter protocol keeps its existing signature.
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    *,
+    analyze: bool = False,
+    full: bool = False,
+    verbose: bool = True,
+) -> None:
+    sql = adapter.build_vacuum_table_sql(
+        table_name,
+        analyze=analyze,
+        full=full,
+        verbose=verbose,
+    )
+    previous_autocommit = getattr(connection, "autocommit", None)
+    try:
+        with cursor_scope(connection) as cursor:
+            if previous_autocommit is not None:
+                connection.autocommit = True
+            cursor.execute(sql)
+    finally:
+        if previous_autocommit is not None:
+            cleanup_preserving_error(
+                lambda: setattr(connection, "autocommit", previous_autocommit),
+                error=None,
+                phase="restore_autocommit",
+            )

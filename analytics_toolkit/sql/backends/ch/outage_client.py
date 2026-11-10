@@ -18,6 +18,7 @@ from analytics_toolkit.sql.execution.backend_options import (
     current_backend_query_label,
 )
 from analytics_toolkit.sql.execution.labels import apply_query_label
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
 from .outage_context import INSERT_KEY, INTERNAL_IO, WRITING, internal_io
 from .outage_ddl import (
@@ -623,9 +624,10 @@ class OutageClient:
 
         with internal_io():
             delivery_connection = get_sql_connection(self._config.connection_key)
-        writer = OutageClient(delivery_connection, self._config)
-        writer._connection_policy = self._get_session(state).policy
+        error: BaseException | None = None
         try:
+            writer = OutageClient(delivery_connection, self._config)
+            writer._connection_policy = self._get_session(state).policy
             with self.query_df_stream(statement.expression.sql(dialect="clickhouse")) as frames:
                 for frame in frames:
                     if len(frame.columns) != len(columns):
@@ -635,12 +637,13 @@ class OutageClient:
                     insert_frame.columns = columns
                     writer.insert_df(table_sql, insert_frame, column_names=columns)
         except BaseException as exc:
+            error = exc
             if state.live_submitted:
                 state.preserve_recovery = True
                 exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
             raise
         finally:
-            delivery_connection.close()
+            cleanup_preserving_error(delivery_connection.close, error=error, phase="close_delivery")
 
     def outage_after_create(
         self, table_name: str, *, policy: Any, pair: bool, expected_columns: Any = None

@@ -7,6 +7,7 @@ from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
 from analytics_toolkit.sql.execution.metadata_cancellation import cancellable_metadata_connection
+from analytics_toolkit.sql.execution.retry_cleanup import connection_scope
 
 
 def table_column_names(db_key: str, table: str) -> tuple[str, ...]:
@@ -14,8 +15,7 @@ def table_column_names(db_key: str, table: str) -> tuple[str, ...]:
     raise_if_cancelled()
     config = get_connection_config(db_key)
     adapter = get_backend_adapter(config.backend)
-    connection = get_sql_connection(config.connection_key)
-    try:
+    with connection_scope(get_sql_connection(config.connection_key)) as connection:
         names: tuple[str, ...] = adapter.get_table_column_names(
             cancellable_metadata_connection(connection),
             table,
@@ -23,5 +23,3 @@ def table_column_names(db_key: str, table: str) -> tuple[str, ...]:
         )
         raise_if_cancelled()
         return names
-    finally:
-        connection.close()

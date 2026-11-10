@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.execution.backend_options import preflight_sql_statements
+from analytics_toolkit.sql.execution.retry_cleanup import connection_scope
 
 from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -72,41 +73,41 @@ def drop_tables(
 
     metadata = plan.metadata
     connection = get_sql_connection(config.connection_key)
-    try:
-        with tracked_sql_operation(
-            metadata=metadata,
-            operation_name="drop_tables",
-            alias=options.connection_key,
-            backend=options.backend,
-            phase="drop_tables",
-            query_label=options.query_label,
-            preview_sql=plan.sqls[0] if plan.sqls else None,
-        ):
-            preflight_sql_statements(connection, plan.sqls)
-            for target_table in target_tables:
-                get_backend_adapter(options.backend).drop_table_with_options(
-                    connection,
-                    target_table,
-                    connection_key=options.connection_key,
-                    ch_cluster=options.ch_cluster,
-                    ch_drop_shard=bool(ch_drop_shard),
-                    ch_drop_distributed=bool(ch_drop_distributed),
-                    ch_wait_for_absence=options.ch_wait_for_absence,
-                    ch_wait_timeout_seconds=options.ch_wait_timeout_seconds,
-                    ch_wait_poll_interval_seconds=(options.ch_wait_poll_interval_seconds),
-                    ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-                    if_exists=bool(if_exists),
-                    query_label=options.query_label,
-                )
-            metadata.affected_rows = None
-    finally:
-        time_print(
-            "Closing connection",
-            connection=config.connection_key,
-            backend=config.backend,
-            phase="close",
-        )
-        connection.close()
+    with connection_scope(connection):
+        try:
+            with tracked_sql_operation(
+                metadata=metadata,
+                operation_name="drop_tables",
+                alias=options.connection_key,
+                backend=options.backend,
+                phase="drop_tables",
+                query_label=options.query_label,
+                preview_sql=plan.sqls[0] if plan.sqls else None,
+            ):
+                preflight_sql_statements(connection, plan.sqls)
+                for target_table in target_tables:
+                    get_backend_adapter(options.backend).drop_table_with_options(
+                        connection,
+                        target_table,
+                        connection_key=options.connection_key,
+                        ch_cluster=options.ch_cluster,
+                        ch_drop_shard=bool(ch_drop_shard),
+                        ch_drop_distributed=bool(ch_drop_distributed),
+                        ch_wait_for_absence=options.ch_wait_for_absence,
+                        ch_wait_timeout_seconds=options.ch_wait_timeout_seconds,
+                        ch_wait_poll_interval_seconds=(options.ch_wait_poll_interval_seconds),
+                        ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+                        if_exists=bool(if_exists),
+                        query_label=options.query_label,
+                    )
+                metadata.affected_rows = None
+        finally:
+            time_print(
+                "Closing connection",
+                connection=config.connection_key,
+                backend=config.backend,
+                phase="close",
+            )
 
     if options.return_metadata:
         return SqlOperationResult(rows=None, metadata=metadata, plan=plan)

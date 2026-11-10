@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-# ruff: noqa: EM101, TRY003
-
-from collections.abc import Mapping, Sequence
 import warnings
+
+# ruff: noqa: EM101, TRY003
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 import pandas as pd
@@ -17,6 +17,7 @@ from analytics_toolkit.sql.connection.errors import (
     SqlTableReadinessError,
     sql_preview,
 )
+from analytics_toolkit.sql.execution.retry_cleanup import connection_scope
 
 from ..connection.config import get_connection_config, resolve_connection_backend
 from ..connection.get_sql_connection import get_sql_connection
@@ -310,15 +311,13 @@ def _handle_existing_create_target(
     from ..dml.table._basic_ops import table_exists
 
     connection = get_sql_connection(config.connection_key)
-    try:
+    with connection_scope(connection, phase="close_existing_table_probe"):
         exists = table_exists(
             config.backend,
             connection,
             table_name,
             config.connection_key,
         )
-    finally:
-        connection.close()
     if not exists:
         return _CREATE_CONTINUE
     if return_metadata:

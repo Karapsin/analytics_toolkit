@@ -4,6 +4,11 @@ from typing import Any
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.connection.refs import ensure_connection_ref
+from analytics_toolkit.sql.execution.retry_cleanup import (
+    cleanup_preserving_error,
+    connection_scope,
+    mark_sql_error,
+)
 
 from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config, resolve_connection_backend
@@ -101,22 +106,22 @@ def gp_vacuum(
         connection=config.connection_key,
         backend=config.backend,
     )
-    try:
-        adapter.vacuum_table(
-            conn,
-            table_name,
-            analyze=analyze,
-            full=full,
-            verbose=verbose,
-        )
-    finally:
-        time_print(
-            "Closing connection",
-            connection=config.connection_key,
-            backend=config.backend,
-            phase="close",
-        )
-        conn.close()
+    with connection_scope(conn):
+        try:
+            adapter.vacuum_table(
+                conn,
+                table_name,
+                analyze=analyze,
+                full=full,
+                verbose=verbose,
+            )
+        finally:
+            time_print(
+                "Closing connection",
+                connection=config.connection_key,
+                backend=config.backend,
+                phase="close",
+            )
 
 
 def drop_table_with_retry(
@@ -137,8 +142,11 @@ def drop_table_with_retry(
     adapter = get_backend_adapter(backend)
 
     def operation(attempt: int) -> None:
-        connection = ensure_connection_ref(connection_key, connection_ref)
+        connection = None
         try:
+            if attempt > 1:
+                replace_connection_fn(connection_key, connection_ref)
+            connection = ensure_connection_ref(connection_key, connection_ref)
             drop_table(
                 backend,
                 connection,
@@ -147,9 +155,14 @@ def drop_table_with_retry(
                 if_exists=if_exists,
             )
             return None
-        except Exception:
-            adapter.rollback_quietly(connection)
-            replace_connection_fn(connection_key, connection_ref)
+        except Exception as exc:
+            mark_sql_error(exc, backend)
+            if connection is not None:
+                cleanup_preserving_error(
+                    lambda: adapter.rollback_quietly(connection),
+                    error=exc,
+                    phase="rollback after table drop",
+                )
             raise
 
     retry_fn(

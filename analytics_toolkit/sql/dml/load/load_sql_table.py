@@ -7,8 +7,12 @@ from typing import Any, Callable, Iterator, Sequence
 import pandas as pd
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.retry import classify_backend_error
 from analytics_toolkit.sql.connection.refs import ensure_connection_ref
 from analytics_toolkit.sql.dml.transfer.runtime.retry import is_non_retryable_sql_error
+from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error, mark_sql_error
+from analytics_toolkit.sql.execution.retry_errors import _common_terminal_reason, _exception_chain
 
 from ...backends import get_backend_adapter
 from ...connection.config import resolve_connection_backend
@@ -56,6 +60,16 @@ def insert_table_batch(
     normalized_batch = adapter.normalize_insert_batch(batch)
 
     def operation(attempt: int) -> int:
+        if attempt > 1:
+            _replace_connection_before_next_insert_retry(
+                adapter=adapter,
+                connection_key=connection_key,
+                connection_ref=connection_ref,
+                rollback_fn=None,
+                replace_connection_fn=replace_connection_fn,
+                attempt=attempt - 1,
+                retry_cnt=retry_cnt,
+            )
         connection = ensure_connection_ref(connection_key, connection_ref)
         try:
             _insert_batch_backend(
@@ -72,6 +86,17 @@ def insert_table_batch(
             )
             return len(normalized_batch)
         except Exception as exc:
+            retain_ambiguous_wrapper = _has_ambiguous_insert_guard(exc, backend)
+            mark_sql_error(exc, backend)
+            if rollback_fn is not None:
+                cleanup_preserving_error(
+                    lambda: rollback_fn(connection), error=exc, phase="rollback_insert"
+                )
+            if (
+                getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False
+                and not retain_ambiguous_wrapper
+            ):
+                raise
             if adapter.should_wrap_insert_error_as_ambiguous(connection, exc):
                 time_print(
                     f"Stage insert failed for {table_name}; "
@@ -86,19 +111,13 @@ def insert_table_batch(
                     connection=connection_type,
                     backend=backend,
                 )
-                raise AmbiguousTableLoadError(
+                ambiguous_error = AmbiguousTableLoadError(
                     f"Ambiguous stage insert outcome on {connection_type} for {table_name}"
-                ) from exc
-            _replace_connection_before_next_insert_retry(
-                adapter=adapter,
-                connection_key=connection_key,
-                connection_ref=connection_ref,
-                rollback_fn=rollback_fn,
-                replace_connection_fn=replace_connection_fn,
-                attempt=attempt,
-                retry_cnt=retry_cnt,
-                error=exc,
-            )
+                )
+                if retain_ambiguous_wrapper:
+                    ambiguous_error.__dict__["analytics_toolkit_sql_retry_safe"] = False
+                    ambiguous_error.__dict__["analytics_toolkit_sql_backend"] = backend
+                raise ambiguous_error from exc
             raise
 
     return retry_fn(
@@ -141,6 +160,16 @@ def insert_rows_batch(
     normalized_rows = adapter.normalize_insert_rows(row_tuples)
 
     def operation(attempt: int) -> int:
+        if attempt > 1:
+            _replace_connection_before_next_insert_retry(
+                adapter=adapter,
+                connection_key=connection_key,
+                connection_ref=connection_ref,
+                rollback_fn=None,
+                replace_connection_fn=replace_connection_fn,
+                attempt=attempt - 1,
+                retry_cnt=retry_cnt,
+            )
         connection = ensure_connection_ref(connection_key, connection_ref)
         try:
             started_at = time.perf_counter()
@@ -161,6 +190,17 @@ def insert_rows_batch(
             )
             duration_seconds = time.perf_counter() - started_at
         except Exception as exc:
+            retain_ambiguous_wrapper = _has_ambiguous_insert_guard(exc, backend)
+            mark_sql_error(exc, backend)
+            if rollback_fn is not None:
+                cleanup_preserving_error(
+                    lambda: rollback_fn(connection), error=exc, phase="rollback_insert"
+                )
+            if (
+                getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False
+                and not retain_ambiguous_wrapper
+            ):
+                raise
             if adapter.should_wrap_insert_error_as_ambiguous(connection, exc):
                 time_print(
                     f"{log_prefix}Stage insert failed for {table_name}; "
@@ -175,19 +215,13 @@ def insert_rows_batch(
                     connection=connection_type,
                     backend=backend,
                 )
-                raise AmbiguousTableLoadError(
+                ambiguous_error = AmbiguousTableLoadError(
                     f"Ambiguous stage insert outcome on {connection_type} for {table_name}"
-                ) from exc
-            _replace_connection_before_next_insert_retry(
-                adapter=adapter,
-                connection_key=connection_key,
-                connection_ref=connection_ref,
-                rollback_fn=rollback_fn,
-                replace_connection_fn=replace_connection_fn,
-                attempt=attempt,
-                retry_cnt=retry_cnt,
-                error=exc,
-            )
+                )
+                if retain_ambiguous_wrapper:
+                    ambiguous_error.__dict__["analytics_toolkit_sql_retry_safe"] = False
+                    ambiguous_error.__dict__["analytics_toolkit_sql_backend"] = backend
+                raise ambiguous_error from exc
             raise
 
         if on_success is not None:
@@ -200,6 +234,23 @@ def insert_rows_batch(
         timeout_increment=timeout_increment,
         operation=operation,
     )
+
+
+def _has_ambiguous_insert_guard(exc: Exception, backend: str) -> bool:
+    guarded = getattr(
+        exc, "analytics_toolkit_sql_retry_safe", True
+    ) is False or preserve_recovery_artifacts(failed=True)
+    if not guarded:
+        return False
+    # Outcome guards describe accepted writes; engine/common errors still retain
+    # their deterministic classification when recovery artifacts are preserved.
+    for node, origin in _exception_chain(exc, backend=backend):
+        if _common_terminal_reason(node) is not None:
+            return False
+        result = classify_backend_error(node, backend=origin)
+        if result is not None and not result[1][0]:
+            return False
+    return True
 
 
 def _logged_insert_exception(exc: Exception, *, safe: bool) -> str:

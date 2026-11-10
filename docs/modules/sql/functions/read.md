@@ -128,6 +128,8 @@ and non-integers are rejected.
 ## Notes
 
 - Prefer this short entrypoint in user-facing examples.
+- Recognized permanent errors stop immediately; unrecognized errors retain the
+  existing retry fallback. See the [retry policy](../retry-policy.md).
 - Dataframe output infers pandas nullable extension dtypes directly from raw
   backend values. Common results use `Int64`, `UInt64`, `boolean`, `Float64`,
   and `string`; empty, all-null, mixed, or unsupported columns remain `object`.

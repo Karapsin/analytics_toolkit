@@ -47,6 +47,7 @@ coverage. Opt into `healthy_shards` for ad hoc partial work; see
 - [DataFrame loading](dataframe-loading.md)
 - [Transfers](transfers.md)
 - [Write safety](write-safety.md)
+- [Retry policy](retry-policy.md)
 - [Logging and observability](logging-and-observability.md)
 - [Table creation](table-creation.md)
 - [Metadata and DDL](metadata-and-ddl.md)

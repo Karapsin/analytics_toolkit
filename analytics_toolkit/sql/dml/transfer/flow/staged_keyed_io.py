@@ -12,6 +12,8 @@ from ....backends.transfer_stage import collision_stage_suffix
 from ....connection.get_sql_connection import get_ch_connection_for_host
 from ....connection.refs import ensure_connection_ref
 from ....dml.io.read_sql import _read_backend
+from ....execution.cancellation import raise_if_cancelled
+from ....execution.retry_cleanup import cleanup_preserving_error, mark_sql_error
 from ...load.load_sql_table import insert_rows_batch
 from ...load.stage import build_stage_table_name, cleanup_stage_table, create_stage_table
 from ...table._basic_ops import table_exists
@@ -219,9 +221,12 @@ def read_key_batch(
         ),
     )
 
-    def read_once(_attempt: int) -> RowBatch:
-        connection = ensure_connection_ref(options.from_db_key, source_ref)
+    def read_once(attempt: int) -> RowBatch:
+        connection = None
         try:
+            if attempt > 1:
+                _replace_keyed_source_for_retry(options, source_ref)
+            connection = ensure_connection_ref(options.from_db_key, source_ref)
             with sql_log_context(f"{task.tag} ", suppress_sql=True):
                 result = _read_backend(
                     options.from_db_backend,
@@ -232,11 +237,20 @@ def read_key_batch(
                     action_name="source-batch reading",
                     phase="read_source_batch",
                 )
-        except Exception:
-            rollback_quietly(connection)
-            _replace_managed_connection(options.from_db_key, source_ref)
+        except Exception as exc:
+            mark_sql_error(exc, options.from_db_backend)
+            if connection is not None:
+                cleanup_preserving_error(
+                    lambda: rollback_quietly(connection),
+                    error=exc,
+                    phase="rollback after staged source read",
+                )
             raise
-        rollback_quietly(connection)
+        cleanup_preserving_error(
+            lambda: rollback_quietly(connection),
+            error=None,
+            phase="rollback after staged source read",
+        )
         result_row_count = len(result.columns[0]) if result.columns else 0
         if any(len(column) != result_row_count for column in result.columns):
             message = f"{task.tag} Source batch columns have unequal lengths."
@@ -391,9 +405,12 @@ def drop_source_stage(
     source_ref: dict[str, Any],
     task: ReadyKeyTask,
 ) -> None:
-    def drop_once(_attempt: int) -> None:
-        connection = ensure_connection_ref(options.from_db_key, source_ref)
+    def drop_once(attempt: int) -> None:
+        connection = None
         try:
+            if attempt > 1:
+                _replace_managed_connection(options.from_db_key, source_ref)
+            connection = ensure_connection_ref(options.from_db_key, source_ref)
             cleanup_stage_table(
                 options.from_db_backend,
                 connection,
@@ -401,9 +418,14 @@ def drop_source_stage(
                 query_label=options.query_label,
                 ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
             )
-        except Exception:
-            rollback_quietly(connection)
-            _replace_managed_connection(options.from_db_key, source_ref)
+        except Exception as exc:
+            mark_sql_error(exc, options.from_db_backend)
+            if connection is not None:
+                cleanup_preserving_error(
+                    lambda: rollback_quietly(connection),
+                    error=exc,
+                    phase="rollback after acknowledged source stage drop",
+                )
             raise
 
     with sql_log_context(f"{task.tag} ", suppress_sql=True):
@@ -537,6 +559,25 @@ def make_target_host_connection_runner(
         )
 
     return run
+
+
+def _replace_keyed_source_for_retry(
+    options: TransferOptions,
+    source_ref: dict[str, Any],
+) -> None:
+    try:
+        _replace_managed_connection(options.from_db_key, source_ref)
+    except Exception as exc:
+        mark_sql_error(exc, options.from_db_backend)
+        # A failed bounded replacement has already closed and cleared its slot.
+        # Let the existing ensure hook use that empty slot once in this attempt.
+        if (
+            getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False
+            or source_ref.get("connection") is not None
+            or not callable(source_ref.get("bounded_ensure_connection"))
+        ):
+            raise
+        raise_if_cancelled()
 
 
 def _replace_managed_connection(

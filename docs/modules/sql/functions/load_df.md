@@ -76,6 +76,9 @@ rows
 
 ## Notes
 
+- Recognized permanent errors stop stage and operation retries, including when
+  an insert failure is wrapped by the driver or loading flow. Unrecognized
+  errors retain the existing retry fallback. See the [retry policy](../retry-policy.md).
 - Every SQL data-stage name created by `load_df` begins with the first 16 hex
   characters of SHA-256 over the exact canonical destination, followed by
   `__`. This stable prefix is collision-resistant but is not proof of identity.

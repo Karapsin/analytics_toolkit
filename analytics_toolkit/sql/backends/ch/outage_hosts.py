@@ -5,6 +5,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Iterator
 
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
+
 from .outage_context import internal_io
 
 if TYPE_CHECKING:
@@ -26,7 +28,11 @@ def host_connection(scope: ClusterScope, host: Host) -> Iterator[Any]:
             host.name,
             port=host.port if scope.config.driver == "native" else None,
         )
+        error: BaseException | None = None
         try:
             yield connection
+        except BaseException as exc:
+            error = exc
+            raise
         finally:
-            connection.close()
+            cleanup_preserving_error(connection.close, error=error, phase="close_host")

@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 
 from ..connection.errors import SqlOperationContext, sql_preview
+from ..execution.retry_cleanup import connection_scope
 from .ch_policy import regular_ddl_properties
 
 
@@ -92,14 +93,12 @@ def generate_create_table_from_query_sql(
     def inspect_schema(attempt: int) -> list[Any]:
         del attempt
         source_connection = get_sql_connection_fn(source_config.connection_key)
-        try:
+        with connection_scope(source_connection, phase="close_schema_inspection"):
             return inspect_source_query_schema(
                 source_config.backend,
                 source_connection,
                 apply_query_label(source_sql, query_label),
             )
-        finally:
-            source_connection.close()
 
     source_schema = run_retrying_operation(
         operation_name=(

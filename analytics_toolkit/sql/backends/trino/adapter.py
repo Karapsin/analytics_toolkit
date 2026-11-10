@@ -4,18 +4,19 @@ from collections.abc import Callable, Sequence
 from string import Formatter
 from typing import Any
 
-from . import operations as _operations
-from . import insert as _insert
-from . import parquet_stage as _parquet_stage
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+
 from .. import dataframe_types as _dataframe_types
 from .. import source_schema as _source_schema
 from ..base import _apply_query_label
-from ..models import SourceColumn
-from ..utils import sql_literal
-from ..utils import sql_in_list as _sql_in_list
-from ..utils import user_filter as _user_filter
 from ..dbapi import DbApiBackendAdapter
-
+from ..models import SourceColumn
+from ..utils import sql_in_list as _sql_in_list
+from ..utils import sql_literal
+from ..utils import user_filter as _user_filter
+from . import insert as _insert
+from . import operations as _operations
+from . import parquet_stage as _parquet_stage
 
 _TRINO_MAX_DECIMAL_PRECISION = 38
 
@@ -42,12 +43,9 @@ class TrinoAdapter(DbApiBackendAdapter):
         super().__init__(backend="trino", commit_commands=False)
 
     def execute_materialization_command(self, connection: Any, sql: str) -> None:
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             cursor.execute(sql)
             cursor.fetchall()
-        finally:
-            cursor.close()
 
     def explicit_create_property_overrides(
         self,
@@ -152,8 +150,7 @@ class TrinoAdapter(DbApiBackendAdapter):
             table_name,
             connection_key=connection_key,
         )
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             cursor.execute(
                 f"""
                 SELECT 1
@@ -164,8 +161,6 @@ class TrinoAdapter(DbApiBackendAdapter):
                 (schema_name, relation_name),
             )
             return cursor.fetchone() is not None
-        finally:
-            cursor.close()
 
     def clear_table_sqls(
         self,
@@ -258,8 +253,7 @@ class TrinoAdapter(DbApiBackendAdapter):
             table_name,
             connection_key=connection_key,
         )
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             cursor.execute(
                 f"""
                 SELECT column_name, data_type
@@ -273,8 +267,6 @@ class TrinoAdapter(DbApiBackendAdapter):
             return {
                 str(column_name): str(data_type) for column_name, data_type in cursor.fetchall()
             }
-        finally:
-            cursor.close()
 
     def inspect_source_query_schema(
         self,
@@ -488,34 +480,33 @@ class TrinoAdapter(DbApiBackendAdapter):
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
         from analytics_toolkit.general import time_print
-        from ...execution.query_timing import run_timed_query
+
         from ...dml.io.execute_sql import (
             _iterate_statements_with_progress,
             _maybe_print_query,
             _split_sql_statements,
         )
+        from ...execution.query_timing import run_timed_query
 
-        cursor = connection.cursor()
-        statements = _split_sql_statements(sql)
-        time_print(f"Executing {len(statements)} statement(s)", backend=self.backend)
-        statement: str | None = None
-        try:
-            for statement in _iterate_statements_with_progress(
-                statements,
-                self.backend,
-                progress=progress,
-            ):
-                _maybe_print_query(statement, print_queries, split_preview=True)
-                run_timed_query(
+        with cursor_scope(connection) as cursor:
+            statements = _split_sql_statements(sql)
+            time_print(f"Executing {len(statements)} statement(s)", backend=self.backend)
+            statement: str | None = None
+            try:
+                for statement in _iterate_statements_with_progress(
+                    statements,
                     self.backend,
-                    lambda statement=statement: cursor.execute(statement),
-                )
-        except Exception:
-            failed_query = statement if statement is not None else sql
-            time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
-            raise
-        finally:
-            cursor.close()
+                    progress=progress,
+                ):
+                    _maybe_print_query(statement, print_queries, split_preview=True)
+                    run_timed_query(
+                        self.backend,
+                        lambda statement=statement: cursor.execute(statement),
+                    )
+            except Exception:
+                failed_query = statement if statement is not None else sql
+                time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
+                raise
         return None
 
     def execute_read_sql(
@@ -530,6 +521,7 @@ class TrinoAdapter(DbApiBackendAdapter):
     ) -> Any:
         del gp_break_query, gp_commit_each_statement
         from analytics_toolkit.general import time_print
+
         from ...dml.io.execute_read import (
             _execute_setup_statements,
             _read_dbapi_cursor,
@@ -539,27 +531,25 @@ class TrinoAdapter(DbApiBackendAdapter):
             f"Executing {max(len(statements) - 1, 0)} setup statement(s) and reading final query",
             backend=self.backend,
         )
-        cursor = connection.cursor()
-        try:
-            _execute_setup_statements(
-                cursor,
-                statements[:-1],
-                connection_type=self.backend,
-                execute_statement=lambda cursor, statement: cursor.execute(statement),
-                print_queries=print_queries,
-                progress=progress,
-            )
-            return _read_dbapi_cursor(
-                cursor,
-                statements[-1],
-                self.backend,
-                print_queries,
-            )
-        except Exception:
-            time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
-            raise
-        finally:
-            cursor.close()
+        with cursor_scope(connection) as cursor:
+            try:
+                _execute_setup_statements(
+                    cursor,
+                    statements[:-1],
+                    connection_type=self.backend,
+                    execute_statement=lambda cursor, statement: cursor.execute(statement),
+                    print_queries=print_queries,
+                    progress=progress,
+                )
+                return _read_dbapi_cursor(
+                    cursor,
+                    statements[-1],
+                    self.backend,
+                    print_queries,
+                )
+            except Exception:
+                time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
+                raise
 
     def insert_dataframe_batch(
         self,

@@ -12,6 +12,7 @@ from analytics_toolkit.sql.execution.cancellation import (
 )
 from analytics_toolkit.sql.execution.observation import observed_connection
 from analytics_toolkit.sql.execution.operation_runner import timed_public_sql_function
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
 from .airflow_compat import variable_getter
 from .config import ChConfig, get_connection_config, get_connections_file_path
@@ -39,8 +40,8 @@ def get_sql_connection(db_key: str) -> Any:
     )
     try:
         raise_if_cancelled()
-    except BaseException:
-        connection.close()
+    except BaseException as exc:
+        cleanup_preserving_error(connection.close, error=exc, phase="close_cancelled_connection")
         raise
     return observed_connection(connection)
 
@@ -71,8 +72,8 @@ def get_ch_connection_for_host(connection_key: str, host: str, *, port: int | No
     )
     try:
         raise_if_cancelled()
-    except BaseException:
-        connection.close()
+    except BaseException as exc:
+        cleanup_preserving_error(connection.close, error=exc, phase="close_cancelled_connection")
         raise
     return observed_connection(connection)
 

@@ -206,13 +206,23 @@ def run_connection_operation(
             annotate_sql_exception(exc, context_factory(attempt))
             from analytics_toolkit.sql.backends import get_backend_adapter
 
-            get_backend_adapter(backend).rollback_quietly(connection_ref["connection"])
+            try:
+                get_backend_adapter(backend).rollback_quietly(connection_ref["connection"])
+            except Exception as rollback_error:  # noqa: BLE001 - preserve the SQL failure.
+                _log_connection_cleanup_failure(
+                    rollback_error, connection_key, backend=backend, phase="rollback"
+                )
             raise
         finally:
-            if cleanup is None:
-                _close_connection(connection_ref, connection_key, backend=backend)
-            else:
-                cleanup(connection_ref)
+            try:
+                if cleanup is None:
+                    _close_connection(connection_ref, connection_key, backend=backend)
+                else:
+                    cleanup(connection_ref)
+            except Exception as close_error:  # noqa: BLE001 - never replay for cleanup.
+                _log_connection_cleanup_failure(
+                    close_error, connection_key, backend=backend, phase="close"
+                )
 
     return _run_with_retry(
         operation_name=operation_name,
@@ -274,6 +284,22 @@ def _close_connection(
         phase="close",
     )
     connection_ref["connection"].close()
+
+
+def _log_connection_cleanup_failure(
+    exc: Exception,
+    connection_key: str,
+    *,
+    backend: str,
+    phase: str,
+) -> None:
+    time_print(
+        f"Connection {phase} failed after SQL outcome was established: {type(exc).__name__}",
+        level="warning",
+        connection=connection_key,
+        backend=backend,
+        phase=phase,
+    )
 
 
 def _first_non_empty_sql_line(sql: str | None) -> str | None:

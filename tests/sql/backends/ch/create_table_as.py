@@ -142,6 +142,34 @@ def test_ch_create_table_as_is_exported() -> None:
     assert not hasattr(sql_module, "ch_create_table_as")
 
 
+@pytest.mark.parametrize("operation_fails", [False, True])
+def test_ch_create_table_as_close_preserves_completed_creation_and_primary_error(
+    fake_client: FakeClickHouseClient,
+    monkeypatch: pytest.MonkeyPatch,
+    operation_fails: bool,
+) -> None:
+    primary = TimeoutError("insert acknowledgement was lost")
+    close_error = RuntimeError("creation connection close failed")
+
+    def failing_close() -> None:
+        fake_client.close_calls += 1
+        raise close_error
+
+    monkeypatch.setattr(fake_client, "close", failing_close)
+    if operation_fails:
+        fake_client.insert_error = primary
+        with pytest.raises(TimeoutError) as caught:
+            ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, QUERY)
+        assert caught.value is primary
+        assert any("close" in note for note in getattr(primary, "__notes__", ()))
+    else:
+        assert ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, QUERY) is None
+
+    assert TARGET_TABLE in fake_client.created_tables
+    assert sum(command.startswith("INSERT INTO") for command in fake_client.commands) == 1
+    assert fake_client.close_calls == 1
+
+
 def test_ch_create_table_as_creates_pair_and_inserts_query(
     fake_client: FakeClickHouseClient,
 ) -> None:

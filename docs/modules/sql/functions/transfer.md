@@ -357,6 +357,11 @@ rows = sql.transfer(
   key. It may therefore observe newer source data.
 - Prefer this short entrypoint in user-facing examples.
 - Retries restart the public operation with fresh connections.
+- The [retry policy](../retry-policy.md) lists backend errors that stop stage,
+  batch, and full-transfer retries. Source errors use the source backend's
+  policy even when the target uses a different backend. Unrecognized errors
+  retain the existing retry fallback; attempt counts and driver retries remain
+  unchanged.
 - Deterministic input and configuration errors stop immediately without an
   operation or full-transfer retry. This includes missing Trino `catalog` or
   `schema` settings required to resolve qualified target table names and
