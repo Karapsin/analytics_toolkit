@@ -157,6 +157,12 @@ determine the stop decision.
 - `USER_CANCELED` — respect cancellation.
 - `ADMINISTRATIVELY_KILLED` — respect administrative termination.
 
+Legacy wrapper aliases also retain their stop behavior when exposed through
+`name` or `error_name`:
+
+- `FEATURE_NOT_SUPPORTED` — retries cannot add unsupported functionality.
+- `INSUFFICIENT_PRIVILEGE` — change the required privileges.
+
 Fixed query limits stop unchanged retries:
 
 - `EXCEEDED_GLOBAL_MEMORY_LIMIT` — the query exceeds its memory cap across workers.

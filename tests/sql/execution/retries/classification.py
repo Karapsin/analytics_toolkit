@@ -247,13 +247,46 @@ def test_legacy_missing_object_error_types_stop_without_native_metadata(error_na
     assert decision.reason == "legacy_deterministic_error"
 
 
+@pytest.mark.parametrize("attribute", ["name", "error_name"])
 @pytest.mark.parametrize("name", ["FEATURE_NOT_SUPPORTED", "INSUFFICIENT_PRIVILEGE"])
-def test_legacy_symbolic_aliases_remain_terminal(name) -> None:
+def test_legacy_symbolic_aliases_remain_terminal(attribute, name) -> None:
     error = RuntimeError("neutral diagnostic")
-    error.name = name
+    setattr(error, attribute, name)
     decision = classify_sql_error(error)
     assert decision.retryable is False
     assert decision.reason == "legacy_deterministic_error"
+
+
+@pytest.mark.parametrize("attribute", ["name", "error_name"])
+@pytest.mark.parametrize("name", ["FEATURE_NOT_SUPPORTED", "INSUFFICIENT_PRIVILEGE"])
+@pytest.mark.parametrize(
+    ("error_class", "code", "backend"),
+    [(NativeGpError, "40001", "gp"), (NativeClickHouseError, 210, "ch")],
+)
+def test_native_transient_code_precedes_legacy_symbolic_alias(
+    error_class, code, backend, attribute, name
+) -> None:
+    error = error_class(code)
+    setattr(error, attribute, name)
+
+    decision = classify_sql_error(error)
+
+    assert decision.retryable is True
+    assert decision.backend == backend
+    assert decision.code == code
+
+
+def test_structured_trino_name_precedes_legacy_compatibility_alias() -> None:
+    error = RuntimeError("neutral diagnostic")
+    error.error_type = "EXTERNAL"
+    error.error_name = "FUTURE_CONNECTOR_FAILURE"
+    error.name = "FEATURE_NOT_SUPPORTED"
+
+    decision = classify_sql_error(error)
+
+    assert decision.retryable is True
+    assert decision.backend == "trino"
+    assert decision.code == "FUTURE_CONNECTOR_FAILURE"
 
 
 def test_stop_log_includes_stable_reason_and_code(monkeypatch, capsys) -> None:

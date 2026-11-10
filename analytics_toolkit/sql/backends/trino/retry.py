@@ -6,6 +6,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 NON_RETRYABLE_ERROR_REASONS: dict[str, str] = {
+    # Keep historical wrapper aliases terminal for both name and error_name.
+    **dict.fromkeys(
+        ("FEATURE_NOT_SUPPORTED", "INSUFFICIENT_PRIVILEGE"), "legacy_deterministic_error"
+    ),
     **dict.fromkeys(
         (
             "SYNTAX_ERROR",
