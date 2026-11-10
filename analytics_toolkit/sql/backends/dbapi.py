@@ -4,6 +4,9 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
+
 from . import common_methods as _common_methods
 from .base import BackendAdapter, BackendName, _apply_query_label
 from .utils import extract_row_count
@@ -17,32 +20,32 @@ class DbApiBackendAdapter(BackendAdapter):
     _read_columns_impl = _common_methods.read_columns_impl
 
     def execute_command(self, connection: Any, sql: str) -> Any:
-        cursor = connection.cursor()
-        try:
-            cursor.execute(sql)
-            if self.commit_commands:
-                connection.commit()
-            return cursor
-        except Exception:
-            if self.commit_commands:
-                connection.rollback()
-            raise
-        finally:
-            cursor.close()
+        with cursor_scope(connection) as cursor:
+            try:
+                cursor.execute(sql)
+                if self.commit_commands:
+                    connection.commit()
+                return cursor
+            except Exception as exc:
+                if self.commit_commands:
+                    cleanup_preserving_error(
+                        connection.rollback, error=exc, phase="rollback_cursor"
+                    )
+                raise
 
     def execute_commands(self, connection: Any, sqls: list[str]) -> None:
-        cursor = connection.cursor()
-        try:
-            for sql in sqls:
-                cursor.execute(sql)
-            if self.commit_commands:
-                connection.commit()
-        except Exception:
-            if self.commit_commands:
-                connection.rollback()
-            raise
-        finally:
-            cursor.close()
+        with cursor_scope(connection) as cursor:
+            try:
+                for sql in sqls:
+                    cursor.execute(sql)
+                if self.commit_commands:
+                    connection.commit()
+            except Exception as exc:
+                if self.commit_commands:
+                    cleanup_preserving_error(
+                        connection.rollback, error=exc, phase="rollback_cursor"
+                    )
+                raise
 
     def insert_from_query(
         self,
@@ -57,19 +60,19 @@ class DbApiBackendAdapter(BackendAdapter):
             self.build_insert_from_query_sql(target_table, source_sql, column_types),
             query_label,
         )
-        cursor = connection.cursor()
-        try:
-            cursor.execute(sql)
-            row_count = extract_row_count(cursor)
-            if self.commit_commands:
-                connection.commit()
-            return row_count
-        except Exception:
-            if self.commit_commands:
-                connection.rollback()
-            raise
-        finally:
-            cursor.close()
+        with cursor_scope(connection) as cursor:
+            try:
+                cursor.execute(sql)
+                row_count = extract_row_count(cursor)
+                if self.commit_commands:
+                    connection.commit()
+                return row_count
+            except Exception as exc:
+                if self.commit_commands:
+                    cleanup_preserving_error(
+                        connection.rollback, error=exc, phase="rollback_cursor"
+                    )
+                raise
 
     def iter_source_batches(
         self,

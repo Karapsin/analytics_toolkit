@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.ddl.properties import overlay_with_properties
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 from ..models import TargetConnectionDefaults
 from ..utils import sql_literal
@@ -203,8 +204,7 @@ def query_transfer_stage_table_names(
         f"{transfer_staging_schema}.__analytics_toolkit_stage_marker__",
         connection_key=connection_key,
     )
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(
             f"""
             SELECT table_name
@@ -215,8 +215,6 @@ def query_transfer_stage_table_names(
             (schema_name, table_pattern),
         )
         return [str(row[0]) for row in (cursor.fetchall() or [])]
-    finally:
-        cursor.close()
 
 
 def qualify_transfer_stage_table_name(

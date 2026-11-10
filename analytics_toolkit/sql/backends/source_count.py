@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+
+
 def build_source_count_sql(
     self: Any,
     source_sql: str,
@@ -22,13 +25,10 @@ def count_source_rows(
     *,
     query_label: str | None = None,
 ) -> int:
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(self.build_source_count_sql(source_sql, query_label=query_label))
         row = fetch_first_row(cursor)
         return int(row[0]) if row else 0
-    finally:
-        cursor.close()
 
 
 def source_sql_for_count_limited_read(

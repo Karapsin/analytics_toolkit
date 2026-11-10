@@ -16,6 +16,7 @@ from ...connection.get_sql_connection import (
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 from .lifecycle import (
     build_create_ch_distributed_table_pair_sqls,
     build_drop_ch_distributed_table_pair_sqls,
@@ -140,6 +141,7 @@ def ch_create_table_as(
 
     metadata = SqlOperationMetadata(query_label=options.query_label)
     connection = get_sql_connection(config.connection_key)
+    error: BaseException | None = None
     try:
         with tracked_sql_operation(
             metadata=metadata,
@@ -281,6 +283,9 @@ def ch_create_table_as(
                     )
                     raise
             time_print(f"Finished creating ClickHouse table {options.target_table}")
+    except BaseException as exc:
+        error = exc
+        raise
     finally:
         time_print(
             "Closing connection",
@@ -288,7 +293,7 @@ def ch_create_table_as(
             backend=config.backend,
             phase="close",
         )
-        connection.close()
+        cleanup_preserving_error(connection.close, error=error, phase="close")
     if options.return_metadata:
         return SqlOperationResult(rows=None, metadata=metadata)
     return None

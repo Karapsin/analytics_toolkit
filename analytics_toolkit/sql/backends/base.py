@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+
 from . import adapter_defaults as _adapter_defaults
 from . import common_methods as _common_methods
 from . import source_count as _source_count
@@ -213,13 +215,10 @@ class BackendAdapter:
         *,
         query_label: str | None = None,
     ) -> int:
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             cursor.execute(self.count_table_rows_sql(table_name, query_label=query_label))
             row = cursor.fetchone()
             return int(row[0]) if row else 0
-        finally:
-            cursor.close()
 
     build_source_count_sql = _source_count.build_source_count_sql
     count_source_rows = _source_count.count_source_rows

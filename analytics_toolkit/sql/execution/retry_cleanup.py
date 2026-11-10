@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.general import time_print
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
+
+
+@contextmanager
+def connection_scope(connection: Any, *, phase: str = "close_connection") -> Iterator[Any]:
+    """Close a connection without changing the established operation outcome."""
+    error: BaseException | None = None
+    try:
+        yield connection
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        cleanup_preserving_error(connection.close, error=error, phase=phase)
 
 
 def mark_sql_error(exc: BaseException, backend: str) -> None:

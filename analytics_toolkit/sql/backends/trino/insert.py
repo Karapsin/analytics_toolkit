@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 
 from analytics_toolkit.sql._log_context import prefix_sql_log_message
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 DEFAULT_TRINO_INSERT_CHUNK_SIZE = 1000
 DATETIME_MICROSECOND_PRECISION = 6
@@ -58,8 +59,7 @@ def insert_rows(
     from analytics_toolkit.general import time_print
 
     chunk_size = get_insert_chunk_size(trino_insert_chunk_size, connection_type)
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         row_iterator = iter_row_values(columns, rows, target_column_types)
         for row_chunk in _chunk_rows(row_iterator, chunk_size):
             params = [value for row in row_chunk for value in row]
@@ -82,8 +82,6 @@ def insert_rows(
             cursor.execute(sql, params)
             if on_progress is not None:
                 on_progress(len(row_chunk))
-    finally:
-        cursor.close()
 
 
 def get_insert_chunk_size(
@@ -117,9 +115,7 @@ def cast_parameter_placeholders(
     if not target_column_types:
         return sql
     casts = [
-        f"CAST(? AS {target_column_types[column]})"
-        if column in target_column_types
-        else "?"
+        f"CAST(? AS {target_column_types[column]})" if column in target_column_types else "?"
         for _ in range(row_count)
         for column in columns
     ]

@@ -6,6 +6,8 @@ from typing import Any
 
 import pandas as pd
 
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+
 from .models import SourceColumn
 
 
@@ -15,15 +17,12 @@ def inspect_dbapi_source_schema(
     *,
     type_code_name: Callable[[Any, int | None, int | None], str | None],
 ) -> list[SourceColumn]:
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(zero_row_query(query))
         return [
             source_column_from_description(column, type_code_name=type_code_name)
             for column in cursor.description or []
         ]
-    finally:
-        cursor.close()
 
 
 def inspect_clickhouse_source_schema(connection: Any, query: str) -> list[SourceColumn]:
@@ -63,10 +62,7 @@ def description_value(column: Any, attribute: str, index: int) -> Any:
 
 
 def zero_row_query(query: str) -> str:
-    return (
-        f"SELECT * FROM ({strip_query_semicolon(query)}) "
-        "AS source_schema_probe WHERE 1 = 0"
-    )
+    return f"SELECT * FROM ({strip_query_semicolon(query)}) AS source_schema_probe WHERE 1 = 0"
 
 
 def strip_query_semicolon(query: str) -> str:
@@ -178,7 +174,7 @@ def refine_clickhouse_column_types_nullability_from_rows(
     if column_types is None or not rows:
         return column_types
 
-    has_null = {column_name: False for column_name in columns}
+    has_null = dict.fromkeys(columns, False)
     for row in rows:
         for column_name, value in zip(columns, row):
             if is_null_value(value):

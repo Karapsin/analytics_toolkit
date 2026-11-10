@@ -5,6 +5,9 @@ from typing import Any
 
 import pandas as pd
 
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+
+from . import common_methods as _common_methods
 from . import target_create as _target_create
 from .models import (
     TargetConnectionDefaults,
@@ -214,8 +217,7 @@ def query_transfer_stage_table_names(
     table_pattern: str,
 ) -> list[str]:
     del connection_key
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(
             """
             SELECT table_name
@@ -226,8 +228,6 @@ def query_transfer_stage_table_names(
             (transfer_staging_schema, table_pattern),
         )
         return [str(row[0]) for row in (cursor.fetchall() or [])]
-    finally:
-        cursor.close()
 
 
 def qualify_transfer_stage_table_name(
@@ -749,31 +749,7 @@ def build_vacuum_table_sql(
     raise NotImplementedError
 
 
-def vacuum_table(
-    adapter: Any,
-    connection: Any,
-    table_name: str,
-    *,
-    analyze: bool = False,
-    full: bool = False,
-    verbose: bool = True,
-) -> None:
-    sql = adapter.build_vacuum_table_sql(
-        table_name,
-        analyze=analyze,
-        full=full,
-        verbose=verbose,
-    )
-    previous_autocommit = getattr(connection, "autocommit", None)
-    cursor = connection.cursor()
-    try:
-        if previous_autocommit is not None:
-            connection.autocommit = True
-        cursor.execute(sql)
-    finally:
-        cursor.close()
-        if previous_autocommit is not None:
-            connection.autocommit = previous_autocommit
+vacuum_table = _common_methods.vacuum_table
 
 
 def prepare_existing_target_for_create_from_sql(

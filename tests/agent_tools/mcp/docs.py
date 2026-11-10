@@ -41,7 +41,13 @@ def test_change_impact_reports_sql_contract_and_architecture_headroom() -> None:
     assert output_type["pointer"] == "/exports/read/parameters/output_type"
     assert output_type["manifest_status"] == "aligned"
     budgets = {item["path"]: item for item in result["result"]["architecture"]["modules"]}
-    assert budgets["analytics_toolkit/sql/backends/base.py"]["remaining_lines"] == 1
+    base_path = "analytics_toolkit/sql/backends/base.py"
+    base_budget = budgets[base_path]
+    source_lines = len((mcp_server.REPO_ROOT / base_path).read_text(encoding="utf-8").splitlines())
+    assert base_budget["max_lines"] == 900
+    assert 0 < source_lines <= base_budget["max_lines"]
+    assert base_budget["line_count"] == source_lines
+    assert base_budget["remaining_lines"] == base_budget["max_lines"] - source_lines
     assert "docs/modules/sql/functions/read.md" in result["result"]["documentation_paths"]
     assert result["telemetry"]["response_bytes"] < 8_000
 

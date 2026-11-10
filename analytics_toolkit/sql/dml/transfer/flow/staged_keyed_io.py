@@ -12,6 +12,7 @@ from ....backends.transfer_stage import collision_stage_suffix
 from ....connection.get_sql_connection import get_ch_connection_for_host
 from ....connection.refs import ensure_connection_ref
 from ....dml.io.read_sql import _read_backend
+from ....execution.cancellation import raise_if_cancelled
 from ....execution.retry_cleanup import cleanup_preserving_error, mark_sql_error
 from ...load.load_sql_table import insert_rows_batch
 from ...load.stage import build_stage_table_name, cleanup_stage_table, create_stage_table
@@ -223,6 +224,8 @@ def read_key_batch(
     def read_once(attempt: int) -> RowBatch:
         connection = None
         try:
+            if attempt > 1:
+                _replace_keyed_source_for_retry(options, source_ref)
             connection = ensure_connection_ref(options.from_db_key, source_ref)
             with sql_log_context(f"{task.tag} ", suppress_sql=True):
                 result = _read_backend(
@@ -242,15 +245,6 @@ def read_key_batch(
                     error=exc,
                     phase="rollback after staged source read",
                 )
-            if (
-                getattr(exc, "analytics_toolkit_sql_retry_safe", True) is not False
-                and attempt < options.retry_cnt
-            ):
-                try:
-                    _replace_managed_connection(options.from_db_key, source_ref)
-                except Exception as replacement_error:
-                    mark_sql_error(replacement_error, options.from_db_backend)
-                    raise
             raise
         cleanup_preserving_error(
             lambda: rollback_quietly(connection),
@@ -565,6 +559,25 @@ def make_target_host_connection_runner(
         )
 
     return run
+
+
+def _replace_keyed_source_for_retry(
+    options: TransferOptions,
+    source_ref: dict[str, Any],
+) -> None:
+    try:
+        _replace_managed_connection(options.from_db_key, source_ref)
+    except Exception as exc:
+        mark_sql_error(exc, options.from_db_backend)
+        # A failed bounded replacement has already closed and cleared its slot.
+        # Let the existing ensure hook use that empty slot once in this attempt.
+        if (
+            getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False
+            or source_ref.get("connection") is not None
+            or not callable(source_ref.get("bounded_ensure_connection"))
+        ):
+            raise
+        raise_if_cancelled()
 
 
 def _replace_managed_connection(

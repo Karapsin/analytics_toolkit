@@ -6,6 +6,7 @@ from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.connection.refs import ensure_connection_ref
 from analytics_toolkit.sql.execution.retry_cleanup import (
     cleanup_preserving_error,
+    connection_scope,
     mark_sql_error,
 )
 
@@ -105,22 +106,22 @@ def gp_vacuum(
         connection=config.connection_key,
         backend=config.backend,
     )
-    try:
-        adapter.vacuum_table(
-            conn,
-            table_name,
-            analyze=analyze,
-            full=full,
-            verbose=verbose,
-        )
-    finally:
-        time_print(
-            "Closing connection",
-            connection=config.connection_key,
-            backend=config.backend,
-            phase="close",
-        )
-        conn.close()
+    with connection_scope(conn):
+        try:
+            adapter.vacuum_table(
+                conn,
+                table_name,
+                analyze=analyze,
+                full=full,
+                verbose=verbose,
+            )
+        finally:
+            time_print(
+                "Closing connection",
+                connection=config.connection_key,
+                backend=config.backend,
+                phase="close",
+            )
 
 
 def drop_table_with_retry(
