@@ -10,6 +10,7 @@ from analytics_toolkit.sql.dml.transfer.flow import attempt, stage, staged_keyed
 from analytics_toolkit.sql.dml.transfer.flow.lazy_keyed_runtime import LazyKeyedRuntime
 from analytics_toolkit.sql.dml.transfer.io import source
 from analytics_toolkit.sql.dml.transfer.runtime.models import (
+    RowBatch,
     TransferConnectionRefs,
     TransferOptions,
     TransferSlice,
@@ -135,3 +136,28 @@ def test_clickhouse_stream_setup_failure_does_not_close_an_unacquired_context():
     with pytest.raises(RuntimeError, match="codec configuration") as caught:
         next(batches)
     assert caught.value is primary
+
+
+def test_exported_first_batch_initializer_keeps_explicit_schema_for_legacy_callers(monkeypatch):
+    opts = options(table_schema={"id": "SMALLINT"})
+    state = TransferStageState(False, stage_column_types={"id": "BIGINT"})
+    assert not state.input_types_resolved
+    created = []
+
+    def create_stage(**kwargs):
+        created.append(dict(kwargs["column_types"]))
+        return "sandbox.explicit_stage"
+
+    monkeypatch.setattr(stage, "create_stage_table", create_stage)
+    stage.initialize_stage_for_first_batch(
+        opts,
+        TransferConnectionRefs(target={"connection": object()}),
+        state,
+        RowBatch(["id"], [(1,)]),
+    )
+
+    assert created == [{"id": "SMALLINT"}]
+    assert state.stage_column_types == {"id": "SMALLINT"}
+    assert state.stage_table == "sandbox.explicit_stage"
+    assert state.stage_table_created
+    assert state.first_non_empty_batch.to_dict("records") == [{"id": 1}]

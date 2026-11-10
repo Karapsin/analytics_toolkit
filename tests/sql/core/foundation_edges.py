@@ -108,7 +108,7 @@ def test_exact_scalar_profiles_aliases_and_native_preservation():
         resolve_profile(observed(1), "ch", source_type="Int8", source_backend="ch").target_type
         == "Int8"
     )
-    assert declared_domain_fits("VARCHAR(2)", "VARCHAR", "gp")
+    assert declared_domain_fits("VARCHAR(2)", "VARCHAR", "gp", source_backend="gp")
     assert declared_domain_fits("bytea", "Nullable(String)", "ch", source_backend="gp")
     assert dataframe_types._infer_common_sql_type(pd.Series([1])) == "BIGINT"
     assert dataframe_types._is_uuid_series(pd.Series([UUID(int=1)]))

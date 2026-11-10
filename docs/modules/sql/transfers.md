@@ -327,7 +327,12 @@ fixed-point Decimal, ISO dates/timestamps (aware instants normalized to UTC), an
 canonical UUIDs. Structured fallback is compact typed JSON version 1, carrying
 source backend/type and recursively tagged values; maps use ordered pairs so
 duplicate keys survive. Unsupported binary text uses a `base64:` prefix; native
-binary transport remains preferred. SQL NULL remains NULL. Mixed naive/aware
+binary transport remains preferred. ClickHouse `String` input is profiled before
+cross-backend text mapping: raw bytes use native Greenplum `BYTEA` or Trino
+`VARBINARY`. A string column containing NUL uses Greenplum `BYTEA` with exact
+UTF-8 encoding; ordinary valid strings retain `TEXT`. Existing authoritative
+Greenplum text columns reject raw bytes, NUL and invalid Unicode before mutation.
+SQL NULL remains NULL. Mixed naive/aware
 timestamps use typed text without assigning a timezone to naive values.
 
 Nested inference also tries native Trino `ARRAY`, `MAP` and `ROW`, and native

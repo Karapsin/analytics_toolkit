@@ -57,6 +57,7 @@ class ColumnProfile:
     native_type: str | None = None
     source_backend: str | None = None
     maximum_byte_length: int = 0
+    text_has_nul: bool = False
     utf8_valid: bool = True
     native_constraints_valid: bool = True
 
@@ -124,6 +125,7 @@ class ColumnProfile:
             if magnitude.is_finite():
                 self.maximum_numeric_magnitude = max(self.maximum_numeric_magnitude, magnitude)
         elif family == "string":
+            self.text_has_nul |= "\x00" in value
             try:
                 self.maximum_byte_length = max(self.maximum_byte_length, len(value.encode("utf-8")))
             except UnicodeEncodeError:
@@ -275,6 +277,7 @@ class ColumnProfile:
         self.all_uuid_strings &= other.all_uuid_strings
         self.maximum_text_length = max(self.maximum_text_length, other.maximum_text_length)
         self.maximum_byte_length = max(self.maximum_byte_length, other.maximum_byte_length)
+        self.text_has_nul |= other.text_has_nul
         self.utf8_valid &= other.utf8_valid
         self.native_constraints_valid &= other.native_constraints_valid
         self.gp_array_compatible &= other.gp_array_compatible

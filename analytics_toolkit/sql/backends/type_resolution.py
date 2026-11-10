@@ -23,6 +23,7 @@ from analytics_toolkit.sql.core.exact_values import (
     typed_text,
 )
 
+from .text_types import binary_profile_fits
 from .value_profiles import ColumnProfile
 
 __all__ = [
@@ -54,11 +55,14 @@ _FLOAT_TYPES = {
     "float32",
     "float64",
     "real",
+    "single",
     "float4",
     "float8",
     "double",
     "double precision",
 }
+_FLOAT32_BITS = 32
+_FLOAT32_PRECISION = 24
 _FLOAT32_LIMIT = Decimal(2**128 - 2**104)
 _FLOAT64_LIMIT = Decimal.from_float(float.fromhex("0x1.fffffffffffffp+1023"))
 
@@ -231,6 +235,12 @@ class ResolvedColumn:
                 source_type=self.source_type,
                 fractional_scale=scale,
             )
+        if (
+            self.target_backend in {"gp", "trino"}
+            and parse_native_type(self.target_type).base.name in {"bytea", "varbinary"}
+            and isinstance(value, str)
+        ):
+            return value.encode("utf-8")
         if is_timestamp_type(self.target_type):
             value = truncate_temporal(value, timestamp_scale(self.target_type))
         if isinstance(value, ExactTemporal):
@@ -251,14 +261,16 @@ class ResolvedColumn:
             "number",
         } and isinstance(value, Integral):
             return Decimal(int(value))
-        if parse_native_type(self.target_type).base.name in _FLOAT_TYPES:
-            return float(value)
+        if parse_native_type(self.target_type).base.name in _FLOAT_TYPES | {"boolean", "bool"}:
+            return (
+                bool(value)
+                if parse_native_type(self.target_type).base.name in {"boolean", "bool"}
+                else float(value)
+            )
         if integer_domain(
             self.target_type, backend=self.target_backend or None
         ) is not None and isinstance(value, Integral):
             return int(value)
-        if parse_native_type(self.target_type).base.name in {"boolean", "bool"}:
-            return bool(value)
         if parse_native_type(self.target_type).base.name == "uuid" and isinstance(value, str):
             return UUID(value)
         return value
@@ -303,7 +315,7 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
     if target is None or not declared_domain_fits(
         source_type, target, target_backend, source_backend=source_backend or None
     ):
-        target = _resolve_native(profile, target_backend, source_type)
+        target = _resolve_native(profile, target_backend, source_type, source_backend)
     fallback = target is None
     if target is None:
         target = {"gp": "TEXT", "trino": "VARCHAR", "ch": "String"}[target_backend]
@@ -336,7 +348,7 @@ def _declared_target(
 
 
 def _resolve_native(  # noqa: C901, PLR0911, PLR0912 - explicit native precedence
-    profile: ColumnProfile, backend: str, source_type: str | None
+    profile: ColumnProfile, backend: str, source_type: str | None, source_backend: str | None = None
 ) -> str | None:
     families = profile.families
     if backend == "ch" and profile.null_count and families & {"array", "tuple", "map"}:
@@ -410,10 +422,10 @@ def _resolve_native(  # noqa: C901, PLR0911, PLR0912 - explicit native precedenc
         return "Date" if backend == "ch" else "DATE"
     if families == {"uuid"}:
         return "UUID"
-    if families == {"binary"}:
-        return {"gp": "BYTEA", "trino": "VARBINARY", "ch": "String"}[backend]
-    if families == {"string"}:
-        return {"gp": "TEXT", "trino": "VARCHAR", "ch": "String"}[backend]
+    if families <= {"string", "binary"}:
+        from .text_types import resolve_text_family  # noqa: PLC0415 - physical type context
+
+        return resolve_text_family(profile, backend, source_type, source_backend)
     from .nested_types import resolve_nested  # noqa: PLC0415 - recursive native policies
 
     return resolve_nested(profile, backend, source_type)
@@ -477,6 +489,14 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
     ):
         msg = "Selected input exceeds authoritative text length."
         raise ValueError(msg)
+    if (
+        base.name in {"binary", "varbinary"}
+        and base.arguments
+        and base.arguments[0].isdigit()
+        and profile.maximum_byte_length > int(base.arguments[0])
+    ):
+        msg = "Selected input exceeds authoritative binary length."
+        raise ValueError(msg)
     from .nested_types import validate_nested  # noqa: PLC0415 - native recursive schemas
 
     if validate_nested(
@@ -504,6 +524,13 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
             msg = "Selected input violates authoritative ClickHouse scalar constraints."
             raise ValueError(msg)
         return
+    if (
+        backend == "gp"
+        and base.name in {"text", "varchar", "char", "character", "character varying"}
+        and ("binary" in profile.families or profile.text_has_nul or not profile.utf8_valid)
+    ):
+        msg = "Selected input is incompatible with authoritative Greenplum text; use BYTEA."
+        raise ValueError(msg)
     domain = integer_domain(target_type, backend=backend)
     decimal_shape = decimal_domain(target_type)
     if domain is not None:
@@ -534,7 +561,11 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
             msg = "Selected input exceeds authoritative numeric domain."
             raise ValueError(msg)
     elif base.name in _FLOAT_TYPES:
-        limit = _FLOAT32_LIMIT if base.name in {"float32", "float4", "real"} else _FLOAT64_LIMIT
+        limit = (
+            _FLOAT32_LIMIT
+            if _float_width(target_type, backend) == _FLOAT32_BITS
+            else _FLOAT64_LIMIT
+        )
         if (
             not profile.families <= {"integer", "decimal", "float"}
             or profile.maximum_numeric_magnitude > limit
@@ -545,7 +576,9 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         if not profile.families <= {"uuid", "string"} or not profile.all_uuid_strings:
             msg = "Selected input is incompatible with authoritative UUID schema."
             raise ValueError(msg)
-    elif base.name in {"bytea", "binary", "varbinary"} and not profile.families <= {"binary"}:
+    elif base.name in {"bytea", "binary", "varbinary"} and not binary_profile_fits(
+        profile, source_type, source_backend
+    ):
         msg = "Selected input is incompatible with authoritative binary schema."
         raise ValueError(msg)
     elif is_timestamp_type(target_type):
@@ -628,7 +661,58 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         raise ValueError(msg)
 
 
-def declared_domain_fits(  # noqa: C901, PLR0911 - exact declared domain proofs
+def _float_width(type_name: str | None, backend: str | None) -> int | None:
+    native = parse_native_type(type_name).base
+    if native.name not in _FLOAT_TYPES:
+        return None
+    if native.name in {"float32", "float4", "real", "single"}:
+        return 32
+    if native.name == "float":
+        if backend == "ch":
+            return 32
+        if native.arguments:
+            return 32 if int(native.arguments[0]) <= _FLOAT32_PRECISION else 64
+        return 64
+    return 64
+
+
+def _date_domain(type_name: str | None, backend: str | None) -> tuple[dt.date, dt.date] | None:
+    native = parse_native_type(type_name).base.name
+    if native not in {"date", "date32"}:
+        return None
+    if native == "date32":
+        return dt.date(1900, 1, 1), dt.date(2299, 12, 31)
+    if backend == "ch":
+        return dt.date(1970, 1, 1), dt.date(2149, 6, 6)
+    return dt.date.min, dt.date.max
+
+
+def _timestamp_range_fits(
+    source_type: str, target_type: str, source_backend: str | None, target_backend: str
+) -> bool:
+    if source_backend is None and parse_native_type(source_type).base.name.startswith("datetime"):
+        source_backend = "ch"
+    if target_backend != "ch":
+        return source_backend in {target_backend, "ch"}
+    if source_backend != "ch":
+        return False
+
+    def bounds(native: str) -> tuple[int, int]:
+        if parse_native_type(native).base.name == "datetime":
+            return 0, (2**32 - 1) * 10**9
+        scale = timestamp_scale(native)
+        unit = 10 ** (9 - scale)
+        # DateTime64's documented calendar domain and signed transport ticks
+        # both constrain its range; scale 9 therefore ends during 2262.
+        return max(-2208988800 * 10**9, -(2**63) * unit), min(
+            10413791999 * 10**9, (2**63 - 1) * unit
+        )
+
+    source_range, target_range = bounds(source_type), bounds(target_type)
+    return target_range[0] <= source_range[0] and source_range[1] <= target_range[1]
+
+
+def declared_domain_fits(  # noqa: C901, PLR0911, PLR0912 - exact declared domain proofs
     source_type: str | None,
     target_type: str | None,
     target_backend: str,
@@ -684,6 +768,7 @@ def declared_domain_fits(  # noqa: C901, PLR0911 - exact declared domain proofs
         return (
             is_timestamp_type(target_type)
             and timestamp_scale(source_type) <= timestamp_scale(target_type)
+            and _timestamp_range_fits(source_type, target_type, source_backend, target_backend)
             and type_has_timezone((source_type or "").lower())
             == type_has_timezone(target_type.lower())
         )
@@ -694,6 +779,10 @@ def declared_domain_fits(  # noqa: C901, PLR0911 - exact declared domain proofs
         "string",
         "character varying",
     } and target.name in {"char", "varchar", "text", "string", "character varying"}:
+        if (source.name == "string" and target_backend != "ch") or (
+            target_backend == "gp" and source_backend != "gp"
+        ):
+            return False
         if target.arguments and target.arguments[0].isdigit():
             return bool(
                 source.arguments
@@ -707,13 +796,39 @@ def declared_domain_fits(  # noqa: C901, PLR0911 - exact declared domain proofs
         and target_backend == "ch"
     ):
         return True
+    source_float = _float_width(source_type, source_backend)
+    target_float = _float_width(target_type, target_backend)
+    if source_float is not None or target_float is not None:
+        return bool(source_float and target_float and source_float <= target_float)
+    source_date = _date_domain(source_type, source_backend)
+    target_date = _date_domain(target_type, target_backend)
+    if source_date is not None or target_date is not None:
+        if source_backend in {"gp", "trino"} and target_backend in {"gp", "trino"}:
+            return source_backend == target_backend
+        return bool(
+            source_date
+            and target_date
+            and target_date[0] <= source_date[0]
+            and source_date[1] <= target_date[1]
+        )
+    binary = {"bytea", "binary", "varbinary"}
+    if source.name in binary or target.name in binary:
+        return bool(
+            source.name in binary
+            and target.name in binary
+            and (
+                not target.arguments
+                or (
+                    source.arguments
+                    and source.arguments[0].isdigit()
+                    and target.arguments[0].isdigit()
+                    and int(source.arguments[0]) <= int(target.arguments[0])
+                )
+            )
+        )
     families = (
-        {"char", "varchar", "text", "string"},
         {"bool", "boolean"},
-        {"date", "date32"},
         {"uuid"},
-        {"bytea", "binary", "varbinary"},
-        {"float", "float32", "float64", "real", "double", "double precision"},
     )
     return any(source.name in group and target.name in group for group in families)
 

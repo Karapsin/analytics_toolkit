@@ -8,6 +8,8 @@ import importlib
 from datetime import date
 from typing import Any, TYPE_CHECKING
 
+import pytest
+
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -234,10 +236,12 @@ class FakeClickHouseClient:
         )
 
 
+@pytest.mark.parametrize("users", [10, None])
 def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     monkeypatch,
+    users,
 ) -> None:
-    source = FakeSourceConnection(rows=[(date(2024, 2, 1), 10)])
+    source = FakeSourceConnection(rows=[(date(2024, 2, 1), users)])
     target = FakeClickHouseClient()
 
     def fake_get_sql_connection(connection_key: str) -> object:
@@ -282,9 +286,11 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     assert stage_identifier.endswith("__w00000")
     assert len(stage_identifier.encode()) <= 63
     staged_row = target.inserts[0]["data"][0]
-    assert staged_row == (date(2024, 2, 1), 10)
+    assert staged_row == (date(2024, 2, 1), users)
     assert target.inserts[0]["column_names"] == ["month_date", "users"]
-    assert target.inserts[0]["column_type_names"] == ["Date", "Int64"]
+    # GP metadata leaves nullability unknown. The certified native integer
+    # representation retains that domain even when this selection has no NULL.
+    assert target.inserts[0]["column_type_names"] == ["Date", "Nullable(Int64)"]
     assert "df" not in target.inserts[0]
 
     cluster_distributed_creates = [
@@ -296,7 +302,7 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     assert len(cluster_distributed_creates) == 1
     assert "ENGINE = Distributed(" in cluster_distributed_creates[0]
     assert "`month_date` Date" in cluster_distributed_creates[0]
-    assert "`users` Int64" in cluster_distributed_creates[0]
+    assert "`users` Nullable(Int64)" in cluster_distributed_creates[0]
     assert "    '{cluster}'," in cluster_distributed_creates[0]
     assert f"    '{TARGET_SHARD_TABLE}'," in cluster_distributed_creates[0]
     local_shard_creates = [
