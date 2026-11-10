@@ -75,6 +75,17 @@ _CODES_BY_NAME = {
     "QUOTA_EXPIRED": 201,
     "TOO_LESS_LIVE_REPLICAS": 285,
 }
+_LEGACY_TERMINAL_NAMES = frozenset(
+    {
+        "ALREADY_EXISTS",
+        "COLUMN_NOT_FOUND",
+        "FEATURE_NOT_SUPPORTED",
+        "FUNCTION_NOT_FOUND",
+        "INSUFFICIENT_PRIVILEGE",
+        "SCHEMA_NOT_FOUND",
+        "TABLE_NOT_FOUND",
+    }
+)
 _HTTP_CODE = re.compile(r"^\s*Received ClickHouse exception,\s*code:\s*(\d+)\b", re.IGNORECASE)
 _HTTP_STATUS = re.compile(r"^\s*HTTP driver received HTTP status (\d{3})\b", re.IGNORECASE)
 _LEGACY_HTTP_RESPONSE = re.compile(
@@ -85,9 +96,15 @@ _LEGACY_HTTP_RESPONSE = re.compile(
 _SERVER_CODE = re.compile(r"^\s*Code:\s*(\d+)\.\s*DB::Exception:", re.IGNORECASE)
 _SERVER_NAME = re.compile(
     r"\(([A-Z][A-Z0-9_]*)\)(?:\s*\(version [^)]*\))?"
-    r"(?:\s*\(for url [^)]*\))?\s*$"
+    r"(?:\s*\(for url [^)]*\))?\s*$",
+    re.IGNORECASE,
 )
 _SYMBOLIC_NAME = re.compile(r"[A-Z][A-Z0-9_]*\Z")
+_BARE_CONVERSION_DIAGNOSTIC = re.compile(
+    r"^\s*(?:DB::Exception:\s*|Received ClickHouse exception(?::|,\s*server response:)"
+    r"\s*(?:DB::Exception:\s*)?)(?:Attempt to read after eof:\s*)?Cannot (?:parse|convert)\b",
+    re.IGNORECASE,
+)
 _CONVERSION_EOF_DIAGNOSTIC = re.compile(
     r"^\s*(?:Received ClickHouse exception,\s*code:\s*32,\s*server response:\s*)?"
     r"(?:Code:\s*32\.\s*)?DB::Exception:\s*"
@@ -122,12 +139,14 @@ def _classify_attributes(exc: BaseException, message: str) -> tuple[bool, str, s
 
     for attribute in ("error_name", "name"):
         name = getattr(exc, attribute, None)
-        if isinstance(name, str) and _SYMBOLIC_NAME.fullmatch(name.strip()):
-            return _classify_name(name.strip(), message)
+        if isinstance(name, str):
+            name = name.strip().upper()
+            if _SYMBOLIC_NAME.fullmatch(name):
+                return _classify_name(name, message)
     return None
 
 
-def _classify_message(message: str) -> tuple[bool, str, str | int] | None:
+def _classify_message(message: str) -> tuple[bool, str, str | int | None] | None:
     legacy = _LEGACY_HTTP_RESPONSE.match(message)
     if legacy is not None:
         body = _classify_server_diagnostic(legacy.group(2) or "")
@@ -144,14 +163,16 @@ def _classify_http_status(status: int) -> tuple[bool, str, int]:
     return reason is None, reason or "clickhouse_unclassified", status
 
 
-def _classify_server_diagnostic(message: str) -> tuple[bool, str, str | int] | None:
+def _classify_server_diagnostic(message: str) -> tuple[bool, str, str | int | None] | None:
     code_match = _HTTP_CODE.match(message) or _SERVER_CODE.match(message)
     if code_match is not None:
         return _classify_code(int(code_match.group(1)), message)
-    if message.lstrip().startswith(("DB::Exception:", "Received ClickHouse exception")):
+    if message.lstrip().lower().startswith(("db::exception:", "received clickhouse exception")):
         name_match = _SERVER_NAME.search(message)
         if name_match is not None:
-            return _classify_name(name_match.group(1), message)
+            return _classify_name(name_match.group(1).upper(), message)
+    if _BARE_CONVERSION_DIAGNOSTIC.match(message):
+        return False, "clickhouse_data", None
     return None
 
 
@@ -179,4 +200,6 @@ def _classify_name(name: str, message: str) -> tuple[bool, str, str | int]:
     code = _CODES_BY_NAME.get(name)
     if code is not None:
         return _classify_code(code, message)
+    if name in _LEGACY_TERMINAL_NAMES:
+        return False, "legacy_deterministic_error", name
     return True, "clickhouse_unclassified", name

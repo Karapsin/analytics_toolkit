@@ -47,7 +47,9 @@ def run_with_retry(  # noqa: PLR0913
             )
             if stop:
                 reason = "custom_predicate" if non_retryable_predicate else decision.reason
-                code = f"; code={decision.code}" if decision.code is not None else ""
+                code = _logged_retry_code(
+                    decision.code, backend=decision.backend, safe=safe_exception_logging
+                )
                 time_print(
                     f"{log_prefix}Failed with a non-retryable error "
                     f"(reason={reason}{code}): "
@@ -104,6 +106,15 @@ def _logged_exception(exc: Exception, *, safe: bool) -> str:
     if len(exception_type) > _MAX_SAFE_EXCEPTION_TYPE_CHARS:
         return exception_type[: _MAX_SAFE_EXCEPTION_TYPE_CHARS - 3] + "..."
     return exception_type
+
+
+def _logged_retry_code(code: str | int | None, *, backend: str | None, safe: bool) -> str:
+    if safe:
+        # Backend packages depend on this runtime; defer catalog imports until logging.
+        from analytics_toolkit.sql.backends.retry_logging import safe_error_code  # noqa: PLC0415
+
+        code = safe_error_code(backend, code)
+    return f"; code={code}" if code is not None else ""
 
 
 def is_non_retryable_sql_error(exc: Exception, *, backend: str | None = None) -> bool:

@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from analytics_toolkit.sql.backends.ch.retry import classify_error
+from analytics_toolkit.sql.execution.retry_errors import classify_sql_error
 
 # Importing the SDK exceptions also loads its unrelated C extensions. Match the
 # exception identity and hierarchy here without importing that transport stack.
@@ -383,3 +384,130 @@ def test_minimum_sdk_http_retry_statuses_keep_legacy_behavior(status: int, body:
 )
 def test_minimum_sdk_brand_cannot_be_read_from_query_text(message: str) -> None:
     assert classify_error(ClickHouseDatabaseError(message)) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "code"),
+    [
+        ("ALREADY_EXISTS", "ALREADY_EXISTS"),
+        ("BAD_ARGUMENTS", 36),
+        ("COLUMN_NOT_FOUND", "COLUMN_NOT_FOUND"),
+        ("FEATURE_NOT_SUPPORTED", "FEATURE_NOT_SUPPORTED"),
+        ("FUNCTION_NOT_FOUND", "FUNCTION_NOT_FOUND"),
+        ("ILLEGAL_TYPE_OF_ARGUMENT", 43),
+        ("INSUFFICIENT_PRIVILEGE", "INSUFFICIENT_PRIVILEGE"),
+        ("SCHEMA_NOT_FOUND", "SCHEMA_NOT_FOUND"),
+        ("SYNTAX_ERROR", 62),
+        ("TABLE_NOT_FOUND", "TABLE_NOT_FOUND"),
+        ("TYPE_MISMATCH", 53),
+        ("UNKNOWN_IDENTIFIER", 47),
+        ("UNKNOWN_TABLE", 60),
+    ],
+)
+@pytest.mark.parametrize("attribute", ["name", "error_name"])
+def test_all_historical_names_stop_with_clickhouse_source_identity(
+    name: str, code: str | int, attribute: str
+) -> None:
+    error = ClickHouseDatabaseError("neutral server diagnostic")
+    setattr(error, attribute, f" {name.title()} ")
+
+    decision = classify_sql_error(error, backend="trino")
+
+    assert decision.retryable is False
+    assert decision.backend == "ch"
+    assert decision.code == code
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ALREADY_EXISTS",
+        "BAD_ARGUMENTS",
+        "COLUMN_NOT_FOUND",
+        "FEATURE_NOT_SUPPORTED",
+        "FUNCTION_NOT_FOUND",
+        "ILLEGAL_TYPE_OF_ARGUMENT",
+        "INSUFFICIENT_PRIVILEGE",
+        "SCHEMA_NOT_FOUND",
+        "SYNTAX_ERROR",
+        "TABLE_NOT_FOUND",
+        "TYPE_MISMATCH",
+        "UNKNOWN_IDENTIFIER",
+        "UNKNOWN_TABLE",
+    ],
+)
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "DB::Exception:",
+        "db::exception:",
+        "Received ClickHouse exception:",
+        "received clickhouse exception:",
+    ],
+)
+def test_historical_branded_names_stop_but_cannot_override_native_code(
+    name: str, prefix: str
+) -> None:
+    message = f"{prefix} Request rejected. ({name.lower()})"
+    diagnostic = classify_sql_error(RuntimeError(message))
+    assert diagnostic.retryable is False
+    assert diagnostic.backend == "ch"
+
+    native = _NATIVE_NETWORK_ERROR(message)
+    native.name = name  # type: ignore[attr-defined]
+    decision = classify_sql_error(native)
+    assert decision.retryable is True
+    assert decision.backend == "ch"
+    assert decision.code == 210
+
+
+@pytest.mark.parametrize("error_type", [ClickHouseDatabaseError, RuntimeError])
+@pytest.mark.parametrize(
+    "message",
+    [
+        "DB::Exception: Cannot parse field",
+        "DB::Exception: Cannot convert value",
+        "Received ClickHouse exception: Cannot convert value",
+        "Received ClickHouse exception, server response: DB::Exception: Cannot parse field",
+        "DB::Exception: Attempt to read after eof: Cannot parse Int64 from String",
+    ],
+)
+def test_bare_branded_conversion_diagnostics_stop_without_overriding_native_code(
+    message: str, error_type: type[Exception]
+) -> None:
+    decision = classify_sql_error(error_type(message), backend="trino")
+    assert decision.retryable is False
+    assert decision.backend == "ch"
+    assert decision.reason == "clickhouse_data"
+    assert decision.code is None
+
+    native = classify_sql_error(_NATIVE_NETWORK_ERROR(message))
+    assert native.retryable is True
+    assert native.backend == "ch"
+    assert native.code == 210
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "DB::Exception: Query SELECT 'Cannot parse field' failed remotely",
+        "Received ClickHouse exception: SELECT 'Cannot convert value'",
+        "Received ClickHouse exception, code: 999999, server response: "
+        "Code: 999999. DB::Exception: Cannot parse field",
+        "Code: 210. DB::Exception: Cannot convert value",
+    ],
+)
+def test_query_excerpts_and_structured_codes_precede_legacy_conversion_text(message: str) -> None:
+    assert classify_sql_error(ClickHouseDatabaseError(message)).retryable is True
+
+
+def test_native_sqlstate_precedes_clickhouse_legacy_name_and_conversion_diagnostic() -> None:
+    error = ClickHouseDatabaseError("DB::Exception: Cannot parse field. (FEATURE_NOT_SUPPORTED)")
+    error.pgcode = "40001"  # type: ignore[attr-defined]
+    error.error_name = "FEATURE_NOT_SUPPORTED"  # type: ignore[attr-defined]
+
+    decision = classify_sql_error(error)
+
+    assert decision.retryable is True
+    assert decision.backend == "gp"
+    assert decision.code == "40001"

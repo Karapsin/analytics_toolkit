@@ -127,6 +127,22 @@ Other HTTP status codes retain the historical fallback. Typed certificate
 verification failures in the native driver also stop; an unclassified generic
 network exception remains eligible for retries.
 
+Legacy ClickHouse wrapper aliases also retain their stop behavior when no
+structured native code overrides them:
+
+- `ALREADY_EXISTS` — reconcile the existing object or creation logic.
+- `COLUMN_NOT_FOUND` — correct the column reference.
+- `FEATURE_NOT_SUPPORTED` — retries cannot add unsupported functionality.
+- `FUNCTION_NOT_FOUND` — correct the function name or signature.
+- `INSUFFICIENT_PRIVILEGE` — change the required privileges.
+- `SCHEMA_NOT_FOUND` — correct or create the schema.
+- `TABLE_NOT_FOUND` — correct or create the table.
+
+Leading ClickHouse server diagnostics reporting that a value cannot parse or
+convert also stop when no structured native code is available. Correct the
+input or conversion; the same text inside quoted SQL does not establish an
+input failure.
+
 ## Trino
 
 These names follow the [standard error registry](https://github.com/trinodb/trino/blob/master/core/trino-spi/src/main/java/io/trino/spi/StandardErrorCode.java).
