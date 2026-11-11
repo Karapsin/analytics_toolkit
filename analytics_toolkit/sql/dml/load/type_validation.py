@@ -57,6 +57,11 @@ def validate_dataframe_schema(
             allow_timestamp_precision_loss=allow_timestamp_precision_loss,
             destination_timezone=destination_timezone,
         )
+        resolution = ResolvedColumn(
+            schema[str(name)], target_backend=backend, destination_timezone=destination_timezone
+        )
+        for value in df.iloc[:, index]:
+            resolution.convert(_schema_value(value, schema[str(name)]))
 
 
 def convert_dataframe_schema(

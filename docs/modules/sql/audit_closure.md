@@ -100,4 +100,14 @@ These cover the actual write context, strict authoritative validation, exact
 text fallback, and recursive preservation of physical instants without
 rewriting the source SQL types or inventing a DST fold.
 
+Destination-native map-key identity is additionally covered by
+`core/map_key_conversion.py::test_trino_uuid_key_collision_rejects_before_dictionary_construction`,
+`core/map_key_conversion.py::test_unique_map_keys_use_final_native_identity_without_changing_scalar_values`,
+`dml/transfer/schema/map_keys.py::test_transfer_rejects_map_keys_that_collide_after_authoritative_uuid_conversion`,
+`dml/transfer/schema/map_keys.py::test_transfer_rejects_map_keys_that_collide_in_final_native_column_before_mutation`,
+and `dml/transfer/schema/map_keys.py::test_load_existing_map_rejects_converted_uuid_key_collision_before_truncation`.
+These include recursive maps, UUID normalization, `REAL` rounding and `CHAR`
+padding, while preserving legal ClickHouse duplicate pairs and inferred maps
+whose string keys remain distinct.
+
 [SQL module index](index.md)

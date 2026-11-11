@@ -373,8 +373,15 @@ a fixed-rank destination. Greenplum maps do not cause automatic JSONB creation.
 Trino maps require non-NULL, unique keys; duplicate keys or coercions that merge
 different keys use typed text during inference and fail validation for an
 authoritative map schema. ClickHouse maps preserve duplicate ordered pairs.
+For Trino, uniqueness uses destination-native key identity, including UUID normalization,
+`REAL` rounding and `CHAR` padding. Distinct source keys that become the same
+destination key fail validation before target mutation; an entry is never
+silently overwritten. For example, uppercase and lowercase spellings of one
+UUID cannot both become keys in an authoritative `MAP(UUID, VARCHAR)`.
+The check applies recursively and preserves legal ClickHouse duplicate pairs.
 These rules follow [Greenplum's array implementation](https://raw.githubusercontent.com/greenplum-db/gpdb-archive/main/src/backend/utils/adt/arrayfuncs.c),
-[Trino's strict map construction](https://raw.githubusercontent.com/trinodb/trino/master/core/trino-main/src/main/java/io/trino/operator/scalar/MapFromEntriesFunction.java)
+[Trino's strict map construction](https://raw.githubusercontent.com/trinodb/trino/master/core/trino-main/src/main/java/io/trino/operator/scalar/MapFromEntriesFunction.java),
+[Trino's native type semantics](https://trino.io/docs/current/language/types.html#char),
 and [ClickHouse's map contract](https://clickhouse.com/docs/reference/data-types/map).
 
 Greenplum can use unconstrained `NUMERIC` when the required precision exceeds

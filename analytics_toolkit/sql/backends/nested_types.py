@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from sqlglot import exp, parse_one
 
-from analytics_toolkit.sql.core.exact_values import OrderedMapPairs
-
 _TRINO_INFERRED_TIMESTAMP_SCALE = 6
 
 if TYPE_CHECKING:
@@ -192,8 +190,10 @@ def convert_nested(
             for _, native in children
         )
         pairs = [(key_type.convert(key), value_type.convert(item)) for key, item in value.items()]
-        return (
-            dict(pairs) if backend == "trino" or isinstance(value, dict) else OrderedMapPairs(pairs)
+        from .map_values import converted_map  # noqa: PLC0415 - preserve converted key identity
+
+        return converted_map(
+            pairs, backend, mapping_input=isinstance(value, dict), key_type=children[0][1]
         )
     return value
 
