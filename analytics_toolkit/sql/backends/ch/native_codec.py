@@ -66,12 +66,17 @@ def _map_items(column: Any, n_items: int, buf: Any) -> list[Any]:
     offsets = column.offset_column.read_items(n_items, buf)
     keys = column.key_column.read_data(offsets[-1], buf)
     values = column.value_column.read_data(offsets[-1], buf)
-    result = []
+    result: list[Any] = []
     begin = 0
     for end in offsets:
         pairs = tuple(zip(keys[begin:end], values[begin:end]))
-        unique = dict(pairs)
-        result.append(unique if len(unique) == len(pairs) else OrderedMapPairs(pairs))
+        try:
+            unique = dict(pairs)
+        except TypeError:
+            # ClickHouse permits array/tuple keys whose decoded values are unhashable.
+            result.append(OrderedMapPairs(pairs))
+        else:
+            result.append(unique if len(unique) == len(pairs) else OrderedMapPairs(pairs))
         begin = end
     return result
 

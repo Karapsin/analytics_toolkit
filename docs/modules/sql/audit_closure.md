@@ -119,4 +119,13 @@ and `dml/transfer/schema/map_keys.py::test_unique_trino_char_map_conversion_free
 These require distinct destination-native keys across both conversions, reject
 collisions before mutation, and retain safe lazy paths and valid stage schemas.
 
+Composite-key equality is additionally covered by
+`core/composite_map_keys.py::test_composite_key_collisions_are_detected_before_materialization`,
+`dml/transfer/schema/composite_map_keys.py::test_composite_map_key_collision_stops_transfer_before_mutation`,
+`dml/transfer/schema/composite_map_keys.py::test_composite_map_key_collision_stops_load_before_truncate_create_or_insert`,
+and `dml/transfer/schema/composite_map_keys.py::test_safe_same_and_widened_composite_keys_keep_lazy_streaming`.
+These check destination-native equality inside `ROW` key fields, including
+`CHAR` padding and `REAL` rounding, without losing valid entries or changing
+the caller's stage schema.
+
 [SQL module index](index.md)

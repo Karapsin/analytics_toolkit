@@ -116,11 +116,17 @@ def _map_column(datatype: Any, source: Any, count: int, context: Any, state: Any
     else:
         keys = datatype.key_type.read_column_data(source, total, context, state[0])
         values = datatype.value_type.read_column_data(source, total, context, state[1])
-    result, begin = [], 0
+    result: list[Any] = []
+    begin = 0
     for end in offsets:
         pairs = tuple(zip(keys[begin:end], values[begin:end]))
-        unique = dict(pairs)
-        result.append(unique if len(unique) == len(pairs) else OrderedMapPairs(pairs))
+        try:
+            unique = dict(pairs)
+        except TypeError:
+            # ClickHouse permits array/tuple keys whose decoded values are unhashable.
+            result.append(OrderedMapPairs(pairs))
+        else:
+            result.append(unique if len(unique) == len(pairs) else OrderedMapPairs(pairs))
         begin = end
     return result
 

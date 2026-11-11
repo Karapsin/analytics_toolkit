@@ -73,12 +73,16 @@ names retain their exact identity during table introspection.
 Trino sends parameterized multi-row insert statements. A connection-level insert
 chunk size can be set in `.connections`, and call-level settings can override
 it. Native `ARRAY`, `MAP`, and `ROW` values retain nested UUID, Decimal and null
-values. Named `ROW` fields follow the declared schema order; map keys must remain
-unique and non-null under destination-native key identity after conversion.
+values. Named `ROW` fields follow the declared schema order, with missing or
+extra fields rejected; positional rows must have the declared number of fields.
+Map keys must remain unique and non-null under destination-native key identity after conversion.
 UUID normalization, `REAL` rounding and `CHAR` padding can merge distinct source
 keys; authoritative maps reject such collisions before target mutation instead
-of discarding an entry. Existing or explicit `TIMESTAMP(p)`
-destinations above precision six preserve every available fractional digit when
+of discarding an entry. Map-key identity also uses the destination types inside
+composite `ROW` keys,
+so padding or rounding in a field cannot silently merge entries.
+Existing or explicit `TIMESTAMP(p)` destinations above precision six preserve
+every available fractional digit when
 the connector supports that precision. Inference retains its supported connector
 precision. Trino upsert builds a final increment for affected partitions and requires
 `upsert_partition_drop_sql_template` in `.connections` so connector-specific

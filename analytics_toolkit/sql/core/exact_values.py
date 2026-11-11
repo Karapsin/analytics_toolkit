@@ -79,10 +79,10 @@ class OrderedMapPairs(Tuple[Tuple[Any, Any], ...]):
         return iter(self)
 
     def keys(self) -> Any:
-        return (key for key, _ in self)
+        return tuple(key for key, _ in self)
 
     def values(self) -> Any:
-        return (value for _, value in self)
+        return tuple(value for _, value in self)
 
 
 @dataclass(frozen=True)

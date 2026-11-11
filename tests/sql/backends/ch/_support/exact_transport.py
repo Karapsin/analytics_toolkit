@@ -9,6 +9,11 @@ class BinaryNativeSource(BytesIO):
     def read_one(self) -> int:
         return self.read(1)[0]
 
+    def read_strings(self, count: int, encoding: str = "utf-8") -> tuple[str, ...]:
+        from clickhouse_driver.reader import read_binary_bytes  # noqa: PLC0415
+
+        return tuple(read_binary_bytes(self).decode(encoding) for _ in range(count))
+
 
 def native_context() -> Any:
     from clickhouse_driver.context import Context  # noqa: PLC0415

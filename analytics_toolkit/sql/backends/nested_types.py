@@ -8,6 +8,7 @@ import numpy as np
 from sqlglot import exp, parse_one
 
 from .map_key_domains import map_key_conversion_is_injective
+from .nested_values import row_items
 
 _TRINO_INFERRED_TIMESTAMP_SCALE = 6
 _MAP_ARGUMENT_COUNT = 2
@@ -178,7 +179,7 @@ def convert_nested(
         )
         return [conversion.convert(item) for item in value]
     if kind in {"tuple", "row"}:
-        items = [value[name] for name, _ in children] if isinstance(value, dict) else value
+        items = row_items(value, children)
         return tuple(
             ResolvedColumn(
                 native, target_backend=backend, destination_timezone=destination_timezone

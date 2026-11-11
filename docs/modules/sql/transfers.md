@@ -378,7 +378,10 @@ For Trino, uniqueness uses destination-native key identity, including UUID norma
 destination key fail validation before target mutation; an entry is never
 silently overwritten. For example, uppercase and lowercase spellings of one
 UUID cannot both become keys in an authoritative `MAP(UUID, VARCHAR)`.
-The check applies recursively and preserves legal ClickHouse duplicate pairs.
+Identity checks also descend into composite keys using each declared field
+type. For `ROW(k CHAR(2))`, the keys `('a',)` and `('a ',)` collide despite
+being distinct Python tuples. These collisions fail before target mutation;
+valid composite keys and legal ClickHouse duplicate pairs retain every entry.
 Map metadata can authorize streaming only when each key conversion is proven
 to preserve distinct destination-native keys. Scalar value-domain fit alone
 does not prove that: bounded `VARCHAR(2)` keys can still collide in `CHAR(2)`.
