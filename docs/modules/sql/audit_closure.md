@@ -136,4 +136,10 @@ The existing disposable scenario `audit.clickhouse.routing_metadata` includes
 for same-named tables in two databases, qualified projections/stars, and both
 ClickHouse transports. It remains advisory and was not run locally.
 
+Empty public metadata listings are covered by
+`backends/ch/empty_listings.py::test_table_listing_keeps_coverage_for_empty_and_nonempty_results`
+and `backends/ch/empty_listings.py::test_other_backend_table_listing_shapes_and_metadata_defaults_are_preserved`.
+Both complete and partial ClickHouse listings retain coverage attributes on
+empty results; canonical shapes and other backend defaults remain intact.
+
 [SQL module index](index.md)

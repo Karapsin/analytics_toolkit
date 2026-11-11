@@ -58,7 +58,7 @@ def show_tables(
 
     result = cast("pd.DataFrame", read_sql(config.connection_key, query))
     if result.empty:
-        return pd.DataFrame(columns=_SHOW_TABLES_COLUMNS)
+        result = result.reindex(columns=_SHOW_TABLES_COLUMNS)
 
     normalized = adapter.postprocess_show_tables(
         config.connection_key,
@@ -66,6 +66,10 @@ def show_tables(
         ch_distributed_table_stats=ch_distributed_table_stats,
         read_sql=read_sql,
     )
+    if normalized.empty:
+        empty = pd.DataFrame(columns=_SHOW_TABLES_COLUMNS)
+        empty.attrs.update(normalized.attrs)
+        return empty
     normalized["row_count"] = pd.Series(
         (_normalize_row_count(value) for value in normalized[_ROW_COUNT_COLUMN]),
         index=normalized.index,

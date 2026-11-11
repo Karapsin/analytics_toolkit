@@ -79,6 +79,10 @@ Incomplete collection never certifies a partial total as complete. Inspect
 `tables.attrs["data_complete"]` and `tables.attrs["ch_cluster_status"]` for coverage;
 unavailable facade statistics keep their existing unknown/default values with
 `data_complete=False`.
+Coverage attributes also remain attached to empty ClickHouse listings, with the
+normalized five-column shape preserved. An empty partial listing still carries
+`data_complete=False` and its cluster status, so it cannot confirm that matching
+tables are absent. Complete empty listings retain their complete coverage status.
 
 Invalid identifiers and other deterministic metadata-query errors fail
 immediately without retrying the same query.
