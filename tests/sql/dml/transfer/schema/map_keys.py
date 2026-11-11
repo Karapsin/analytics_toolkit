@@ -11,7 +11,11 @@ import pytest
 from analytics_toolkit import sql
 from analytics_toolkit.sql.core.exact_values import OrderedMapPairs
 
-from tests.sql._support.adaptive_transfer import install, track_spools
+from tests.sql._support.adaptive_transfer import (
+    install,
+    require_streaming_fast_path,
+    track_spools,
+)
 from tests.sql._support.load_table import load_df_module
 
 _UUID = "12345678-abcd-4321-abcd-123456789abc"
@@ -182,5 +186,97 @@ def test_transfer_rejects_map_keys_that_collide_in_final_native_column_before_mu
     assert not scenario.schemas
     assert not scenario.loaded
     assert scenario.finalizations == 0
+    assert paths
+    assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize("explicit_stage", [False, True])
+def test_trino_bounded_map_keys_are_validated_before_char_target_mutation(
+    monkeypatch, explicit_stage
+):
+    scenario = install(
+        monkeypatch,
+        native_type="MAP(VARCHAR(2), VARCHAR)",
+        rows=[({"b": "safe"},), ({"a": "first", "a ": "second"},)],
+        table_schema={"id": "MAP(VARCHAR(2), VARCHAR)"} if explicit_stage else None,
+        from_db_key="trino",
+        from_db_backend="trino",
+        write_mode="truncate_insert",
+    )
+    scenario.existing_types = {"id": "MAP(CHAR(2), VARCHAR)"}
+    paths = track_spools(monkeypatch)
+
+    with pytest.raises(ValueError, match="cannot be converted to the resolved destination schema"):
+        scenario.run()
+
+    assert scenario.read_count == 1
+    assert "complete:SELECT id FROM source" in scenario.events
+    assert "create_target" not in scenario.events
+    assert not scenario.schemas
+    assert not scenario.loaded
+    assert scenario.finalizations == 0
+    assert paths
+    assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize("key_type", ["VARCHAR(2)", "VARCHAR(4)"])
+def test_trino_safe_map_key_identity_keeps_same_type_and_widening_lazy_streams(
+    monkeypatch, key_type
+):
+    values = {"a": "first", "a ": "second"}
+    scenario = install(
+        monkeypatch,
+        native_type="MAP(VARCHAR(2), VARCHAR)",
+        rows=[(values,)],
+        from_db_key="trino",
+        from_db_backend="trino",
+        write_mode="append",
+        replace_target_table=False,
+    )
+    target_type = "MAP(" + key_type + ", VARCHAR)"
+    scenario.existing_types = {"id": target_type}
+    require_streaming_fast_path(monkeypatch)
+
+    assert scenario.run() == 1
+
+    assert scenario.schemas == [{"id": target_type}]
+    assert scenario.loaded == [[(values,)]]
+    assert scenario.read_count == 1
+    assert scenario.events.index("create_target") < scenario.events.index(
+        "complete:SELECT id FROM source"
+    )
+
+
+@pytest.mark.parametrize("explicit_stage", [False, True])
+def test_unique_trino_char_map_conversion_freezes_and_loads_without_changing_stage_schema(
+    monkeypatch, explicit_stage
+):
+    values = {"a ": "first", "b": "second"}
+    source_type, target_type = "MAP(VARCHAR(2), VARCHAR)", "MAP(CHAR(2), VARCHAR)"
+    scenario = install(
+        monkeypatch,
+        native_type=source_type,
+        rows=[(values,)],
+        table_schema={"id": source_type} if explicit_stage else None,
+        from_db_key="trino",
+        from_db_backend="trino",
+        write_mode="append",
+        replace_target_table=False,
+    )
+    scenario.existing_types = {"id": target_type}
+    paths = track_spools(monkeypatch)
+
+    result = scenario.run(metadata=True)
+
+    assert result.rows == 1
+    assert result.metadata.input_count == 1
+    assert scenario.schemas == [{"id": source_type if explicit_stage else target_type}]
+    assert scenario.existing_types == {"id": target_type}
+    assert scenario.loaded == [[(values,)]]
+    assert scenario.read_count == 1
+    assert scenario.finalizations == 1
+    assert scenario.events.index("complete:SELECT id FROM source") < scenario.events.index(
+        "create_target"
+    )
     assert paths
     assert all(not path.exists() for path in paths)

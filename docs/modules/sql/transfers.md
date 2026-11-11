@@ -379,6 +379,15 @@ destination key fail validation before target mutation; an entry is never
 silently overwritten. For example, uppercase and lowercase spellings of one
 UUID cannot both become keys in an authoritative `MAP(UUID, VARCHAR)`.
 The check applies recursively and preserves legal ClickHouse duplicate pairs.
+Map metadata can authorize streaming only when each key conversion is proven
+to preserve distinct destination-native keys. Scalar value-domain fit alone
+does not prove that: bounded `VARCHAR(2)` keys can still collide in `CHAR(2)`.
+The proof recurses through arrays, rows and maps nested in values; otherwise
+the complete selected input is validated before target mutation. An explicit
+staging schema cannot bypass the unchanged existing target's key constraints:
+both source-to-stage and stage-to-target conversions must be safe. Valid casts
+keep the requested stage schema and converted rows. Same-type and proven safe
+widening conversions retain lazy streaming.
 These rules follow [Greenplum's array implementation](https://raw.githubusercontent.com/greenplum-db/gpdb-archive/main/src/backend/utils/adt/arrayfuncs.c),
 [Trino's strict map construction](https://raw.githubusercontent.com/trinodb/trino/master/core/trino-main/src/main/java/io/trino/operator/scalar/MapFromEntriesFunction.java),
 [Trino's native type semantics](https://trino.io/docs/current/language/types.html#char),

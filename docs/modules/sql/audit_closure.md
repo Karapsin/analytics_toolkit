@@ -110,4 +110,13 @@ These include recursive maps, UUID normalization, `REAL` rounding and `CHAR`
 padding, while preserving legal ClickHouse duplicate pairs and inferred maps
 whose string keys remain distinct.
 
+Map-key metadata proofs and the explicit-stage/existing-target boundary are
+covered by
+`core/map_key_domains.py::test_map_only_restriction_recurses_without_changing_scalar_char_conversion`,
+`dml/transfer/schema/map_keys.py::test_trino_bounded_map_keys_are_validated_before_char_target_mutation`,
+`dml/transfer/schema/map_keys.py::test_trino_safe_map_key_identity_keeps_same_type_and_widening_lazy_streams`,
+and `dml/transfer/schema/map_keys.py::test_unique_trino_char_map_conversion_freezes_and_loads_without_changing_stage_schema`.
+These require distinct destination-native keys across both conversions, reject
+collisions before mutation, and retain safe lazy paths and valid stage schemas.
+
 [SQL module index](index.md)

@@ -302,6 +302,12 @@ rows = sql.transfer(
   integer, decimal and temporal representations before text. Every keyed slice
   contributes to this one resolved schema; the adaptive path has an all-key
   barrier and uses one target stage.
+- Map keys additionally require metadata proof that conversion preserves
+  distinct destination-native identities, recursively. This applies to both
+  source-to-stage and stage-to-existing-target conversions; an explicit stage
+  schema does not override existing constraints. Without that proof, complete
+  converted-key validation precedes target mutation. Safe same-type and widening
+  paths remain lazy, and validation preserves the requested stage schema.
 - Adaptive profiling freezes the selected rows in a native source snapshot when
   source staging is configured, then certifies a bounded-memory local replay
   spool. Without native staging it streams directly into that spool. The spool

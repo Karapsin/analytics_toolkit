@@ -33,6 +33,7 @@ from analytics_toolkit.sql.dml.destination_context import freeze_destination_tim
 from analytics_toolkit.sql.dml.load.stage import cleanup_stage_table
 from analytics_toolkit.sql.dml.table.table_validation import validate_complete_upsert_columns
 from analytics_toolkit.sql.dml.transfer.flow import row_counts
+from analytics_toolkit.sql.dml.transfer.flow.conversion_validation import validate_final_conversions
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
     disable_query_limit_for_transfer_reads,
 )
@@ -457,7 +458,7 @@ def _validate_resolved_input(
     except (TypeError, ValueError, OverflowError):
         _reject("Selected input cannot be converted to the resolved destination schema.")
     if state.insert_column_types is not None:
-        for column, profile, resolution in zip(schema.columns, profiles, resolutions):
+        targets = [
             resolve_column_type(
                 SourceColumn(column.name, resolution.target_type),
                 options.to_db_backend,
@@ -467,6 +468,12 @@ def _validate_resolved_input(
                 allow_timestamp_precision_loss=False,
                 destination_timezone=options.input_resolution.get("destination_timezone"),
             )
+            for column, profile, resolution in zip(schema.columns, profiles, resolutions)
+        ]
+        try:
+            validate_final_conversions(spool, resolutions, targets)
+        except (TypeError, ValueError, OverflowError):
+            _reject("Selected input cannot be converted to the resolved destination schema.")
 
 
 def _freeze(
@@ -599,10 +606,10 @@ def resolve_adaptive_input(
         or (
             state.insert_column_types is not None
             and not declared_domain_fits(
-                column.native_type,
+                target_types[column.name],
                 state.insert_column_types[column.name],
                 options.to_db_backend,
-                source_backend=options.from_db_backend,
+                source_backend=options.to_db_backend,
             )
         )
         for column in source_schema

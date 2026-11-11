@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from sqlglot import exp, parse_one
 
+from .map_key_domains import map_key_conversion_is_injective
+
 _TRINO_INFERRED_TIMESTAMP_SCALE = 6
+_MAP_ARGUMENT_COUNT = 2
 
 if TYPE_CHECKING:
     from .value_profiles import ColumnProfile
@@ -328,8 +331,21 @@ def declared_nested_fits(  # noqa: PLR0911 - nested domain proof
         return declared_domain_fits(
             source_fields[0][1], target_fields[0][1], target_backend, source_backend=source_backend
         )
-    if source == "map" and target_backend == "trino" and source_backend != "trino":
-        return False  # ClickHouse permits duplicate keys; Trino does not.
+    if source == "map" and target_backend == "trino":
+        return bool(
+            source_backend == "trino"
+            and target == "map"
+            and len(source_fields) == len(target_fields) == _MAP_ARGUMENT_COUNT
+            and map_key_conversion_is_injective(
+                source_fields[0][1], target_fields[0][1], target_backend, source_backend
+            )
+            and declared_domain_fits(
+                source_fields[1][1],
+                target_fields[1][1],
+                target_backend,
+                source_backend=source_backend,
+            )
+        )
     same_shape = source == target or {source, target} <= {"tuple", "row"}
     return bool(
         same_shape
