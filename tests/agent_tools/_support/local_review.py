@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from agent_tools import local_review, sessions, task_context
+from agent_tools import local_review, review_iterations, sessions, task_context
 from tests._support.paths import REPO_ROOT
 
 if TYPE_CHECKING:
@@ -50,23 +49,59 @@ def signed_receipt(root: Path, repository: str = "owner/repo") -> dict[str, Any]
         "summary": "Synthetic independent reviewer approval",
         "execution_sha256": "a" * 64,
     }
-    source = local_review.directory(root) / "fixture-payload"
-    source.write_bytes(proto.canonical(payload))
-    source.with_name(source.name + ".sig").unlink(missing_ok=True)
-    subprocess.run(
-        [
-            "ssh-keygen",
-            "-Y",
-            "sign",
-            "-f",
-            sessions.load(root)["signing_key"],
-            "-n",
-            proto.NAMESPACE,
-            str(source),
-        ],
-        check=True,
-        capture_output=True,
-    )
-    value = {"payload": payload, "signature": source.with_name(source.name + ".sig").read_text()}
+    subject = {
+        k: payload[k] for k in ("repository", "head", "base", "tree", "task_digest", "producer_id")
+    }
+    first = signed_round(root, subject)
+    rounds = [
+        first,
+        signed_round(
+            root, subject, previous_rounds_sha256=review_iterations.findings_digest([first])
+        ),
+    ]
+    payload["reviewer_id"] = rounds[-1]["payload"]["reviewer_id"]
+    payload["execution_sha256"] = rounds[-1]["payload"]["execution_sha256"]
+    payload["review_iterations"] = {"version": 1, "rounds": rounds}
+    job = local_review.directory(root) / ("fixture-" + uuid.uuid4().hex)
+    job.mkdir()
+    value = local_review._sign_payload(root, job, payload)
     (local_review.directory(root) / (head + ".json")).write_bytes(proto.canonical(value))
     return value
+
+
+def signed_round(  # noqa: PLR0913 - explicit independent-review outcome fixture.
+    root,
+    subject,
+    *,
+    findings=None,
+    approved=True,
+    coverage=True,
+    prior_findings=None,
+    reviewer_id=None,
+    previous_rounds_sha256=None,
+):
+    """Synthetic round provenance with actual temporary-key signatures."""
+    job = local_review.directory(root) / ("fixture-round-" + uuid.uuid4().hex)
+    job.mkdir()
+    payload = {
+        "version": 1,
+        "kind": "local-review-round",
+        **subject,
+        "reviewer_id": reviewer_id or "reviewer:" + str(uuid.uuid4()),
+        "reviewer_runtime": "codex",
+        "reviewer_version": "fixture",
+        "reviewer_model": "codex-default",
+        "reviewer_auth": "chatgpt",
+        "execution_sha256": hashlib.sha256(job.name.encode()).hexdigest(),
+        "coverage_complete": coverage,
+        "prior_findings_sha256": review_iterations.findings_digest(prior_findings or []),
+        "previous_rounds_sha256": previous_rounds_sha256 or review_iterations.findings_digest([]),
+        "verdict": {
+            "approved": approved,
+            "alignment": "not_aligned" if findings else "aligned",
+            "summary": "Synthetic reviewer result",
+            "change_summary": "Feature",
+            "findings": findings or [],
+        },
+    }
+    return local_review._sign_payload(root, job, payload)

@@ -1850,7 +1850,17 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         root_path,
         paths=commit_paths,
     )
-    if not visual_verification["ok"]:
+    try:
+        deferred_visuals = _visual_review_is_deferred(root_path)
+    except (RuntimeError, ValueError, OSError) as exc:
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Visual review sequencing decision is invalid.",
+            blockers=[{"phase": "visual_review", "message": str(exc)}],
+        )
+    if not visual_verification["ok"] and not deferred_visuals:
         return _tool_output(
             "git_workflow",
             input_summary,
@@ -4413,19 +4423,35 @@ def _push_readiness(root: Path) -> dict[str, Any]:
     }
 
 
+def _visual_review_is_deferred(root: Path) -> bool:
+    if not sessions.load(root):
+        return False
+    from agent_tools import local_review  # noqa: PLC0415 - session/reviewer import cycle.
+
+    return local_review.visual_review_order(root) is not None
+
+
 def _push_dev_result(root: Path) -> dict[str, Any]:
     if sessions.load(root):
-        visual = sql_explorer_visual.verify_visual_receipt(root, for_push=True)
-        if not visual["ok"]:
-            return {
-                "readiness": {},
-                "command_results": [],
-                "blockers": [{"phase": "visual_review", "message": visual["message"]}],
-            }
         try:
             from agent_tools import local_review  # noqa: PLC0415
 
-            local_review.review(root)
+            deferred = _visual_review_is_deferred(root)
+            source_review = {}
+            if deferred:
+                receipt = local_review.review(root)
+                source_review = {
+                    "source_review": {"status": "approved", "head": receipt["payload"]["head"]}
+                }
+            visual = sql_explorer_visual.verify_visual_receipt(root, for_push=True)
+            if not visual["ok"]:
+                return {
+                    "readiness": source_review,
+                    "command_results": [],
+                    "blockers": [{"phase": "visual_review", "message": visual["message"]}],
+                }
+            if not deferred:
+                local_review.review(root)
             result = sessions.push(root)
             return {
                 **result,

@@ -152,12 +152,25 @@ Restoring context does not transfer owner approval from the source PR.
    publication this starts a fresh independent read-only local reviewer of the
    session's CLI (`ATK_LOCAL_REVIEWER=codex|claude` overrides it; the receipt
    records `reviewer_runtime`). Rejected candidates stay local for correction and
-   another fresh review. `review` retries review of a committed candidate; `push`
+   another fresh review. At least two completed independent iterations are
+   required: later reviewers search for previously missed defects and verify
+   earlier findings are resolved. Concrete findings stop for local correction;
+   incomplete-only attempts do not advance the round. The durable task journal
+   resumes interrupted work without converting intermediate results into
+   approval. Only a complete aligned current-head iteration with no new or
+   unresolved issues produces the final source receipt; there is no retry cap.
+   `review` retries review of a committed candidate; `push`
    retries publication after approval. This signed local review is the only
    source review the PR ever receives. Review and `refresh` advance the recorded
    dev base to the newest merged `origin/dev` commit contained in HEAD (with a
    revalidation receipt), and SQL Explorer changes automatically attach the
-   current completed visual-review receipt.
+   current completed visual-review receipt. An explicit recorded user decision
+   may instead require source approval before visual checks, using the
+   task-bound sequencing evidence described in
+   [the agent workflow guide](../agent_tools/README.md). In that mode commit and
+   source review proceed first, but publication remains blocked until a fresh
+   complete visual receipt passes. Visual completion alone does not change the
+   reviewed source or invalidate its approval.
 8. Publication verifies the signed head and task attachment, archives the task,
    and hands ownership to the Pi. Finish with the PR link without waiting for
    review, approval, CI or merge. Never edit a handed-off branch.

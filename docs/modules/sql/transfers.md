@@ -320,7 +320,12 @@ before replay. Ordinary completion and failures before mutation remove local
 checkpoints.
 
 Inference tries exact integers, decimal/numeric and temporal/native nested types
-before text. Decimal scale and integral digits include every selected value;
+before text. Every inferred native candidate is validated against the complete
+profile before destination publication. Date/timestamp calendar bounds and raw
+tick ranges apply during inference too: values outside ClickHouse native ranges
+use exact ISO text. Aligned timestamps try a supported lower native precision
+before text; empty/all-null temporal columns retain suitable native defaults.
+Decimal scale and integral digits include every selected value;
 integers and Decimal values never pass through binary floating point. If no
 supported native type preserves the column, text uses exact base-10 integers,
 fixed-point Decimal, ISO dates/timestamps (aware instants normalized to UTC), and

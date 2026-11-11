@@ -201,11 +201,12 @@ def test_stdio_exposes_only_immutable_reads(
 
 
 PROGRAM = """
-import json, os, sys
+import json, os, sys, uuid
 from pathlib import Path
 sys.path.insert(0, sys.argv[7])
 from agent_tools.local_review_files import Files
 root, job, head, base, mode, thread = sys.argv[1:7]
+thread = str(uuid.uuid4())
 names = ('GH_TOKEN', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'SSH_AUTH_SOCK')
 assert not any(name in os.environ for name in names)
 job = Path(job)
@@ -307,10 +308,19 @@ def test_fresh_review_execution_and_fail_closed_publication(
     else:
         receipt = local_review.review(candidate)
         assert receipt["payload"]["head"] == head
-        assert receipt["payload"]["reviewer_id"] == "reviewer:" + thread
+        assert receipt["payload"]["reviewer_id"].startswith("reviewer:")
+        assert (
+            len(
+                {
+                    r["payload"]["reviewer_id"]
+                    for r in receipt["payload"]["review_iterations"]["rounds"]
+                }
+            )
+            == 2
+        )
         assert local_review.review(candidate) == receipt
     inputs = list(local_review.directory(candidate).glob("run-*/reviewer-input.txt"))
-    assert len(inputs) == 1
+    assert len(inputs) == (2 if error is None else 1)
     prompt = inputs[0].read_text(encoding="utf-8")
     payload = json.loads(prompt[prompt.index("{") :])
     assert payload["user_task"] == task_context.protocol().public_context(context)

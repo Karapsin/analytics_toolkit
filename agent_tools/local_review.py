@@ -14,7 +14,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from agent_tools import sessions, sql_explorer_visual, task_context
+from agent_tools import (
+    bootstrap_process,
+    review_iterations,
+    sessions,
+    sql_explorer_visual,
+    task_context,
+)
 
 RUNTIME_ADAPTER = "agent_tools/agent_runtimes.py"
 # Built-in Codex reviewer contract, used when the dev base predates the shared
@@ -58,6 +64,7 @@ REVIEW_PROMPT = (
 )
 AUTHOR_SESSION_ENV = ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID")
 VISUAL_EVIDENCE_KEY = "sql_explorer_visual_review"
+VISUAL_ORDER_KEY = "visual_review_order"
 
 
 def protocol(root: Path) -> Any:
@@ -101,12 +108,18 @@ def verified(root: Path, head: str) -> dict[str, Any]:
         raise RuntimeError(msg)
     receipt = json.loads(path.read_text())
     proto.validate_binding(receipt, **binding(root, head))
+    verify_signature(root, receipt)
+    review_iterations.validate_convergence(root, receipt["payload"])
+    return receipt
+
+
+def verify_signature(root: Path, receipt: dict[str, Any]) -> None:
+    """Verify local provenance without implying converged source approval."""
     key = Path(sessions.load(root)["signing_key"]).with_suffix(".pub")
     allowed = directory(root) / "allowed-signers"
     allowed.write_text("atk-local " + key.read_text().strip() + "\n")
     allowed.chmod(0o600)
-    proto.verify_signature(receipt, allowed)
-    return receipt
+    protocol(root).verify_signature(receipt, allowed)
 
 
 def arguments(root: Path, job: Path, subject: dict[str, str]) -> list[str]:
@@ -356,6 +369,16 @@ def validation(root: Path) -> dict[str, Any]:
 
 
 def review(root: Path) -> dict[str, Any]:
+    """Serialize the complete task review; process death releases the OS lock."""
+    try:
+        with bootstrap_process.lock(directory(root) / "iterations.lock", wait=False):
+            return _review(root)
+    except BlockingIOError as exc:
+        msg = "An independent review of this task is already running"
+        raise RuntimeError(msg) from exc
+
+
+def _review(root: Path) -> dict[str, Any]:
     """Leave rejected commits local; each new candidate needs another fresh reviewer."""
     sessions.writable(root)
     sessions.clean(root)
@@ -374,24 +397,57 @@ def review(root: Path) -> dict[str, Any]:
         target.replace(target.with_name(head + ".superseded-" + uuid.uuid4().hex[:8] + ".json"))
     supplied = review_evidence(root, subject)
     context = task_context.protocol().public_context(task_context.read(root))
-    request = json.dumps(
-        {
-            "subject": subject,
-            "user_task": context,
-            "validation": checks,
-            "evidence": supplied,
-            "base_revalidations": sessions.load(root).get("base_revalidations", []),
-        },
-        ensure_ascii=False,
-    )
+    request = {
+        "subject": subject,
+        "user_task": context,
+        "validation": checks,
+        "evidence": supplied,
+        "base_revalidations": sessions.load(root).get("base_revalidations", []),
+    }
+
     # Keep the CLI outside every candidate/project configuration directory.
-    retained = directory(root) / ("run-" + uuid.uuid4().hex)
-    with tempfile.TemporaryDirectory(prefix="atk-independent-review-") as temporary:
-        job = Path(temporary)
-        try:
-            return _execute_review(root, job, subject, request)
-        finally:
-            shutil.copytree(job, retained)
+    def execute(round_request: str) -> dict[str, Any]:
+        retained = directory(root) / ("run-" + uuid.uuid4().hex)
+        with tempfile.TemporaryDirectory(prefix="atk-independent-review-") as temporary:
+            job = Path(temporary)
+            try:
+                return _execute_review(root, job, subject, round_request)
+            finally:
+                shutil.copytree(job, retained)
+
+    rounds = review_iterations.run(root, subject, request, execute)
+    if subject != binding(root, head) or sessions.run(root, "git", "rev-parse", "HEAD") != head:
+        msg = "Candidate or task changed during independent review iterations"
+        raise RuntimeError(msg)
+    sessions.clean(root)
+    final = rounds[-1]["payload"]
+    payload = {
+        "version": 1,
+        "kind": "local-source-review",
+        "mode": "read-only",
+        **subject,
+        **{k: v for k, v in final.items() if k.startswith("reviewer_")},
+        "approved": True,
+        "alignment": "aligned",
+        "summary": final["verdict"]["summary"],
+        "execution_sha256": final["execution_sha256"],
+        "review_iterations": {
+            "version": 1,
+            "completed_rounds": len(rounds),
+            "rounds": [rounds[0], rounds[-1]],
+            "history_sha256": hashlib.sha256(
+                protocol(root).canonical(review_iterations.history(root))
+            ).hexdigest(),
+        },
+    }
+    review_iterations.validate_convergence(root, payload)
+    with tempfile.TemporaryDirectory(prefix="atk-review-convergence-") as temporary:
+        receipt = _sign_payload(root, Path(temporary), payload)
+    temporary_target = target.with_suffix(".tmp")
+    temporary_target.write_bytes(protocol(root).canonical(receipt))
+    temporary_target.chmod(0o600)
+    temporary_target.replace(target)
+    return verified(root, head)
 
 
 def _reviewer_command(
@@ -428,7 +484,6 @@ def _reviewer_command(
 
 def _execute_review(root: Path, job: Path, subject: dict[str, str], request: str) -> dict[str, Any]:
     head = subject["head"]
-    target = directory(root) / (head + ".json")
     session_id = str(uuid.uuid4())
     runtime, adapter, command, environment = _reviewer_command(root, job, subject, session_id)
     source, _ = trusted_runtime(root, job, subject["base"])
@@ -459,19 +514,19 @@ def _execute_review(root: Path, job: Path, subject: dict[str, str], request: str
         observed = _codex_events(events, job)
     else:
         observed = adapter.RUNTIMES[runtime].parse_events(events, job, session_id)
-    verdict = _accepted_verdict(observed, subject)
+    authors = {os.environ.get(name) for name in AUTHOR_SESSION_ENV} | {subject["producer_id"]}
+    if observed["session_id"] in authors - {None, ""}:
+        msg = "A separate fresh reviewer session is required."
+        raise RuntimeError(msg)
     checked = subprocess.run(
         [*provider(source, root, subject, job), "--verify-ledger"],
         capture_output=True,
         check=False,
     )
-    if checked.returncode:
-        msg = "Independent reviewer complete diff coverage is missing or invalid"
-        raise ValueError(msg)
+    iteration = json.loads(request)["iteration"]
     payload = {
         "version": 1,
-        "kind": "local-source-review",
-        "mode": "read-only",
+        "kind": "local-review-round",
         **subject,
         "reviewer_id": "reviewer:" + observed["session_id"],
         "reviewer_runtime": (
@@ -480,13 +535,21 @@ def _execute_review(root: Path, job: Path, subject: dict[str, str], request: str
         "reviewer_version": observed.get("version") or version,
         "reviewer_model": observed["model"],
         "reviewer_auth": observed["auth"],
-        "approved": True,
-        "alignment": "aligned",
-        "summary": task_context.protocol().redact(str(verdict.get("summary", ""))),
+        "verdict": observed["verdict"],
+        "coverage_complete": checked.returncode == 0,
+        "prior_findings_sha256": review_iterations.findings_digest(iteration["prior_findings"]),
+        "previous_rounds_sha256": iteration["previous_rounds_sha256"],
         "execution_sha256": hashlib.sha256(events).hexdigest(),
     }
+    receipt = _sign_payload(root, job, payload)
+    # Persist before returning, including rejected and incomplete verdicts. A host
+    # interruption after this point can resume without replaying a completed round.
+    review_iterations.record(root, iteration["attempt_id"], receipt)
+    return receipt
+
+
+def _sign_payload(root: Path, job: Path, payload: dict[str, Any]) -> dict[str, Any]:
     proto = protocol(root)
-    proto.validate_binding({"payload": payload, "signature": "pending"}, **subject)
     source = job / "receipt.json"
     source.write_bytes(proto.canonical(payload))
     subprocess.run(
@@ -503,12 +566,7 @@ def _execute_review(root: Path, job: Path, subject: dict[str, str], request: str
         capture_output=True,
         check=True,
     )
-    receipt = {"payload": payload, "signature": source.with_suffix(".json.sig").read_text()}
-    temporary = target.with_suffix(".tmp")
-    temporary.write_bytes(proto.canonical(receipt))
-    temporary.chmod(0o600)
-    temporary.replace(target)
-    return verified(root, head)
+    return {"payload": payload, "signature": source.with_suffix(".json.sig").read_text()}
 
 
 def evidence(root: Path, digest: str) -> dict[str, Any]:
@@ -539,10 +597,46 @@ def review_evidence(root: Path, subject: dict[str, str]) -> dict[str, Any]:
     supplied = evidence(root, subject["task_digest"])
     # Only the verified attachment below may use the visual-review evidence name.
     supplied.pop(VISUAL_EVIDENCE_KEY, None)
+    order = visual_review_order(root, subject["task_digest"])
+    if order is not None:
+        return {**supplied, VISUAL_ORDER_KEY: order}
     visual = visual_evidence(root, subject)
     if visual is None:
         return supplied
     return {**supplied, "task_digest": subject["task_digest"], VISUAL_EVIDENCE_KEY: visual}
+
+
+def visual_review_order(root: Path, digest: str | None = None) -> dict[str, Any] | None:
+    """Validate a task-bound user decision about sequencing, never waive visuals."""
+    if not sessions.state_path(root).with_name("atk-local-review-evidence.json").exists():
+        return None
+    context = task_context.read(root)
+    current = task_context.protocol().digest(task_context.protocol().public_context(context))
+    if digest is not None and digest != current:
+        msg = "Visual review order belongs to a different task"
+        raise ValueError(msg)
+    decision = evidence(root, current).get(VISUAL_ORDER_KEY)
+    if decision is None:
+        return None
+    fields = {"decision", "message_source", "correction_index", "user_prompt"}
+    valid = isinstance(decision, dict) and set(decision) == fields
+    if valid:
+        index = decision["correction_index"]
+        prompt = decision["user_prompt"]
+        valid = (
+            decision["decision"] == "source-review-before-visuals"
+            and decision["message_source"] == "user"
+            and type(index) is int
+            and 0 <= index < len(context["corrections"])
+            and prompt == context["corrections"][index]
+            and isinstance(prompt, str)
+            and " ".join(prompt.split()).casefold().rstrip(".!?")
+            == "do visual checks only after final review approval"
+        )
+    if not valid:
+        msg = "Visual review order requires the exact recorded user correction and decision"
+        raise ValueError(msg)
+    return {**decision, "task_digest": current, "visual_review_required_before_publication": True}
 
 
 def visual_evidence(root: Path, subject: dict[str, str]) -> dict[str, Any] | None:

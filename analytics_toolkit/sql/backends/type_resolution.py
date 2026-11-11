@@ -316,6 +316,9 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
         source_type, target, target_backend, source_backend=source_backend or None
     ):
         target = _resolve_native(profile, target_backend, source_type, source_backend)
+    from .inferred_types import certify_native_candidate  # noqa: PLC0415 - candidate certification
+
+    target = certify_native_candidate(profile, target, target_backend, source_type, source_backend)
     fallback = target is None
     if target is None:
         target = {"gp": "TEXT", "trino": "VARCHAR", "ch": "String"}[target_backend]
@@ -371,14 +374,11 @@ def _resolve_native(  # noqa: C901, PLR0911, PLR0912 - explicit native precedenc
             return f"{name}({shape[0]}, {shape[1]})"
         if shape:
             return {"gp": "NUMERIC", "trino": "DECIMAL(38, 10)", "ch": "Decimal(38, 10)"}[backend]
-        if is_timestamp_type(source_type):
-            from analytics_toolkit.sql.backends.source_schema import (  # noqa: PLC0415 - backend registry import cycle
-                type_has_timezone,
-            )
+        from .inferred_types import empty_temporal_type  # noqa: PLC0415 - native empty defaults
 
-            return ("TIMESTAMP(6)" if backend == "trino" else "TIMESTAMP") + (
-                " WITH TIME ZONE" if type_has_timezone((source_type or "").lower()) else ""
-            )
+        temporal = empty_temporal_type(source_type, backend)
+        if temporal is not None:
+            return temporal
         return {"gp": "TEXT", "trino": "VARCHAR", "ch": "String"}[backend]
     if families <= {"integer"}:
         return _integer_type(

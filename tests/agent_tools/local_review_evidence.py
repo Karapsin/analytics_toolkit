@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from agent_tools import local_review, sessions, sql_explorer_visual, task_context
-from tests.agent_tools._support.local_review import signed_receipt
+from tests.agent_tools._support.local_review import signed_receipt, signed_round
 from tests.agent_tools.handoff import no_network, submitted
 from tests.agent_tools.sessions import git
 from tests.agent_tools.sessions import source as source  # noqa: PLC0414
@@ -70,7 +70,12 @@ def capture_review(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
     def execute(root: Path, job: Path, subject: dict[str, str], request: str) -> dict[str, Any]:
         calls.append({"subject": subject, "request": json.loads(request)})
-        return {"payload": subject}
+        return signed_round(
+            root,
+            subject,
+            prior_findings=json.loads(request)["iteration"]["prior_findings"],
+            previous_rounds_sha256=json.loads(request)["iteration"]["previous_rounds_sha256"],
+        )
 
     monkeypatch.setattr(local_review, "_execute_review", execute)
     return calls
@@ -129,13 +134,14 @@ def test_review_diffs_against_merged_dev_and_supersedes_stale_receipt(
     stale = signed_receipt(candidate)  # Bound to the pre-merge base for this exact head.
     assert stale["payload"]["base"] != dev
     local_review.review(candidate)
-    (call,) = calls
+    assert len(calls) == 2
+    call = calls[0]
     assert call["subject"]["base"] == dev
     assert call["request"]["base_revalidations"][0]["after"] == dev
     changed = git(candidate, "diff", "--name-only", call["subject"]["base"], head)
     assert "other-pr" not in changed.split()
     reviews = local_review.directory(candidate)
-    assert not (reviews / (head + ".json")).exists()
+    assert local_review.verified(candidate, head)["payload"]["base"] == dev
     assert list(reviews.glob(head + ".superseded-*.json"))
 
 
@@ -186,7 +192,8 @@ def test_review_attaches_current_visual_receipt_bound_to_task(candidate, monkeyp
         json.dumps({"task_digest": digest, local_review.VISUAL_EVIDENCE_KEY: {"forged": True}})
     )
     local_review.review(candidate)
-    (call,) = calls
+    assert len(calls) == 2
+    call = calls[0]
     evidence = call["request"]["evidence"]
     assert evidence["task_digest"] == call["subject"]["task_digest"]
     visual = evidence[local_review.VISUAL_EVIDENCE_KEY]
@@ -236,7 +243,8 @@ def test_non_visual_change_never_attaches_or_accepts_visual_evidence(
     )
     (local_review.directory(candidate) / (git(candidate, "rev-parse", "HEAD") + ".json")).unlink()
     local_review.review(candidate)
-    (call,) = calls
+    assert len(calls) == 2
+    call = calls[0]
     assert call["request"]["evidence"] == {"task_digest": digest, "scope": "Approved"}
 
 

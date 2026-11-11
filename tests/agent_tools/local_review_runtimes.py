@@ -39,7 +39,7 @@ if {runtime!r} == "claude":
     server = json.loads(Path(args[args.index("--mcp-config") + 1]).read_text())
     provider = server["mcpServers"]["source_files"]["args"]
 else:
-    session = {thread!r}
+    session = str(__import__("uuid").uuid4())
     prefix = "mcp_servers.source_files.args="
     provider = next(json.loads(v[len(prefix):]) for v in args if v.startswith(prefix))
 root, head, base, ledger = provider[3], provider[5], provider[7], provider[9]
@@ -138,7 +138,7 @@ def install_fake(
 def test_adapter_review_records_runtime_identity_and_isolation(
     adapter_base: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: str
 ) -> None:
-    control, thread = install_fake(tmp_path, monkeypatch, runtime, "approve")
+    control, _thread = install_fake(tmp_path, monkeypatch, runtime, "approve")
     monkeypatch.setenv("ATK_LOCAL_REVIEWER", runtime)
     monkeypatch.setenv("GITHUB_TOKEN", "synthetic-never-forwarded")
     monkeypatch.setenv("ATK_UNLISTED_PROBE", "synthetic-unlisted")
@@ -164,7 +164,10 @@ def test_adapter_review_records_runtime_identity_and_isolation(
         assert args[args.index("--tools") + 1] == ""
         assert json.loads(args[args.index("--json-schema") + 1])["additionalProperties"] is False
     else:
-        assert payload["reviewer_id"] == "reviewer:" + thread
+        assert payload["reviewer_id"].startswith("reviewer:")
+        assert (
+            len({r["payload"]["reviewer_id"] for r in payload["review_iterations"]["rounds"]}) == 2
+        )
         assert payload["reviewer_runtime"] == "codex"
         assert payload["reviewer_version"] == "codex-cli 9.9.9"
         assert payload["reviewer_auth"] == "chatgpt"

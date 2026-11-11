@@ -237,6 +237,27 @@ Local cleanup prunes remote references and deletes only proven merged, unused
 branches reachable from dev. Unknown, active and squash-only unique local work
 is preserved and reported; the Pi safely cleans verified merged remote branches.
 Each reviewer is a fresh read-only session separate from the candidate authors.
+Local source review now runs successive independent iterations. Even a clean
+first review is followed by a second fresh reviewer explicitly looking for
+issues the earlier review missed. Every later reviewer receives the actual
+previous findings and must verify their resolution while inspecting the complete
+current source and task. A repeated unresolved issue still blocks publication.
+Concrete findings stop the workflow for a local fix; a new head discards source
+approval but retains finding provenance. A finding round followed by a complete
+clean review of its fix can satisfy the two-iteration minimum. Incomplete-only
+attempts never count as completed rounds, and there is no retry limit.
+
+The private task journal persists pending attempts and signed round outcomes.
+An OS lock prevents concurrent invocations from creating independent first
+rounds. Interrupted attempts resume the pending iteration with a fresh reviewer;
+a durably recorded completed result need not be repeated. Task or dev-base
+changes invalidate usable-round caches while retaining prior findings for
+inspection. Only a complete aligned current-head review with no new or
+unresolved findings, after at least two completed iterations, creates the final
+signed source receipt. Intermediate round records cannot authorize publication.
+When source-first visual ordering is explicitly requested, all source iterations
+finish before capture; the complete final visual gate still precedes publication.
+
 Confirmed reviewer defects start a fresh Pi correction agent followed by
 independent review, repeating until approved. An unfinished source assessment
 continues in fresh read-only invocations of the same immutable assignment; it
@@ -344,8 +365,40 @@ not native window decorations. `visual-workflow status` returns the next PNG
 batch; the agent must open every full image and record a verdict through
 `visual-review`. Geometry checks and every agent verdict must pass before
 completion. The receipt records the host and capture method and is bound to
-the complete reviewed content; only a current all-pass receipt allows commit
-or push. Failed or interrupted captures require a new review session.
+the complete reviewed content; a current all-pass receipt is always required
+before publication. Failed or interrupted captures require a new review session.
+
+By default the completed visual receipt also precedes local source review and
+commit. An explicitly recorded user instruction can instead order source review,
+then visual checks, then publication. The supported instruction is
+"do visual checks only after final review approval" (case, whitespace and trailing
+punctuation may vary). Record the exact message with `task_context(action="append")`.
+The private `.git/atk-local-review-evidence.json` must carry the current task digest
+and a `visual_review_order` object with exactly these fields:
+
+```json
+{
+  "decision": "source-review-before-visuals",
+  "message_source": "user",
+  "correction_index": 0,
+  "user_prompt": "do visual checks only after final review approval"
+}
+```
+
+Use the actual zero-based correction index and exact recorded message; unrelated
+messages and mismatched task digests fail closed. This decision permits a local
+candidate commit and independent source review before capture. The workflow then
+reports source approval and blocks publication until every current visual check
+passes. Run `visual-workflow` only after source approval, then retry
+`git_workflow(action="push")`. Completing visuals leaves the exact source/task
+approval valid; source or task changes require fresh approval. This orders the
+two required phases and never waives either gate.
+Source-first captures bind the complete subject and exact final signed source
+receipt at start, capture and completion. A capture from before that approval,
+or from a replaced approval receipt, cannot satisfy publication even when its
+source fingerprint happens to match. Direct session publication also verifies
+the complete visual producer/session before task archival and before pushing
+the originally reviewed SHA, preventing a changed HEAD from borrowing approval.
 
 Capture waits for both intended scene state and passing geometry, with a bounded
 timeout. Save scenes require the active document name and requested button focus;
