@@ -29,13 +29,14 @@ from analytics_toolkit.sql.core.type_resolution import (
     timestamp_scale,
 )
 from analytics_toolkit.sql.ddl.schema import validate_table_schema_columns
+from analytics_toolkit.sql.dml.destination_context import freeze_destination_timezone
 from analytics_toolkit.sql.dml.load.stage import cleanup_stage_table
 from analytics_toolkit.sql.dml.table.table_validation import validate_complete_upsert_columns
 from analytics_toolkit.sql.dml.transfer.flow import row_counts
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
     disable_query_limit_for_transfer_reads,
 )
-from analytics_toolkit.sql.dml.transfer.io.source import iter_source_batches
+from analytics_toolkit.sql.dml.transfer.io.source import iter_source_batches, normalize_source_batch
 from analytics_toolkit.sql.dml.transfer.runtime.models import (
     RowBatch,
     TransferConnectionRefs,
@@ -350,14 +351,14 @@ def _profile_batch(
     state: TransferStageState,
     scan: _InputScan,
     source_batch: RowBatch,
+    source_connection: Any = None,
 ) -> None:
     raise_if_cancelled()
     _check_generation_scope(options, scan.observed_scope)
     if list(source_batch.columns) != list(scan.spool.columns):
         _reject("Source columns changed while freezing selected input.")
-    batch = get_backend_adapter(options.from_db_backend).normalize_transfer_source_batch(
-        source_batch,
-        state.source_column_types,
+    batch = normalize_source_batch(
+        options, source_connection, source_batch, state.source_column_types or {}
     )
     for row in batch.rows:
         for profile, value in zip(scan.profiles, row):
@@ -389,7 +390,7 @@ def _scan_input(
         )
         try:
             for source_batch in batches:
-                _profile_batch(options, state, scan, source_batch)
+                _profile_batch(options, state, scan, source_batch, refs.source["connection"])
         finally:
             close = getattr(batches, "close", None)
             if callable(close):
@@ -426,6 +427,7 @@ def _resolve_scan(
             source_backend=options.from_db_backend,
             authoritative_type=schema.target_types[column.name] if schema.authoritative else None,
             allow_timestamp_precision_loss=options.table_schema is not None,
+            destination_timezone=options.input_resolution.get("destination_timezone"),
         )
         for column, profile in zip(schema.columns, scan.profiles)
     ]
@@ -439,7 +441,12 @@ def _validate_resolved_input(
     resolutions: list[ResolvedColumn],
 ) -> None:
     profiles = [
-        ColumnProfile(native_type=item.target_type, source_backend=options.to_db_backend)
+        ColumnProfile(
+            native_type=item.target_type,
+            source_backend=options.to_db_backend,
+            destination_timezone=options.input_resolution.get("destination_timezone"),
+            temporal_type=item.target_type,
+        )
         for item in resolutions
     ]
     try:
@@ -458,6 +465,7 @@ def _validate_resolved_input(
                 source_backend=options.to_db_backend,
                 authoritative_type=state.insert_column_types[column.name],
                 allow_timestamp_precision_loss=False,
+                destination_timezone=options.input_resolution.get("destination_timezone"),
             )
 
 
@@ -475,6 +483,8 @@ def _freeze(
         source_key=options.from_db_key,
         configuration_digest=digest,
         namespace=(options.from_db_backend, options.to_db_backend, options.target_table),
+        destination_timezone=options.input_resolution.get("destination_timezone"),
+        timezone_policy_version=options.input_resolution.get("timezone_policy_version"),
         availability_scope=_availability_scope(options),
         query_digest=hashlib.sha256(
             json.dumps(
@@ -494,7 +504,12 @@ def _freeze(
             spool,
             [
                 ColumnProfile(
-                    native_type=column.native_type, source_backend=options.from_db_backend
+                    native_type=column.native_type,
+                    source_backend=options.from_db_backend,
+                    destination_timezone=options.input_resolution.get("destination_timezone"),
+                    temporal_type=schema.target_types[column.name]
+                    if schema.authoritative
+                    else None,
                 )
                 for column in schema.columns
             ],
@@ -503,7 +518,11 @@ def _freeze(
         _scan_input(options, refs, state, scan, context)
         resolutions = _resolve_scan(options, schema, scan)
         _check_generation_scope(options, scan.observed_scope)
-        spool.identity = replace(identity, availability_scope=_availability_scope(options))
+        spool.identity = replace(
+            identity,
+            availability_scope=_availability_scope(options),
+            source_timezone=options.input_resolution.get("source_timezone"),
+        )
         spool.certify()
         _validate_resolved_input(options, state, schema, spool, resolutions)
         labels = {item.index: item.label for item in options.transfer_slices or []}
@@ -552,7 +571,25 @@ def resolve_adaptive_input(
         context,
     )
     cached = options.input_resolution
-    needs_profile = context.force_freeze or any(
+
+    def target_zone(ref: dict[str, Any]) -> str | None:
+        return freeze_destination_timezone(
+            cached, options.to_db_backend, ref["connection"], target_types
+        )
+
+    if refs.target.get("connection") is not None:
+        target_zone(refs.target)
+    else:
+        run_target_operation(
+            options,
+            "resolve_write_context",
+            target_zone,
+            open_connection=context.open_connection or get_sql_connection,
+        )
+    contextual_profile = options.from_db_backend != "ch" and get_backend_adapter(
+        options.to_db_backend
+    ).requires_destination_timezone(target_types)
+    needs_profile = (context.force_freeze or contextual_profile) or any(
         not declared_domain_fits(
             column.native_type,
             target_types[column.name],
@@ -641,7 +678,14 @@ def run_resolved_transfer(
 
     def runner(role: str, operation: Any) -> Any:
         require_frozen_configuration(options)
-        return target_runner(role, operation)
+
+        def checked(ref: dict[str, Any]) -> Any:
+            freeze_destination_timezone(
+                options.input_resolution, options.to_db_backend, ref["connection"]
+            )
+            return operation(ref)
+
+        return target_runner(role, checked)
 
     # Orchestration imports are local to avoid the public transfer import cycle.
     from analytics_toolkit.sql.dml.transfer.flow.attempt import load_stage_batches  # noqa: PLC0415
@@ -791,9 +835,16 @@ def run_target_operation(
     return run_with_fresh_connection(
         options.to_db_key,
         role,
-        operation,
+        lambda ref: _run_context_checked_target(options, ref, operation),
         open_connection=open_connection,
     )
+
+
+def _run_context_checked_target(
+    options: TransferOptions, ref: dict[str, Any], operation: Any
+) -> Any:
+    freeze_destination_timezone(options.input_resolution, options.to_db_backend, ref["connection"])
+    return operation(ref)
 
 
 def estimated_input_rows(

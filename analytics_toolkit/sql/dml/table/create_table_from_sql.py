@@ -84,9 +84,7 @@ from .table_validation import normalize_key_columns
 
 
 def transfer_table(**kwargs: Any) -> int | SqlPlan | SqlOperationResult:
-    from ..transfer.flow.api import (
-        transfer_table as _transfer_table,
-    )
+    from ..transfer.flow.api import transfer_table as _transfer_table
 
     return _transfer_table(**kwargs)
 
@@ -527,7 +525,9 @@ def _execute_generic_create_table_from_sql_attempt(
                 if options.source_key == options.target_key
                 else {"connection": target_connection}
             )
-            prepared = prepare_generic_query_input(options, query_connection_ref, source_schema)
+            prepared = prepare_generic_query_input(
+                options, query_connection_ref, source_schema, target_query_ref
+            )
             source_connection = query_connection_ref["connection"]
             if options.source_key == options.target_key:
                 target_connection = source_connection

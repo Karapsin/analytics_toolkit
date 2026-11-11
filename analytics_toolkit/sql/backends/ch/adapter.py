@@ -23,13 +23,20 @@ from . import reconfigure_proxy as _reconfigure
 from . import routing as _routing
 from . import source_count as _source_count
 from . import source_schema as _ch_source_schema
+from . import source_temporals as _source_temporals
 from . import target_create as _target_create
 from . import transfer_cleanup as _cleanup
 from . import upsert as _upsert
+from . import write_preflight as _write_preflight
 from .config import AIRFLOW_EXTRA_FIELDS, validate_connection
 
 
 class ClickHouseAdapter(BackendAdapter):
+    destination_write_timezone = _write_preflight.destination_write_timezone
+    requires_destination_timezone = _write_preflight.requires_destination_timezone
+    requires_dataframe_timezone = _write_preflight.requires_dataframe_timezone
+    source_read_timezone = _source_temporals.source_read_timezone
+    normalize_source_temporal_batch = _source_temporals.normalize_source_temporal_batch
     validate_connection = validate_connection
     get_table_column_names = _column_names.get_table_column_names
     get_writable_table_column_types = _column_names.get_writable_table_column_types

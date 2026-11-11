@@ -98,13 +98,17 @@ def test_authoritative_ch_calendar_schema_rejects_extremes_before_mutation(
 
 def patch_load_boundaries(monkeypatch: pytest.MonkeyPatch, existing_type: str | None = None):
     adapter = get_backend_adapter("ch")
-    connection = SimpleNamespace(close=lambda: None)
+    connection = SimpleNamespace(close=lambda: None, server_tz="UTC")
     created = []
     loaded = []
     monkeypatch.setattr(load_df_module, "get_sql_connection", lambda _key: connection)
     monkeypatch.setattr(load_df_module, "table_exists", lambda *_a, **_k: existing_type is not None)
 
     def create(_backend, _connection, _table, frame, **kwargs):
+        # CH load ensures an existing target with CREATE IF NOT EXISTS. That
+        # request does not create a resource or change its authoritative schema.
+        if existing_type is not None:
+            return
         schema = kwargs.get("table_schema") or {
             name: adapter.infer_dataframe_column_type(frame[name]) for name in frame.columns
         }
@@ -190,7 +194,7 @@ def test_future_trino_timestamp_is_native_only_when_lower_precision_is_exact(
     )
     if nanoseconds == 123456000:
         expected_type = "DateTime64(6)"
-        expected = dt.datetime.fromisoformat("2263-01-01T00:00:00.123456")
+        expected = ExactTemporal(ticks // 1000, 6)
     else:
         expected_type = "String"
         expected = "2263-01-01T00:00:00.123456001"
@@ -213,7 +217,7 @@ def test_future_dataframe_timestamp_does_not_narrow_unaligned_ticks(
 
     if nanoseconds == 123456000:
         assert created == [{"id": "DateTime64(6)"}]
-        assert loaded == [[dt.datetime.fromisoformat("2263-01-01T00:00:00.123456")]]
+        assert loaded == [[ExactTemporal(ticks // 1000, 6)]]
     else:
         assert created == [{"id": "String"}]
         assert loaded == [["2263-01-01T00:00:00.123456001"]]
@@ -227,10 +231,102 @@ def test_future_gp_microsecond_timestamp_remains_native_in_transfer_and_datafram
 
     assert scenario.run() == 1
     assert scenario.schemas == [{"id": "DateTime64(6)"}]
-    assert scenario.loaded == [[(value,)]]
+    assert scenario.loaded == [[(value.replace(tzinfo=dt.timezone.utc),)]]
     assert scenario.read_count == 1
 
     created, loaded = patch_load_boundaries(monkeypatch)
     assert load_ch([value]) == 1
     assert created == [{"id": "DateTime64(6)"}]
-    assert loaded == [[value]]
+    assert loaded == [[value.replace(tzinfo=dt.timezone.utc)]]
+
+
+_DATE_TIMESTAMP_REJECTIONS = [
+    ("DateTime64(6)", dt.date(1800, 1, 1)),
+    ("DateTime64(6)", dt.date(2300, 1, 1)),
+    ("DateTime64(9)", dt.date(2263, 1, 1)),
+    ("DateTime64(9)", dt.date(2262, 4, 12)),
+]
+_DATE_TIMESTAMP_ACCEPTED = [
+    ("DateTime64(6)", dt.date(2024, 1, 1)),
+    ("DateTime64(9)", dt.date(2024, 1, 1)),
+    ("DateTime64(9)", dt.date(2262, 4, 11)),
+]
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize(("target", "outside"), _DATE_TIMESTAMP_REJECTIONS)
+def test_transfer_date_only_authoritative_timestamp_range_rejects_before_publication(
+    monkeypatch: pytest.MonkeyPatch, existing: bool, target: str, outside: dt.date
+) -> None:
+    scenario = gp_to_new_ch(
+        monkeypatch,
+        "DATE",
+        [_VALID_DATE, outside],
+        table_schema=None if existing else {"id": target},
+    )
+    if existing:
+        scenario.existing_types = {"id": target}
+    paths = track_spools(monkeypatch)
+
+    with pytest.raises(ValueError, match="authoritative timestamp range"):
+        scenario.run()
+
+    assert scenario.read_count == 1
+    assert "create_target" not in scenario.events
+    assert not scenario.schemas
+    assert not scenario.loaded
+    assert scenario.finalizations == 0
+    assert paths
+    assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize(("target", "outside"), _DATE_TIMESTAMP_REJECTIONS)
+def test_load_date_only_authoritative_timestamp_range_rejects_before_ddl_or_insert(
+    monkeypatch: pytest.MonkeyPatch, existing: bool, target: str, outside: dt.date
+) -> None:
+    created, loaded = patch_load_boundaries(monkeypatch, target if existing else None)
+
+    with pytest.raises(ValueError, match="authoritative timestamp range"):
+        load_ch([_VALID_DATE, outside], table_schema=None if existing else {"id": target})
+
+    assert not created
+    assert not loaded
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize(("target", "value"), _DATE_TIMESTAMP_ACCEPTED)
+def test_transfer_date_only_timestamp_conversion_sends_midnight_datetime_payload(
+    monkeypatch: pytest.MonkeyPatch, existing: bool, target: str, value: dt.date
+) -> None:
+    scenario = gp_to_new_ch(
+        monkeypatch,
+        "DATE",
+        [value],
+        table_schema=None if existing else {"id": target},
+    )
+    if existing:
+        scenario.existing_types = {"id": target}
+
+    assert scenario.run() == 1
+
+    expected = dt.datetime.fromisoformat(value.isoformat() + "T00:00:00+00:00")
+    assert scenario.schemas == [{"id": target}]
+    assert scenario.loaded == [[(expected,)]]
+    assert isinstance(scenario.loaded[0][0][0], dt.datetime)
+    assert scenario.read_count == 1
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize(("target", "value"), _DATE_TIMESTAMP_ACCEPTED)
+def test_load_date_only_timestamp_conversion_sends_midnight_datetime_payload(
+    monkeypatch: pytest.MonkeyPatch, existing: bool, target: str, value: dt.date
+) -> None:
+    created, loaded = patch_load_boundaries(monkeypatch, target if existing else None)
+
+    assert load_ch([value], table_schema=None if existing else {"id": target}) == 1
+
+    expected = dt.datetime.fromisoformat(value.isoformat() + "T00:00:00+00:00")
+    assert created == ([] if existing else [{"id": target}])
+    assert loaded == [[expected]]
+    assert isinstance(loaded[0][0], dt.datetime)

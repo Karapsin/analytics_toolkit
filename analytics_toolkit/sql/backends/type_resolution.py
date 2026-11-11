@@ -23,6 +23,9 @@ from analytics_toolkit.sql.core.exact_values import (
     typed_text,
 )
 
+from .inferred_types import resolve_column_type
+from .temporal_context import TIMEZONE_POLICY_VERSION
+from .temporal_values import timestamp_value, validate_timestamp_range
 from .text_types import binary_profile_fits
 from .value_profiles import ColumnProfile
 
@@ -196,6 +199,7 @@ class ResolvedColumn:
     text_fallback: bool = False
     certified_input_count: int = 0
     target_backend: str = ""
+    destination_timezone: str | None = None
 
     def convert(self, value: Any) -> Any:  # noqa: C901, PLR0911 - preserve explicit destination conversions
         if is_null(value):
@@ -212,7 +216,12 @@ class ResolvedColumn:
         )
 
         if nested_descriptor(self.target_type)[0]:
-            return convert_nested(value, self.target_type, self.target_backend)
+            return convert_nested(
+                value,
+                self.target_type,
+                self.target_backend,
+                destination_timezone=self.destination_timezone,
+            )
         textual = parse_native_type(self.target_type).base.name in {
             "string",
             "text",
@@ -242,17 +251,25 @@ class ResolvedColumn:
         ):
             return value.encode("utf-8")
         if is_timestamp_type(self.target_type):
-            value = truncate_temporal(value, timestamp_scale(self.target_type))
+            value = timestamp_value(
+                truncate_temporal(value, timestamp_scale(self.target_type)),
+                self.target_type,
+                self.destination_timezone,
+            )
         if isinstance(value, ExactTemporal):
             if (
-                is_timestamp_type(self.target_type)
+                self.target_backend != "ch"
+                and is_timestamp_type(self.target_type)
                 and timestamp_scale(self.target_type) <= _TRINO_TIMESTAMP_SCALE
             ):
                 return value.calendar_datetime()
             return (
                 value
-                if self.target_backend == "trino"
-                and timestamp_scale(self.target_type) > _MAX_TEMPORAL_SCALE
+                if self.target_backend == "ch"
+                or (
+                    self.target_backend == "trino"
+                    and timestamp_scale(self.target_type) > _MAX_TEMPORAL_SCALE
+                )
                 else value.timestamp()
             )
         if parse_native_type(self.target_type).base.name in {
@@ -282,6 +299,8 @@ class ResolvedColumn:
             "reason": self.reason,
             "encoding_version": 1 if self.text_fallback else None,
             "certified_input_count": self.certified_input_count,
+            "destination_timezone": self.destination_timezone,
+            "timezone_policy_version": TIMEZONE_POLICY_VERSION,
         }
 
 
@@ -293,7 +312,9 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
     source_backend: str = "",
     authoritative_type: str | None = None,
     allow_timestamp_precision_loss: bool = True,
+    destination_timezone: str | None = None,
 ) -> ResolvedColumn:
+    destination_timezone = destination_timezone or profile.destination_timezone
     if authoritative_type is not None:
         validate_profile(
             profile,
@@ -302,6 +323,7 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
             allow_timestamp_precision_loss=allow_timestamp_precision_loss,
             source_type=source_type,
             source_backend=source_backend,
+            destination_timezone=destination_timezone,
         )
         return ResolvedColumn(
             authoritative_type,
@@ -310,6 +332,7 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
             "authoritative",
             certified_input_count=profile.count,
             target_backend=target_backend,
+            destination_timezone=destination_timezone,
         )
     target = _declared_target(source_type, source_backend, target_backend)
     if target is None or not declared_domain_fits(
@@ -318,7 +341,14 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
         target = _resolve_native(profile, target_backend, source_type, source_backend)
     from .inferred_types import certify_native_candidate  # noqa: PLC0415 - candidate certification
 
-    target = certify_native_candidate(profile, target, target_backend, source_type, source_backend)
+    target = certify_native_candidate(
+        profile,
+        target,
+        target_backend,
+        source_type,
+        source_backend,
+        destination_timezone=destination_timezone,
+    )
     fallback = target is None
     if target is None:
         target = {"gp": "TEXT", "trino": "VARCHAR", "ch": "String"}[target_backend]
@@ -336,6 +366,7 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
         fallback,
         profile.count,
         target_backend,
+        destination_timezone,
     )
 
 
@@ -474,8 +505,10 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
     allow_timestamp_precision_loss: bool = True,
     source_type: str | None = None,
     source_backend: str | None = None,
+    destination_timezone: str | None = None,
 ) -> None:
     """Validate authoritative targets without widening or changing their family."""
+    destination_timezone = destination_timezone or profile.destination_timezone
     outer_type = parse_native_type(target_type)
     base = outer_type.base
     if backend == "ch" and profile.null_count and not _permits_null(target_type):
@@ -500,7 +533,11 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
     from .nested_types import validate_nested  # noqa: PLC0415 - native recursive schemas
 
     if validate_nested(
-        profile, target_type, backend, allow_timestamp_precision_loss=allow_timestamp_precision_loss
+        profile,
+        target_type,
+        backend,
+        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+        destination_timezone=destination_timezone,
     ):
         return
     if base.name in {"enum8", "enum16", "fixedstring"}:
@@ -590,21 +627,8 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         ):
             msg = "Selected input exceeds authoritative timestamp precision."
             raise ValueError(msg)
-        if backend == "ch" and profile.minimum_timestamp_ns is not None:
-            scale = timestamp_scale(target_type)
-            if not 0 <= scale <= _MAX_TEMPORAL_SCALE:
-                msg = "Unsupported authoritative timestamp scale."
-                raise ValueError(msg)
-            lower, upper = (0, 2**32 - 1) if base.name == "datetime" else (-(2**63), 2**63 - 1)
-            unit = 10 ** (9 - scale)
-            if (
-                profile.minimum_timestamp_ns // unit < lower
-                or cast("int", profile.maximum_timestamp_ns) // unit > upper
-                or cast("dt.date", profile.minimum_date) < dt.date(1900, 1, 1)
-                or cast("dt.date", profile.maximum_date) > dt.date(2299, 12, 31)
-            ):
-                msg = "Selected input exceeds authoritative timestamp range."
-                raise ValueError(msg)
+        if backend == "ch":
+            validate_timestamp_range(profile, target_type, destination_timezone)
     elif base.name in {"bool", "boolean"} and not profile.families <= {"boolean"}:
         msg = "Selected input is incompatible with authoritative boolean schema."
         raise ValueError(msg)
@@ -769,8 +793,11 @@ def declared_domain_fits(  # noqa: C901, PLR0911, PLR0912 - exact declared domai
             is_timestamp_type(target_type)
             and timestamp_scale(source_type) <= timestamp_scale(target_type)
             and _timestamp_range_fits(source_type, target_type, source_backend, target_backend)
-            and type_has_timezone((source_type or "").lower())
-            == type_has_timezone(target_type.lower())
+            and (
+                source_backend == "ch"
+                or type_has_timezone((source_type or "").lower())
+                == type_has_timezone(target_type.lower())
+            )
         )
     if source.name in {
         "char",
@@ -870,23 +897,4 @@ def requires_adaptive_resolution(
             source_backend=source_backend,
         )
         for column in source_schema
-    )
-
-
-def resolve_column_type(  # noqa: PLR0913 - preserve column and authority context
-    column: Any,
-    target_backend: str,
-    profile: ColumnProfile,
-    source_backend: str | None = None,
-    authoritative_type: str | None = None,
-    *,
-    allow_timestamp_precision_loss: bool = True,
-) -> ResolvedColumn:
-    return resolve_profile(
-        profile,
-        target_backend,
-        source_type=column.native_type,
-        source_backend=source_backend or "",
-        authoritative_type=authoritative_type,
-        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
     )

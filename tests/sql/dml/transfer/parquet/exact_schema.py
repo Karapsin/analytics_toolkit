@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -128,3 +129,18 @@ def test_same_trino_quoted_row_fields_survive_actual_parquet_round_trip() -> Non
     assert recovered.to_pylist() == [
         {"payload": {"MixedCase": 2**53 + 1, "Spaced Name": [str(UUID(int=1)), None]}}
     ]
+
+
+def test_python_datetime_microseconds_and_nulls_survive_actual_parquet_round_trip() -> None:
+    before_epoch = datetime.fromisoformat("1969-12-31T23:59:59.999999")
+    after_epoch = datetime.fromisoformat("1970-01-01T00:00:00.000001")
+    values = [None, before_epoch, None, after_epoch, None]
+    batch = RowBatch(["event_at"], [(value,) for value in values])
+    table = row_batch_to_arrow_table(pa, batch, column_types={"event_at": "TIMESTAMP(6)"})
+    assert table.schema.field("event_at").type == pa.timestamp("us")
+    target = io.BytesIO()
+    pq.write_table(table, target)
+    recovered = pq.read_table(pa.BufferReader(target.getvalue()))
+    assert recovered.schema.field("event_at").type == pa.timestamp("us")
+    assert recovered.column("event_at").to_pylist() == values
+    assert recovered.column("event_at").cast(pa.int64()).to_pylist() == [None, -1, None, 1, None]

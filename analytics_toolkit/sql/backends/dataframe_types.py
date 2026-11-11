@@ -21,13 +21,15 @@ def infer_ch_dataframe_column_type(adapter: Any, series: pd.Series) -> str:
     return _infer_column_type(series, "ch")
 
 
-def _infer_column_type(series: pd.Series, backend: str) -> str:
+def _infer_column_type(
+    series: pd.Series, backend: str, *, destination_timezone: str | None = None
+) -> str:
     from analytics_toolkit.sql.core.type_resolution import (  # noqa: PLC0415 - avoid backend registry import cycles
         ColumnProfile,
         resolve_profile,
     )
 
-    profile = ColumnProfile()
+    profile = ColumnProfile(destination_timezone=destination_timezone)
     for value in series:
         profile.add(value)
     declared = None
@@ -44,7 +46,13 @@ def _infer_column_type(series: pd.Series, backend: str) -> str:
             profile.families.add("timestamp")
             profile.aware = getattr(series.dtype, "tz", None) is not None
             profile.naive = not profile.aware
-    return resolve_profile(profile, backend, source_type=declared, source_backend="ch").target_type
+    return resolve_profile(
+        profile,
+        backend,
+        source_type=declared,
+        source_backend="ch",
+        destination_timezone=destination_timezone,
+    ).target_type
 
 
 def _infer_common_sql_type(series: pd.Series) -> str:

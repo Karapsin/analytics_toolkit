@@ -124,6 +124,12 @@ def map_source_column(
         nested = map_declared_nested(column.native_type, target_backend, source_backend)
         if nested is not None:
             return nested
+    if (
+        source_backend == "ch"
+        and target_backend in {"gp", "trino"}
+        and classify_source_type(normalize_type_name(column.native_type)) == "timestamp"
+    ):
+        return ("TIMESTAMP(6)" if target_backend == "trino" else "TIMESTAMP") + " WITH TIME ZONE"
     return str(
         adapter.map_same_backend_source_type_to_target(column)
         if source_backend == target_backend

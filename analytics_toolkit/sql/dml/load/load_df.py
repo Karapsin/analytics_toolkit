@@ -88,6 +88,11 @@ from ..table.write_modes import (
     upsert_stage_table,
 )
 from .type_validation import convert_dataframe_schema, validate_dataframe_schema
+from analytics_toolkit.sql.dml.destination_context import (
+    freeze_destination_timezone,
+    infer_dataframe_write_schema,
+    prepare_dataframe_write_context,
+)
 from ..empty_source import (
     EmptySourceError,
     EmptySourcePolicy,
@@ -266,17 +271,15 @@ def load_df(
                 input_schema = (
                     options.table_schema
                     or state.target_column_types
-                    or {
-                        str(name): get_backend_adapter(
-                            options.connection_backend
-                        ).infer_dataframe_column_type(df[name])
-                        for name in df.columns
-                    }
+                    or infer_dataframe_write_schema(
+                        df, options.connection_backend, options.destination_context
+                    )
                 )
                 input_df, operation_metadata.type_resolutions = convert_dataframe_schema(
                     input_df,
                     input_schema,
                     options.connection_backend,
+                    destination_timezone=options.destination_context.get("destination_timezone"),
                 )
                 progress_bar = _make_load_progress_bar(
                     total=len(df),
@@ -572,6 +575,9 @@ def _initialize_load_state(options: LoadOptions, connection: Any) -> LoadState:
         options.destination_table,
         connection_key=options.connection_key,
     )
+    freeze_destination_timezone(
+        options.destination_context, options.connection_backend, connection, options.table_schema
+    )
     return LoadState(
         target_exists=target_exists,
         original_target_exists=target_exists,
@@ -618,7 +624,12 @@ def _handle_empty_dataframe_load(
 def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
     if options.table_schema is not None:
         validate_table_schema_columns(options.table_schema, df.columns)
-        validate_dataframe_schema(df, options.table_schema, options.connection_backend)
+        validate_dataframe_schema(
+            df,
+            options.table_schema,
+            options.connection_backend,
+            destination_timezone=options.destination_context.get("destination_timezone"),
+        )
 
     if options.gp_distributed_by_key:
         validate_key_columns_in_columns(options.gp_distributed_by_key, df.columns)
@@ -664,9 +675,12 @@ def _prepare_load_target(
             options.destination_table,
             connection_key=options.connection_key,
         )
+    zone = prepare_dataframe_write_context(options, state, connection, df)
     if state.target_column_types is not None:
         validation_df = (
-            convert_dataframe_schema(df, options.table_schema, options.connection_backend)[0]
+            convert_dataframe_schema(
+                df, options.table_schema, options.connection_backend, destination_timezone=zone
+            )[0]
             if options.table_schema is not None
             else df
         )
@@ -675,9 +689,15 @@ def _prepare_load_target(
             state.target_column_types,
             options.connection_backend,
             allow_timestamp_precision_loss=False,
+            destination_timezone=zone,
         )
     if options.table_schema is not None:
-        validate_dataframe_schema(df, options.table_schema, options.connection_backend)
+        validate_dataframe_schema(
+            df,
+            options.table_schema,
+            options.connection_backend,
+            destination_timezone=options.destination_context.get("destination_timezone"),
+        )
     _apply_load_target_write_mode(options, state, connection)
     _ensure_load_target_table(options, state, connection, df)
     _load_target_column_metadata(options, state, connection, df)
@@ -748,8 +768,12 @@ def _create_load_target_table(
     create_kwargs: dict[str, Any] = {}
     if options.query_label is not None:
         create_kwargs["query_label"] = options.query_label
-    if options.table_schema is not None:
-        create_kwargs["table_schema"] = options.table_schema
+    if options.table_schema is not None or options.destination_context.get(
+        "context_inferred_schema"
+    ):
+        create_kwargs["table_schema"] = (
+            options.table_schema or options.destination_context["inferred_schema"]
+        )
     create_kwargs.update(
         get_backend_adapter(options.connection_backend).build_load_target_create_kwargs(
             gp_distributed_by_key=options.gp_distributed_by_key,
@@ -773,7 +797,7 @@ def _create_load_target_table(
         options.connection_backend,
         connection,
         options.destination_table,
-        None if options.table_schema is not None else df,
+        None if create_kwargs.get("table_schema") is not None else df,
         connection_key=options.connection_key,
         **create_kwargs,
     )
@@ -788,10 +812,9 @@ def _load_target_column_metadata(
     if state.target_column_types is not None and state.original_target_exists:
         return
     if options.write_mode == "replace" and not options.append and state.original_target_exists:
-        adapter = get_backend_adapter(options.connection_backend)
-        state.target_column_types = options.table_schema or {
-            str(column): adapter.infer_dataframe_column_type(df[column]) for column in df.columns
-        }
+        state.target_column_types = options.table_schema or infer_dataframe_write_schema(
+            df, options.connection_backend, options.destination_context
+        )
         return
     if options.write_mode == "upsert" and state.original_target_exists:
         return
@@ -1964,9 +1987,18 @@ def _run_load_target_action(
     return run_with_fresh_connection(
         options.connection_key,
         role,
-        operation,
+        lambda ref: _run_context_checked_load_action(options, ref, operation),
         open_connection=get_sql_connection,
     )
+
+
+def _run_context_checked_load_action(
+    options: LoadOptions, ref: dict[str, Any], operation: Any
+) -> Any:
+    freeze_destination_timezone(
+        options.destination_context, options.connection_backend, ref["connection"]
+    )
+    return operation(ref)
 
 
 def _validate_dataframe_key_uniqueness(

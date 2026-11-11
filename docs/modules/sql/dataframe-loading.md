@@ -87,6 +87,22 @@ ClickHouse table. ClickHouse upsert builds a final increment for affected
 partitions, drops those partitions from the shard or local target, and inserts
 through the target table.
 
+ClickHouse timestamp columns without an explicit timezone use the actual
+client/server write policy. The operation resolves and freezes that policy for
+validation and retries without rewriting the column's SQL type. An explicit
+column timezone takes precedence. Named zones use IANA `ZoneInfo` rules,
+including future daylight-saving transitions; packaged `tzdata` and the
+Python 3.8 backport provide portable support. Unknown timezone context is never
+assumed to be UTC; dry-run plans mark required live resolution as pending.
+
+Naive datetime and date values denote local wall time in the selected policy;
+dates become midnight. For explicit or existing timestamp columns, ambiguous
+or nonexistent local times fail before target mutation; supply an aware value
+or exact instant instead. Inferred columns preserve unresolved local times and
+mixed naive/aware values as exact text rather than selecting an offset or DST
+fold. A server default alone does not disambiguate mixed awareness. Aware and
+raw temporal values retain their physical instant and are never shifted twice.
+
 Greenplum upsert deletes matching keys from the target using the stage table
 and then inserts the staged rows.
 

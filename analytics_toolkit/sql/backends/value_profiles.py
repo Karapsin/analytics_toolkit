@@ -56,6 +56,21 @@ class ColumnProfile:
     map_comparable_keys: bool = True
     native_type: str | None = None
     source_backend: str | None = None
+    minimum_date_only: dt.date | None = None
+    maximum_date_only: dt.date | None = None
+    destination_timezone: str | None = None
+    temporal_type: str | None = None
+    temporal_value_count: int = 0
+    context_value_count: int = 0
+    context_valid: bool = True
+    wall_time_error: str | None = None
+    wall_time_error_zone: str | None = None
+    minimum_context_timestamp_ns: int | None = None
+    maximum_context_timestamp_ns: int | None = None
+    minimum_naive_timestamp_ns: int | None = None
+    maximum_naive_timestamp_ns: int | None = None
+    minimum_instant_timestamp_ns: int | None = None
+    maximum_instant_timestamp_ns: int | None = None
     maximum_byte_length: int = 0
     text_has_nul: bool = False
     utf8_valid: bool = True
@@ -137,14 +152,15 @@ class ColumnProfile:
         elif family == "binary":
             self.maximum_byte_length = max(self.maximum_byte_length, len(value))
         elif family == "timestamp":
+            self._observe_temporal(value)
             exact = isinstance(value, ExactTemporal)
-            stamp = value.calendar_datetime() if exact else pd.Timestamp(value)
+            stamp = value.calendar_datetime() if exact else value
             self.aware |= stamp.tzinfo is not None
             self.naive |= stamp.tzinfo is None
             fraction = (
                 value.ticks % 10**value.scale
                 if exact
-                else stamp.microsecond * 1000 + stamp.nanosecond
+                else stamp.microsecond * 1000 + getattr(stamp, "nanosecond", 0)
             )
             scale = value.scale if exact else 9
             while scale and fraction % 10 == 0:
@@ -156,12 +172,12 @@ class ColumnProfile:
                 stamp = value.calendar_datetime(utc=True)
             else:
                 if stamp.tzinfo is not None:
-                    stamp = stamp.tz_convert("UTC")
+                    stamp = stamp.astimezone(dt.timezone.utc)
                 days = (stamp.date() - dt.date(1970, 1, 1)).days
                 ticks = (
                     (days * 86400 + stamp.hour * 3600 + stamp.minute * 60 + stamp.second) * 10**9
                     + stamp.microsecond * 1000
-                    + stamp.nanosecond
+                    + getattr(stamp, "nanosecond", 0)
                 )
             self.minimum_timestamp_ns = (
                 ticks
@@ -175,13 +191,24 @@ class ColumnProfile:
             )
             self._add_date(stamp.date())
         elif family == "date":
+            self._observe_temporal(value)
+            self.minimum_date_only = (
+                value if self.minimum_date_only is None else min(self.minimum_date_only, value)
+            )
+            self.maximum_date_only = (
+                value if self.maximum_date_only is None else max(self.maximum_date_only, value)
+            )
             self._add_date(value)
         elif family in {"array", "tuple"}:
             values = list(value)
             if family == "array":
                 self.gp_array_compatible &= _array_shape(values) is not None
                 if self.array_leaves is None:
-                    self.array_leaves = ColumnProfile(source_backend=self.source_backend)
+                    self.array_leaves = ColumnProfile(
+                        source_backend=self.source_backend,
+                        destination_timezone=self.destination_timezone,
+                        temporal_type=self._destination_leaf(),
+                    )
                 for leaf in _array_leaves(values):
                     self.array_leaves.add(leaf)
                 if not self.children:
@@ -189,6 +216,8 @@ class ColumnProfile:
                         ColumnProfile(
                             native_type=child_types[0][1] if kind == "array" else None,
                             source_backend=self.source_backend,
+                            destination_timezone=self.destination_timezone,
+                            temporal_type=self._destination_child(0),
                         )
                     )
                 for item in values:
@@ -200,6 +229,8 @@ class ColumnProfile:
                         ColumnProfile(
                             native_type=child_types[index][1] if index < len(child_types) else None,
                             source_backend=self.source_backend,
+                            destination_timezone=self.destination_timezone,
+                            temporal_type=self._destination_child(index),
                         )
                         for index, _ in enumerate(values)
                     ]
@@ -216,6 +247,8 @@ class ColumnProfile:
                     ColumnProfile(
                         native_type=child_types[index][1] if kind == "map" else None,
                         source_backend=self.source_backend,
+                        destination_timezone=self.destination_timezone,
+                        temporal_type=self._destination_child(index),
                     )
                     for index in range(_MAP_ARGUMENT_COUNT)
                 ]
@@ -232,7 +265,9 @@ class ColumnProfile:
                             )
 
                             normalized_key = ResolvedColumn(
-                                child_types[0][1], target_backend=self.source_backend or ""
+                                child_types[0][1],
+                                target_backend=self.source_backend or "",
+                                destination_timezone=self.destination_timezone,
                             ).convert(key)
                         self.map_duplicate_keys |= normalized_key in seen
                         seen.add(normalized_key)
@@ -241,6 +276,25 @@ class ColumnProfile:
                     self.children[0].add(key)
                     self.children[1].add(item)
 
+    def _destination_child(self, index: int) -> str | None:
+        from .nested_types import nested_descriptor  # noqa: PLC0415 - destination schema context
+
+        fields = nested_descriptor(self.temporal_type or "")[1]
+        return fields[index][1] if index < len(fields) else None
+
+    def _destination_leaf(self) -> str | None:
+        from .nested_types import nested_descriptor  # noqa: PLC0415 - destination schema context
+
+        native = self.temporal_type or ""
+        while nested_descriptor(native)[0] in {"array", "gp_array"}:
+            native = nested_descriptor(native)[1][0][1]
+        return native or None
+
+    def _observe_temporal(self, value: Any) -> None:
+        from .temporal_context import observe_context  # noqa: PLC0415 - exact destination context
+
+        observe_context(self, value)
+
     def _add_date(self, value: dt.date) -> None:
         self.minimum_date = value if self.minimum_date is None else min(self.minimum_date, value)
         self.maximum_date = value if self.maximum_date is None else max(self.maximum_date, value)
@@ -248,14 +302,35 @@ class ColumnProfile:
     observe = add
 
     def merge(self, other: ColumnProfile) -> ColumnProfile:  # noqa: C901 - complete aggregate merge
+        from .temporal_context import effective_timezone  # noqa: PLC0415 - frozen context identity
+
+        self.context_valid &= other.context_valid and effective_timezone(
+            self.temporal_type, self.destination_timezone
+        ) == effective_timezone(other.temporal_type, other.destination_timezone)
+        self.wall_time_error_zone = (
+            self.wall_time_error_zone
+            if self.wall_time_error is not None
+            else other.wall_time_error_zone
+        )
+        self.wall_time_error = self.wall_time_error or other.wall_time_error
+        self.temporal_value_count += other.temporal_value_count
+        self.context_value_count += other.context_value_count
         self.count += other.count
         self.null_count += other.null_count
         self.families |= other.families
         for attribute, reducer in (
             ("minimum_integer", min),
             ("maximum_integer", max),
+            ("minimum_date_only", min),
+            ("maximum_date_only", max),
             ("minimum_date", min),
             ("maximum_date", max),
+            ("minimum_context_timestamp_ns", min),
+            ("maximum_context_timestamp_ns", max),
+            ("minimum_naive_timestamp_ns", min),
+            ("maximum_naive_timestamp_ns", max),
+            ("minimum_instant_timestamp_ns", min),
+            ("maximum_instant_timestamp_ns", max),
             ("minimum_timestamp_ns", min),
             ("maximum_timestamp_ns", max),
         ):

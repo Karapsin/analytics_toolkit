@@ -305,6 +305,7 @@ def test_stream_parser_supports_native_driver_shapes() -> None:
         metadata,
     )
     assert _split_first_stream_block([metadata, (1,)]) == ([(1,)], metadata)
+    assert _split_first_stream_block(([(1,)], metadata)) == ([(1,)], metadata)
     assert _normalize_stream_rows([]) == []
     assert _normalize_stream_rows([[(1,)], [(2,)]]) == [(1,), (2,)]
     assert _is_column_metadata(metadata)

@@ -16,6 +16,7 @@ class LoadOptions:
     destination_table: str
     destination_hash: str | None = None
     table_schema: dict[str, str] | None = None
+    destination_context: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
     append: bool = False
     write_mode: str = "replace"
     empty_source_policy: EmptySourcePolicy | None = None

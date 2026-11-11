@@ -8,6 +8,7 @@ from analytics_toolkit.sql.ddl.identifiers import _parse_table_name, quote_ident
 from analytics_toolkit.sql.dml.io.dataframes import dataframe_from_columns
 
 from .native_codec import install_exact_native_codec
+from .temporal_context import native_context_timezone, timezone_name
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
@@ -135,7 +136,26 @@ class NativeClickHouseClient:
     def __init__(self, client: Any) -> None:
         self._client = client
         self._closed = False
+        self._exact_source_values = False
         install_exact_native_codec(client)
+
+    def enable_exact_source_values(self) -> None:
+        """Keep source instants raw before any dataframe inference; never shared globally."""
+        self._exact_source_values = True
+        current = getattr(self._client, "connection", None)
+        for connection in [current, *getattr(self._client, "connections", ())]:
+            context = getattr(connection, "context", None)
+            if context is not None:
+                context._atk_exact_source_values = True  # noqa: SLF001 -- connection-local codec policy
+
+    @property
+    def effective_write_timezone(self) -> str | None:
+        connection = getattr(self._client, "connection", None)
+        return timezone_name(native_context_timezone(getattr(connection, "context", None)))
+
+    @property
+    def effective_read_timezone(self) -> str | None:
+        return "UTC" if self._exact_source_values else self.effective_write_timezone
 
     def command(
         self,

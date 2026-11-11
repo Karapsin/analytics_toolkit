@@ -81,6 +81,28 @@ def test_exact_temporal_fallback_text_keeps_full_fraction_and_utc_instant() -> N
     assert typed_text(value) == "2299-01-01T00:00:00.00000001+00:00"
 
 
+def test_public_fixed_offset_fallback_retains_a_resolvable_zone() -> None:
+    from datetime import timedelta  # noqa: PLC0415
+
+    from clickhouse_connect.datatypes.registry import get_from_name  # noqa: PLC0415
+
+    ticks = epoch_seconds(2299) * 10**7 + 1
+    context = http_query_context()
+    selected = timezone(timedelta(hours=5, minutes=30))
+    context.query_tz = selected
+    if not callable(context.active_tz):
+        context.active_tz = selected
+    value = exact_http_type(get_from_name("DateTime64(7)")).read_column(
+        http_source(struct.pack("<q", ticks)),
+        1,
+        context,
+    )[0]
+    assert isinstance(value, ExactTemporal)
+    assert value.timezone == "+05:30"
+    assert value.isoformat() == "2299-01-01T05:30:00.0000001+05:30"
+    assert typed_text(value) == "2299-01-01T00:00:00.0000001+00:00"
+
+
 @pytest.mark.parametrize("year", [1970, 2299])
 @pytest.mark.parametrize("client_timezone", [False, True])
 def test_binary_naive_native_wallclock_preserves_raw_ticks_and_source_zone(

@@ -22,7 +22,8 @@ def render_transfer_literal(self: Any, value: Any) -> str:
         # A retained source zone identifies the raw instant even when the
         # driver's public representation deliberately omitted the offset.
         aware = value.timezone is not None
-        text = value.isoformat(utc=aware).replace("T", " ", 1)
+        instant = ExactTemporal(value.ticks, value.scale, "UTC") if aware else value
+        text = instant.isoformat(utc=aware).replace("T", " ", 1)
         if aware:
             text = text[:-6]
         zone = ", 'UTC'" if aware else ""

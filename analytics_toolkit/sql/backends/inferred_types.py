@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from .type_resolution import ResolvedColumn
     from .value_profiles import ColumnProfile
 
 
-def certify_native_candidate(
+def certify_native_candidate(  # noqa: PLR0913 - frozen context and source identity
     profile: ColumnProfile,
     target: str | None,
     backend: str,
     source_type: str | None,
     source_backend: str,
+    *,
+    destination_timezone: str | None = None,
 ) -> str | None:
     from .source_schema import nullable_clickhouse_type  # noqa: PLC0415 - native backend cycle
     from .type_resolution import (  # noqa: PLC0415 - inference cycle
@@ -36,6 +39,7 @@ def certify_native_candidate(
                 allow_timestamp_precision_loss=False,
                 source_type=source_type,
                 source_backend=source_backend,
+                destination_timezone=destination_timezone,
             )
         except ValueError:
             return None
@@ -94,4 +98,27 @@ def empty_temporal_type(source_type: str | None, backend: str) -> str | None:
         return f"DateTime64({min(9, max(6, timestamp_scale(source_type)))}{zone})"
     return ("TIMESTAMP(6)" if backend == "trino" else "TIMESTAMP") + (
         " WITH TIME ZONE" if aware else ""
+    )
+
+
+def resolve_column_type(  # noqa: PLR0913 - preserve column and authority context
+    column: Any,
+    target_backend: str,
+    profile: ColumnProfile,
+    source_backend: str | None = None,
+    authoritative_type: str | None = None,
+    *,
+    allow_timestamp_precision_loss: bool = True,
+    destination_timezone: str | None = None,
+) -> ResolvedColumn:
+    from .type_resolution import resolve_profile  # noqa: PLC0415 - native resolution cycle
+
+    return resolve_profile(
+        profile,
+        target_backend,
+        source_type=column.native_type,
+        source_backend=source_backend or "",
+        authoritative_type=authoritative_type,
+        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+        destination_timezone=destination_timezone,
     )

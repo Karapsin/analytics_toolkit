@@ -23,7 +23,7 @@ from ...table.table_validation import (
     validate_key_columns_in_columns,
     validate_upsert_partition_column_in_columns,
 )
-from ..io.source import iter_source_batches
+from ..io.source import iter_source_batches, normalize_source_batch
 from ..runtime.models import (
     AdaptiveBatchSizer,
     RowBatch,
@@ -37,10 +37,7 @@ from ..runtime.retry import (
     rollback_quietly,
     run_with_retry,
 )
-from ..schema import (
-    inspect_source_query_schema,
-    map_source_schema_to_target,
-)
+from ..schema import inspect_source_query_schema, map_source_schema_to_target
 from .adaptive_input import (
     AdaptiveTransferCompleteError,
     AdaptiveTransferContext,
@@ -736,7 +733,9 @@ def load_stage_batches(
         ):
             if source_batch.empty:
                 continue
-            batch = get_backend_adapter(options.from_db_backend).normalize_transfer_source_batch(
+            batch = normalize_source_batch(
+                options,
+                connection_refs.source.get("connection"),
                 source_batch,
                 stage_state.source_column_types,
             )

@@ -37,11 +37,17 @@ def validate_dataframe_schema(
     backend: str,
     *,
     allow_timestamp_precision_loss: bool = True,
+    destination_timezone: str | None = None,
 ) -> None:
     for index, name in enumerate(df.columns):
         if str(name) not in schema:
             continue
-        profile = ColumnProfile(native_type=schema[str(name)], source_backend=backend)
+        profile = ColumnProfile(
+            native_type=schema[str(name)],
+            source_backend=backend,
+            destination_timezone=destination_timezone,
+            temporal_type=schema[str(name)],
+        )
         for value in df.iloc[:, index]:
             profile.add(_schema_value(value, schema[str(name)]))
         validate_profile(
@@ -49,6 +55,7 @@ def validate_dataframe_schema(
             schema[str(name)],
             backend,
             allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+            destination_timezone=destination_timezone,
         )
 
 
@@ -56,13 +63,18 @@ def convert_dataframe_schema(
     df: pd.DataFrame,
     schema: Mapping[str, str],
     backend: str | None = None,
+    *,
+    destination_timezone: str | None = None,
 ) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
     columns = []
     metadata = []
     for index, name in enumerate(df.columns):
         native_type = schema[str(name)]
         resolution = ResolvedColumn(
-            native_type, certified_input_count=len(df), target_backend=backend or ""
+            native_type,
+            certified_input_count=len(df),
+            target_backend=backend or "",
+            destination_timezone=destination_timezone,
         )
         columns.append(
             pd.Series(

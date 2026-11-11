@@ -87,8 +87,9 @@ def test_exact_temporal_read_values_remain_usable_as_clickhouse_keys(naive_outpu
         transfer_key_values=[stamp],
         concurrency=1,
     )
-    text = stamp.isoformat(utc=True).replace("T", " ", 1)[:-6]
-    assert slices[0].predicate_sql == f"(k) = toDateTime64('{text}', 7, 'UTC')"
+    assert slices[0].predicate_sql == (
+        "(k) = toDateTime64('2298-12-28 08:00:00.1234567', 7, 'UTC')"
+    )
     assert get_backend_adapter("ch").render_transfer_literal(ExactTemporal(1234567, 7)) == (
         "toDateTime64('1970-01-01 00:00:00.1234567', 7)"
     )
@@ -117,3 +118,33 @@ def test_current_and_legacy_transfer_stage_collisions_are_recognized(collision: 
 def test_generated_collision_suffix_is_recognized() -> None:
     suffix = collision_stage_suffix("gp", "a" * 32 + "__source", "0123456789abcdef")
     assert match_transfer_stage_identifier(suffix) is not None
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (
+            ExactTemporal(0, 0, "Europe/Moscow", offset_naive=True),
+            "toDateTime64('1970-01-01 00:00:00', 0, 'UTC')",
+        ),
+        (
+            ExactTemporal(1729989000000000001, 9, "Europe/Berlin", offset_naive=True),
+            "toDateTime64('2024-10-27 00:30:00.000000001', 9, 'UTC')",
+        ),
+        (
+            ExactTemporal(1729992600000000001, 9, "Europe/Berlin", offset_naive=True),
+            "toDateTime64('2024-10-27 01:30:00.000000001', 9, 'UTC')",
+        ),
+    ],
+)
+def test_raw_clickhouse_key_literals_use_ticks_instead_of_naive_display(value, expected):
+    assert get_backend_adapter("ch").render_transfer_literal(value) == expected
+
+    *_rest, slices, _concurrency = keys_module.normalize_transfer_slices(
+        source_sql="SELECT * FROM t WHERE {k}",
+        source_backend="ch",
+        transfer_keys="k",
+        transfer_key_values=[value],
+        concurrency=1,
+    )
+    assert slices[0].source_sql == "SELECT * FROM t WHERE (k) = " + expected

@@ -21,6 +21,7 @@ from analytics_toolkit.sql.dml.transfer.flow import (
     staged_attempt,
     staged_keyed_pipeline,
 )
+from analytics_toolkit.sql.dml.transfer.io.source import normalize_source_batch
 from analytics_toolkit.sql.dml.transfer.runtime import retry as transfer_retry
 from analytics_toolkit.sql.dml.transfer.runtime.models import (
     RowBatch,
@@ -104,6 +105,9 @@ class Scenario:
 
 
 class Connection:
+    server_tz = "UTC"
+    effective_read_timezone = "UTC"
+
     def close(self) -> None:
         return
 
@@ -115,6 +119,14 @@ def _change_configuration(field: str = "database", value: str = "changed_namespa
     configs["ch"][field] = value
     path.write_text(json.dumps(configs))
     set_connections_path(path)
+
+
+def normalized_source_rows(options, refs, state, batch):
+    if options.input_resolution.get("spool") is not None:
+        return batch.rows
+    return normalize_source_batch(
+        options, refs.source.get("connection"), batch, state.source_column_types
+    ).rows
 
 
 def install(
@@ -197,6 +209,7 @@ def install(
     ) -> int:
         refs, state = connection_refs, stage_state
         scenario.schemas.append(dict(state.stage_column_types or {}))
+
         values = [
             row
             for batch in adaptive_input.resolved_source_batches(
@@ -208,7 +221,7 @@ def install(
                 options.source_sql,
                 options.batch_size,
             )
-            for row in batch.rows
+            for row in normalized_source_rows(options, refs, state, batch)
         ]
         scenario.loaded.append(values)
         scenario.events.append("load")
@@ -311,6 +324,9 @@ class ConnectionCounts:
 
 
 class CountedConnection:
+    server_tz = "UTC"
+    effective_read_timezone = "UTC"
+
     def __init__(self, counts: ConnectionCounts, alias: str) -> None:
         self.counts = counts
         self.alias = alias

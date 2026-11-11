@@ -37,7 +37,7 @@ def test_aligned_late_timestamp_tries_exact_lower_precision_native_before_text()
     result = resolve_profile(profile, "ch", source_type="DateTime64(9, 'UTC')", source_backend="ch")
     assert result.target_type == "DateTime64(6, 'UTC')"
     assert not result.text_fallback
-    assert result.convert(value) == value.calendar_datetime()
+    assert result.convert(value) == ExactTemporal(value.ticks // 1000, 6, "UTC")
 
 
 @pytest.mark.parametrize("source", ["DATE", "Date32"])

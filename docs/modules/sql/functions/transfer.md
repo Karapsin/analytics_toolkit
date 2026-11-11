@@ -316,6 +316,13 @@ rows = sql.transfer(
   replacement client can open against different storage. Cleanup retains
   resources when the original endpoint cannot be proved; guards are removed
   when the operation ends, including cancellation.
+- ClickHouse timestamp validation and replay bind the actual write timezone
+  and policy version; explicit column zones take precedence. Unknown context
+  remains pending instead of assuming UTC. Authoritative schemas reject
+  ambiguous or nonexistent naive local times; inference preserves unresolved
+  wall times or mixed awareness as exact text. Internal source decoding retains
+  raw instants across DST folds, and physical ClickHouse timestamps infer native
+  timezone-aware GP/Trino types when precision fits. See [type conversion](../transfers.md#types).
 - Text fallback preserves NULL, fixed-point decimal text, base-10 integer text,
   ISO dates and full-precision timestamps (aware instants normalized to UTC).
   Structured values use versioned typed JSON with ordered map pairs. Supported
@@ -436,7 +443,9 @@ rows = sql.transfer(
   `toDateTime64` with their full fractional precision. Aware datetime keys
   normalize to UTC; naive keys retain the connection's timezone semantics.
   Exact temporal values returned by ClickHouse reads retain their raw instant
-  and fractional scale when reused as transfer keys.
+  and fractional scale when reused as transfer keys, even when their display
+  omits the timezone: predicates render from the retained UTC ticks rather than
+  interpreting the displayed local fields again.
 - Values are always explicit; the helper does not query distinct key values
   automatically.
 - Keyed transfers render each source slice by replacing placeholders inline.

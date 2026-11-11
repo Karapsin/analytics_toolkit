@@ -12,9 +12,13 @@ from typing import Any
 
 from analytics_toolkit.sql.dml.io.dataframes import dataframe_from_columns
 
-from .exact_temporal import timestamp_from_ticks, timestamp_ticks
+from .exact_temporal import datetime_from_seconds, timestamp_from_ticks, timestamp_ticks
+from .temporal_context import timezone_name
 
 _LOGGER = logging.getLogger(__name__)
+_DATETIME_MAX_TICKS = 2**32 - 1
+_DATETIME64_MIN_TICKS = -(2**63)
+_DATETIME64_MAX_TICKS = 2**63 - 1
 
 
 class _SafeHTTPSource:
@@ -37,21 +41,67 @@ class _SafeHTTPSource:
 def _datetime_column(
     datatype: Any, source: Any, count: int, context: Any, _state: Any = None
 ) -> Any:
+    ticks = source.read_array("q", count)
+    if getattr(datatype, "_atk_exact_source_values", False):
+        return _raw_temporal_values(ticks, datatype.scale)
     active = context.active_tz
     timezone = datatype.tzinfo or (active(datatype.tzinfo) if callable(active) else active)
-    return [
-        timestamp_from_ticks(tick, datatype.scale, timezone)
-        for tick in source.read_array("q", count)
-    ]
+    return [timestamp_from_ticks(tick, datatype.scale, timezone) for tick in ticks]
+
+
+def _datetime_seconds_column(
+    datatype: Any,
+    source: Any,
+    count: int,
+    context: Any,
+    _state: Any = None,
+) -> Any:
+    ticks = source.read_array("I", count)
+    if getattr(datatype, "_atk_exact_source_values", False):
+        return _raw_temporal_values(ticks, 0)
+    if datatype.read_format(context) == "int":
+        return ticks
+    active = context.active_tz
+    timezone = active(datatype.tzinfo) if callable(active) else (active or datatype.tzinfo)
+    return [datetime_from_seconds(value, timezone) for value in ticks]
+
+
+def _raw_temporal_values(ticks: Any, scale: int) -> list[Any]:
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
+        ExactTemporal,
+    )
+
+    return [ExactTemporal(int(value), scale, "UTC") for value in ticks]
+
+
+def _raw_column_finalizer(_datatype: Any, column: Any, _context: Any) -> Any:
+    return column
+
+
+def _timestamp_write_values(datatype: Any, values: Any, scale: int) -> list[int]:
+    timezone = datatype.tzinfo or getattr(datatype, "_atk_default_timezone", None)
+    if not datatype.nullable and any(value is None for value in values):
+        message = "SQL NULL is not writable to a non-nullable ClickHouse timestamp."
+        raise ValueError(message)
+    return [0 if value is None else timestamp_ticks(value, scale, timezone) for value in values]
 
 
 def _datetime_write(datatype: Any, values: Any, dest: Any, context: Any) -> None:
     del context
-    timezone = datatype.tzinfo or getattr(datatype, "_atk_default_timezone", None)
-    ticks = [
-        0 if value is None else timestamp_ticks(value, datatype.scale, timezone) for value in values
-    ]
+    ticks = _timestamp_write_values(datatype, values, datatype.scale)
+    if any(value < _DATETIME64_MIN_TICKS or value > _DATETIME64_MAX_TICKS for value in ticks):
+        message = "Value is outside ClickHouse DateTime64's Int64 timestamp range."
+        raise ValueError(message)
     dest.extend(pack(f"<{len(ticks)}q", *ticks))
+
+
+def _datetime_seconds_write(datatype: Any, values: Any, dest: Any, context: Any) -> None:
+    del context
+    ticks = _timestamp_write_values(datatype, values, 0)
+    if any(value < 0 or value > _DATETIME_MAX_TICKS for value in ticks):
+        message = "Value is outside ClickHouse DateTime's UInt32 timestamp range."
+        raise ValueError(message)
+    dest.extend(pack(f"<{len(ticks)}I", *ticks))
 
 
 def _map_column(datatype: Any, source: Any, count: int, context: Any, state: Any = None) -> Any:
@@ -75,14 +125,26 @@ def _map_column(datatype: Any, source: Any, count: int, context: Any, state: Any
     return result
 
 
-def exact_http_type(datatype: Any, *, default_timezone: Any = None) -> Any:
+def exact_http_type(
+    datatype: Any,
+    *,
+    default_timezone: Any = None,
+    exact_source_values: bool = False,
+) -> Any:
     """Clone registry types before customizing so unrelated clients are untouched."""
     from clickhouse_connect.datatypes.container import Map  # noqa: PLC0415
-    from clickhouse_connect.datatypes.temporal import DateTime64  # noqa: PLC0415
+    from clickhouse_connect.datatypes.temporal import DateTime, DateTime64  # noqa: PLC0415
 
     datatype = copy(datatype)
-    if isinstance(datatype, DateTime64):
+    if isinstance(datatype, (DateTime, DateTime64)):
         datatype._atk_default_timezone = default_timezone  # noqa: SLF001 -- per-client implicit zone
+        datatype._atk_exact_source_values = exact_source_values  # noqa: SLF001 -- connection-local source policy
+        if exact_source_values:
+            datatype._finalize_column = MethodType(_raw_column_finalizer, datatype)  # noqa: SLF001
+    if isinstance(datatype, DateTime):
+        datatype._read_column_binary = MethodType(_datetime_seconds_column, datatype)  # noqa: SLF001
+        datatype._write_column_binary = MethodType(_datetime_seconds_write, datatype)  # noqa: SLF001
+    if isinstance(datatype, DateTime64):
         datatype._read_column_binary = MethodType(_datetime_column, datatype)  # noqa: SLF001
         datatype._write_column_binary = MethodType(_datetime_write, datatype)  # noqa: SLF001
     if isinstance(datatype, Map):
@@ -90,11 +152,22 @@ def exact_http_type(datatype: Any, *, default_timezone: Any = None) -> Any:
     for attribute in ("element_type", "key_type", "value_type"):
         child = getattr(datatype, attribute, None)
         if child is not None:
-            setattr(datatype, attribute, exact_http_type(child, default_timezone=default_timezone))
+            setattr(
+                datatype,
+                attribute,
+                exact_http_type(
+                    child,
+                    default_timezone=default_timezone,
+                    exact_source_values=exact_source_values,
+                ),
+            )
     children = getattr(datatype, "element_types", None)
     if children is not None:
         datatype.element_types = [
-            exact_http_type(child, default_timezone=default_timezone) for child in children
+            exact_http_type(
+                child, default_timezone=default_timezone, exact_source_values=exact_source_values
+            )
+            for child in children
         ]
     return datatype
 
@@ -103,6 +176,8 @@ class ExactHTTPTransform:
     def __init__(self, original: Any, *, default_timezone: Any = None) -> None:
         self._original = original
         self._default_timezone = default_timezone
+        self.read_timezone: str | None = None
+        self.exact_source_values = False
 
     def build_insert(self, context: Any) -> Any:
         context.column_types = [
@@ -123,6 +198,13 @@ class ExactHTTPTransform:
         if context.use_numpy:
             message = "Toolkit exact ClickHouse reads require non-NumPy column blocks."
             raise ValueError(message)
+        active = context.active_tz
+        read_zone = active(None) if callable(active) else active
+        self.read_timezone = (
+            "UTC"
+            if self.exact_source_values
+            else (timezone_name(read_zone) if read_zone is not None else "UTC")
+        )
         names, types = [], []
         first = True
         owned_source = _SafeHTTPSource(source)
@@ -149,7 +231,12 @@ class ExactHTTPTransform:
                     if first:
                         renamer = getattr(context, "column_renamer", None)
                         names.append(renamer(name) if renamer else name)
-                        types.append(exact_http_type(get_from_name(spec)))
+                        types.append(
+                            exact_http_type(
+                                get_from_name(spec),
+                                exact_source_values=self.exact_source_values,
+                            )
+                        )
                     context.start_column(name)
                     columns.append(types[index].read_column(source, rows, context) if rows else ())
                 first = False
@@ -182,20 +269,38 @@ class ExactHTTPClient:
 
     def __init__(self, client: Any) -> None:
         self._client = client
+        self._write_timezone = getattr(client, "server_tz", None)
+        self._read_transform: ExactHTTPTransform | None = None
         transform = getattr(client, "_transform", None)
         if transform is not None:
             if not callable(getattr(transform, "parse_response", None)):
                 message = "Incompatible clickhouse-connect exact-decoding interface."
                 raise RuntimeError(message)
-            client._transform = ExactHTTPTransform(  # noqa: SLF001
-                transform, default_timezone=getattr(client, "server_tz", None)
+            self._read_transform = ExactHTTPTransform(
+                transform, default_timezone=self._write_timezone
             )
+            client._transform = self._read_transform  # noqa: SLF001
         elif type(client).__module__.startswith("clickhouse_connect"):
             message = "Incompatible clickhouse-connect exact-decoding interface."
             raise RuntimeError(message)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._client, name)
+
+    @property
+    def effective_write_timezone(self) -> str | None:
+        return timezone_name(self._write_timezone)
+
+    @property
+    def effective_read_timezone(self) -> str | None:
+        if self._read_transform is not None and self._read_transform.exact_source_values:
+            return "UTC"
+        return self._read_transform.read_timezone if self._read_transform is not None else None
+
+    def enable_exact_source_values(self) -> None:
+        """Preserve source raw ticks in this client, for eager and streaming reads."""
+        if self._read_transform is not None:
+            self._read_transform.exact_source_values = True
 
     def query(self, sql: str, **kwargs: Any) -> Any:
         kwargs["use_numpy"] = False

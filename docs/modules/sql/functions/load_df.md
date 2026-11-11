@@ -91,6 +91,11 @@ rows
   columns fail before stage creation or target mutation; reordered complete rows
   are loaded in target order. Explicit `table_schema` and existing target types
   remain authoritative and are validated against the complete dataframe.
+- ClickHouse timestamps use the [resolved write timezone](../dataframe-loading.md#backend-notes)
+  without changing the declared column type. Explicit column zones win.
+  Authoritative schemas reject ambiguous or nonexistent naive local times
+  before mutation; inference preserves unresolved local times and mixed
+  awareness as exact text. Aware and raw values retain their instant.
 - When `upsert_partition_column` is supplied, the effective key is that column
   followed by `key_columns`, with duplicates removed. ID 7 in January and ID 7
   in February are separate records. Without a partition column, `key_columns`

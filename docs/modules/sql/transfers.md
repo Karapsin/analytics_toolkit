@@ -308,10 +308,34 @@ than running a mutable source query again. Declared types that fit retain the
 streaming path. Explicit `table_schema` and existing destination types remain
 authoritative: inference never widens an existing table or changes its numeric
 columns into text. Explicitly requested timestamp precision reduction is a
-deliberate caller conversion. ClickHouse `FixedString(N)` is validated in UTF-8
+deliberate caller conversion. Date values supplied to timestamp columns become
+exact midnight datetimes, using an explicitly named ClickHouse timezone when
+present, otherwise the resolved actual write timezone. Their midnight ticks
+must fit the destination calendar and precision range before destination mutation. ClickHouse `FixedString(N)` is validated in UTF-8
 bytes, and `Enum8`/`Enum16` values must belong to the declared labels or codes.
 Unrecognized authoritative native types require proven identical source metadata
 or typed-stage validation before the operation can certify them.
+
+ClickHouse timestamp interpretation is bound to the operation's actual write
+timezone and policy version, separately from SQL schema identity. Explicit
+column zones take precedence; implicit declarations keep their original SQL
+type. Validation and certified replay require the same context, so a retry
+cannot silently adopt a different timezone. Unknown context is never replaced
+with an assumed UTC policy; plans leave required live resolution pending.
+Named zones use portable IANA rules, including future DST transitions.
+Authoritative timestamp schemas reject ambiguous or nonexistent naive local
+times before mutation. Inference preserves those unresolved wall times, and
+mixed naive/aware values without an explicit disambiguation policy, as exact
+text. Aware and raw timestamps already identify an instant and are not
+relocalized.
+
+Internal ClickHouse source streams retain raw UTC ticks before dataframe
+construction, including nested `DateTime` and `DateTime64` values. Two instants
+in a repeated DST hour therefore remain distinct through streaming, profiling
+and replay. Logical source SQL types remain unchanged; UTC is an internal
+transport representation. Physical ClickHouse timestamps infer timezone-aware
+Greenplum and Trino timestamp types recursively when native precision fits.
+The normal public read mode and its outer result shapes remain unchanged.
 
 If a structural cutover becomes uncertain, the certified local input is retained
 with a private versioned manifest containing its schema, source identity digest,

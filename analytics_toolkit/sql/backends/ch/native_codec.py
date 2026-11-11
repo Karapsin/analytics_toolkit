@@ -5,7 +5,8 @@ from __future__ import annotations
 from types import MethodType
 from typing import Any
 
-from .exact_temporal import timestamp_from_ticks, timestamp_ticks
+from .exact_temporal import datetime_from_seconds, timestamp_from_ticks, timestamp_ticks
+from .temporal_context import native_context_timezone
 
 
 def _temporal_timezone(column: Any) -> Any:
@@ -13,19 +14,46 @@ def _temporal_timezone(column: Any) -> Any:
         return column.timezone
     # The driver omits an explicit tzinfo when local and server zones agree.
     # That still denotes local/server wallclock fields, rather than UTC fields.
-    if column.context.settings.get("use_client_time_zone", False):
-        from clickhouse_driver.util.compat import get_localzone_name_compat  # noqa: PLC0415
-
-        return get_localzone_name_compat()
-    return column.context.server_info.get_timezone()
+    return native_context_timezone(column.context)
 
 
 def _datetime_items(column: Any, items: Any, nulls_map: Any = None) -> tuple[Any, ...]:
+    if getattr(column.context, "_atk_exact_source_values", False):
+        return _raw_temporal_items(items, column.scale, nulls_map)
     timezone = _temporal_timezone(column)
     return tuple(
         None
         if nulls_map is not None and nulls_map[index]
         else timestamp_from_ticks(value, column.scale, timezone, offset_naive=column.offset_naive)
+        for index, value in enumerate(items)
+    )
+
+
+def _datetime_seconds_items(column: Any, items: Any, nulls_map: Any = None) -> tuple[Any, ...]:
+    if getattr(column.context, "_atk_exact_source_values", False):
+        return _raw_temporal_items(items, 0, nulls_map)
+    timezone = _temporal_timezone(column)
+    return tuple(
+        None
+        if nulls_map is not None and nulls_map[index]
+        else datetime_from_seconds(
+            value,
+            timezone,
+            offset_naive=column.offset_naive,
+        )
+        for index, value in enumerate(items)
+    )
+
+
+def _raw_temporal_items(items: Any, scale: int, nulls_map: Any = None) -> tuple[Any, ...]:
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
+        ExactTemporal,
+    )
+
+    return tuple(
+        None
+        if nulls_map is not None and nulls_map[index]
+        else ExactTemporal(int(value), scale, "UTC")
         for index, value in enumerate(items)
     )
 
@@ -50,20 +78,27 @@ def _map_items(column: Any, n_items: int, buf: Any) -> list[Any]:
 
 def _datetime_write(column: Any, items: Any, nulls_map: Any = None) -> None:
     timezone = _temporal_timezone(column)
+    scale = getattr(column, "scale", 0)
     for index, value in enumerate(items):
         items[index] = (
             column.null_value
             if nulls_map is not None and nulls_map[index]
-            else timestamp_ticks(value, column.scale, timezone)
+            else timestamp_ticks(value, scale, timezone)
         )
 
 
 def _prepare_column(column: Any) -> Any:
-    from clickhouse_driver.columns.datetimecolumn import DateTime64Column  # noqa: PLC0415
+    from clickhouse_driver.columns.datetimecolumn import (  # noqa: PLC0415
+        DateTime64Column,
+        DateTimeColumn,
+    )
     from clickhouse_driver.columns.mapcolumn import MapColumn  # noqa: PLC0415
 
     if isinstance(column, DateTime64Column):
         column.after_read_items = MethodType(_datetime_items, column)
+    elif isinstance(column, DateTimeColumn):
+        column.after_read_items = MethodType(_datetime_seconds_items, column)
+    if isinstance(column, DateTimeColumn):
         column.before_write_items = MethodType(_datetime_write, column)
     if isinstance(column, MapColumn):
         column.read_items = MethodType(_map_items, column)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -63,6 +63,22 @@ class TransferSourceStreamReadError(RuntimeError):
             ]
         )
         return "; ".join(parts)
+
+
+def normalize_source_batch(
+    options: Any, connection: Any, batch: RowBatch, column_types: dict[str, str | None]
+) -> RowBatch:
+    """Bind source transport semantics before profiling, spooling or target encoding."""
+    if options.input_resolution.get("spool") is not None:
+        return batch
+    adapter = get_backend_adapter(options.from_db_backend)
+    batch = adapter.normalize_transfer_source_batch(batch, column_types)
+    return cast(
+        "RowBatch",
+        adapter.normalize_source_temporal_batch(
+            connection, batch, column_types, options.input_resolution
+        ),
+    )
 
 
 def iter_source_batches(
@@ -210,9 +226,7 @@ def _start_dbapi_query_with_retry(
             return cursor, columns
         except Exception:
             cursor.close()
-            get_backend_adapter(connection_backend).rollback_quietly(
-                connection_ref["connection"]
-            )
+            get_backend_adapter(connection_backend).rollback_quietly(connection_ref["connection"])
             replace_connection(connection_key, connection_ref)
             raise
 
@@ -234,11 +248,12 @@ def _start_clickhouse_stream_with_retry(
 ) -> tuple[Any, Iterator[pd.DataFrame], pd.DataFrame | None]:
     def operation(attempt: int) -> tuple[Any, Iterator[pd.DataFrame], pd.DataFrame | None]:
         connection = connection_ref["connection"]
+        exact_source = getattr(connection, "enable_exact_source_values", None)
+        if callable(exact_source):
+            exact_source()
         original_query_limit = getattr(connection, "query_limit", None)
         should_restore_query_limit = (
-            disable_query_limit
-            and hasattr(connection, "query_limit")
-            and original_query_limit
+            disable_query_limit and hasattr(connection, "query_limit") and original_query_limit
         )
         if should_restore_query_limit:
             connection.query_limit = 0

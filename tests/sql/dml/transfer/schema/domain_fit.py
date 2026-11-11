@@ -115,7 +115,11 @@ def test_transfer_profiles_narrow_date_and_float_domains_even_when_observed_valu
     assert result.metadata.input_count == len(values)
     assert scenario.read_count == 1
     assert scenario.schemas == [{"id": target}]
-    assert scenario.loaded == [[(value,) for value in values]]
+    expected_values = [
+        value.replace(tzinfo=dt.timezone.utc) if isinstance(value, dt.datetime) else value
+        for value in values
+    ]
+    assert scenario.loaded == [[(value,) for value in expected_values]]
     assert scenario.events.index("complete:SELECT id FROM source") < scenario.events.index(
         "create_target"
     )
@@ -151,7 +155,11 @@ def test_transfer_keeps_native_streaming_for_proven_date_and_float_widenings(
     assert scenario.run() == len(values)
 
     assert scenario.schemas == [{"id": target}]
-    assert scenario.loaded == [[(value,) for value in values]]
+    expected = [
+        value.replace(tzinfo=dt.timezone.utc) if isinstance(value, dt.datetime) else value
+        for value in values
+    ]
+    assert scenario.loaded == [[(value,) for value in expected]]
     assert scenario.read_count == 1
     assert scenario.events.index("create_target") < scenario.events.index(
         "read:SELECT id FROM source"

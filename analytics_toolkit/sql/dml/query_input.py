@@ -12,6 +12,7 @@ from analytics_toolkit.sql.backends.query_source_binding import query_may_read_t
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 from analytics_toolkit.sql.dml.ddl_options import resolve_cluster_routed_source_staging_ch_policy
+from analytics_toolkit.sql.dml.destination_context import freeze_destination_timezone
 from analytics_toolkit.sql.dml.load.load_sql_table import insert_rows_batch
 from analytics_toolkit.sql.dml.table.table_validation import validate_key_columns_in_columns
 from analytics_toolkit.sql.dml.transfer.flow.adaptive_input import (
@@ -85,10 +86,17 @@ def prepare_query_input(
     connection_ref: dict[str, Any],
     cache: dict[str, Any],
     source_schema: list[Any] | None = None,
+    target_connection_ref: dict[str, Any] | None = None,
 ) -> PreparedQueryInput:
     prepared = cache.get("prepared_query_input")
     if prepared is not None:
         require_frozen_configuration(prepared.options)
+        freeze_destination_timezone(
+            prepared.options.input_resolution,
+            prepared.options.to_db_backend,
+            (target_connection_ref or connection_ref)["connection"],
+            prepared.schema,
+        )
         return cast("PreparedQueryInput", prepared)
     config = get_connection_config(request.alias)
     target_alias = request.target_alias or request.alias
@@ -147,7 +155,9 @@ def prepare_query_input(
     )
     frozen = resolve_adaptive_input(
         options,
-        TransferConnectionRefs(source=connection_ref, target=connection_ref),
+        TransferConnectionRefs(
+            source=connection_ref, target=target_connection_ref or connection_ref
+        ),
         state,
         source_schema,
         context,
@@ -173,7 +183,10 @@ def validate_query_columns(
 
 
 def prepare_generic_query_input(
-    options: Any, connection_ref: dict[str, Any], source_schema: list[Any]
+    options: Any,
+    connection_ref: dict[str, Any],
+    source_schema: list[Any],
+    target_connection_ref: dict[str, Any] | None = None,
 ) -> PreparedQueryInput | None:
     if not options.insert_data:
         return None
@@ -201,6 +214,7 @@ def prepare_generic_query_input(
         connection_ref,
         options.input_resolution,
         source_schema,
+        target_connection_ref,
     )
 
 
@@ -222,6 +236,12 @@ def replay_query_input(
     total = 0
     for batch in resolved_source_batches(options, iter):
         require_frozen_configuration(options)
+        freeze_destination_timezone(
+            options.input_resolution,
+            options.to_db_backend,
+            connection_ref["connection"],
+            prepared.schema,
+        )
         total += insert_rows_batch(
             options.to_db_backend,
             connection_ref,

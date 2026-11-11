@@ -88,6 +88,17 @@ def test_local_facade_can_move_to_empty_verified_scope(monkeypatch):
     assert calls == []
 
 
+def test_existing_pair_in_same_verified_scopes_requires_no_migration_or_collision_probe(
+    monkeypatch,
+):
+    adapter, calls = setup(monkeypatch, layout())
+    monkeypatch.setattr(
+        module, "table_exists_on_cluster", lambda *_a: pytest.fail("unnecessary collision probe")
+    )
+    module.preflight_create_table_replacement(adapter, object(), options())
+    assert calls == []
+
+
 @pytest.mark.parametrize("existing_pair", [False, True])
 def test_verified_layout_conversion_is_delegated_only_after_collision_checks(
     monkeypatch, existing_pair

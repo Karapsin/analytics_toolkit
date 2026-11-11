@@ -25,13 +25,18 @@ def launch(monkeypatch, outcomes):
         outcome = outcomes.pop(0)
         if isinstance(outcome, BaseException):
             raise outcome
-        return signed_round(
+        summary = outcome.pop("summary", None)
+        receipt = signed_round(
             root,
             subject,
             prior_findings=request["iteration"]["prior_findings"],
             previous_rounds_sha256=request["iteration"]["previous_rounds_sha256"],
             **outcome,
         )
+        if summary is not None:
+            receipt["payload"]["verdict"]["summary"] = summary
+            return local_review._sign_payload(root, job, receipt["payload"])
+        return receipt
 
     monkeypatch.setattr(local_review, "_execute_review", execute)
     return calls
@@ -115,12 +120,38 @@ def test_interrupted_second_round_resumes_without_publishing_or_repeating_first(
 def test_incomplete_verdict_does_not_advance_the_pending_iteration(candidate, monkeypatch):
     target = unreviewed(candidate)
     launch(monkeypatch, [{"approved": False, "coverage": False}])
-    with pytest.raises(RuntimeError, match="Local review rejected"):
+    with pytest.raises(
+        RuntimeError, match="incomplete inspection or complete diff coverage missing"
+    ):
         local_review.review(candidate)
     assert not target.exists()
     calls = launch(monkeypatch, [{}, {}])
     local_review.review(candidate)
     assert [r["iteration"]["number"] for r in calls] == [1, 2]
+
+
+def test_concrete_issue_is_actionable_even_when_summary_describes_incomplete_scope(
+    candidate, monkeypatch
+):
+    target = unreviewed(candidate)
+    finding = "[P1] type_resolution.py::validate_profile accepts out-of-range date-only timestamps"
+    launch(
+        monkeypatch,
+        [
+            {
+                "approved": False,
+                "findings": [finding],
+                "summary": "Only 10 paths assessed; incomplete",
+            }
+        ],
+    )
+    with pytest.raises(RuntimeError, match="concrete source issues require correction") as error:
+        local_review.review(candidate)
+    assert finding in str(error.value)
+    assert str(error.value).index(finding) < str(error.value).index("Only 10 paths assessed")
+    assert not target.exists()
+    completed = [x["result"] for x in review_iterations.history(candidate)["attempts"]]
+    assert [review_iterations.classification(x["payload"]) for x in completed] == ["issues"]
 
 
 def test_approved_verdict_with_unresolved_findings_is_never_clean(candidate, monkeypatch):

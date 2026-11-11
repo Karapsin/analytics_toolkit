@@ -14,7 +14,8 @@ from uuid import UUID
 
 import numpy as np
 import pandas as pd
-from dateutil.tz import gettz
+
+from .temporal_zones import canonical_named_zone
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -106,7 +107,7 @@ class ExactTemporal:
         except (ValueError, OverflowError):
             return self.calendar_datetime() if scale <= _PYTHON_TEMPORAL_SCALE else self
         if self.timezone:
-            value = value.tz_localize("UTC").tz_convert(self.timezone)
+            value = value.tz_localize("UTC").tz_convert(canonical_named_zone(self.timezone))
             return value.tz_localize(None) if self.offset_naive else value
         return value
 
@@ -123,10 +124,15 @@ class ExactTemporal:
         )
         if self.timezone is None:
             return value.replace(tzinfo=None)
-        zone = dt.timezone.utc if utc and not self.offset_naive else gettz(self.timezone)
-        if zone is None:
+        try:
+            zone = (
+                dt.timezone.utc
+                if utc and not self.offset_naive
+                else canonical_named_zone(self.timezone)
+            )
+        except ValueError as exc:
             msg = "Unknown exact timestamp timezone."
-            raise ValueError(msg)
+            raise ValueError(msg) from exc
         converted = value.astimezone(zone)
         return converted.replace(tzinfo=None) if self.offset_naive else converted
 

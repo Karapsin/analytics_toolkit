@@ -37,6 +37,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
+  "backports.zoneinfo>=0.2.1,<0.3; python_version < '3.9'",
   "clickhouse-connect>=0.5.14,<1; python_version < '3.13'",
   "clickhouse-connect>=1.4,<2; python_version >= '3.13'",
   "fsspec>=2024.2",
@@ -56,6 +57,7 @@ dependencies = [
   "sqlparse>=0.4.3,<1",
   "tqdm>=4.65.0,<5",
   "trino>=0.320,<1",
+  "tzdata>=2022.7",
   "zstandard>=0.20.0,<1",
 ]
 

@@ -186,6 +186,52 @@ def test_fast_path_forwards_the_resolved_policy(monkeypatch):
     assert called[0]["policy"] is args["ch_creation_policy"]
 
 
+def test_legacy_fast_path_resolves_replace_policy_without_changing_drop_mode():
+    args = options()
+    args.update(
+        source_backend="ch",
+        source_key="ch",
+        ch_engine="MergeTree",
+        ch_cluster="core",
+        ch_sharding_key="id",
+        ch_only_shard=True,
+        ch_retry_per_host_drops=False,
+        ch_replace_table=True,
+        dry_run=True,
+        insert_data=False,
+    )
+    applied, plan = ch_fast_path_module.create_table_from_sql_fast_path(
+        get_backend_adapter("ch"), **args
+    )
+    assert applied is True
+    assert plan.options["ch_creation_policy"]["create_distributed_pair"] is False
+    assert plan.options["ch_creation_policy"]["shard_on_cluster"] is None
+    assert plan.options["ch_replace_table"] is True
+    assert plan.options["drop_target_if_exists"] is False
+    assert len(plan.statements) == 1
+    assert plan.statements[0].sql.startswith("CREATE OR REPLACE TABLE analytics.events")
+
+
+def test_failed_connection_acquisition_preserves_error_and_never_closes_unacquired_target(
+    monkeypatch,
+):
+    module = importlib.import_module("analytics_toolkit.sql.backends.ch.policy_ctas")
+    failure = ConnectionError("target could not be opened")
+
+    def open_connection(_key):
+        raise failure
+
+    monkeypatch.setattr(legacy, "get_sql_connection", open_connection)
+    monkeypatch.setattr(
+        module, "close_connection_ref", lambda *_a: pytest.fail("no connection was acquired")
+    )
+    args = options()
+    args["input_resolution"] = {}
+    with pytest.raises(ConnectionError, match="target could not be opened") as caught:
+        create_table_as_with_policy(policy=policy(), **args)
+    assert caught.value is failure
+
+
 @pytest.mark.parametrize("mode", ["default", "skip", "replace"])
 def test_public_query_creation_existing_modes_never_accidentally_append(monkeypatch, mode):
     client = Client(exists=True)

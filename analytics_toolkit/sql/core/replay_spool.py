@@ -30,6 +30,9 @@ class FrozenInputIdentity:
     namespace: tuple[str, ...] = ()
     availability_scope: tuple[str, ...] = ()
     query_digest: str = ""
+    source_timezone: str | None = None
+    destination_timezone: str | None = None
+    timezone_policy_version: int | None = None
 
 
 class ReplaySpool:
@@ -217,6 +220,9 @@ class ReplaySpool:
             namespace=tuple(identity["namespace"]),
             availability_scope=tuple(identity["availability_scope"]),
             query_digest=identity["query_digest"],
+            source_timezone=identity.get("source_timezone"),
+            destination_timezone=identity.get("destination_timezone"),
+            timezone_policy_version=identity.get("timezone_policy_version"),
         )
         self._directory = None
         self.path = manifest.parent / "rows.atk"

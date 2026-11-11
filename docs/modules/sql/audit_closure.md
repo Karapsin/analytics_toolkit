@@ -37,13 +37,13 @@ correctness bug: closing a connection cannot cause successful work to replay.
 | 17 | HTTP inserts round nullable large integers | fixed | `core/exact_values.py::test_nullable_integer_and_decimal_never_cross_float` |
 | 18 | Native transfers have the same nullable-integer corruption | fixed | `backends/ch/exact_transport.py::test_native_stream_header_is_consumed_once_and_tuple_cells_are_rows` |
 | 19 | Native tuple-valued results can be mistaken for metadata | fixed | `backends/ch/exact_transport.py::test_real_driver_iter_query_result_header_contract` |
-| 20 | CH nanosecond timestamps lose precision in two paths | fixed | `backends/ch/exact_transport.py::test_binary_temporal_ticks_remain_exact_for_both_transports` |
+| 20 | CH nanosecond timestamps lose precision in two paths | fixed | `backends/ch/exact_transport.py::test_binary_temporal_ticks_remain_exact_for_both_transports`; `backends/ch/temporal_source_mode.py::test_native_exact_source_eager_stream_nested_fold_and_reconnect`; `dml/transfer/schema/write_timezone.py::test_transfer_preserves_both_source_dst_fold_instants_on_streaming_path` |
 | 21 | Unsigned dataframe integers infer as signed `Int64` | fixed | `core/exact_values.py::test_unsigned_dataframe_inference_preserves_clickhouse_family` |
 | 22 | Object-dtype datetimes infer as dates | fixed | `core/exact_values.py::test_dataframe_inference_preserves_decimal_datetime_and_date32` |
 | 23 | Wide CH integers map incorrectly within CH | fixed | `core/type_resolution.py::test_clickhouse_native_type_identity_survives_structural_mapping` |
 | 24 | Nested CH types are misclassified as scalar integers | fixed | `core/type_resolution.py::test_clickhouse_native_type_identity_survives_structural_mapping` |
 | 25 | `Date32` targets narrow to `Date` | fixed | `core/type_resolution.py::test_clickhouse_native_type_identity_survives_structural_mapping` |
-| 26 | HTTP transfers reject several valid DateTime64 precisions | fixed | `backends/ch/exact_transport.py::test_http_stream_uses_column_blocks_and_preserves_duplicate_names` |
+| 26 | HTTP transfers reject several valid DateTime64 precisions | fixed | `backends/ch/exact_transport.py::test_http_stream_uses_column_blocks_and_preserves_duplicate_names`; `backends/ch/temporal_source_mode.py::test_http_exact_source_eager_stream_nested_fold_and_client_isolation` |
 | 27 | Partial-column CH upserts erase untouched fields | fixed | `dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage` |
 | 28 | Moving an upsert key between partitions leaves stale rows | accepted partition-scoped key contract | `dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped` |
 | 29 | Key-validated append can swap columns | fixed | `dml/load/upsert_rows.py::test_key_validated_append_uses_explicit_subset_column_order` |
@@ -59,13 +59,13 @@ correctness bug: closing a connection cannot cause successful work to replay.
 | 39 | Guarded replacement loses optional Distributed engine arguments | fixed | `backends/ch/replace_routing.py::test_guarded_replacement_preserves_configured_distributed_template_arguments` |
 | 40 | Readiness failures leak created stages | fixed | `dml/load/stage_ownership.py::test_load_readiness_failure_cleans_acknowledged_partial_pair_only`; `dml/transfer/row_batches/stage_ownership.py::test_keyed_worker_readiness_failure_cleans_acknowledged_stage_before_return`; `dml/transfer/row_batches/stage_registration.py::test_keyed_initialization_registers_partial_pair_before_readiness_returns` |
 | 41 | CH string-key literals mishandle backslashes | fixed | `dml/transfer/row_batches/predicate_literals.py::test_clickhouse_literals_escape_backslashes_and_preserve_precise_instants` |
-| 42 | CH datetime transfer keys fail with fractions or timezone offsets | fixed | `dml/transfer/row_batches/predicate_literals.py::test_clickhouse_literals_escape_backslashes_and_preserve_precise_instants` |
+| 42 | CH datetime transfer keys fail with fractions or timezone offsets | fixed | `dml/transfer/row_batches/predicate_literals.py::test_clickhouse_literals_escape_backslashes_and_preserve_precise_instants`; `dml/transfer/row_batches/predicate_literals.py::test_raw_clickhouse_key_literals_use_ticks_instead_of_naive_display` |
 | 43 | Transfer placeholders ignore SQL context | fixed | `dml/transfer/row_batches/predicate_literals.py::test_inserted_placeholder_text_is_never_scanned_again` |
 | 44 | Collision-generated stages evade stale cleanup | fixed | `dml/transfer/row_batches/predicate_literals.py::test_generated_collision_suffix_is_recognized` |
 | 45 | Initial target failures leak source connections | fixed | `dml/transfer/row_batches/initialization_cleanup.py::test_target_initialization_failure_closes_acquired_source_exactly_once` |
 | 46 | CH unsigned small integers narrow incorrectly in Trino | fixed | `core/type_resolution.py::test_cross_backend_mapping_never_uses_a_narrow_integer_domain` |
 | 47 | Wide CH integers narrow to BIGINT in GP and Trino | fixed | `core/type_resolution.py::test_adaptive_inference_uses_complete_actual_values_before_text` |
-| 48 | Trino timestamp inference uses precision 3 | fixed | `core/type_resolution.py::test_cross_backend_mapping_never_uses_a_narrow_integer_domain` |
+| 48 | Trino timestamp inference uses precision 3 | fixed | `core/type_resolution.py::test_cross_backend_mapping_never_uses_a_narrow_integer_domain`; `dml/transfer/schema/write_timezone.py::test_inferred_cross_backend_ch_timestamps_preserve_physical_instants` |
 | 49 | Trino identifiers containing `?` break typed inserts | fixed | `backends/insert_schema/identifier_markers.py::test_typed_trino_insert_does_not_rewrite_question_marks_in_identifiers_or_label` |
 | 50 | GP identifiers containing `%` break dataframe inserts | fixed | `backends/insert_schema/identifier_markers.py::test_greenplum_execute_values_template_escapes_identifier_and_label_percents` |
 | 51 | Trino metadata helpers discard identifier quoting | fixed | `backends/adapters/metadata_identifiers.py::test_trino_metadata_quotes_each_catalog_and_relation_component` |
@@ -89,5 +89,15 @@ Additional foundation regressions cover complete input profiles and certified
 spools, tagged exact text, authoritative-schema rejection, duplicate result
 labels, and schema-driven physical Parquet types in `tests/sql/core/` and
 `tests/sql/dml/transfer/parquet/exact_schema.py`.
+
+Timezone certification and inference are additionally covered by
+`core/destination_timezone.py::test_canonical_iana_rules_include_future_dst_and_historical_offsets`,
+`dml/transfer/schema/write_timezone.py::test_certified_transfer_cannot_rebind_to_a_different_timezone_during_retry`,
+`dml/transfer/schema/write_timezone.py::test_load_rejects_ambiguous_or_missing_naive_wallclock_before_truncate`,
+`dml/transfer/schema/write_timezone.py::test_inferred_transfer_preserves_unresolved_dst_wallclock_as_text`,
+and `dml/transfer/schema/write_timezone.py::test_inferred_cross_backend_ch_timestamps_preserve_physical_instants`.
+These cover the actual write context, strict authoritative validation, exact
+text fallback, and recursive preservation of physical instants without
+rewriting the source SQL types or inventing a DST fold.
 
 [SQL module index](index.md)

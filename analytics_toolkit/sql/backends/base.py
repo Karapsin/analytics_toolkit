@@ -231,6 +231,11 @@ class BackendAdapter:
         finally:
             close_cursor(cursor, backend=self.backend)
 
+    destination_write_timezone = _adapter_defaults.destination_write_timezone
+    requires_destination_timezone = _adapter_defaults.requires_destination_timezone
+    requires_dataframe_timezone = _adapter_defaults.requires_dataframe_timezone
+    source_read_timezone = _adapter_defaults.source_read_timezone
+    normalize_source_temporal_batch = _adapter_defaults.normalize_source_temporal_batch
     build_source_count_sql = _source_count.build_source_count_sql
     count_source_rows = _source_count.count_source_rows
     source_sql_for_count_limited_read = _source_count.source_sql_for_count_limited_read

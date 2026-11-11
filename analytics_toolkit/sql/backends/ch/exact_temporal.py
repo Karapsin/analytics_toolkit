@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from datetime import timezone as dt_timezone
 from numbers import Integral
 from typing import Any
 
 import pandas as pd
-from pytz import timezone as named_timezone
+
+from .temporal_context import canonical_timezone, timezone_name
 
 _MAX_SCALE = 9
 _MICRO_SCALE = 6
@@ -21,6 +22,7 @@ def timestamp_from_ticks(
     if not 0 <= scale <= _MAX_SCALE:
         message = "ClickHouse DateTime64 scale must be between 0 and 9."
         raise ValueError(message)
+    timezone = canonical_timezone(timezone)
     precision, unit = next(
         (p, u) for p, u in ((0, "s"), (3, "ms"), (6, "us"), (9, "ns")) if p >= scale
     )
@@ -37,13 +39,12 @@ def timestamp_from_ticks(
             )
             value = datetime(1970, 1, 1, tzinfo=dt_timezone.utc) + timedelta(microseconds=micros)
             if timezone is not None:
-                zone = named_timezone(timezone) if isinstance(timezone, str) else timezone
-                value = value.astimezone(zone)
+                value = value.astimezone(timezone)
             return value.replace(tzinfo=None) if timezone is None or offset_naive else value
         return ExactTemporal(
             int(ticks),
             scale,
-            str(timezone) if timezone is not None else None,
+            timezone_name(timezone),
             offset_naive=offset_naive,
         )
     if timezone is not None:
@@ -63,13 +64,33 @@ def timestamp_ticks(value: Any, scale: int, timezone: Any = None) -> int:
         return int(value.ticks // 10 ** (value.scale - scale))
     if isinstance(value, Integral):
         return int(value)
-    timestamp = pd.Timestamp(value)
-    if timestamp.tz is None and timezone is not None:
-        timestamp = timestamp.tz_localize(timezone)
-    if timestamp.tz is not None:
-        timestamp = timestamp.tz_convert("UTC").tz_localize(None)
-    delta = timestamp.to_pydatetime(warn=False).replace(tzinfo=dt_timezone.utc) - datetime(
-        1970, 1, 1, tzinfo=dt_timezone.utc
+    from analytics_toolkit.sql.backends.temporal_context import (  # noqa: PLC0415
+        context_ticks,
+        localize_wall,
     )
-    nanos = ((delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds) * 1000
-    return int((nanos + timestamp.nanosecond) // 10 ** (9 - scale))
+
+    zone = timezone_name(timezone)
+    if timezone is not None and zone is None:
+        fraction = value.nanosecond if isinstance(value, pd.Timestamp) else 0
+        stamp = value.to_pydatetime(warn=False) if isinstance(value, pd.Timestamp) else value
+        if isinstance(stamp, date) and not isinstance(stamp, datetime):
+            stamp = datetime.combine(stamp, time())
+        if stamp.tzinfo is None:
+            stamp = localize_wall(stamp, timezone)
+        ticks = context_ticks(stamp, None) + fraction
+    else:
+        ticks = context_ticks(value, zone)
+    return int(ticks // 10 ** (9 - scale))
+
+
+def datetime_from_seconds(
+    ticks: int,
+    timezone: Any = None,
+    *,
+    offset_naive: bool = False,
+) -> datetime:
+    timezone = canonical_timezone(timezone)
+    value = datetime(1970, 1, 1, tzinfo=dt_timezone.utc) + timedelta(seconds=int(ticks))
+    if timezone is not None:
+        value = value.astimezone(timezone)
+    return value.replace(tzinfo=None) if timezone is None or offset_naive else value

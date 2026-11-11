@@ -152,7 +152,9 @@ def nested_descriptor(type_name: str) -> tuple[str, list[tuple[str, str]]]:
     return "", []
 
 
-def convert_nested(value: Any, type_name: str, backend: str = "") -> Any:
+def convert_nested(
+    value: Any, type_name: str, backend: str = "", *, destination_timezone: str | None = None
+) -> Any:
     from .type_resolution import ResolvedColumn  # noqa: PLC0415 - recursive exact conversion
 
     kind, children = nested_descriptor(type_name)
@@ -160,25 +162,34 @@ def convert_nested(value: Any, type_name: str, backend: str = "") -> Any:
         native = children[0][1]
         while native.endswith("[]"):
             native = native[:-2]
-        leaf = ResolvedColumn(native, target_backend=backend)
+        leaf = ResolvedColumn(
+            native, target_backend=backend, destination_timezone=destination_timezone
+        )
         return [
-            convert_nested(item, type_name, backend)
+            convert_nested(item, type_name, backend, destination_timezone=destination_timezone)
             if isinstance(item, list) or (isinstance(item, np.ndarray) and item.ndim > 0)
             else leaf.convert(item)
             for item in value
         ]
     if kind == "array":
-        conversion = ResolvedColumn(children[0][1], target_backend=backend)
+        conversion = ResolvedColumn(
+            children[0][1], target_backend=backend, destination_timezone=destination_timezone
+        )
         return [conversion.convert(item) for item in value]
     if kind in {"tuple", "row"}:
         items = [value[name] for name, _ in children] if isinstance(value, dict) else value
         return tuple(
-            ResolvedColumn(native, target_backend=backend).convert(item)
+            ResolvedColumn(
+                native, target_backend=backend, destination_timezone=destination_timezone
+            ).convert(item)
             for item, (_, native) in zip(items, children)
         )
     if kind == "map":
         key_type, value_type = (
-            ResolvedColumn(native, target_backend=backend) for _, native in children
+            ResolvedColumn(
+                native, target_backend=backend, destination_timezone=destination_timezone
+            )
+            for _, native in children
         )
         pairs = [(key_type.convert(key), value_type.convert(item)) for key, item in value.items()]
         return (
@@ -193,6 +204,7 @@ def validate_nested(  # noqa: C901 - recursive authoritative nested schema
     backend: str,
     *,
     allow_timestamp_precision_loss: bool = True,
+    destination_timezone: str | None = None,
 ) -> bool:
     from .type_resolution import validate_profile  # noqa: PLC0415 - recursive authority validation
 
@@ -212,6 +224,7 @@ def validate_nested(  # noqa: C901 - recursive authoritative nested schema
                 native,
                 backend,
                 allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+                destination_timezone=destination_timezone,
             )
         return True
     family = "tuple" if kind == "row" else kind
@@ -233,7 +246,11 @@ def validate_nested(  # noqa: C901 - recursive authoritative nested schema
         raise ValueError(msg)
     for child, (_, native) in zip(profile.children, children):
         validate_profile(
-            child, native, backend, allow_timestamp_precision_loss=allow_timestamp_precision_loss
+            child,
+            native,
+            backend,
+            allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+            destination_timezone=destination_timezone,
         )
     return True
 

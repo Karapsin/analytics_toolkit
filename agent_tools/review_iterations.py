@@ -193,6 +193,16 @@ def run(
         receipt = execute(json.dumps({**request, "iteration": iteration}, ensure_ascii=False))
         record(root, attempt_id, receipt)
         outcome = classification(receipt["payload"])
+        if outcome == "issues":
+            verdict = receipt["payload"]["verdict"]
+            concrete = [x for x in verdict["findings"] if re.match(r"^\[P[0-3]\]\s", x)]
+            msg = (
+                "Local review rejected; concrete source issues require correction: "
+                + "\n".join(x[:1200] for x in concrete[:2])
+                + "\nReviewer summary: "
+                + verdict["summary"][:500]
+            )
+            raise RuntimeError(msg)
         if outcome != "clean":
             msg = (
                 "Local review rejected; incomplete inspection or complete diff coverage missing: "
