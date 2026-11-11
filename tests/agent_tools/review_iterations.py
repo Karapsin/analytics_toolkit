@@ -130,6 +130,34 @@ def test_incomplete_verdict_does_not_advance_the_pending_iteration(candidate, mo
     assert [r["iteration"]["number"] for r in calls] == [1, 2]
 
 
+def test_request_requires_bounded_complete_inspection_but_still_blocks_incomplete_round(
+    candidate, monkeypatch
+):
+    target = unreviewed(candidate)
+    calls = launch(
+        monkeypatch,
+        [{"approved": False, "coverage": False, "summary": "Only five paths inspected"}],
+    )
+    with pytest.raises(RuntimeError, match="incomplete inspection"):
+        local_review.review(candidate)
+    assert len(calls) == 1
+    request = calls[0]
+    instructions = request["iteration"]["instructions"]
+    assert "complete immutable inventory in bounded groups" in instructions
+    assert "semantically assessing" in instructions
+    assert "small initial sample or a size estimate while work can continue" in instructions
+    assert "Concrete findings may still stop a round for repair" in instructions
+    assert "tool failures, unresolved uncertainty" in instructions
+    assert "still require rejection; never pressure approval or relax coverage" in instructions
+    assert request["iteration"]["minimum_completed_rounds"] == 2
+    assert request["user_task"] == task_context.protocol().public_context(
+        task_context.read(candidate)
+    )
+    assert not target.exists()
+    outcomes = [a["result"] for a in review_iterations.history(candidate)["attempts"]]
+    assert [review_iterations.classification(r["payload"]) for r in outcomes] == ["incomplete"]
+
+
 def test_concrete_issue_is_actionable_even_when_summary_describes_incomplete_scope(
     candidate, monkeypatch
 ):

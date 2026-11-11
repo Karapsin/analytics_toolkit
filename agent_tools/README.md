@@ -246,6 +246,12 @@ Concrete findings stop the workflow for a local fix; a new head discards source
 approval but retains finding provenance. A finding round followed by a complete
 clean review of its fix can satisfy the two-iteration minimum. Incomplete-only
 attempts never count as completed rounds, and there is no retry limit.
+Ordinary iteration requests direct the reviewer through the complete immutable
+inventory in bounded groups, assessing each page and recovering truncated reads.
+A small initial sample or estimated remaining size is not a reason to end a
+no-findings round while inspection can continue. Concrete defects may still
+stop for repair; actual tool failures, uncertainty or incomplete inspection
+still require rejection and never justify approval or reduced coverage.
 
 The private task journal persists pending attempts and signed round outcomes.
 An OS lock prevents concurrent invocations from creating independent first
