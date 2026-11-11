@@ -56,6 +56,14 @@ already exists, its schema is used for final insert column types. If the target
 table does not exist, the load creates it from `table_schema` or inferred
 dataframe types and inserts the dataframe rows normally.
 
+Existing ClickHouse upserts verify the physical table and its partition-mutation
+scope together. Caller creation defaults continue to control new stages;
+partition `ALTER` commands use the verified storage scope, including an exact
+local scope when appropriate. Dry-run and returned plans stay offline and mark
+`plan.options["pending_existing_layout_verification"] = True`: their provisional
+`ALTER` scope reflects the requested policy until live execution verifies the
+existing layout.
+
 For Trino and ClickHouse upsert, `upsert_partition_column` is also required and
 must name one dataframe column. That column defines the partition replacement
 boundary; it is not inferred from `partition_by`, which only controls table

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
+from sqlglot import parse_one
+
 from tests.sql._support.load_table import (
     TEST_CH_SHARD_TABLE,
     TEST_CH_STAGE_TABLE,
@@ -33,9 +36,11 @@ def test_finalize_stage_table_clickhouse_upsert_drops_shard_partitions() -> None
     )
 
     drop_sql = next(sql for sql in client.commands if "DROP PARTITION" in sql)
-    assert drop_sql == (
-        f'ALTER TABLE "default"."{TEST_CH_SHARD_TABLE}" ON CLUSTER core DROP PARTITION 1'
-    )
+    tree = parse_one(drop_sql, read=ClickHouseDialect)
+    assert tree.this.db == "default"
+    assert tree.this.name == TEST_CH_SHARD_TABLE
+    assert tree.args["cluster"].this.name == "core"
+    assert "DROP PARTITION 1" in drop_sql
     assert client.commands[-1].startswith(f"INSERT INTO {TEST_CH_TABLE} (`id`, `score`) ")
 
 

@@ -8,7 +8,9 @@ from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.upsert import incoming_stage_source_sql
 from analytics_toolkit.sql.backends.utils import sql_literal
 
-from .dialect import ClickHouseDialect
+from .dialect import ClickHouseDialect, sql_string_literal
+from .routing import local_sql
+from .upsert_context import verified_local_upsert
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,7 +23,11 @@ def resolve_upsert_execution_options(
 
     del adapter
     layout = inspect_existing_layout(connection, table_name)
-    return {**options, "ch_only_shard": not layout.create_distributed_pair}
+    return {
+        **options,
+        "ch_cluster": layout.shard_on_cluster,
+        "ch_only_shard": not layout.create_distributed_pair,
+    }
 
 
 def resolve_upsert_execution_sqls(
@@ -36,10 +42,41 @@ def resolve_upsert_execution_sqls(
         tree = parse_one(sql, read=ClickHouseDialect)
         if isinstance(tree, exp.Alter):
             tree.set("this", exp.to_table(layout.physical_table, dialect=ClickHouseDialect))
+            tree.set(
+                "cluster",
+                exp.OnCluster(this=exp.Literal.string(layout.shard_on_cluster))
+                if layout.shard_on_cluster is not None
+                else None,
+            )
             result.append(tree.sql(dialect=ClickHouseDialect))
         else:
             result.append(sql)
     return result
+
+
+def execute_upsert_command(adapter: Any, connection: Any, table_name: str, sql: str) -> Any:
+    from .layout import inspect_existing_layout  # noqa: PLC0415 -- backend registry cycle.
+
+    tree = parse_one(sql, read=ClickHouseDialect)
+    if not isinstance(tree, exp.Alter):
+        return adapter.execute_command(connection, sql)
+    layout = inspect_existing_layout(connection, table_name)
+    tree.set("this", exp.to_table(layout.physical_table, dialect=ClickHouseDialect))
+    tree.set(
+        "cluster",
+        exp.OnCluster(this=exp.Literal.string(layout.shard_on_cluster))
+        if layout.shard_on_cluster is not None
+        else None,
+    )
+    resolved_sql = tree.sql(dialect=ClickHouseDialect)
+    if (
+        layout.shard_on_cluster is None
+        and tree.args.get("actions")
+        and all(isinstance(action, exp.DropPartition) for action in tree.args["actions"])
+    ):
+        with verified_local_upsert(connection, layout.physical_table), local_sql(connection):
+            return adapter.execute_command(connection, resolved_sql)
+    return adapter.execute_command(connection, resolved_sql)
 
 
 def build_upsert_stage_sqls(  # noqa: PLR0913 - mirrors the backend adapter protocol.
@@ -209,15 +246,18 @@ def build_drop_upsert_partition_sqls(  # noqa: PLR0913 - mirrors the backend ada
         target_table if ch_only_shard else ch_distributed_table_pair(target_table).shard_table
     )
     cluster_clause = None if ch_only_shard else ch_cluster
-    values = (
-        list(partition_values) if partition_values is not None else ["<affected partition value>"]
+    literals = (
+        [
+            sql_string_literal(value) if isinstance(value, str) else sql_literal(value)
+            for value in partition_values
+        ]
+        if partition_values is not None
+        else ["<affected partition value>"]
     )
     return [
         _apply_query_label(
-            f"ALTER TABLE {drop_table}{ch_cluster_clause(cluster_clause)} "
-            f"DROP PARTITION "
-            f"{value if isinstance(value, str) and value.startswith('<') else sql_literal(value)}",
+            f"ALTER TABLE {drop_table}{ch_cluster_clause(cluster_clause)} DROP PARTITION {literal}",
             query_label,
         )
-        for value in values
+        for literal in literals
     ]

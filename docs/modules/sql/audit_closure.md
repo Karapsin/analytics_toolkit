@@ -47,7 +47,7 @@ correctness bug: closing a connection cannot cause successful work to replay.
 | 27 | Partial-column CH upserts erase untouched fields | fixed | `dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage` |
 | 28 | Moving an upsert key between partitions leaves stale rows | accepted partition-scoped key contract | `dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped` |
 | 29 | Key-validated append can swap columns | fixed | `dml/load/upsert_rows.py::test_key_validated_append_uses_explicit_subset_column_order` |
-| 30 | Several writes ignore local-only CH policy | fixed | `backends/ch/reconfigure/structural_safety.py::test_local_layout_never_owns_a_suffix_companion` |
+| 30 | Several writes ignore local-only CH policy | fixed | `backends/ch/reconfigure/structural_safety.py::test_local_layout_never_owns_a_suffix_companion`; `dml/load/upsert_storage_scope.py::test_load_df_upsert_mutates_only_verified_existing_storage_scope`; `dml/load/upsert_storage_scope.py::test_transfer_finalization_upsert_mutates_only_verified_existing_storage_scope` |
 | 31 | Query-based creation drops resolved CH creation policy | fixed | `backends/ch/policy_ctas.py::test_public_query_policy_keeps_independent_ddl_and_routing_scopes` |
 | 32 | `ch_replace_table=True` is discarded with `sql=...` | fixed | `backends/ch/policy_ctas.py::test_public_query_replace_flag_controls_sql_plan_without_implying_drop`; `backends/ch/policy_ctas.py::test_query_sql_generation_preserves_replace_mode` |
 | 33 | Default query creation can append to an existing table | fixed | `backends/ch/policy_ctas.py::test_public_query_creation_existing_modes_never_accidentally_append` |
@@ -141,5 +141,16 @@ Empty public metadata listings are covered by
 and `backends/ch/empty_listings.py::test_other_backend_table_listing_shapes_and_metadata_defaults_are_preserved`.
 Both complete and partial ClickHouse listings retain coverage attributes on
 empty results; canonical shapes and other backend defaults remain intact.
+
+Existing-storage upsert scope and offline planning are additionally covered by
+`dml/load/upsert_storage_scope.py::test_existing_layout_rewrites_prebuilt_partition_scope_without_changing_other_sql`,
+`dml/load/upsert_storage_scope.py::test_outage_checkpoint_replay_respects_verified_local_or_selected_cluster_scope`,
+`dml/load/upsert_storage_scope.py::test_upsert_dry_plan_keeps_desired_scope_without_querying_existing_storage`,
+and `dml/load/upsert_storage_scope.py::test_transfer_upsert_dry_plan_defers_existing_storage_verification`.
+Live mutation uses the verified physical table and scope; offline plans preserve
+desired policy and explicitly defer existing-layout verification. The existing
+disposable `audit.upsert.ch` scenario also covers actual storage cluster `B`
+with an invalid desired caller cluster `A` and independent local staging on both
+ClickHouse transports; it was not run locally.
 
 [SQL module index](index.md)

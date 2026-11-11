@@ -132,7 +132,9 @@ class BackendAdapter:
     get_writable_table_column_types = _common_methods.get_writable_table_column_types
     resolve_upsert_execution_options = _common_methods.resolve_upsert_execution_options
     resolve_upsert_execution_sqls = _common_methods.resolve_upsert_execution_sqls
+    execute_upsert_command = _common_methods.execute_upsert_command
     _read_dataframe_impl = _common_methods.read_dataframe_impl
+
     def table_exists(
         self,
         connection: Any,
@@ -639,27 +641,30 @@ class BackendAdapter:
                     incoming_stage_tables=request.incoming_stage_tables,
                 )
 
-            self.execute_commands(request.connection, self.build_upsert_stage_sqls(
-                request.target_table,
-                request.stage_table,
-                columns=list(
-                    request.insert_column_types
-                    or request.target_column_types
-                    or request.sample_batch.columns
+            self.execute_commands(
+                request.connection,
+                self.build_upsert_stage_sqls(
+                    request.target_table,
+                    request.stage_table,
+                    columns=list(
+                        request.insert_column_types
+                        or request.target_column_types
+                        or request.sample_batch.columns
+                    ),
+                    key_columns=request.key_columns or [],
+                    column_types=request.insert_column_types,
+                    ch_cluster=request.ch_cluster,
+                    ch_only_shard=request.ch_only_shard,
+                    query_label=request.query_label,
+                    upsert_partition_column=request.upsert_partition_column,
+                    final_stage_table=request.final_upsert_stage_table,
+                    incoming_stage_tables=request.incoming_stage_tables,
+                    partition_values=partition_values,
+                    trino_partition_drop_sql_template=(
+                        request.trino_upsert_partition_drop_sql_template
+                    ),
                 ),
-                key_columns=request.key_columns or [],
-                column_types=request.insert_column_types,
-                ch_cluster=request.ch_cluster,
-                ch_only_shard=request.ch_only_shard,
-                query_label=request.query_label,
-                upsert_partition_column=request.upsert_partition_column,
-                final_stage_table=request.final_upsert_stage_table,
-                incoming_stage_tables=request.incoming_stage_tables,
-                partition_values=partition_values,
-                trino_partition_drop_sql_template=(
-                    request.trino_upsert_partition_drop_sql_template
-                ),
-            ))
+            )
             return
 
         if request.replace_target_table:

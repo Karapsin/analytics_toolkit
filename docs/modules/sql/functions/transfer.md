@@ -496,6 +496,8 @@ rows = sql.transfer(
   increment for affected partitions, drop those partitions, and insert the
   final increment. They do not use native `MERGE`, arbitrary key deletes, or
   ClickHouse lightweight key deletes for upsert finalization.
+  Existing ClickHouse targets bind partition mutation to the verified physical
+  table and storage scope, independently of desired stage creation settings.
 - Trino partition upsert requires `upsert_partition_drop_sql_template` in the
   target connection config. The template is rendered once per affected
   partition value with `{table}`, `{partition_column}`, and
@@ -503,6 +505,9 @@ rows = sql.transfer(
 - Upsert dry-run plans use `table_schema` when provided, infer simple source
   query output columns when possible, and otherwise show an explicit
   source-column placeholder without opening database connections.
+  ClickHouse upsert plans set `pending_existing_layout_verification=True`;
+  their provisional `ALTER` scope follows requested policy until live execution
+  verifies the existing layout. The offline plan does not certify that scope.
 - ClickHouse targets create distributed/shard table pairs unless `ch_only_shard=True`.
   If final row-count validation fails while replacing an existing target, transfer
   finalization propagates the error after rollback restores the original tables.

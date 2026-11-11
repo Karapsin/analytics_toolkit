@@ -42,6 +42,7 @@ class ClickHouseAdapter(BackendAdapter):
     get_writable_table_column_types = _column_names.get_writable_table_column_types
     resolve_upsert_execution_options = _upsert.resolve_upsert_execution_options
     resolve_upsert_execution_sqls = _upsert.resolve_upsert_execution_sqls
+    execute_upsert_command = _upsert.execute_upsert_command
     backend: BackendName = "ch"
     display_name = "ClickHouse"
     sqlglot_dialect = "clickhouse"

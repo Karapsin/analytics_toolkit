@@ -30,7 +30,9 @@ def inspect_outage_layout(session: Any, table_name: str) -> ExistingClickHouseLa
         session.scope(cluster).objects(database, table.name)
         if cluster is not None
         else session.local_objects(database, table.name)
-    ) or session.local_facade(database, table.name)
+    )
+    physical_scope = cluster if objects else None
+    objects = objects or session.local_facade(database, table.name)
     if not objects:
         return None
     original = objects[0]
@@ -39,7 +41,7 @@ def inspect_outage_layout(session: Any, table_name: str) -> ExistingClickHouseLa
             logical_table=table_name,
             physical_table=table_name,
             create_distributed_pair=False,
-            shard_on_cluster=None,
+            shard_on_cluster=physical_scope,
             distributed_on_cluster=None,
             distributed_cluster=None,
             ddl=original.create_sql,

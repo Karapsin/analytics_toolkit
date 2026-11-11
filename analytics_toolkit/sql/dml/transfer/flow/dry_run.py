@@ -44,6 +44,10 @@ def dry_run_transfer_options(
     lazy_keyed_staging = slices is not None and source_staged
     return {
         "write_mode": options.write_mode,
+        "pending_existing_layout_verification": (
+            options.write_mode == "upsert"
+            and get_backend_adapter(options.to_db_backend).supports_distributed_table_targets()
+        ),
         "empty_source_policy": options.empty_source_policy,
         "transfer_id": options.transfer_id,
         "canonical_destination_identity": options.canonical_destination_identity,
@@ -224,7 +228,9 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
             plan.add(
                 "RESOLVE DESTINATION TYPES FROM SOURCE METADATA; IF NEEDED, PROFILE AND "
                 "CERTIFY THE COMPLETE SELECTED INPUT BEFORE CREATING DESTINATION TABLES",
-                alias=options.to_db_key, backend=options.to_db_backend, phase="resolve_types",
+                alias=options.to_db_key,
+                backend=options.to_db_backend,
+                phase="resolve_types",
             )
         _add_target_stage_templates(
             plan,

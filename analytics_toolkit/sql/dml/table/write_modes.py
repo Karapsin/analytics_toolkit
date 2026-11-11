@@ -221,7 +221,7 @@ def upsert_stage_table(
             raise ValueError(message)
         for sql in checkpoint.replay_sqls:
             checkpoint.mutation_started = True
-            adapter.execute_command(connection, sql)
+            adapter.execute_upsert_command(connection, target_table, sql)
         return
     partition_values = None
     if upsert_partition_column is not None:
@@ -262,9 +262,13 @@ def upsert_stage_table(
         checkpoint.prepared = True
         for sql in checkpoint.replay_sqls:
             checkpoint.mutation_started = True
-            adapter.execute_command(connection, sql)
+            adapter.execute_upsert_command(connection, target_table, sql)
         return
-    adapter.execute_commands(connection, sqls)
+    if adapter.uses_partition_replacement_upsert():
+        for sql in sqls:
+            adapter.execute_upsert_command(connection, target_table, sql)
+    else:
+        adapter.execute_commands(connection, sqls)
 
 
 def _build_trino_merge_sql(

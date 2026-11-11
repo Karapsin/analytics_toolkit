@@ -898,6 +898,9 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "key_columns": options.key_columns,
             "upsert_partition_column": options.upsert_partition_column,
             "upsert_requires_complete_writable_rows": options.write_mode == "upsert",
+            "pending_existing_layout_verification": (
+                options.write_mode == "upsert" and adapter.supports_distributed_table_targets()
+            ),
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
@@ -1265,6 +1268,8 @@ def _add_parquet_load_plan_steps(
                 columns=[str(column) for column in df.columns],
                 key_columns=options.key_columns or [],
                 column_types=options.table_schema,
+                ch_cluster=options.ch_cluster,
+                ch_only_shard=options.ch_only_shard,
                 query_label=options.query_label,
                 upsert_partition_column=options.upsert_partition_column,
                 final_stage_table=(

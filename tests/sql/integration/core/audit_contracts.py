@@ -185,6 +185,121 @@ def test_complete_reordered_upserts_use_partition_scoped_keys(
         (1, "april", "new-a"),
     ]
 
+    if backend == "ch":
+        _assert_upsert_uses_existing_storage_scope(resource_registry)
+
+
+def _assert_upsert_uses_existing_storage_scope(resource_registry: ResourceRegistry) -> None:
+    # Single-host storage avoids introducing distributed preservation-join
+    # constraints. The intentionally unconfigured caller scope must never reach DDL.
+    storage_cluster = "integration_cluster"
+    schema = {"row_id": "Int64", "month": "Int32", "payload": "String"}
+    initial = pd.DataFrame(
+        {
+            "row_id": [1, 2, 9],
+            "month": [202401, 202401, 202403],
+            "payload": ["old", "preserve-key", "preserve-partition"],
+        }
+    )
+    update = pd.DataFrame(
+        {
+            "row_id": [1, 1],
+            "month": [202401, 202402],
+            "payload": ["new", "new-partition"],
+        }
+    )
+    for alias in ("ch_routed", "ch_routed_native"):
+        table = resource_registry.table(
+            alias,
+            integration_table("ch", f"upsert_scope_{alias}"),
+            ch_cluster=storage_cluster,
+        )
+        absent_cluster = integration_table("ch", f"absent_scope_{alias}").partition(".")[2]
+        assert (
+            sql.read(
+                alias,
+                f"SELECT count() FROM system.clusters WHERE cluster = '{absent_cluster}'",
+                output_type="scalar",
+                retry_cnt=1,
+                query_label=_label(f"{alias}-scope-absent"),
+            )
+            == 0
+        )
+        common = {
+            "table_schema": schema,
+            "partition_by": ["month"],
+            "order_by": ["row_id"],
+            "ch_engine": "MergeTree",
+            "ch_shard_on_cluster": storage_cluster,
+            "ch_distributed_on_cluster": storage_cluster,
+            "retry_cnt": 1,
+        }
+        assert (
+            sql.load_df(
+                alias,
+                table,
+                initial,
+                write_mode="replace",
+                ch_distributed_cluster=storage_cluster,
+                query_label=_label(f"{alias}-scope-seed"),
+                **common,
+            )
+            == 3
+        )
+        ddl = sql.extract_ddl(alias, table)
+        assert "Distributed(" in ddl
+        assert storage_cluster in ddl
+        # The dry plan proves this test has not accidentally normalized caller A
+        # to B before runtime existing-layout resolution. Stage policies are the
+        # independently configured local MergeTree policy, not caller A's scope.
+        with pytest.warns(DeprecationWarning, match="ch_cluster is deprecated"):
+            plan = sql.load_df(
+                alias,
+                table,
+                update,
+                write_mode="upsert",
+                key_columns="row_id",
+                upsert_partition_column="month",
+                ch_cluster=absent_cluster,
+                dry_run=True,
+                query_label=_label(f"{alias}-scope-plan"),
+                **common,
+            )
+        assert plan.options["ch_cluster"] == absent_cluster
+        stages = [
+            statement.sql
+            for statement in plan.statements
+            if statement.phase in {"create_stage", "create_final_upsert_stage"}
+        ]
+        assert stages
+        assert all(absent_cluster not in statement for statement in stages)
+        assert all("Distributed(" not in statement for statement in stages)
+        with pytest.warns(DeprecationWarning, match="ch_cluster is deprecated"):
+            inserted = sql.load_df(
+                alias,
+                table,
+                update,
+                write_mode="upsert",
+                key_columns="row_id",
+                upsert_partition_column="month",
+                ch_cluster=absent_cluster,
+                query_label=_label(f"{alias}-scope-upsert"),
+                **common,
+            )
+        assert inserted == 2
+        result = sql.read(
+            alias,
+            f"SELECT row_id, month, payload FROM {table} ORDER BY month, row_id",
+            retry_cnt=1,
+            query_label=_label(f"{alias}-scope-check"),
+        )
+        assert list(result.itertuples(index=False, name=None)) == [
+            (1, 202401, "new"),
+            (2, 202401, "preserve-key"),
+            (1, 202402, "new-partition"),
+            (9, 202403, "preserve-partition"),
+        ]
+
 
 @pytest.mark.sql_scenario("audit.clickhouse.local_creation")
 def test_clickhouse_query_creation_respects_local_layout_and_existing_target(

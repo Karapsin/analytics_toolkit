@@ -71,6 +71,11 @@ def resolve_upsert_execution_sqls(
     return sqls
 
 
+def execute_upsert_command(self: Any, connection: Any, table_name: str, sql: str) -> Any:
+    del table_name
+    return self.execute_command(connection, sql)
+
+
 def execute_commands(self: Any, connection: Any, sqls: list[str]) -> None:
     for sql in sqls:
         self.execute_command(connection, sql)

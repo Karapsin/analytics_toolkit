@@ -40,6 +40,7 @@ from .routing import (
     _identifier_value,
     _RoutingClickHouse,
 )
+from .upsert_context import verified_local_partition_alter
 
 _CLUSTER_REQUIRED_ARGS = 3
 _DESCRIBE_DEFAULT_FIELDS = 3
@@ -385,6 +386,10 @@ class OutageClient:
                 preflight_clusters = clusters or (
                     [configured.cluster]
                     if configured is not None
+                    and not (
+                        _LOCAL_SQL_EXECUTION.get()
+                        and verified_local_partition_alter(self, statement)
+                    )
                     and not state.resources.get(
                         ("ch_owned_local", self._config.connection_key, target)
                     )

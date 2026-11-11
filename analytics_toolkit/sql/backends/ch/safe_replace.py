@@ -181,7 +181,7 @@ def _finalize_upsert(adapter: Any, request: StageFinalizationRequest) -> None:
     for sql in adapter.resolve_upsert_execution_sqls(
         request.connection, request.target_table, sqls
     ):
-        adapter.execute_command(request.connection, sql)
+        adapter.execute_upsert_command(request.connection, request.target_table, sql)
 
 
 def _replacement_physical_target(adapter: Any, request: StageFinalizationRequest) -> str:

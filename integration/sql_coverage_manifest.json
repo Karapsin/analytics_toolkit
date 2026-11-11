@@ -10552,7 +10552,8 @@
       ],
       "regression_tests": [
         "tests/sql/dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped",
-        "tests/sql/dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage"
+        "tests/sql/dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage",
+        "tests/sql/dml/load/upsert_storage_scope.py::test_load_df_upsert_mutates_only_verified_existing_storage_scope"
       ]
     },
     "audit.clickhouse.local_creation": {
