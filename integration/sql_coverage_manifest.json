@@ -10574,6 +10574,8 @@
       ],
       "regression_tests": [
         "tests/sql/backends/ch/routing_contract.py::test_routing_preserves_bound_qualified_columns_and_stars",
+        "tests/sql/backends/ch/source_bindings.py::test_same_scope_database_qualified_sources_remain_distinct",
+        "tests/sql/backends/ch/source_bindings.py::test_same_scope_explicit_aliases_remain_authoritative",
         "tests/sql/explorer/metadata_identity.py::test_persisted_unqualified_clickhouse_completion_uses_current_database"
       ]
     }

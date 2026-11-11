@@ -101,6 +101,13 @@ qualified columns, qualified stars, aliases, CTEs and correlated references keep
 their source identity when a named table becomes a cluster function. Unrelated
 table functions are left unchanged.
 
+Sources retain their complete database/table identity within each query scope.
+A join between `a.events` and `b.events` keeps both sources distinct, so their
+database-qualified columns and stars still resolve after routing. Implicit
+sources receive distinct generated aliases; explicit aliases remain
+authoritative. Bare qualifiers that do not identify one source remain
+ambiguous rather than being assigned to another database's table.
+
 Consequently, `wait_shard` is compatible with routing when the physical shard
 has full routing-cluster coverage and consistent metadata. The confirmed
 incomplete-pair fallback requires the local facade to be ready because it is

@@ -18,7 +18,7 @@ correctness bug: closing a connection cannot cause successful work to replay.
 
 | ID | Audit finding | Disposition | Regression node (`tests/sql/` unless qualified) |
 | --- | --- | --- | --- |
-| 1 | CH routing breaks qualified columns | fixed | `backends/ch/routing_contract.py::test_routing_preserves_bound_qualified_columns_and_stars` |
+| 1 | CH routing breaks qualified columns | fixed | `backends/ch/routing_contract.py::test_routing_preserves_bound_qualified_columns_and_stars`; `backends/ch/source_bindings.py::test_same_scope_database_qualified_sources_remain_distinct` |
 | 2 | Explorer database discovery fails with routing or healthy-shard mode | fixed | `explorer/completion.py::test_backend_namespace_discovery_uses_serial_metadata_queries` |
 | 3 | Explorer persists incomplete metadata as complete | fixed | `explorer/metadata_identity.py::test_partial_catalog_never_prunes_complete_snapshot_and_recovers_without_usage` |
 | 4 | Explicit all-replica queries can silently return partial results | fixed | `backends/ch/routing_contract.py::test_explicit_all_replicas_requires_physical_coverage_without_automatic_routing` |
@@ -127,5 +127,13 @@ and `dml/transfer/schema/composite_map_keys.py::test_safe_same_and_widened_compo
 These check destination-native equality inside `ROW` key fields, including
 `CHAR` padding and `REAL` rounding, without losing valid entries or changing
 the caller's stage schema.
+
+Same-scope cross-database source bindings are additionally covered by
+`backends/ch/source_bindings.py::test_same_scope_explicit_aliases_remain_authoritative`
+and `backends/ch/source_bindings.py::test_same_scope_sources_remain_bound_across_cte_shadowing_and_correlation`.
+The existing disposable scenario `audit.clickhouse.routing_metadata` includes
+`integration/core/audit_contracts.py::test_clickhouse_routing_bindings_and_current_database_metadata`
+for same-named tables in two databases, qualified projections/stars, and both
+ClickHouse transports. It remains advisory and was not run locally.
 
 [SQL module index](index.md)

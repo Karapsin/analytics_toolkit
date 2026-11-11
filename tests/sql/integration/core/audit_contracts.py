@@ -277,7 +277,9 @@ def test_clickhouse_query_creation_respects_local_layout_and_existing_target(
 
 
 @pytest.mark.sql_scenario("audit.clickhouse.routing_metadata")
-def test_clickhouse_routing_bindings_and_current_database_metadata() -> None:
+def test_clickhouse_routing_bindings_and_current_database_metadata(
+    resource_registry: ResourceRegistry,
+) -> None:
     alias = "ch_routed"
     for query in (
         "SELECT one.dummy FROM system.one",
@@ -318,3 +320,47 @@ def test_clickhouse_routing_bindings_and_current_database_metadata() -> None:
     assert "numbers" in system
     if current != "system":
         assert "numbers" not in unqualified
+    _assert_same_named_cross_database_join(resource_registry)
+
+
+def _assert_same_named_cross_database_join(resource_registry: ResourceRegistry) -> None:
+    left = integration_table("ch", "audit_bound_events")
+    right = f"default.{left.partition('.')[2]}"
+    for table, values in (
+        (left, pd.DataFrame({"id": [1, 2], "left_value": [10, 20]})),
+        (right, pd.DataFrame({"id": [1, 2], "right_value": [100, 200]})),
+    ):
+        resource_registry.table("ch", table, ch_cluster="integration_cluster")
+        assert (
+            sql.load_df(
+                "ch_routed",
+                table,
+                values,
+                write_mode="replace",
+                ch_engine="MergeTree",
+                ch_only_shard=True,
+                ch_distributed_table=False,
+                ch_shard_on_cluster="integration_cluster",
+                order_by="id",
+                retry_cnt=1,
+                query_label=_label("same-name-binding-seed"),
+            )
+            == 2
+        )
+    expected = [
+        {"id": 1, "left_value": 10, "right_value": 100},
+        {"id": 2, "left_value": 20, "right_value": 200},
+    ]
+    for alias in ("ch_routed", "ch_routed_native"):
+        for projection in (
+            f"{left}.id, {left}.left_value, {right}.right_value",
+            f"{left}.*, {right}.right_value",
+        ):
+            result = sql.read(
+                alias,
+                f"SELECT {projection} FROM {left} GLOBAL INNER JOIN {right} "
+                f"ON {left}.id = {right}.id ORDER BY {left}.id",
+                retry_cnt=1,
+                query_label=_label("same-name-binding-read"),
+            )
+            assert result.to_dict("records") == expected
