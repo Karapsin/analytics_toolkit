@@ -29,7 +29,7 @@ def test_outage_local_stage_metadata_does_not_inherit_regular_cluster_defaults(
         client = sql.get_sql_connection("ch")
         with local_sql(client):
             client.command(f"CREATE TABLE IF NOT EXISTS {name} (id UInt64) ENGINE=Memory")
-            assert client.query(f"DESCRIBE TABLE {name}").result_rows == [("id", "UInt64")]
+            assert client.query(f"DESCRIBE TABLE {name}").result_rows == [("id", "UInt64", "")]
             assert client.query(
                 "SELECT name, type FROM system.columns "
                 "WHERE database='db' AND table='local__stage__metadata'"

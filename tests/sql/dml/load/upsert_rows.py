@@ -34,6 +34,7 @@ def _patch_load_boundaries(monkeypatch, *, writable_types):
     monkeypatch.setattr(
         adapter, "get_writable_table_column_types", lambda *_a, **_k: writable_types
     )
+    monkeypatch.setattr(load_df_module, "get_table_column_types", lambda *_a, **_k: writable_types)
     monkeypatch.setattr(load_df_module, "create_stage_table", lambda **_k: "public.run_stage")
     monkeypatch.setattr(
         load_df_module,

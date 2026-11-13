@@ -130,6 +130,9 @@ class BackendAdapter:
     read_dataframe = _common_methods.read_dataframe
     get_table_column_names = _common_methods.get_table_column_names
     get_writable_table_column_types = _common_methods.get_writable_table_column_types
+    validate_existing_dataframe_insert_columns = (
+        _common_methods.validate_existing_dataframe_insert_columns
+    )
     resolve_upsert_execution_options = _common_methods.resolve_upsert_execution_options
     resolve_upsert_execution_sqls = _common_methods.resolve_upsert_execution_sqls
     execute_upsert_command = _common_methods.execute_upsert_command
@@ -875,8 +878,8 @@ class BackendAdapter:
         return f"INSERT INTO {target_table} ({target_columns}) SELECT {select_columns} {from_sql}"
 
     column_list_sql = _common_methods.column_list_sql
-
     cast_select_expression = _common_methods.cast_select_expression
+    quote_identifier = _common_methods.quote_identifier
 
     def null_safe_key_equality(
         self,
@@ -888,10 +891,6 @@ class BackendAdapter:
         left_expr = f"{left_alias}.{quoted_column}"
         right_expr = f"{right_alias}.{quoted_column}"
         return f"({left_expr} = {right_expr} OR ({left_expr} IS NULL AND {right_expr} IS NULL))"
-
-    def quote_identifier(self, identifier: str) -> str:
-        escaped = identifier.replace(self.identifier_quote, self.identifier_quote * 2)
-        return f"{self.identifier_quote}{escaped}{self.identifier_quote}"
 
 
 def _apply_query_label(sql: str, query_label: str | None) -> str:

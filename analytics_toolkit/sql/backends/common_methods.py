@@ -18,6 +18,23 @@ def column_list_sql(self: Any, columns: Sequence[str]) -> str:
     return ", ".join(self.quote_identifier(column_name) for column_name in columns)
 
 
+def quote_identifier(self: Any, identifier: str) -> str:
+    escaped = identifier.replace(self.identifier_quote, self.identifier_quote * 2)
+    return f"{self.identifier_quote}{escaped}{self.identifier_quote}"
+
+
+def validate_existing_dataframe_insert_columns(
+    self: Any,
+    connection: Any,
+    table_name: str,
+    columns: Sequence[str],
+    *,
+    connection_key: str,
+) -> None:
+    """Backends without computed columns need no additional insertability probe."""
+    del self, connection, table_name, columns, connection_key
+
+
 def cast_select_expression(self: Any, column_name: str, target_type: str) -> str:
     quoted_column = self.quote_identifier(column_name)
     return f"CAST({quoted_column} AS {target_type}) AS {quoted_column}"

@@ -75,14 +75,7 @@ def test_insert_gp_rows_rolls_back_on_error(monkeypatch) -> None:
 
 
 def test_load_df_drops_overlap_stage_table_on_error(monkeypatch) -> None:
-    class FakeConnection:
-        def __init__(self) -> None:
-            self.close_calls = 0
-
-        def close(self) -> None:
-            self.close_calls += 1
-
-    connection = FakeConnection()
+    connection = FakeDbapiConnection()
     monkeypatch.setattr(
         load_df_module,
         "get_table_column_types",

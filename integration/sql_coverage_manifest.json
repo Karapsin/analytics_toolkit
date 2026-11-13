@@ -10600,6 +10600,63 @@
         "tests/sql/dml/transfer/schema/text_width.py::test_exact_structured_text_width_is_accepted_without_changing_schema"
       ]
     },
+    "audit.load.unknown_columns.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_dataframe_columns.py::test_unknown_dataframe_columns_are_rejected_before_truncating_existing_rows[audit.load.unknown_columns.gp]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/incoming_columns.py::test_unknown_existing_target_columns_fail_before_destructive_load",
+        "tests/sql/dml/load/incoming_columns.py::test_known_subset_and_reordered_append_preserve_existing_rows"
+      ]
+    },
+    "audit.load.unknown_columns.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_dataframe_columns.py::test_unknown_dataframe_columns_are_rejected_before_truncating_existing_rows[audit.load.unknown_columns.trino]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/incoming_columns.py::test_unknown_existing_target_columns_fail_before_destructive_load",
+        "tests/sql/dml/load/incoming_columns.py::test_known_subset_and_reordered_append_preserve_existing_rows"
+      ]
+    },
+    "audit.load.unknown_columns.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_dataframe_columns.py::test_unknown_dataframe_columns_are_rejected_before_truncating_existing_rows[audit.load.unknown_columns.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/incoming_columns.py::test_unknown_existing_target_columns_fail_before_destructive_load",
+        "tests/sql/dml/load/incoming_columns.py::test_known_subset_and_reordered_append_preserve_existing_rows"
+      ]
+    },
+    "audit.load.computed_columns.materialized": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_generated_columns.py::test_noninsertable_computed_columns_are_rejected_before_clearing_rows[audit.load.computed_columns.materialized]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/noninsertable_columns.py::test_noninsertable_existing_columns_reject_before_clearing_seed_rows",
+        "tests/sql/backends/ch/insertable_columns.py::test_clickhouse_explicit_insertability_respects_transport_and_effective_setting",
+        "tests/sql/backends/ch/insertable_columns.py::test_clickhouse_ephemeral_and_default_inputs_remain_insertable"
+      ]
+    },
+    "audit.load.computed_columns.alias": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_generated_columns.py::test_noninsertable_computed_columns_are_rejected_before_clearing_rows[audit.load.computed_columns.alias]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/noninsertable_columns.py::test_noninsertable_existing_columns_reject_before_clearing_seed_rows",
+        "tests/sql/backends/ch/insertable_columns.py::test_clickhouse_explicit_insertability_respects_transport_and_effective_setting",
+        "tests/sql/backends/ch/insertable_columns.py::test_clickhouse_ephemeral_and_default_inputs_remain_insertable"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

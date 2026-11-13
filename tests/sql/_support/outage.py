@@ -30,6 +30,18 @@ class Result:
         self.row_count = len(self.result_rows)
 
 
+def _column_default_kind(column: Any) -> str:
+    for constraint in column.args.get("constraints") or []:
+        kind = constraint.args.get("kind")
+        if isinstance(kind, exp.DefaultColumnConstraint):
+            return "DEFAULT"
+        if isinstance(kind, exp.ComputedColumnConstraint):
+            return "MATERIALIZED" if kind.args.get("persisted") else "ALIAS"
+        if isinstance(kind, exp.EphemeralColumnConstraint):
+            return "EPHEMERAL"
+    return ""
+
+
 @dataclass
 class Table:
     ddl: str
@@ -381,7 +393,11 @@ class Client:
         if not isinstance(target, (exp.Table, exp.Anonymous)):
             target = next(statement.find_all(exp.Table), None)
         if not isinstance(target, (exp.Table, exp.Anonymous)):
-            return Result([("id", "UInt64")], ("name", "type"), ("String", "String"))
+            return Result(
+                [("id", "UInt64", "")],
+                ("name", "type", "default_type"),
+                ("String", "String", "String"),
+            )
         function = target if isinstance(target, exp.Anonymous) else target.this
         name = (
             f"{function.expressions[1].this}.{function.expressions[2].this}"
@@ -392,11 +408,22 @@ class Client:
         if obj:
             columns = parse_one(obj.ddl, read=_RoutingClickHouse).find_all(exp.ColumnDef)
             return Result(
-                [(item.name, item.args["kind"].sql(dialect="clickhouse")) for item in columns],
-                ("name", "type"),
-                ("String", "String"),
+                [
+                    (
+                        item.name,
+                        item.args["kind"].sql(dialect="clickhouse"),
+                        _column_default_kind(item),
+                    )
+                    for item in columns
+                ],
+                ("name", "type", "default_type"),
+                ("String", "String", "String"),
             )
-        return Result([("id", "UInt64")], ("name", "type"), ("String", "String"))
+        return Result(
+            [("id", "UInt64", "")],
+            ("name", "type", "default_type"),
+            ("String", "String", "String"),
+        )
 
     @staticmethod
     def _project(statement: Any, rows: Any, obj: Any) -> Result:

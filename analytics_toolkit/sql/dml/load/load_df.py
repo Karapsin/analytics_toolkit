@@ -87,7 +87,11 @@ from ..table.write_modes import (
     finalize_stage_table,
     upsert_stage_table,
 )
-from .type_validation import convert_dataframe_schema, validate_dataframe_schema
+from .type_validation import (
+    convert_dataframe_schema,
+    normalize_dataframe_columns,
+    validate_dataframe_schema,
+)
 from analytics_toolkit.sql.dml.destination_context import (
     freeze_destination_timezone,
     infer_dataframe_write_schema,
@@ -163,6 +167,7 @@ def load_df(
 ) -> int | SqlPlan | SqlOperationResult:
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame.")
+    df = normalize_dataframe_columns(df)
     validate_retry_options(retry_cnt, timeout_increment)
     validate_optional_positive_int(
         trino_insert_chunk_size,
@@ -697,6 +702,13 @@ def _prepare_load_target(
             options.table_schema,
             options.connection_backend,
             destination_timezone=options.destination_context.get("destination_timezone"),
+        )
+    if state.original_target_exists and options.write_mode in {"append", "truncate_insert"}:
+        get_backend_adapter(options.connection_backend).validate_existing_dataframe_insert_columns(
+            connection,
+            options.destination_table,
+            [str(column) for column in df.columns],
+            connection_key=options.connection_key,
         )
     _apply_load_target_write_mode(options, state, connection)
     _ensure_load_target_table(options, state, connection, df)

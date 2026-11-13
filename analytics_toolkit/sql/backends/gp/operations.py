@@ -58,6 +58,43 @@ def get_writable_table_column_types(
         close_cursor(cursor, backend="gp")
 
 
+def validate_existing_dataframe_insert_columns(
+    adapter: Any,
+    connection: Any,
+    table_name: str,
+    columns: Sequence[str],
+    *,
+    connection_key: str,
+) -> None:
+    """Reject explicit values for generated columns before a committed clear."""
+    from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- registry cycle.
+        split_gp_table_name,
+    )
+
+    del adapter, connection_key
+    schema, relation = split_gp_table_name(table_name)
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "SELECT a.attname FROM pg_catalog.pg_attribute AS a "
+            "JOIN pg_catalog.pg_class AS c ON c.oid = a.attrelid "
+            "JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = %s AND c.relname = %s "
+            "AND a.attnum > 0 AND NOT a.attisdropped "
+            "AND (COALESCE(row_to_json(a)->>'attgenerated', '') <> '' "
+            "OR COALESCE(row_to_json(a)->>'attidentity', '') = 'a') "
+            "ORDER BY a.attnum",
+            (schema, relation),
+        )
+        noninsertable = {str(row[0]) for row in cursor.fetchall()}
+    finally:
+        close_cursor(cursor, backend="gp")
+    blocked = [column for column in columns if column in noninsertable]
+    if blocked:
+        message = "Incoming column(s) cannot be inserted explicitly: " + ", ".join(blocked)
+        raise ValueError(message)
+
+
 def build_execute_create_as_sqls(  # noqa: PLR0913
     adapter: Any,
     *,

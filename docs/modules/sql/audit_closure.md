@@ -191,4 +191,19 @@ semantics remain unchanged. The disposable cases
 `integration/core/audit_encoded_values.py::test_complete_structured_encoding_is_validated_before_creating_a_bounded_target`
 cover rejection before CREATE and exact-width success; they were not run locally.
 
+Dataframe input-column validation is additionally covered by
+`dml/load/incoming_columns.py::test_unknown_existing_target_columns_fail_before_destructive_load`,
+`dml/load/incoming_columns.py::test_duplicate_sql_column_names_fail_before_destructive_load`,
+`dml/load/incoming_columns.py::test_single_nonstring_label_is_copied_to_its_sql_name_without_mutating_input`,
+`backends/gp/insertable_columns.py::test_gp_generated_columns_are_rejected_before_insert`,
+and `backends/ch/insertable_columns.py::test_clickhouse_explicit_insertability_respects_transport_and_effective_setting`.
+Unknown and noninsertable incoming fields are rejected before destructive
+loading, with backend-supported input-column exceptions retained. Canonical SQL
+names must be unique; valid subsets, reordered inputs and replacement schemas
+remain supported. The disposable unknown-column cases for all three backends in
+`integration/core/audit_dataframe_columns.py::test_unknown_dataframe_columns_are_rejected_before_truncating_existing_rows`
+and ClickHouse computed-column cases in
+`integration/core/audit_generated_columns.py::test_noninsertable_computed_columns_are_rejected_before_clearing_rows`
+were not run locally.
+
 [SQL module index](index.md)

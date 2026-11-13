@@ -98,7 +98,14 @@ def test_authoritative_ch_calendar_schema_rejects_extremes_before_mutation(
 
 def patch_load_boundaries(monkeypatch: pytest.MonkeyPatch, existing_type: str | None = None):
     adapter = get_backend_adapter("ch")
-    connection = SimpleNamespace(close=lambda: None, server_tz="UTC")
+
+    def query(statement):
+        if statement.startswith("DESCRIBE TABLE "):
+            return SimpleNamespace(result_rows=[("id", existing_type, "")])
+        message = f"Unexpected metadata query: {statement}"
+        raise AssertionError(message)
+
+    connection = SimpleNamespace(close=lambda: None, server_tz="UTC", query=query)
     created = []
     loaded = []
     monkeypatch.setattr(load_df_module, "get_sql_connection", lambda _key: connection)

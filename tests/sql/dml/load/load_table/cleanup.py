@@ -8,6 +8,7 @@ from tests.sql._support.load_table import (
     TEST_CH_STAGE_TABLE,
     TEST_CH_TABLE,
     FakeClickHouseClient,
+    FakeDbapiConnection,
     SimpleNamespace,
     load_df_module,
     pd,
@@ -45,14 +46,7 @@ def test_finalize_stage_table_clickhouse_upsert_drops_shard_partitions() -> None
 
 
 def test_load_df_drops_overlap_stage_table_after_success(monkeypatch) -> None:
-    class FakeConnection:
-        def __init__(self) -> None:
-            self.close_calls = 0
-
-        def close(self) -> None:
-            self.close_calls += 1
-
-    connection = FakeConnection()
+    connection = FakeDbapiConnection()
     monkeypatch.setattr(
         load_df_module,
         "get_table_column_types",

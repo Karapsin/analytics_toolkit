@@ -40,6 +40,9 @@ class ClickHouseAdapter(BackendAdapter):
     validate_connection = validate_connection
     get_table_column_names = _column_names.get_table_column_names
     get_writable_table_column_types = _column_names.get_writable_table_column_types
+    validate_existing_dataframe_insert_columns = (
+        _column_names.validate_existing_dataframe_insert_columns
+    )
     resolve_upsert_execution_options = _upsert.resolve_upsert_execution_options
     resolve_upsert_execution_sqls = _upsert.resolve_upsert_execution_sqls
     execute_upsert_command = _upsert.execute_upsert_command

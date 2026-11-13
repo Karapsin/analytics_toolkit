@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from decimal import Decimal
 from numbers import Integral, Real
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,33 @@ from analytics_toolkit.sql.core.type_resolution import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+
+def validate_dataframe_columns(
+    df: pd.DataFrame, schema: Mapping[str, str] | None = None
+) -> list[str]:
+    """Require unique SQL names and a type for every incoming column."""
+    names = [str(name) for name in df.columns]
+    duplicates = [name for name, count in Counter(names).items() if count > 1]
+    if duplicates:
+        message = "Incoming column(s) resolve to duplicate SQL names: " + ", ".join(duplicates)
+        raise ValueError(message)
+    if schema is not None:
+        missing = [name for name in names if name not in schema]
+        if missing:
+            message = "Incoming column(s) have no authoritative SQL type: " + ", ".join(missing)
+            raise ValueError(message)
+    return names
+
+
+def normalize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Copy only when SQL names need normalization; preserve caller labels."""
+    names = validate_dataframe_columns(df)
+    if all(isinstance(name, str) for name in df.columns):
+        return df
+    normalized = df.copy(deep=False)
+    normalized.columns = names
+    return normalized
 
 
 def _schema_value(value: Any, target_type: str) -> Any:
@@ -40,9 +68,8 @@ def validate_dataframe_schema(
     allow_timestamp_precision_loss: bool = True,
     destination_timezone: str | None = None,
 ) -> None:
+    validate_dataframe_columns(df, schema)
     for index, name in enumerate(df.columns):
-        if str(name) not in schema:
-            continue
         profile = ColumnProfile(
             native_type=schema[str(name)],
             source_backend=backend,
@@ -76,6 +103,7 @@ def convert_dataframe_schema(
     *,
     destination_timezone: str | None = None,
 ) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    validate_dataframe_columns(df, schema)
     columns = []
     metadata = []
     for index, name in enumerate(df.columns):

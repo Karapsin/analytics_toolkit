@@ -30,6 +30,14 @@ source data can produce ambiguous pandas dtypes. Use
 [sql.create_table](functions/create_table.md) when you need the table
 creation step independently from loading rows.
 
+Dataframe write column names must be unique as SQL strings. When a write keeps
+an existing target schema, every incoming column must be present and insertable;
+unknown names and noninsertable fields fail before stage creation or target mutation.
+Backend-specific supported inputs, such as ClickHouse `EPHEMERAL` columns, remain
+available. Valid subsets and
+reordered columns remain supported for `append` and `truncate_insert`.
+Replacement follows its requested or inferred schema and can include new columns.
+
 Object columns whose non-null values are all Python `uuid.UUID` instances infer
 as native `UUID` on Greenplum, Trino, and ClickHouse. ClickHouse uses
 `Nullable(UUID)` when the dataframe column contains nulls. UUID-looking strings,

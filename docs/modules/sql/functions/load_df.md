@@ -83,6 +83,11 @@ rows
   another name, and cleanup retains the actual created name.
 - Omitting `write_mode` selects `replace` unless the legacy `append=True` flag is supplied. Prefer an explicit `write_mode` for incremental or truncate-and-load workflows.
 - Replacing an existing table builds and validates an offside table before cutover. Greenplum uses a transaction, Trino uses a reversible rename, and ClickHouse exchanges or reversibly renames the physical/facade replacement pair. New columns are included without dropping the live table first.
+- Dataframe write column names must be unique as SQL strings. For modes that
+  retain an existing target schema, unknown or noninsertable incoming fields fail
+  before stage creation or target mutation. Backend-supported input columns remain
+  available. Valid subset and reordered inputs remain supported
+  for `append` and `truncate_insert`; replacement uses its new resolved schema.
 - An empty dataframe follows `empty_source_policy`. Empty replacement creates a zero-row table with the requested schema. Pass `table_schema` when an empty object-typed column has no unambiguous backend type.
 - `write_mode="upsert"` stages incoming rows and rejects duplicate staged keys
   before any target mutation.
