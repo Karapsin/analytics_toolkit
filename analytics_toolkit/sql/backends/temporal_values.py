@@ -12,6 +12,17 @@ if TYPE_CHECKING:
 _MAX_SCALE = 9
 
 
+def timestamp_scale(type_name: str | None) -> int:
+    from .type_resolution import parse_native_type  # noqa: PLC0415 - native grammar cycle
+
+    base = parse_native_type(type_name).base
+    if base.name == "datetime":
+        return 0
+    if base.arguments and base.arguments[0].isdigit():
+        return int(base.arguments[0])
+    return 6
+
+
 def timestamp_value(value: Any, target: str, destination_timezone: str | None = None) -> Any:
     from .temporal_context import localize_value  # noqa: PLC0415 - frozen destination context
     from .type_resolution import parse_native_type  # noqa: PLC0415 - native grammar cycle
@@ -37,10 +48,7 @@ def validate_timestamp_range(
     profile: ColumnProfile, target: str, destination_timezone: str | None = None
 ) -> None:
     from .temporal_context import effective_timezone  # noqa: PLC0415 - frozen destination context
-    from .type_resolution import (  # noqa: PLC0415 - native grammar cycle
-        parse_native_type,
-        timestamp_scale,
-    )
+    from .type_resolution import parse_native_type  # noqa: PLC0415 - native grammar cycle
 
     scale = timestamp_scale(target)
     if not 0 <= scale <= _MAX_SCALE:

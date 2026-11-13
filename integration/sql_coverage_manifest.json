@@ -10657,6 +10657,42 @@
         "tests/sql/backends/ch/insertable_columns.py::test_clickhouse_ephemeral_and_default_inputs_remain_insertable"
       ]
     },
+    "audit.load.enum_values.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_enum_values.py::test_ordinary_enum_cells_load_as_exact_native_values_after_truncation[audit.load.enum_values.gp]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/enum_values.py::test_numeric_enum_values_reach_real_gp_adaptation_as_exact_primitives",
+        "tests/sql/dml/load/enum_values.py::test_scalar_enum_values_publish_exact_native_values",
+        "tests/sql/dml/load/enum_values.py::test_nested_array_enums_publish_native_integer_and_sql_null_leaves"
+      ]
+    },
+    "audit.load.enum_values.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_enum_values.py::test_ordinary_enum_cells_load_as_exact_native_values_after_truncation[audit.load.enum_values.trino]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/enum_values.py::test_numeric_enum_values_reach_real_gp_adaptation_as_exact_primitives",
+        "tests/sql/dml/load/enum_values.py::test_scalar_enum_values_publish_exact_native_values",
+        "tests/sql/dml/load/enum_values.py::test_nested_array_enums_publish_native_integer_and_sql_null_leaves"
+      ]
+    },
+    "audit.load.enum_values.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_enum_values.py::test_ordinary_enum_cells_load_as_exact_native_values_after_truncation[audit.load.enum_values.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/enum_values.py::test_numeric_enum_values_reach_real_gp_adaptation_as_exact_primitives",
+        "tests/sql/dml/load/enum_values.py::test_scalar_enum_values_publish_exact_native_values",
+        "tests/sql/dml/load/enum_values.py::test_nested_array_enums_publish_native_integer_and_sql_null_leaves"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

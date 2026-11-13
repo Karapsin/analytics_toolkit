@@ -38,6 +38,11 @@ available. Valid subsets and
 reordered columns remain supported for `append` and `truncate_insert`.
 Replacement follows its requested or inferred schema and can include new columns.
 
+Python `Enum` members use their logical `.value` before type resolution,
+validation and transport, including nested values. Their underlying values follow
+the usual native conversions and null handling; a string-valued member follows
+the same conversion as its string value.
+
 Object columns whose non-null values are all Python `uuid.UUID` instances infer
 as native `UUID` on Greenplum, Trino, and ClickHouse. ClickHouse uses
 `Nullable(UUID)` when the dataframe column contains nulls. UUID-looking strings,

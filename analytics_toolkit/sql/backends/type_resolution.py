@@ -21,11 +21,12 @@ from analytics_toolkit.sql.core.exact_values import (
     is_null,
     truncate_temporal,
     typed_text,
+    unwrap_enum,
 )
 
 from .inferred_types import resolve_column_type
 from .temporal_context import TIMEZONE_POLICY_VERSION
-from .temporal_values import timestamp_value, validate_timestamp_range
+from .temporal_values import timestamp_scale, timestamp_value, validate_timestamp_range
 from .text_types import binary_profile_fits
 from .value_profiles import ColumnProfile
 
@@ -181,15 +182,6 @@ def is_timestamp_type(type_name: str | None) -> bool:
     return name.startswith(("timestamp", "datetime")) or name == "timestamptz"
 
 
-def timestamp_scale(type_name: str | None) -> int:
-    base = parse_native_type(type_name).base
-    if base.name == "datetime":
-        return 0
-    if base.arguments and base.arguments[0].isdigit():
-        return int(base.arguments[0])
-    return 6
-
-
 @dataclass(frozen=True)
 class ResolvedColumn:
     target_type: str
@@ -202,6 +194,7 @@ class ResolvedColumn:
     destination_timezone: str | None = None
 
     def convert(self, value: Any) -> Any:  # noqa: C901, PLR0911 - preserve explicit destination conversions
+        value = unwrap_enum(value)
         if is_null(value):
             return None
         from .ch.value_validation import (  # noqa: PLC0415 - scalar grammar cycle

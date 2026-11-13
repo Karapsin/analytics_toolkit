@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from analytics_toolkit.sql.backends.conversion_profiles import validate_converted_rows
+from analytics_toolkit.sql.core.exact_values import unwrap_enum
 from analytics_toolkit.sql.core.type_resolution import (
     ColumnProfile,
     ResolvedColumn,
@@ -50,6 +51,7 @@ def normalize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _schema_value(value: Any, target_type: str) -> Any:
+    value = unwrap_enum(value)
     # Caller-requested numeric schemas have historically accepted float inputs.
     # Validate the deliberate conversion rather than changing inferred types.
     if isinstance(value, Real) and not isinstance(value, Integral):

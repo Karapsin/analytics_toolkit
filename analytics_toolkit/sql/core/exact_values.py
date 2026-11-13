@@ -146,6 +146,13 @@ class ExactTemporal:
         return base + (f".{fraction:0{self.scale}d}" if self.scale else "") + suffix
 
 
+def unwrap_enum(value: Any) -> Any:
+    """Use an Enum's logical value before selecting SQL or transport behavior."""
+    while isinstance(value, Enum):
+        value = value.value
+    return value
+
+
 def is_null(value: Any) -> bool:
     if value is None or value is pd.NA or value is pd.NaT:
         return True
@@ -227,8 +234,7 @@ def truncate_temporal(value: Any, scale: int) -> Any:
 
 def encode_value(value: Any) -> Any:  # noqa: C901, PLR0911, PLR0912 - tagged scalar codec
     """Tagged JSON tree; SQL NULL and nested containers retain their identity."""
-    if isinstance(value, Enum):
-        return encode_value(value.value)
+    value = unwrap_enum(value)
     if isinstance(value, np.ndarray):
         return encode_value(value.tolist())
     if isinstance(value, Real) and not isinstance(value, (Integral, bool, np.bool_)):
@@ -264,6 +270,16 @@ def encode_value(value: Any) -> Any:  # noqa: C901, PLR0911, PLR0912 - tagged sc
     raise TypeError(msg)
 
 
+def _decoded_map(pairs: tuple[tuple[Any, Any], ...], *, ordered: bool) -> Any:
+    if ordered:
+        return OrderedMapPairs(pairs)
+    try:
+        mapping = dict(pairs)
+    except (TypeError, ValueError):
+        return OrderedMapPairs(pairs)
+    return mapping if len(mapping) == len(pairs) else OrderedMapPairs(pairs)
+
+
 def decode_value(encoded: Any) -> Any:  # noqa: C901, PLR0911 - tagged scalar codec
     tag, *payload = encoded
     if tag == "null":
@@ -297,7 +313,7 @@ def decode_value(encoded: Any) -> Any:  # noqa: C901, PLR0911 - tagged scalar co
         return tuple(values) if tag == "tuple" else values
     if tag in {"map", "map_pairs"}:
         pairs = tuple((decode_value(k), decode_value(v)) for k, v in payload[0])
-        return OrderedMapPairs(pairs) if tag == "map_pairs" else dict(pairs)
+        return _decoded_map(pairs, ordered=tag == "map_pairs")
     msg = "Unknown exact-value encoding tag."
     raise ValueError(msg)
 
@@ -310,6 +326,7 @@ def typed_text(  # noqa: C901, PLR0911 - scalar-family encoding
     fractional_scale: int | None = None,
 ) -> str | None:
     """Stable, exact fallback. Container keys are encoded as ordered pairs."""
+    value = unwrap_enum(value)
     if is_null(value):
         return None
     if isinstance(value, Integral) and not isinstance(value, bool):

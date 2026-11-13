@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 from sqlglot import exp, parse_one
 
 from .map_key_domains import map_key_conversion_is_injective
-from .nested_values import row_items
+from .nested_values import array_item, row_items
 
 _TRINO_INFERRED_TIMESTAMP_SCALE = 6
 _MAP_ARGUMENT_COUNT = 2
@@ -169,9 +168,9 @@ def convert_nested(
         )
         return [
             convert_nested(item, type_name, backend, destination_timezone=destination_timezone)
-            if isinstance(item, list) or (isinstance(item, np.ndarray) and item.ndim > 0)
+            if isinstance(item, list)
             else leaf.convert(item)
-            for item in value
+            for item in map(array_item, value)
         ]
     if kind == "array":
         conversion = ResolvedColumn(

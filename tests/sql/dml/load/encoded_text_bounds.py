@@ -15,12 +15,62 @@ from tests.sql._support.load_encoded_values import configure_load
 
 class _State(Enum):
     READY = "a"
+    LONG = "abcdefghijk"
+
+
+class _StructuredValue(Enum):
+    EMPTY = []  # noqa: RUF012 - the enum intentionally wraps a logical array.
+
+
+class _FloatValue(Enum):
+    ONE = 1.0
+
+
+def test_plain_string_enum_uses_its_logical_value_for_bounded_text(
+    monkeypatch, write_sql_connections
+):
+    schema = {"value": "VARCHAR(1)"}
+    connection = configure_load(monkeypatch, write_sql_connections, exists=False, schema=schema)
+    assert (
+        sql.load_df(
+            "encoded_gp",
+            "public.encoded_target",
+            pd.DataFrame({"value": pd.Series([_State.READY, None], dtype=object)}),
+            table_schema=schema,
+            retry_cnt=1,
+            timeout_increment=0,
+        )
+        == 2
+    )
+    assert connection.bound_rows == [("a",), (None,)]
+
+
+def test_float_enum_preserves_explicit_integral_float_conversion(
+    monkeypatch, write_sql_connections
+):
+    schema = {"value": "INTEGER"}
+    connection = configure_load(monkeypatch, write_sql_connections, exists=False, schema=schema)
+    assert (
+        sql.load_df(
+            "encoded_gp",
+            "public.encoded_target",
+            pd.DataFrame({"value": pd.Series([_FloatValue.ONE, None], dtype=object)}),
+            table_schema=schema,
+            retry_cnt=1,
+            timeout_increment=0,
+        )
+        == 2
+    )
+    assert connection.bound_rows == [(1,), (None,)]
 
 
 @pytest.mark.parametrize("exists", [False, True], ids=["new_target", "existing_truncate"])
 @pytest.mark.parametrize("native_type", ["VARCHAR(10)", "CHAR(10)", "CHARACTER VARYING(10)"])
+@pytest.mark.parametrize(
+    "value", [_StructuredValue.EMPTY, _State.LONG], ids=["typed_json", "long_string"]
+)
 def test_encoded_dataframe_overflow_rejects_before_any_target_mutation(
-    monkeypatch, write_sql_connections, exists, native_type
+    monkeypatch, write_sql_connections, exists, native_type, value
 ):
     schema = {"value": native_type}
     connection = configure_load(monkeypatch, write_sql_connections, exists=exists, schema=schema)
@@ -28,7 +78,7 @@ def test_encoded_dataframe_overflow_rejects_before_any_target_mutation(
         sql.load_df(
             "encoded_gp",
             "public.encoded_target",
-            pd.DataFrame({"value": pd.Series(["a", _State.READY], dtype=object)}),
+            pd.DataFrame({"value": pd.Series(["a", value], dtype=object)}),
             table_schema=schema,
             write_mode="truncate_insert" if exists else "replace",
             retry_cnt=1,
@@ -42,7 +92,7 @@ def test_encoded_dataframe_exact_bound_keeps_sql_null_and_typed_text(
     monkeypatch, write_sql_connections
 ):
     expected = json.dumps(
-        {"v": 1, "backend": "", "type": "", "value": ["str", "a"]},
+        {"v": 1, "backend": "", "type": "", "value": ["array", []]},
         separators=(",", ":"),
     )
     schema = {"value": f"VARCHAR({len(expected)})"}
@@ -51,7 +101,7 @@ def test_encoded_dataframe_exact_bound_keeps_sql_null_and_typed_text(
         sql.load_df(
             "encoded_gp",
             "public.encoded_target",
-            pd.DataFrame({"value": pd.Series([None, _State.READY], dtype=object)}),
+            pd.DataFrame({"value": pd.Series([None, _StructuredValue.EMPTY], dtype=object)}),
             table_schema=schema,
             retry_cnt=1,
             timeout_increment=0,

@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field
 from decimal import Decimal
-from enum import Enum
 from numbers import Integral, Real
 from typing import Any
 from uuid import UUID
@@ -21,7 +20,10 @@ from analytics_toolkit.sql.core.exact_values import (
     integer_text,
     is_null,
     typed_text,
+    unwrap_enum,
 )
+
+from .nested_values import array_item
 
 _MAP_ARGUMENT_COUNT = 2
 _GP_MAX_ARRAY_DIMENSIONS = 6
@@ -77,10 +79,7 @@ class ColumnProfile:
     native_constraints_valid: bool = True
 
     def add(self, value: Any) -> None:  # noqa: C901, PLR0912, PLR0915 - family profile dispatch
-        if isinstance(value, Enum):
-            value = value.value
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
+        value = array_item(value)
         self.count += 1
         if is_null(value):
             self.null_count += 1
@@ -255,7 +254,8 @@ class ColumnProfile:
             if len(self.children) != _MAP_ARGUMENT_COUNT:
                 self.structurally_compatible = False
             else:
-                for key, item in pairs:
+                for original_key, item in pairs:
+                    key = unwrap_enum(original_key)
                     self.map_null_keys |= is_null(key)
                     try:
                         normalized_key = key
@@ -408,7 +408,7 @@ def _family(value: Any) -> str:  # noqa: C901, PLR0911 - ordered scalar-family d
 
 def _array_shape(value: list[Any]) -> tuple[int, ...] | None:
     """GP arrays require rectangular, nonempty inner dimensions (maximum six)."""
-    value = [item.tolist() if isinstance(item, np.ndarray) else item for item in value]
+    value = [array_item(item) for item in value]
     nested = [isinstance(item, list) for item in value]
     if not any(nested):
         return (len(value),)
@@ -424,7 +424,7 @@ def _array_shape(value: list[Any]) -> tuple[int, ...] | None:
 
 def _array_leaves(value: list[Any]) -> Any:
     for original in value:
-        item = original.tolist() if isinstance(original, np.ndarray) else original
+        item = array_item(original)
         if isinstance(item, list):
             yield from _array_leaves(item)
         else:

@@ -206,4 +206,13 @@ and ClickHouse computed-column cases in
 `integration/core/audit_generated_columns.py::test_noninsertable_computed_columns_are_rejected_before_clearing_rows`
 were not run locally.
 
+Enum logical-value conversion is additionally covered by
+`core/enum_values.py::test_logical_enum_containers_share_native_shape_and_leaf_conversion`,
+`dml/load/enum_values.py::test_numeric_enum_values_reach_real_gp_adaptation_as_exact_primitives`,
+`dml/load/enum_values.py::test_nested_array_enums_publish_native_integer_and_sql_null_leaves`,
+and `dml/load/enum_values.py::test_enum_map_key_collision_rejects_before_clearing_existing_rows`.
+Members are normalized through `.value` before certification and conversion,
+including nested values. Native exact numbers, nulls and strings keep their
+ordinary representations, while map-key collision checks remain active.
+
 [SQL module index](index.md)

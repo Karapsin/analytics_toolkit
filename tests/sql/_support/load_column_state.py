@@ -176,7 +176,13 @@ class ColumnConnection:
 
 
 def existing_column_target(
-    monkeypatch, backend, columns=("id",), *, real_metadata=False, **settings
+    monkeypatch,
+    backend,
+    columns=("id",),
+    *,
+    real_metadata=False,
+    real_gp_adaptation=False,
+    **settings,
 ):
     store = ExistingColumnStore(backend, columns, **settings)
     monkeypatch.setattr(load_df_module, "get_sql_connection", lambda _key: ColumnConnection(store))
@@ -190,6 +196,12 @@ def existing_column_target(
 
     def execute_values(cursor, statement, rows, page_size, **_kwargs):
         del page_size
+        if real_gp_adaptation:
+            from psycopg2.extensions import adapt  # noqa: PLC0415 - optional real-driver boundary
+
+            for row in rows:
+                for value in row:
+                    adapt(value).getquoted()
         placeholders = ", ".join("(" + ", ".join("NULL" for _ in row) + ")" for row in rows)
         sql = statement % placeholders
         cursor.store.execute(sql, [value for row in rows for value in row])

@@ -6,8 +6,16 @@ from typing import Any
 
 import numpy as np
 
+from analytics_toolkit.sql.core.exact_values import unwrap_enum
+
+
+def array_item(value: Any) -> Any:
+    value = unwrap_enum(value)
+    return value.tolist() if isinstance(value, np.ndarray) else value
+
 
 def row_items(value: Any, fields: list[tuple[str, str]]) -> list[Any]:
+    value = unwrap_enum(value)
     if isinstance(value, dict):
         if len(value) != len(fields) or set(value) != {name for name, _native in fields}:
             msg = "Row fields must match the resolved destination schema."
