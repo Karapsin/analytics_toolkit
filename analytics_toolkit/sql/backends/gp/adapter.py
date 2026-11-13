@@ -12,6 +12,7 @@ from ..dbapi import DbApiBackendAdapter
 from ..models import SourceColumn, TransferAttemptPolicy, TransferInsertPageSizing
 from ..utils import user_filter as _user_filter
 from . import insert as _insert
+from . import json_values as _json_values
 from . import key_literals as _key_literals
 from . import metadata_types as _metadata_types
 from . import native_types as _native_types
@@ -62,6 +63,8 @@ GP_IDENTIFIER_MAX_BYTES = _stage.GP_IDENTIFIER_MAX_BYTES
 
 
 class GreenplumAdapter(DbApiBackendAdapter):
+    prepare_dataframe_payload = _json_values.prepare_dataframe_payload
+    load_execution_preview_requires_schema = True
     validate_connection = validate_connection
     display_name = "Greenplum"
     sqlglot_dialect = "postgres"

@@ -46,7 +46,7 @@ correctness bug: closing a connection cannot cause successful work to replay.
 | 26 | HTTP transfers reject several valid DateTime64 precisions | fixed | `backends/ch/exact_transport.py::test_http_stream_uses_column_blocks_and_preserves_duplicate_names`; `backends/ch/temporal_source_mode.py::test_http_exact_source_eager_stream_nested_fold_and_client_isolation` |
 | 27 | Partial-column CH upserts erase untouched fields | fixed | `dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage` |
 | 28 | Moving an upsert key between partitions leaves stale rows | accepted partition-scoped key contract | `dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped` |
-| 29 | Key-validated append can swap columns | fixed | `dml/load/upsert_rows.py::test_key_validated_append_uses_explicit_subset_column_order` |
+| 29 | Key-validated append can swap columns | fixed | `dml/load/upsert_rows.py::test_key_validated_append_uses_explicit_subset_column_order`; `dml/load/append_plan_columns.py::test_key_validated_append_plan_names_and_projects_incoming_columns`; `dml/load/append_plan_columns.py::test_parquet_append_plan_names_incoming_columns_and_cleans_owned_resources` |
 | 30 | Several writes ignore local-only CH policy | fixed | `backends/ch/reconfigure/structural_safety.py::test_local_layout_never_owns_a_suffix_companion`; `dml/load/upsert_storage_scope.py::test_load_df_upsert_mutates_only_verified_existing_storage_scope`; `dml/load/upsert_storage_scope.py::test_transfer_finalization_upsert_mutates_only_verified_existing_storage_scope` |
 | 31 | Query-based creation drops resolved CH creation policy | fixed | `backends/ch/policy_ctas.py::test_public_query_policy_keeps_independent_ddl_and_routing_scopes` |
 | 32 | `ch_replace_table=True` is discarded with `sql=...` | fixed | `backends/ch/policy_ctas.py::test_public_query_replace_flag_controls_sql_plan_without_implying_drop`; `backends/ch/policy_ctas.py::test_query_sql_generation_preserves_replace_mode` |
@@ -241,5 +241,21 @@ and `dml/table/stage_constraints.py::test_prepared_partition_replay_validates_th
 Every key and writer contributes before live publication. Actual staged SQL
 projections and prepared replay payloads retain their nullability checks;
 dry plans leave this validation pending.
+
+Greenplum native JSON validation is additionally covered by
+`dml/load/gp_json.py::test_native_json_containers_load_through_real_gp_execute_values`,
+`dml/load/gp_json.py::test_invalid_json_serialization_rejects_before_clearing_seed_rows`,
+`dml/load/gp_json.py::test_custom_json_serializer_is_frozen_once_across_lost_acknowledgement_retry`,
+`dml/load/gp_json.py::test_json_null_document_and_sql_null_obey_existing_not_null_constraint`,
+`dml/load/gp_json.py::test_public_native_json_arrays_keep_sql_array_rank_and_json_element_values`,
+`dml/load/gp_json.py::test_qualified_builtin_json_schema_keeps_native_container_semantics`,
+and `dml/load/gp_json.py::test_explicit_json_encoding_cannot_bypass_existing_jsonb_nul_constraints`.
+These preserve supported dataframe JSON payloads, stricter existing constraints
+and the same certified documents through accepted write replay. The disposable
+`audit.load.gp_json.json` and `audit.load.gp_json.jsonb` cases in
+`integration/core/audit_gp_json.py::test_greenplum_json_existing_and_explicit_loads_preserve_native_values`
+also cover explicit two-dimensional arrays under catalog rank erasure; they were
+not run locally. Default query decoding still maps SQL NULL and JSON null to
+`None` and can leave original SQL array rank ambiguous.
 
 [SQL module index](index.md)

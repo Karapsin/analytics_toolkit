@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, Mapping
 from analytics_toolkit.sql.dml.table.upsert_checkpoint import UpsertCheckpoint
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from analytics_toolkit.sql.dml.empty_source import EmptySourcePolicy
 
 
@@ -62,3 +64,4 @@ class LoadState:
     upsert_checkpoint: UpsertCheckpoint = field(default_factory=UpsertCheckpoint)
     owned_stage_resources: list[tuple[str, str, Any]] = field(default_factory=list)
     stage_candidates: list[str] = field(default_factory=list)
+    prepared_json_dataframe: pd.DataFrame | None = field(default=None, repr=False, compare=False)

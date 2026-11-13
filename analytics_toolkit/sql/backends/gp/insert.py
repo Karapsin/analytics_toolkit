@@ -9,6 +9,8 @@ import pandas as pd
 
 from analytics_toolkit.sql.backends.execution_outcome import close_cursor
 
+from .json_values import JsonArray, JsonDocument
+
 DEFAULT_GP_INSERT_CHUNK_SIZE = 10_000
 
 
@@ -223,6 +225,8 @@ def _is_null_like(value: Any) -> bool:
 
 
 def _normalize_nested_scalar(value: Any) -> Any:
+    if isinstance(value, JsonArray):
+        return value
     if isinstance(value, list):
         return [_normalize_nested_scalar(item) for item in value]
     if isinstance(value, tuple):
@@ -255,12 +259,18 @@ def _normalize_json_array(value: Any, rank: int) -> Any:
 
     if _is_null_like(value):
         return None
+    if isinstance(value, JsonArray):
+        return value
     if not isinstance(value, (list, tuple)):
         message = "Greenplum JSON array values must match the destination array rank."
         raise TypeError(message)
     if rank > 1:
         return [_normalize_json_array(item, rank - 1) for item in value]
     return [
-        None if _is_null_like(item) else item if isinstance(item, Json) else Json(item)
+        None
+        if _is_null_like(item)
+        else item
+        if isinstance(item, (Json, JsonDocument))
+        else Json(item)
         for item in value
     ]

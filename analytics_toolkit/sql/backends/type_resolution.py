@@ -26,7 +26,10 @@ from analytics_toolkit.sql.core.exact_values import (
     unwrap_enum,
 )
 
+from .ch.value_validation import _permits_null
+from .gp.json_values import validate_json_profile
 from .inferred_types import resolve_column_type
+from .native_values import convert_native_value
 from .temporal_context import TIMEZONE_POLICY_VERSION
 from .temporal_values import timestamp_scale, timestamp_value, validate_timestamp_range
 from .text_types import binary_profile_fits
@@ -36,6 +39,7 @@ __all__ = [
     "ColumnProfile",
     "NativeType",
     "ResolvedColumn",
+    "_permits_null",
     "decimal_domain",
     "declared_domain_fits",
     "integer_domain",
@@ -199,24 +203,9 @@ class ResolvedColumn:
         value = unwrap_enum(value)
         if is_null(value):
             return None
-        from .ch.value_validation import (  # noqa: PLC0415 - scalar grammar cycle
-            validate_constrained_value,
-        )
-
-        if parse_native_type(self.target_type).base.name in {"enum8", "enum16", "fixedstring"}:
-            return validate_constrained_value(value, self.target_type)
-        from .nested_types import (  # noqa: PLC0415 - recursive native schemas
-            convert_nested,
-            nested_descriptor,
-        )
-
-        if nested_descriptor(self.target_type)[0]:
-            return convert_nested(
-                value,
-                self.target_type,
-                self.target_backend,
-                destination_timezone=self.destination_timezone,
-            )
+        native, value = convert_native_value(value, self)
+        if native:
+            return value
         textual = parse_native_type(self.target_type).base.name in {
             "string",
             "text",
@@ -483,15 +472,6 @@ def _integer_type(  # noqa: PLR0911 - exact backend integer candidates
     return None
 
 
-def _permits_null(type_name: str) -> bool:
-    outer = parse_native_type(type_name)
-    return outer.name == "nullable" or bool(
-        outer.name == "lowcardinality"
-        and outer.arguments
-        and parse_native_type(outer.arguments[0]).name == "nullable"
-    )
-
-
 def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative family contracts
     profile: ColumnProfile,
     target_type: str,
@@ -506,6 +486,8 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
     destination_timezone = destination_timezone or profile.destination_timezone
     outer_type = parse_native_type(target_type)
     base = outer_type.base
+    if backend == "gp" and validate_json_profile(profile, target_type):
+        return
     if backend == "ch" and profile.null_count and not _permits_null(target_type):
         msg = "Selected input contains NULL for a nonnullable authoritative column."
         raise ValueError(msg)

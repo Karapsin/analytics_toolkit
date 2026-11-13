@@ -104,6 +104,26 @@ def test_adapter_default_required_constraints_do_not_probe_the_connection() -> N
     )
 
 
+@pytest.mark.parametrize(
+    "adapter", [MinimalContractAdapter(), get_backend_adapter("trino"), get_backend_adapter("ch")]
+)
+def test_adapter_default_payload_preparation_preserves_unowned_input(adapter) -> None:
+    original = pd.DataFrame({"payload": [{"unowned": True}]})
+    assert adapter.prepare_dataframe_payload(original, {"payload": "JSONB"}) is None
+    assert original.iloc[0, 0] == {"unowned": True}
+    assert adapter.load_execution_preview_requires_schema is False
+
+
+def test_gp_owns_its_dataframe_preparation_and_preview_policy() -> None:
+    adapter = get_backend_adapter("gp")
+    original = pd.DataFrame({"payload": [{"owned": True}]})
+    prepared = adapter.prepare_dataframe_payload(original, {"payload": "JSONB"})
+    assert prepared is not None
+    assert prepared.iloc[0, 0] == '{"owned": true}'
+    assert original.iloc[0, 0] == {"owned": True}
+    assert adapter.load_execution_preview_requires_schema is True
+
+
 def test_default_insertability_hook_keeps_extension_adapters_network_free() -> None:
     adapter = MinimalContractAdapter()
     assert (

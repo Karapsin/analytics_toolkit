@@ -11,7 +11,22 @@ from analytics_toolkit.sql.connection.validation import close_validation_resourc
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
+
+    import pandas as pd
+
+
+class DataframePreparationPolicy:
+    """Default policies leave dataframe payloads and execution previews alone."""
+
+    load_execution_preview_requires_schema: bool = False
+
+    def prepare_dataframe_payload(
+        self, df: pd.DataFrame, schema: Mapping[str, str] | None
+    ) -> pd.DataFrame | None:
+        """Backends without an owned payload codec need no prepared frame."""
+        del self, df, schema
+        return None
 
 
 def column_list_sql(self: Any, columns: Sequence[str]) -> str:

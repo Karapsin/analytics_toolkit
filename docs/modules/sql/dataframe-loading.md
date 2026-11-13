@@ -73,6 +73,9 @@ UUIDs and aware timestamps use the text representation required by Hive stages.
 `key_columns` lets the load validate staged rows against an existing target
 before final insertion. Use it when duplicate keys in append-like flows would be
 more expensive to fix after the load finishes.
+Key-validated append uses explicit incoming column names in both `INSERT` and
+`SELECT`, including dry-run and returned SQL plans, so valid subsets and reordered
+inputs keep the same mapping as execution.
 
 For `write_mode="upsert"`, `key_columns` is required. Incoming rows are staged
 first and duplicate staged keys raise before finalization. If the target table
@@ -101,6 +104,22 @@ array columns retain their element precision and declared dimensions when
 appending to an existing table. Nested UUIDs, exact decimals and nulls remain
 native; array parameters use the resolved destination type. Quoted custom type
 names retain their exact identity during table introspection.
+
+Greenplum `JSON` and `JSONB`, including their `pg_catalog`-qualified forms,
+accept dictionaries, lists, encoded JSON document strings and supported psycopg2
+`Json` wrappers. Strings retain their document text. Serialization and validation
+finish before target mutation; retained documents are reused on retries, so a
+custom serializer runs once. Malformed documents and values outside the `JSONB`
+Unicode or numeric domain fail early. Python `None` is SQL NULL; the document
+`'null'` and `Json(None)` are JSON null and can satisfy a `NOT NULL` column.
+Explicit JSON previews may serialize and validate once in memory without opening
+a connection.
+
+Declare native SQL array dimensions explicitly, such as `JSONB[][]` for a
+two-dimensional array. Prepared values retain that rank when catalog metadata
+reports `JSONB[]`. The default Greenplum query decoder maps SQL NULL and JSON
+null to `None`; decoded lists and catalog `[]` metadata can also leave the
+original SQL array rank ambiguous.
 
 Trino sends parameterized multi-row insert statements. A connection-level insert
 chunk size can be set in `.connections`, and call-level settings can override

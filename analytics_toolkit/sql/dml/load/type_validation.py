@@ -19,6 +19,8 @@ from analytics_toolkit.sql.core.type_resolution import (
     validate_profile,
 )
 
+from .json_values import prepare_json_dataframe
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -89,6 +91,9 @@ def _validated_dataframe_profiles(
 ) -> dict[str, ColumnProfile]:
     """Return facts about certified outgoing cells without retaining private values."""
     validate_dataframe_columns(df, schema)
+    prepared = prepare_json_dataframe(df, schema, backend)
+    if prepared is not None:
+        df = prepared
     profiles = {}
     for index, name in enumerate(df.columns):
         profile = ColumnProfile(

@@ -23,7 +23,7 @@ from .models import (
 from .utils import extract_row_count
 
 
-class BackendAdapter:
+class BackendAdapter(_common_methods.DataframePreparationPolicy):
     backend: BackendName
     display_name: str
     sqlglot_dialect: str

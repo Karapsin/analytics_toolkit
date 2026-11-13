@@ -10784,6 +10784,29 @@
         "tests/sql/dml/transfer/not_null_targets.py::test_partition_upsert_null_rejects_before_any_partition_mutation"
       ]
     },
+    "audit.load.gp_json.json": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_json.py::test_greenplum_json_existing_and_explicit_loads_preserve_native_values[audit.load.gp_json.json]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_json.py::test_native_json_containers_load_through_real_gp_execute_values",
+        "tests/sql/dml/load/gp_json.py::test_invalid_json_serialization_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.load.gp_json.jsonb": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_json.py::test_greenplum_json_existing_and_explicit_loads_preserve_native_values[audit.load.gp_json.jsonb]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_json.py::test_native_json_containers_load_through_real_gp_execute_values",
+        "tests/sql/dml/load/gp_json.py::test_invalid_json_serialization_rejects_before_clearing_seed_rows",
+        "tests/sql/dml/load/gp_json.py::test_public_native_json_arrays_keep_sql_array_rank_and_json_element_values"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

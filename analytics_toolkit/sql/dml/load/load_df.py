@@ -119,6 +119,13 @@ from ..transfer.runtime.retry import (
     run_with_retry,
 )
 from ..transfer.staging import _sanitize_transfer_staging_username
+from .json_values import (
+    attach_json_dataframe,
+    convert_prepared_load_dataframe,
+    prepare_initial_json_dataframe,
+    prepare_json_dataframe,
+    retain_json_dataframe,
+)
 from .load_sql_table import insert_table_batch
 from .models import LoadOptions, LoadState
 from .stage import (
@@ -212,6 +219,10 @@ def load_df(
         timeout_increment=timeout_increment,
     )
 
+    df, prepared_json_dataframe = prepare_initial_json_dataframe(
+        df, options.table_schema, options.connection_backend
+    )
+
     if dry_run or return_sql:
         return build_load_df_plan(options, df)
 
@@ -224,7 +235,7 @@ def load_df(
     retained_upsert_state: LoadState | None = None
 
     def operation(attempt: int) -> int | SqlOperationResult:
-        nonlocal retained_upsert_state
+        nonlocal retained_upsert_state, prepared_json_dataframe
         state: LoadState | None = retained_upsert_state
         operation_error: Exception | None = None
         try:
@@ -247,12 +258,13 @@ def load_df(
                             connection_ref["connection"],
                         ),
                     )
-                    _validate_load_dataframe(options, df)
-                    if df.empty:
+                    attempt_df = attach_json_dataframe(state, prepared_json_dataframe, df)
+                    _validate_load_dataframe(options, attempt_df)
+                    if attempt_df.empty:
                         empty_result = _handle_empty_dataframe_load(
                             options,
                             state,
-                            df,
+                            attempt_df,
                             operation_metadata=operation_metadata,
                             return_metadata=return_metadata,
                         )
@@ -265,27 +277,12 @@ def load_df(
                             options=options,
                             state=state,
                             connection=connection_ref["connection"],
-                            df=df,
+                            df=attempt_df,
                         ),
                     )
 
-                input_df = (
-                    df.loc[:, list(state.target_column_types or {})]
-                    if options.write_mode == "upsert" and state.original_target_exists
-                    else df
-                )
-                input_schema = (
-                    options.table_schema
-                    or state.target_column_types
-                    or infer_dataframe_write_schema(
-                        df, options.connection_backend, options.destination_context
-                    )
-                )
-                input_df, operation_metadata.type_resolutions = convert_dataframe_schema(
-                    input_df,
-                    input_schema,
-                    options.connection_backend,
-                    destination_timezone=options.destination_context.get("destination_timezone"),
+                input_df, operation_metadata.type_resolutions = convert_prepared_load_dataframe(
+                    options, state, df
                 )
                 progress_bar = _make_load_progress_bar(
                     total=len(df),
@@ -333,6 +330,7 @@ def load_df(
             operation_error = exc
             raise
         finally:
+            prepared_json_dataframe = retain_json_dataframe(state, prepared_json_dataframe)
             retained_upsert_state = _retain_or_cleanup_load(options, state, operation_error)
 
     def context(attempt: int) -> SqlOperationContext:
@@ -681,6 +679,14 @@ def _prepare_load_target(
             options.destination_table,
             connection_key=options.connection_key,
         )
+    if state.prepared_json_dataframe is not None:
+        df = state.prepared_json_dataframe
+    prepared = prepare_json_dataframe(
+        df, options.table_schema or state.target_column_types, options.connection_backend
+    )
+    if prepared is not None:
+        state.prepared_json_dataframe = prepared
+        df = prepared
     zone = prepare_dataframe_write_context(options, state, connection, df)
     null_columns: tuple[str, ...] = ()
     if state.target_column_types is not None:
@@ -1153,6 +1159,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             stage_table=stage_table,
             phase="insert_from_stage",
             query_label=options.query_label,
+            column_types=_incoming_column_types(options, None, df),
         )
         add_cleanup_stage_step(
             plan,
@@ -1193,6 +1200,15 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
 
 
 def _load_df_preview_sql(options: LoadOptions, df: pd.DataFrame) -> str | None:
+    if (
+        get_backend_adapter(options.connection_backend).load_execution_preview_requires_schema
+        and options.table_schema is None
+    ):
+        # Execution discovers existing JSON types before certifying payloads;
+        # its diagnostic preview must not infer or serialize raw adapters.
+        return _build_dataframe_insert_placeholder(
+            options.connection_backend, options.destination_table, df
+        )
     plan = build_load_df_plan(options, df)
     if not plan.sqls:
         return None
@@ -1314,6 +1330,7 @@ def _add_parquet_load_plan_steps(
             stage_table=stage_table,
             phase="insert_from_stage",
             query_label=options.query_label,
+            column_types=_incoming_column_types(options, None, df),
         )
 
     add_cleanup_stage_step(
@@ -1781,10 +1798,10 @@ def _resume_load_upsert(options: LoadOptions, state: LoadState, df: pd.DataFrame
 
 
 def _incoming_column_types(
-    options: LoadOptions, state: LoadState, df: pd.DataFrame
+    options: LoadOptions, state: LoadState | None, df: pd.DataFrame
 ) -> dict[str, str]:
     adapter = get_backend_adapter(options.connection_backend)
-    types = options.table_schema or state.target_column_types or {}
+    types = options.table_schema or (state.target_column_types if state is not None else None) or {}
     return {
         str(column): types.get(str(column)) or adapter.infer_dataframe_column_type(df[column])
         for column in df.columns

@@ -11,6 +11,19 @@ from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
 
 
+def _permits_null(type_name: str) -> bool:
+    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 - native grammar cycle
+        parse_native_type,
+    )
+
+    outer = parse_native_type(type_name)
+    return outer.name == "nullable" or bool(
+        outer.name == "lowcardinality"
+        and outer.arguments
+        and parse_native_type(outer.arguments[0]).name == "nullable"
+    )
+
+
 @lru_cache(maxsize=1024)
 def enum_members(type_name: str) -> tuple[frozenset[str], frozenset[int]]:
     from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 - native grammar cycle

@@ -88,6 +88,8 @@ rows
   before stage creation or target mutation. Backend-supported input columns remain
   available. Valid subset and reordered inputs remain supported
   for `append` and `truncate_insert`; replacement uses its new resolved schema.
+  Key-validated append plans name incoming columns explicitly in both `INSERT`
+  and `SELECT`, matching execution.
 - Nonempty `append`, `truncate_insert` and `upsert` inputs reject converted SQL
   nulls for `NOT NULL` columns and omitted required columns before target mutation.
   Backend-supported append/truncate omissions, complete-row upsert requirements
@@ -97,6 +99,16 @@ rows
   their normal conversion rules.
 - Explicit or existing integer columns convert accepted boolean scalars to native
   `0`/`1`; automatic boolean and integer inference retain their respective types.
+- Greenplum `JSON`/`JSONB` and their `pg_catalog`-qualified forms preserve native
+  dictionaries/lists, encoded document strings and supported `Json` wrappers.
+  The validated serialized documents are retained through retries; custom
+  serializers run once. Invalid JSON or stricter existing `JSONB` constraints
+  reject before mutation. Python `None` remains SQL NULL, while `'null'` and
+  `Json(None)` are JSON null. Explicit JSON previews validate in memory without
+  opening a connection.
+- Explicit native JSON array dimensions, such as `JSONB[][]`, survive catalog
+  metadata reporting `JSONB[]`. See the [backend notes](../dataframe-loading.md#backend-notes)
+  for the default query decoder's JSON-null and array-rank limitations.
 - An empty dataframe follows `empty_source_policy`. Empty replacement creates a zero-row table with the requested schema. Pass `table_schema` when an empty object-typed column has no unambiguous backend type.
 - `write_mode="upsert"` stages incoming rows and rejects duplicate staged keys
   before any target mutation.
