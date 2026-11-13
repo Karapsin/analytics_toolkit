@@ -89,6 +89,11 @@ keys; authoritative maps reject such collisions before target mutation instead
 of discarding an entry. Map-key identity also uses the destination types inside
 composite `ROW` keys,
 so padding or rounding in a field cannot silently merge entries.
+
+When Python serializes dataframe values to text, authoritative width checks use
+the complete encoded strings, including structured-text metadata. Oversized
+values fail before target creation or mutation.
+
 Existing or explicit `TIMESTAMP(p)` destinations above precision six preserve
 every available fractional digit when
 the connector supports that precision. Inference retains its supported connector

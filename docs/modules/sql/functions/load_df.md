@@ -91,6 +91,8 @@ rows
   columns fail before stage creation or target mutation; reordered complete rows
   are loaded in target order. Explicit `table_schema` and existing target types
   remain authoritative and are validated against the complete dataframe.
+  When Python serializes values to text, their complete encoded strings must
+  fit the authoritative widths before target creation or mutation.
 - Existing ClickHouse upserts bind target preservation reads, partition mutation,
   final inserts and prepared-payload replay to the same verified physical storage
   scope; caller creation policy still controls new stages. Offline

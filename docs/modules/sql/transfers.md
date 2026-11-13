@@ -364,6 +364,12 @@ Greenplum text columns reject raw bytes, NUL and invalid Unicode before mutation
 SQL NULL remains NULL. Mixed naive/aware
 timestamps use typed text without assigning a timezone to naive values.
 
+At execution, bounded text columns validate the complete string encoded in
+Python, including source backend/type metadata in structured JSON. An encoded
+value that exceeds an explicit or existing width fails before target creation
+or data mutation. Native stage values handled by SQL casts retain the backend's
+cast semantics.
+
 Nested inference also tries native Trino `ARRAY`, `MAP` and `ROW`, and native
 Greenplum arrays. Greenplum arrays must be rectangular within each value;
 ragged arrays, NULL or empty subarrays, and unsupported dimensions use typed

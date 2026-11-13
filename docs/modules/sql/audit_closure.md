@@ -177,4 +177,18 @@ The disposable scenario `audit.clickhouse.column_ttl_reconfigure` in
 `integration/core/audit_reconfiguration.py::test_local_to_pair_keeps_column_ttl_only_on_physical_storage`
 checks facade/shard DDL and unexpired rows; it was not run locally.
 
+Complete encoded-text bounds are covered by
+`core/conversion_profiles.py::test_converted_profile_measures_complete_structured_text`,
+`dml/transfer/schema/text_width.py::test_new_bounded_target_rejects_metadata_expanded_structured_text_before_creation`,
+`dml/transfer/schema/text_width.py::test_exact_structured_text_width_is_accepted_without_changing_schema`,
+`dml/transfer/schema/text_width.py::test_explicit_text_stage_rejects_overflow_even_when_existing_target_is_wider`,
+`dml/load/encoded_text_bounds.py::test_encoded_dataframe_overflow_rejects_before_any_target_mutation`,
+and `dml/load/encoded_text_bounds.py::test_encoded_dataframe_exact_bound_keeps_sql_null_and_typed_text`.
+Python-encoded values must fit their own authoritative schema before target
+creation or mutation, including structured-text metadata. Native SQL cast
+semantics remain unchanged. The disposable cases
+`audit.transfer.encoded_varchar.gp` and `audit.transfer.encoded_varchar.trino` in
+`integration/core/audit_encoded_values.py::test_complete_structured_encoding_is_validated_before_creating_a_bounded_target`
+cover rejection before CREATE and exact-width success; they were not run locally.
+
 [SQL module index](index.md)

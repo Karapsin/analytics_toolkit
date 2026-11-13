@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.conversion_profiles import validate_converted_rows
 from analytics_toolkit.sql.backends.models import SourceColumn
 from analytics_toolkit.sql.backends.stage_ownership import single_resource_policy
 from analytics_toolkit.sql.connection.config import get_connection_config
@@ -33,7 +34,10 @@ from analytics_toolkit.sql.dml.destination_context import freeze_destination_tim
 from analytics_toolkit.sql.dml.load.stage import cleanup_stage_table
 from analytics_toolkit.sql.dml.table.table_validation import validate_complete_upsert_columns
 from analytics_toolkit.sql.dml.transfer.flow import row_counts
-from analytics_toolkit.sql.dml.transfer.flow.conversion_validation import validate_final_conversions
+from analytics_toolkit.sql.dml.transfer.flow.conversion_validation import (
+    resolve_final_conversions,
+    validate_final_conversions,
+)
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
     disable_query_limit_for_transfer_reads,
 )
@@ -441,35 +445,24 @@ def _validate_resolved_input(
     spool: ReplaySpool,
     resolutions: list[ResolvedColumn],
 ) -> None:
-    profiles = [
-        ColumnProfile(
-            native_type=item.target_type,
-            source_backend=options.to_db_backend,
-            destination_timezone=options.input_resolution.get("destination_timezone"),
-            temporal_type=item.target_type,
-        )
-        for item in resolutions
-    ]
     try:
-        for row in spool.iter_rows():
-            raise_if_cancelled()
-            for profile, resolution, value in zip(profiles, resolutions, row):
-                profile.add(resolution.convert(value))
+        profiles = validate_converted_rows(
+            spool.iter_rows(),
+            resolutions,
+            backend=options.to_db_backend,
+            destination_timezone=options.input_resolution.get("destination_timezone"),
+        )
     except (TypeError, ValueError, OverflowError):
         _reject("Selected input cannot be converted to the resolved destination schema.")
-    if state.insert_column_types is not None:
-        targets = [
-            resolve_column_type(
-                SourceColumn(column.name, resolution.target_type),
-                options.to_db_backend,
-                profile,
-                source_backend=options.to_db_backend,
-                authoritative_type=state.insert_column_types[column.name],
-                allow_timestamp_precision_loss=False,
-                destination_timezone=options.input_resolution.get("destination_timezone"),
-            )
-            for column, profile, resolution in zip(schema.columns, profiles, resolutions)
-        ]
+    targets = resolve_final_conversions(
+        schema.columns,
+        resolutions,
+        profiles,
+        backend=options.to_db_backend,
+        existing_types=state.insert_column_types,
+        destination_timezone=options.input_resolution.get("destination_timezone"),
+    )
+    if targets is not None:
         try:
             validate_final_conversions(spool, resolutions, targets)
         except (TypeError, ValueError, OverflowError):

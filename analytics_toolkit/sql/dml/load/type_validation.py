@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from analytics_toolkit.sql.backends.conversion_profiles import validate_converted_rows
 from analytics_toolkit.sql.core.type_resolution import (
     ColumnProfile,
     ResolvedColumn,
@@ -60,8 +61,12 @@ def validate_dataframe_schema(
         resolution = ResolvedColumn(
             schema[str(name)], target_backend=backend, destination_timezone=destination_timezone
         )
-        for value in df.iloc[:, index]:
-            resolution.convert(_schema_value(value, schema[str(name)]))
+        validate_converted_rows(
+            ((_schema_value(value, schema[str(name)]),) for value in df.iloc[:, index]),
+            [resolution],
+            backend=backend,
+            destination_timezone=destination_timezone,
+        )
 
 
 def convert_dataframe_schema(

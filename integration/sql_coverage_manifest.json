@@ -10576,6 +10576,30 @@
         "tests/sql/dml/transfer/row_batches/gp_key_literals.py::test_keyed_transfer_selects_timestamp_row_by_emitted_literal_semantics"
       ]
     },
+    "audit.transfer.encoded_varchar.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_encoded_values.py::test_complete_structured_encoding_is_validated_before_creating_a_bounded_target[audit.transfer.encoded_varchar.gp]",
+      "backends": [
+        "ch",
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/schema/text_width.py::test_new_bounded_target_rejects_metadata_expanded_structured_text_before_creation",
+        "tests/sql/dml/transfer/schema/text_width.py::test_exact_structured_text_width_is_accepted_without_changing_schema"
+      ]
+    },
+    "audit.transfer.encoded_varchar.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_encoded_values.py::test_complete_structured_encoding_is_validated_before_creating_a_bounded_target[audit.transfer.encoded_varchar.trino]",
+      "backends": [
+        "ch",
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/schema/text_width.py::test_new_bounded_target_rejects_metadata_expanded_structured_text_before_creation",
+        "tests/sql/dml/transfer/schema/text_width.py::test_exact_structured_text_width_is_accepted_without_changing_schema"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

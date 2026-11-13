@@ -331,8 +331,12 @@ rows = sql.transfer(
   timezone-aware GP/Trino types when precision fits. See [type conversion](../transfers.md#types).
 - Text fallback preserves NULL, fixed-point decimal text, base-10 integer text,
   ISO dates and full-precision timestamps (aware instants normalized to UTC).
-  Structured values use versioned typed JSON with ordered map pairs. Supported
-  binary representations stay binary; otherwise bytes use a `base64:` prefix.
+  Structured values use versioned typed JSON with source backend/type metadata
+  and ordered map pairs. At execution, bounded text widths validate the complete
+  Python-encoded string, including that metadata, before target creation or data
+  mutation. Native stage values handled by SQL casts retain backend cast
+  semantics. Supported binary representations stay binary; otherwise bytes use a
+  `base64:` prefix.
   Optional metadata reports the types, conversion reason, encoding version and
   certified input count without reporting private values. Dry-run plans never
   profile or spool query results: `type_resolution_pending` and native
