@@ -25,6 +25,9 @@ def inspect_outage_layout(session: Any, table_name: str) -> ExistingClickHouseLa
     if not database:
         message = "A database is required for existing-layout inspection."
         raise ClickHouseClusterTopologyError(message)
+    if not table.db:
+        table.set("db", exp.to_identifier(database))
+    logical_table = table.sql(dialect=ClickHouseDialect)
     cluster = configured_cluster(session.config) if session.config.cluster_routing else None
     objects = (
         session.scope(cluster).objects(database, table.name)
@@ -38,8 +41,8 @@ def inspect_outage_layout(session: Any, table_name: str) -> ExistingClickHouseLa
     original = objects[0]
     if original.engine.lower() != "distributed":
         return ExistingClickHouseLayout(
-            logical_table=table_name,
-            physical_table=table_name,
+            logical_table=logical_table,
+            physical_table=logical_table,
             create_distributed_pair=False,
             shard_on_cluster=physical_scope,
             distributed_on_cluster=None,
@@ -59,7 +62,7 @@ def inspect_outage_layout(session: Any, table_name: str) -> ExistingClickHouseLa
         f"{quote_identifier(reference.database, 'ch')}.{quote_identifier(reference.table, 'ch')}"
     )
     return ExistingClickHouseLayout(
-        logical_table=table_name,
+        logical_table=logical_table,
         physical_table=physical,
         create_distributed_pair=True,
         shard_on_cluster=reference.cluster,

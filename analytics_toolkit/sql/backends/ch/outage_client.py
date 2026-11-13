@@ -41,6 +41,7 @@ from .routing import (
     _RoutingClickHouse,
 )
 from .upsert_context import verified_local_partition_alter
+from .upsert_storage import apply_upsert_write_key, upsert_write_scope
 
 _CLUSTER_REQUIRED_ARGS = 3
 _DESCRIBE_DEFAULT_FIELDS = 3
@@ -315,7 +316,9 @@ class OutageClient:
                     source_delegate = self._delegate(session, source_routing)
                     if isinstance(source_delegate, ClusterRoutingClient):
                         source = parse_one(
-                            source_delegate.route(source.sql(dialect="clickhouse")),
+                            source_delegate.route(
+                                source.sql(dialect="clickhouse"), upsert_connection=self
+                            ),
                             read=_RoutingClickHouse,
                         )
                         statement.set("expression", source)
@@ -339,6 +342,7 @@ class OutageClient:
                 routing = ChClusterRouting(cluster, sharding_key=function_key)
             else:
                 routing = None if _LOCAL_SQL_EXECUTION.get() else session.infer_routing(statement)
+            routing, target = upsert_write_scope(self, statement, routing, target)
             mutation = writing or destructive or isinstance(statement, exp.Create)
             clusters = (
                 special[1]
@@ -441,7 +445,7 @@ class OutageClient:
                 raise ClickHouseClusterTopologyError(msg)  # noqa: TRY301 - preserve relay artifacts
             delegate = self._delegate(session, routing)
             execution_sql = (
-                delegate.route(sql)
+                delegate.route(sql, upsert_connection=self)
                 if isinstance(delegate, ClusterRoutingClient) and special is None
                 else sql
             )
@@ -451,6 +455,7 @@ class OutageClient:
                     session.resolve(cluster=routing.cluster, database=target[0], table=target[1])
                 if function_target is not None:
                     session.insert_key = function_target[3]
+                apply_upsert_write_key(self, session, target)
                 settings = session.insertion_settings()
                 self._settings(session, kwargs, settings)
                 self._check_inline_settings(statement, settings)

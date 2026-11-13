@@ -4,7 +4,7 @@ import re
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import sqlglot
@@ -25,6 +25,7 @@ from .dialect import ClickHouseDialect
 from .managed_routing import ManagedPairResolver, ManagedTableRoute
 from .outage_context import LOGICAL_STATISTICS, WRITING
 from .source_binding import preserve_source_bindings
+from .upsert_storage import upsert_storage_resolver
 
 _RoutingClickHouse = ClickHouseDialect
 
@@ -394,14 +395,18 @@ class ClusterRoutingClient:
     def close(self) -> None:
         self._client.close()
 
-    def route(self, sql: str) -> str:
+    def route(self, sql: str, *, upsert_connection: object | None = None) -> str:
         if _LOCAL_SQL_EXECUTION.get():
             return sql
         return route_sql(
             sql,
             routing=self._routing,
             database=self._database,
-            managed_pair_resolver=self._managed_pairs,
+            managed_pair_resolver=upsert_storage_resolver(
+                self if upsert_connection is None else upsert_connection,
+                self._managed_pairs,
+                self._routing.sharding_key,
+            ),
         )
 
     def _insert_route(self, table_name: str) -> _BinaryInsertRoute:
@@ -581,7 +586,7 @@ def _normalize_explicit_cluster_tables(
         else:
             sharding_key = trailing[0].sql(dialect="clickhouse") if trailing else None
             replacement = _cluster_table(
-                explicit_function_cluster,
+                managed_route.cluster or explicit_function_cluster,
                 managed_route.database,
                 managed_route.table,
                 sharding_key=sharding_key,
@@ -614,6 +619,7 @@ def _replace_source_table(
     if managed_route is not None and managed_route.mode == "local":
         return
     if managed_route is not None:
+        cluster = managed_route.cluster or cluster
         database = managed_route.database
         relation = managed_route.table
     function_name = _route_function_name(managed_route, relation, database)
@@ -702,6 +708,7 @@ def _routed_table_from_table(
     if managed_route is not None and managed_route.mode == "local":
         return table.copy(), False
     if managed_route is not None:
+        route = replace(route, cluster=managed_route.cluster or route.cluster)
         database = managed_route.database
         relation = managed_route.table
     return (
@@ -709,7 +716,11 @@ def _routed_table_from_table(
             route.cluster,
             database,
             relation,
-            sharding_key=getattr(managed_route, "sharding_key", None) or route.sharding_key,
+            sharding_key=(
+                managed_route.sharding_key
+                if managed_route is not None and managed_route.cluster is not None
+                else getattr(managed_route, "sharding_key", None) or route.sharding_key
+            ),
             function_name=_route_function_name(managed_route, relation, database),
         ),
         True,

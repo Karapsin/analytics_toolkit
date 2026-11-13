@@ -8,6 +8,7 @@ from analytics_toolkit.sql.connection.errors import (
     ClickHouseClusterTopologyError,
     InvalidSqlInputError,
 )
+from sqlglot import exp, parse_one
 
 layout = importlib.import_module("analytics_toolkit.sql.backends.ch.layout")
 outage = importlib.import_module("analytics_toolkit.sql.backends.ch.outage_layout")
@@ -112,3 +113,39 @@ def test_outage_layout_rejects_dynamic_reference_without_claiming_storage_owners
     dynamic = table(engine_full="Distributed('core', currentDatabase())")
     with pytest.raises(ClickHouseClusterTopologyError, match="Cannot verify managed"):
         outage.inspect_outage_layout(session_for([dynamic]), "db.events")
+
+
+@pytest.mark.parametrize("pair", [False, True])
+def test_unqualified_target_snapshot_keeps_verified_logical_and_physical_namespaces(pair):
+    class Client:
+        def query(self, sql):
+            if sql == "SHOW CREATE TABLE events":
+                engine = (
+                    "Distributed('storage', 'other.db', 'events', id)"
+                    if pair
+                    else "MergeTree ORDER BY id"
+                )
+                ddl = f'CREATE TABLE "current.db".events (id Int64) ENGINE = {engine}'
+            elif "create_table_query" in sql:
+                ddl = 'CREATE TABLE "other.db".events (id Int64) ENGINE = MergeTree ORDER BY id'
+            else:
+                pytest.fail(f"Unexpected metadata query: {sql}")
+            return SimpleNamespace(result_rows=[(ddl,)])
+
+    snapshot = layout.inspect_existing_layout(Client(), "events")
+    logical = parse_one(snapshot.logical_table, read="clickhouse", into=exp.Table)
+    physical = parse_one(snapshot.physical_table, read="clickhouse", into=exp.Table)
+    assert (logical.db, logical.name) == ("current.db", "events")
+    assert (physical.db, physical.name) == ("other.db" if pair else "current.db", "events")
+    assert snapshot.shard_on_cluster == ("storage" if pair else None)
+
+
+def test_outage_unqualified_local_snapshot_uses_exact_current_database_identity():
+    snapshot = outage.inspect_outage_layout(
+        session_for([table("MergeTree")], database="current.db"), "events"
+    )
+    logical = parse_one(snapshot.logical_table, read="clickhouse", into=exp.Table)
+    physical = parse_one(snapshot.physical_table, read="clickhouse", into=exp.Table)
+    assert (logical.db, logical.name) == ("current.db", "events")
+    assert (physical.db, physical.name) == ("current.db", "events")
+    assert snapshot.shard_on_cluster is None

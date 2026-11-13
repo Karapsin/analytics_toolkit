@@ -24,11 +24,18 @@ from sqlglot import exp, parse_one
 from tests.conftest import DEFAULT_SQL_CONNECTIONS
 from tests.sql._support.load_table import load_df_module
 from tests.sql._support.outage import Client, Cluster
+from tests.sql._support.upsert_scope import (
+    EXPECTED_ROWS,
+    INCOMING_ROWS,
+    UNRELATED_ROWS,
+    StatefulUpsertClient,
+)
 
 
 @pytest.fixture(autouse=True)
 def configured_creation_scopes(write_sql_connections):
     connections = deepcopy(DEFAULT_SQL_CONNECTIONS)
+    connections["ch"]["database"] = "db"
     defaults = connections["ch"]["ddl_defaults"]
     defaults["regular"]["shard"]["on_cluster"] = "caller_a"
     defaults["regular"]["distributed"]["cluster"] = "caller_a"
@@ -269,8 +276,9 @@ def test_transfer_upsert_dry_plan_defers_existing_storage_verification(monkeypat
     assert all("storage_b" not in statement for statement in partitions)
 
 
-def test_routed_local_upsert_keeps_partition_mutation_local_and_routes_population():
-    raw = ExistingStorageClient(local=True)
+@pytest.mark.parametrize("local", [False, True])
+def test_routed_upsert_preserves_target_rows_and_unrelated_scope(local):
+    raw = StatefulUpsertClient(local=local)
     client = ClusterRoutingClient(raw, routing=ChClusterRouting("caller_a"), database="db")
     options = TransferOptions(
         from_db_key="gp",
@@ -300,13 +308,9 @@ def test_routed_local_upsert_keeps_partition_mutation_local_and_routes_populatio
         fresh_clickhouse_target=False,
         target_connection_runner=lambda _role, operation: operation({"connection": client}),
     )
-    assert_verified_mutation_only(raw)
-    population = [statement for statement in raw.commands if statement.startswith("INSERT")]
-    assert population
-    assert any("FROM cluster('caller_a'" in statement for statement in population)
-    assert any(
-        "INSERT INTO FUNCTION" in statement and "caller_a" in statement for statement in population
-    )
+    assert sorted(raw.rows[raw.target]) == sorted(EXPECTED_ROWS)
+    assert raw.rows[raw.unrelated] == UNRELATED_ROWS
+    assert sorted(raw.rows[("caller_a", "payload")]) == sorted(EXPECTED_ROWS[:-1])
 
 
 @pytest.mark.parametrize("routed", [False, True])
@@ -432,8 +436,14 @@ def test_upsert_stage_default_checkpoint_preserves_payload_before_verified_parti
     assert "events" in publication
     assert "payload" in publication
     if local:
-        assert "INSERT INTO FUNCTION" in publication
-        assert "caller_a" in publication
+        target, source_query = StatefulUpsertClient._insert_parts(publication)
+        assert target.db == "db"
+        assert target.name == "events"
+        assert isinstance(target.this, exp.Identifier)
+        stage_source = source_query.args["from_"].this.this
+        assert isinstance(stage_source, exp.Anonymous)
+        assert stage_source.expressions[0].this == "caller_a"
+        assert stage_source.expressions[2].this == "payload"
 
 
 class StringPartitionClient(ExistingStorageClient):
@@ -513,3 +523,37 @@ def test_unknown_partition_values_keep_only_the_synthetic_dry_plan_marker():
     assert len(statements) == 1
     assert statements[0].endswith("DROP PARTITION <affected partition value>")
     assert "'<affected partition value>'" not in statements[0]
+
+
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("table_name", ["db.events", "events"])
+def test_load_df_upsert_keeps_all_target_operations_on_verified_storage(
+    monkeypatch, local, table_name
+):
+    raw = StatefulUpsertClient(local=local)
+    client = ClusterRoutingClient(raw, routing=ChClusterRouting("caller_a"), database="db")
+    stages = iter(["db.incoming", "db.payload"])
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda _key: client)
+    monkeypatch.setattr(load_df_module, "create_stage_table", lambda **_kwargs: next(stages))
+    monkeypatch.setattr(load_df_module, "_create_load_target_table", lambda *_a, **_k: None)
+    monkeypatch.setattr(load_df_module, "cleanup_stage_table_with_retry", lambda *_a, **_k: None)
+
+    def insert_stage(_backend, _connection, table, batch, **_kwargs):
+        raw.rows[("caller_a", table.split(".")[-1])] = list(
+            batch.itertuples(index=False, name=None)
+        )
+        return len(batch)
+
+    monkeypatch.setattr(load_df_module, "insert_table_batch", insert_stage)
+    assert sql.load_df(
+        "ch",
+        table_name,
+        pd.DataFrame(INCOMING_ROWS, columns=["id", "month", "value"]),
+        write_mode="upsert",
+        key_columns="id",
+        upsert_partition_column="month",
+        retry_cnt=1,
+    ) == len(INCOMING_ROWS)
+    assert sorted(raw.rows[raw.target]) == sorted(EXPECTED_ROWS)
+    assert raw.rows[raw.unrelated] == UNRELATED_ROWS
+    assert sorted(raw.rows[("caller_a", "payload")]) == sorted(EXPECTED_ROWS[:-1])

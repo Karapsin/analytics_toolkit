@@ -254,7 +254,7 @@ def upsert_stage_table(
         # The first two statements preserve untouched rows and add incoming rows.
         # Certify that complete payload before any partition drop is submitted.
         for sql in sqls[:2]:
-            adapter.execute_command(connection, sql)
+            adapter.execute_upsert_command(connection, target_table, sql)
         checkpoint.final_stage_table = final_stage_table
         checkpoint.target_table = target_table
         checkpoint.backend = backend

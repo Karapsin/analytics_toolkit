@@ -124,7 +124,7 @@ def test_finalize_stage_table_clickhouse_only_shard_upsert_deletes_target() -> N
     )
 
     drop_sql = next(sql for sql in client.commands if "DROP PARTITION" in sql)
-    assert drop_sql == f"ALTER TABLE {TEST_CH_TABLE} DROP PARTITION 1"
+    assert drop_sql == f"ALTER TABLE default.{TEST_CH_TABLE} DROP PARTITION 1"
     assert "ON CLUSTER" not in drop_sql
 
 

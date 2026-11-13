@@ -60,9 +60,11 @@ def _inspect_existing_layout_local(
         ddl = show_create_table_on_cluster(connection, table, cluster)
     create = parse_create_table(ddl, table)
     if engine_name(create).lower() != "distributed":
+        database = unquoted_table_name(table)[0] or table_database(connection, create)
+        qualified = qualify_with_database(table, database)
         return ExistingClickHouseLayout(
-            logical_table=table,
-            physical_table=table,
+            logical_table=qualified,
+            physical_table=qualified,
             create_distributed_pair=False,
             shard_on_cluster=shard_on_cluster,
             distributed_on_cluster=None,
@@ -90,7 +92,7 @@ def _inspect_existing_layout_local(
     require_merge_tree(physical_create, physical)
     owns_physical = owns_physical and _column_identity(create) == _column_identity(physical_create)
     return ExistingClickHouseLayout(
-        logical_table=table,
+        logical_table=qualified,
         physical_table=physical,
         create_distributed_pair=True,
         shard_on_cluster=shard_on_cluster or reference.cluster,

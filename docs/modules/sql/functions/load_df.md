@@ -91,8 +91,9 @@ rows
   columns fail before stage creation or target mutation; reordered complete rows
   are loaded in target order. Explicit `table_schema` and existing target types
   remain authoritative and are validated against the complete dataframe.
-- Existing ClickHouse upserts verify both the physical target and its mutation
-  scope at execution; caller creation policy still controls new stages. Offline
+- Existing ClickHouse upserts bind target preservation reads, partition mutation,
+  final inserts and prepared-payload replay to the same verified physical storage
+  scope; caller creation policy still controls new stages. Offline
   `dry_run`/`return_sql` plans open no connection and set
   `plan.options["pending_existing_layout_verification"] = True`. Their provisional
   partition SQL uses the requested policy until the existing layout is verified.

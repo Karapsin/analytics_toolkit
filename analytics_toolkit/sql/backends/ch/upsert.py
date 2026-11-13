@@ -11,6 +11,7 @@ from analytics_toolkit.sql.backends.utils import sql_literal
 from .dialect import ClickHouseDialect, sql_string_literal
 from .routing import local_sql
 from .upsert_context import verified_local_upsert
+from .upsert_storage import verified_upsert_storage
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -56,11 +57,25 @@ def resolve_upsert_execution_sqls(
 
 def execute_upsert_command(adapter: Any, connection: Any, table_name: str, sql: str) -> Any:
     from .layout import inspect_existing_layout  # noqa: PLC0415 -- backend registry cycle.
+    from .reconfigure_ddl import (  # noqa: PLC0415 -- DDL parsing imports backend registry helpers.
+        _distributed_sharding_key,
+        parse_create_table,
+    )
 
+    layout = inspect_existing_layout(connection, table_name)
+    sharding_key = (
+        _distributed_sharding_key(parse_create_table(layout.ddl, layout.logical_table))
+        if layout.create_distributed_pair
+        else None
+    )
+    with verified_upsert_storage(connection, layout, sharding_key=sharding_key):
+        return _execute_upsert_on_storage(adapter, connection, layout, sql)
+
+
+def _execute_upsert_on_storage(adapter: Any, connection: Any, layout: Any, sql: str) -> Any:
     tree = parse_one(sql, read=ClickHouseDialect)
     if not isinstance(tree, exp.Alter):
         return adapter.execute_command(connection, sql)
-    layout = inspect_existing_layout(connection, table_name)
     tree.set("this", exp.to_table(layout.physical_table, dialect=ClickHouseDialect))
     tree.set(
         "cluster",

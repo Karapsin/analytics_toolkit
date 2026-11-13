@@ -33,6 +33,7 @@ class ManagedTableRoute:
     mode: RouteMode
     engine: str | None = None
     sharding_key: str | None = None
+    cluster: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,17 @@ class ManagedPairResolver:
             route = self._inspect_route(cluster=cluster, database=database, table=table)
             self._cache[key] = route
             return route
+
+    def resolve_physical(self, *, cluster: str, database: str, table: str) -> ManagedTableRoute:
+        """Validate explicitly verified storage without interpreting a coordinator facade."""
+        objects, replicas = self._read_consistent_cluster_object(
+            cluster=cluster, database=database, table=table, allow_incomplete=False
+        )
+        engine = objects[0].engine
+        if not engine.lower().endswith("mergetree"):
+            message = "Verified upsert storage must retain its MergeTree engine."
+            raise ClickHouseClusterTopologyError(message)
+        return ManagedTableRoute(database, table, self._route_mode(engine, replicas), engine)
 
     def _inspect_route(
         self,

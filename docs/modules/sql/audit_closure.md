@@ -147,7 +147,12 @@ Existing-storage upsert scope and offline planning are additionally covered by
 `dml/load/upsert_storage_scope.py::test_outage_checkpoint_replay_respects_verified_local_or_selected_cluster_scope`,
 `dml/load/upsert_storage_scope.py::test_upsert_dry_plan_keeps_desired_scope_without_querying_existing_storage`,
 and `dml/load/upsert_storage_scope.py::test_transfer_upsert_dry_plan_defers_existing_storage_verification`.
-Live mutation uses the verified physical table and scope; offline plans preserve
+Target preservation reads, partition mutation, final inserts and prepared-payload
+replay use the same verified physical storage scope; stage policies remain
+independent. Stateful coverage is provided by
+`dml/load/upsert_storage_scope.py::test_routed_upsert_preserves_target_rows_and_unrelated_scope`
+and `dml/load/upsert_storage_scope.py::test_load_df_upsert_keeps_all_target_operations_on_verified_storage`.
+Offline plans preserve
 desired policy and explicitly defer existing-layout verification. The existing
 disposable `audit.upsert.ch` scenario also covers actual storage cluster `B`
 with an invalid desired caller cluster `A` and independent local staging on both

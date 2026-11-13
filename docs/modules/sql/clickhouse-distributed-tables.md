@@ -257,13 +257,13 @@ pair, not a new target: reconcile it before loading. Healthy-only `IF NOT EXISTS
 creation checks the complete definition, including engine, keys, indexes and
 settings; conflicting definitions are rejected. Appends to verified existing
 targets use their established definitions instead of recreating them from defaults.
-Existing-target upserts likewise resolve the physical table and partition-mutation
-cluster from the verified storage layout. A facade referencing storage on cluster
+Existing-target upserts bind target preservation reads, partition mutation, final
+inserts and prepared-payload replay to the same verified physical storage scope. A facade referencing storage on cluster
 `B` therefore mutates that storage even when caller creation settings name `A`.
 A scope verified through a cluster retains that cluster; coordinator-local or
-fallback storage keeps partition mutation local, without inheriting DDL defaults
-or automatic routing. Stage creation and logical population retain their separate
-policies. Offline upsert plans set `pending_existing_layout_verification=True`;
+fallback storage keeps every target-storage operation local, without inheriting
+DDL defaults or automatic routing. Stage creation and stage-source routing retain
+their independent policies. Offline upsert plans set `pending_existing_layout_verification=True`;
 their provisional SQL uses the requested policy and does not inspect the existing
 layout until execution.
 Replace-style loads also prove absence in the resolved per-call creation scopes,
