@@ -113,6 +113,10 @@ rows
   whole minutes within ±14 hours, and unresolved named zones fail before mutation.
   Nonempty native `TIME` payloads require native insertion; valid omitted nullable
   columns and empty-input policies retain their existing behavior.
+- Trino map-key clocks use destination SQL identity, recursively inside `ROW`
+  keys. `TIME` keys use wall-clock payloads without offsets; aware
+  `TIME WITH TIME ZONE` keys retain offsets and compare modulo a UTC day.
+  Naive zoned map keys reject before mutation. Scalar cast policy is unchanged.
 - Greenplum `JSON`/`JSONB` and their `pg_catalog`-qualified forms preserve native
   dictionaries/lists, encoded document strings and supported `Json` wrappers.
   The validated serialized documents are retained through retries; custom

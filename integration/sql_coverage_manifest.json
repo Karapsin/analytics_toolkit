@@ -10845,6 +10845,17 @@
         "tests/sql/dml/load/trino_time_values.py::test_parquet_append_omitting_nullable_time_stages_only_incoming_columns"
       ]
     },
+    "audit.load.trino_time_map_keys": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_time_values.py::test_trino_time_map_keys_are_certified_before_clearing_existing_rows",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_time_map_keys.py::test_trino_time_map_cast_collision_cannot_clear_existing_rows",
+        "tests/sql/dml/load/trino_time_map_keys.py::test_trino_time_map_rounding_keeps_distinct_native_wall_clocks"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

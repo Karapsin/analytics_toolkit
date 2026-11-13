@@ -25,6 +25,7 @@ _NATIVE_PRECISION = 6
 @dataclass(frozen=True)
 class _TimeType:
     precision: int
+    with_timezone: bool = False
 
 
 @dataclass(frozen=True)
@@ -46,11 +47,18 @@ class _ClockZoneSnapshot(dt.tzinfo):
 @lru_cache(maxsize=1024)
 def _time_type(native_type: str) -> _TimeType | None:
     match = re.fullmatch(
-        r"time\s*(?:\(\s*(\d+)\s*\))?(?:\s+(?:with|without)\s+time\s+zone)?",
+        r"time\s*(?:\(\s*(\d+)\s*\))?(?:\s+(with|without)\s+time\s+zone)?",
         native_type.strip(),
         flags=re.IGNORECASE,
     )
-    return _TimeType(int(match[1]) if match[1] is not None else 3) if match else None
+    return (
+        _TimeType(
+            int(match[1]) if match[1] is not None else 3,
+            with_timezone=(match[2] or "").lower() == "with",
+        )
+        if match
+        else None
+    )
 
 
 def is_time_type(native_type: str) -> bool:
@@ -172,6 +180,45 @@ def convert_time_value(value: Any, native_type: str) -> dt.time | None:
     hour, seconds = divmod(seconds, 3600)
     minute, second = divmod(seconds, 60)
     return dt.time(hour, minute, second, fraction, tzinfo=value.tzinfo, fold=value.fold)
+
+
+def time_key_value_and_identity(
+    value: Any, native_type: str | None
+) -> tuple[bool, dt.time | None, int | None]:
+    """Return a lossless key payload and its native Trino equality identity."""
+    if not is_time_type(native_type or ""):
+        return False, None, None
+    native_type = native_type or ""
+    spec = _checked_type(native_type)
+    value = convert_time_value(value, native_type)
+    if value is None:
+        message = "Trino TIME map keys cannot be NULL."
+        raise ValueError(message)
+    ticks = (value.hour * 3600 + value.minute * 60 + value.second) * 10**6 + value.microsecond
+    if spec.with_timezone:
+        offset = value.utcoffset()
+        if offset is None:
+            message = (
+                "Cannot certify Trino TIME WITH TIME ZONE map keys without a fixed UTC offset; "
+                "the native cast uses the session timezone at query start."
+            )
+            raise ValueError(message)
+        ticks -= (offset.days * 86400 + offset.seconds) * 10**6 + offset.microseconds
+    ticks %= _DAY_MICROSECONDS
+    if spec.with_timezone:
+        # Python-equal aware keys are native-equal too. Retain their stored
+        # offsets; the separate modulo-day identity detects the reverse case.
+        return True, value, ticks
+    seconds, fraction = divmod(ticks, 10**6)
+    hour, seconds = divmod(seconds, 3600)
+    minute, second = divmod(seconds, 60)
+    return True, dt.time(hour, minute, second, fraction), ticks
+
+
+def time_key_identity(value: Any, native_type: str | None) -> tuple[bool, int | None]:
+    """Match native key equality without relying on Python's aware clock hash."""
+    handled, _value, identity = time_key_value_and_identity(value, native_type)
+    return handled, identity
 
 
 def contains_time_type(native_type: str) -> bool:

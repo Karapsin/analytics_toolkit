@@ -215,3 +215,121 @@ def test_trino_time_values_preserve_precision_and_stage_only_incoming_columns(
         not isinstance(parse_one(statement, read="trino"), exp.Alter) for statement in commands
     )
     pd.testing.assert_frame_equal(incoming, original)
+
+
+def _map_rows(alias: str, table: str) -> list[tuple[int, dt.time, str]]:
+    frame = sql.read(
+        alias,
+        "SELECT source.row_id, map_key, map_value "
+        f"FROM {table} AS source CROSS JOIN UNNEST(source.payload) "
+        "AS map_entry(map_key, map_value) ORDER BY source.row_id, map_key",
+        retry_cnt=1,
+        query_label=_label("trino-time-map-read"),
+    )
+    rows = []
+    for row_id, key, value in frame.itertuples(index=False, name=None):
+        assert isinstance(key, dt.time)
+        assert key.tzinfo is None
+        assert isinstance(value, str)
+        rows.append((int(row_id), key, value))
+    return rows
+
+
+@pytest.mark.sql_scenario("audit.load.trino_time_map_keys")
+def test_trino_time_map_keys_are_certified_before_clearing_existing_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    resource_registry: ResourceRegistry,
+) -> None:
+    alias = "trino_target_values"
+    table = resource_registry.table(alias, integration_table("trino", "time_map_keys"))
+    sql.execute(
+        alias,
+        f"CREATE TABLE {table} (row_id BIGINT, payload MAP(TIME(6), VARCHAR))",
+        retry_cnt=1,
+        query_label=_label("trino-time-map-create"),
+    )
+    sql.execute(
+        alias,
+        f"INSERT INTO {table} (row_id, payload) VALUES "
+        "(99, MAP(ARRAY[TIME '01:00:00.000000'], ARRAY['original']))",
+        retry_cnt=1,
+        query_label=_label("trino-time-map-seed"),
+    )
+    seeded = [(99, dt.time(1), "original")]
+    assert _map_rows(alias, table) == seeded
+
+    east_one = dt.timezone(dt.timedelta(hours=1))
+    colliding = {
+        dt.time(12, tzinfo=dt.timezone.utc): "first",
+        dt.time(12, tzinfo=east_one): "second",
+    }
+    assert len(colliding) == 2
+    first = dt.time(12, 0, 0, 123400, tzinfo=dt.timezone.utc)
+    second = dt.time(13, 0, 0, 123499, tzinfo=east_one)
+    distinct = {first: "first", second: "second"}
+    assert len(distinct) == 2
+    # Native TIME(3) rounding makes these aware Python times equal, while
+    # the SQL TIME keys retain distinct wall clocks after their zone cast.
+    assert first.replace(microsecond=123000) == second.replace(microsecond=123000)
+    incoming = pd.DataFrame({"row_id": [1], "payload": pd.Series([distinct], dtype=object)})
+    with monkeypatch.context() as operations:
+        commands, inserts, stage_columns, locations = _observe_writes(
+            operations, resource_registry, {table}, "trino_target_parquet"
+        )
+        with pytest.raises(ValueError, match=r"(?i)(map.*key|authoritative map schema)"):
+            sql.load_df(
+                alias,
+                table,
+                pd.DataFrame({"row_id": [100], "payload": pd.Series([colliding], dtype=object)}),
+                write_mode="truncate_insert",
+                use_parquet_staging=False,
+                retry_cnt=1,
+                query_label=_label("trino-time-map-reject"),
+            )
+        assert commands == []
+        assert inserts == []
+        assert _map_rows(alias, table) == seeded
+
+        assert (
+            sql.load_df(
+                alias,
+                table,
+                incoming,
+                table_schema={"row_id": "BIGINT", "payload": "MAP(TIME(3), VARCHAR)"},
+                write_mode="truncate_insert",
+                use_parquet_staging=False,
+                retry_cnt=1,
+                query_label=_label("trino-time-map-distinct"),
+            )
+            == 1
+        )
+        assert _map_rows(alias, table) == [
+            (1, dt.time(12, 0, 0, 123000), "first"),
+            (1, dt.time(13, 0, 0, 123000), "second"),
+        ]
+        assert (
+            sql.read(
+                alias,
+                f"SELECT cardinality(payload) FROM {table} WHERE row_id = 1",
+                output_type="scalar",
+                retry_cnt=1,
+                query_label=_label("trino-time-map-cardinality"),
+            )
+            == 2
+        )
+        assert (
+            sql.read(
+                alias,
+                f"SELECT typeof(payload) FROM {table} WHERE row_id = 1",
+                output_type="scalar",
+                retry_cnt=1,
+                query_label=_label("trino-time-map-type"),
+            )
+            == "map(time(6), varchar)"
+        )
+    assert commands
+    assert inserts
+    assert stage_columns == []
+    assert locations == []
+    assert list(distinct.items()) == [(first, "first"), (second, "second")]
+    assert incoming.iloc[0]["payload"] is distinct

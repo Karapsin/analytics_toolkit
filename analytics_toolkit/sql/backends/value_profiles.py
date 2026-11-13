@@ -290,6 +290,9 @@ class ColumnProfile:
                     try:
                         normalized_key = key
                         if kind == "map":
+                            from .map_values import (  # noqa: PLC0415 -- native clock equality.
+                                profile_map_key_identity,
+                            )
                             from .type_resolution import (  # noqa: PLC0415 - backend recursive type policies
                                 ResolvedColumn,
                             )
@@ -299,6 +302,9 @@ class ColumnProfile:
                                 target_backend=self.source_backend or "",
                                 destination_timezone=self.destination_timezone,
                             ).convert(key)
+                            normalized_key = profile_map_key_identity(
+                                normalized_key, child_types[0][1], self.source_backend or ""
+                            )
                         self.map_duplicate_keys |= normalized_key in seen
                         seen.add(normalized_key)
                     except (TypeError, ValueError, ArithmeticError):

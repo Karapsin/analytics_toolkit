@@ -157,6 +157,12 @@ of discarding an entry. Map-key identity also uses the destination types inside
 composite `ROW` keys,
 so padding or rounding in a field cannot silently merge entries.
 
+Trino `TIME` map keys use destination wall-clock identity and canonical key
+payloads without offsets. `TIME WITH TIME ZONE` keys retain known offsets and
+compare by UTC time modulo 24 hours; naive zoned keys fail before mutation
+because their identity requires an unresolved offset. These rules also apply
+inside composite `ROW` keys. Scalar clock values retain native server cast policy.
+
 Existing or explicit Trino `TIME` schemas accept native time values. Bare `TIME`
 defaults to precision 3; the engine range is 0–12, subject to connector support.
 Existing precision must fit exactly; explicit conversion uses native rounding

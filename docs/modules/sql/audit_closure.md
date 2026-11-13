@@ -295,4 +295,16 @@ uses Iceberg `TIME(6)` and explicit conversions against the existing schema; it
 was not run locally. These restore native clock binding without adding interval,
 connector or native-time inference features.
 
+Trino clock map-key identity and payloads are covered by
+`dml/load/trino_time_map_keys.py::test_trino_time_map_cast_collision_cannot_clear_existing_rows`,
+`dml/load/trino_time_map_keys.py::test_trino_time_map_native_distinct_pairs_do_not_collapse_before_binding`,
+`dml/load/trino_time_map_keys.py::test_trino_time_map_zoned_distinct_instants_retain_both_offset_keys`,
+and `dml/load/trino_time_map_keys.py::test_trino_time_map_uncertifiable_keys_reject_before_mutation`.
+These reject SQL-equivalent keys before clearing the target and preserve
+SQL-distinct keys through native dictionary binding, including composite keys.
+The disposable `audit.load.trino_time_map_keys` case in
+`integration/core/audit_trino_time_values.py::test_trino_time_map_keys_are_certified_before_clearing_existing_rows`
+also checks native wall-clock keys and unchanged physical `TIME(6)` precision;
+it was not run locally.
+
 [SQL module index](index.md)

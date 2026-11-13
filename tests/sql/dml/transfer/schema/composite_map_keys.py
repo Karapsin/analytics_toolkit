@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
@@ -176,3 +178,81 @@ def test_safe_same_and_widened_composite_keys_keep_lazy_streaming(monkeypatch, t
     assert scenario.events.index("create_target") < scenario.events.index(
         "complete:SELECT id FROM source"
     )
+
+
+def time_map_transfer(monkeypatch, values, *, stage_type=None):
+    scenario = install(
+        monkeypatch,
+        native_type="MAP(TIME(6) WITH TIME ZONE, VARCHAR)",
+        rows=[(value,) for value in values],
+        from_db_key="trino",
+        from_db_backend="trino",
+        write_mode="truncate_insert",
+        table_schema={"id": stage_type} if stage_type is not None else None,
+    )
+    scenario.existing_types = {"id": "MAP(TIME(6), VARCHAR)"}
+    return scenario
+
+
+@pytest.mark.parametrize("explicit_stage", [False, True])
+def test_frozen_time_map_last_row_cast_collision_rejects_before_any_target_stage(
+    monkeypatch, explicit_stage
+):
+    safe = {dt.time(1, tzinfo=dt.timezone.utc): "safe"}
+    collision = {
+        dt.time(12, tzinfo=dt.timezone.utc): "first",
+        dt.time(12, tzinfo=dt.timezone(dt.timedelta(hours=1))): "second",
+    }
+    assert len(collision) == 2
+    stage_type = "MAP(TIME(6), VARCHAR)" if explicit_stage else None
+    scenario = time_map_transfer(monkeypatch, [safe, collision], stage_type=stage_type)
+    paths = track_spools(monkeypatch)
+
+    with pytest.raises(ValueError, match="cannot be converted to the resolved destination schema"):
+        scenario.run()
+
+    assert scenario.read_count == 1
+    assert "complete:SELECT id FROM source" in scenario.events
+    assert "create_target" not in scenario.events
+    assert scenario.schemas == []
+    assert scenario.loaded == []
+    assert scenario.finalizations == 0
+    assert scenario.existing_types == {"id": "MAP(TIME(6), VARCHAR)"}
+    assert paths
+    assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize("explicit_stage", [False, True])
+def test_frozen_time_map_cast_keeps_sql_distinct_wall_keys_and_the_existing_schema(
+    monkeypatch, explicit_stage
+):
+    source = {
+        dt.time(12, 0, 0, 123400, tzinfo=dt.timezone.utc): "first",
+        dt.time(13, 0, 0, 123499, tzinfo=dt.timezone(dt.timedelta(hours=1))): "second",
+    }
+    assert len(source) == 2
+    stage_type = "MAP(TIME(3), VARCHAR)" if explicit_stage else None
+    scenario = time_map_transfer(monkeypatch, [source], stage_type=stage_type)
+    paths = track_spools(monkeypatch)
+    first_fraction, second_fraction = (123000, 123000) if explicit_stage else (123400, 123499)
+    expected = {
+        dt.time(12, 0, 0, first_fraction): "first",
+        dt.time(13, 0, 0, second_fraction): "second",
+    }
+
+    result = scenario.run(metadata=True)
+
+    assert result.rows == 1
+    assert result.metadata.input_count == 1
+    assert scenario.schemas == [{"id": stage_type or "MAP(TIME(6), VARCHAR)"}]
+    assert scenario.loaded == [[(expected,)]]
+    assert len(scenario.loaded[0][0][0]) == 2
+    assert len(source) == 2
+    assert scenario.existing_types == {"id": "MAP(TIME(6), VARCHAR)"}
+    assert scenario.read_count == 1
+    assert scenario.finalizations == 1
+    assert scenario.events.index("complete:SELECT id FROM source") < scenario.events.index(
+        "create_target"
+    )
+    assert paths
+    assert all(not path.exists() for path in paths)
