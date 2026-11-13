@@ -10587,6 +10587,17 @@
         "tests/sql/backends/ch/reconfigure/structural_safety.py::test_local_to_pair_rejects_a_preexisting_companion_before_ddl"
       ]
     },
+    "audit.clickhouse.column_ttl_reconfigure": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_local_to_pair_keeps_column_ttl_only_on_physical_storage",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/structural_safety.py::test_local_to_pair_reconfiguration_removes_only_facade_column_ttl",
+        "tests/sql/backends/ch/reconfigure/structural_safety.py::test_managed_pair_identity_excludes_only_physical_column_ttl"
+      ]
+    },
     "audit.clickhouse.routing_metadata": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_routing_bindings_and_current_database_metadata",

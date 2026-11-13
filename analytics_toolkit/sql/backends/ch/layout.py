@@ -12,7 +12,13 @@ from analytics_toolkit.sql.ddl.identifiers import quote_identifier
 
 from .ddl import build_ch_shard_table_name
 from .metadata import extract_clickhouse_distributed_shard_table
-from .reconfigure_ddl import engine_name, engine_sql, parse_create_table, require_merge_tree
+from .reconfigure_ddl import (
+    _column_without_ttl,
+    engine_name,
+    engine_sql,
+    parse_create_table,
+    require_merge_tree,
+)
 from .reconfigure_support import (
     qualify_with_database,
     resolve_optional_cluster,
@@ -107,7 +113,7 @@ def _inspect_existing_layout_local(
 def _column_identity(create: exp.Create) -> tuple[str, ...]:
     schema = create.this
     return tuple(
-        item.sql(dialect="clickhouse")
+        _column_without_ttl(item).sql(dialect="clickhouse")
         for item in schema.expressions
         if isinstance(item, exp.ColumnDef)
     )

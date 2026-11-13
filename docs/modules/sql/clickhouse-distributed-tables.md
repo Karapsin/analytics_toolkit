@@ -141,6 +141,12 @@ shard is remote from the connected host, its DDL is inspected through the live
 Distributed routing cluster. Use `to_defaults=True` to converge the managed
 topology to the connection's regular `ddl_defaults` policy.
 
+Rebuilt Distributed facades retain permitted column defaults and comments.
+They exclude MergeTree storage clauses, including TTL clauses on the table and
+its columns. Physical replacement storage retains those TTL declarations.
+When verifying a facade/storage pair, column TTL differences alone are permitted;
+column types, defaults, comments and other identity checks remain active.
+
 Structural changes create and validate a replacement before cutover. Writers
 must be paused during that window. Atomic and Shared databases use an atomic
 name exchange; other database engines use a reversible rename sequence.

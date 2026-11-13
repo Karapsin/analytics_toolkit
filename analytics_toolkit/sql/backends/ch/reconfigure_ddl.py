@@ -90,6 +90,15 @@ def transform_distributed_create(
         schema.set(
             "expressions", [item for item in schema.expressions if isinstance(item, exp.ColumnDef)]
         )
+    schema = transformed.this
+    assert isinstance(schema, exp.Schema)
+    schema.set(
+        "expressions",
+        [
+            _column_without_ttl(item) if isinstance(item, exp.ColumnDef) else item
+            for item in schema.expressions
+        ],
+    )
     database, relation = distributed_table_parts(shard_table)
     current_engine = engine_sql(create)
     existing = extract_clickhouse_distributed_shard_table(current_engine, database)
@@ -122,6 +131,19 @@ def transform_distributed_create(
         transformed,
         exp.EngineProperty,
         engine_property,
+    )
+    return transformed
+
+
+def _column_without_ttl(column: exp.ColumnDef) -> exp.ColumnDef:
+    transformed = column.copy()
+    transformed.set(
+        "constraints",
+        [
+            constraint
+            for constraint in transformed.constraints
+            if not isinstance(constraint.kind, exp.MergeTreeTTL)
+        ],
     )
     return transformed
 

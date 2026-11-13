@@ -85,6 +85,11 @@ Statements:
 - Atomic and Shared databases use `EXCHANGE TABLES`; other database engines use a rename fallback. Each submitted cutover records its inverse and acknowledgement; rollback reverses only acknowledged steps
 - an uncertain cutover or rollback stops structural replay and retains replacements and backups for recovery, with the original error and resource scopes reported
 - local-to-pair conversion rejects an existing deterministic companion before DDL; a name ending in `_shard` alone never establishes resource ownership
+- rebuilt Distributed facades retain permitted column defaults and comments and
+  omit MergeTree storage clauses, including TTL clauses on the table and its
+  columns; physical replacement storage retains those TTL declarations.
+  Column TTL differences alone do not invalidate an otherwise verified pair;
+  remaining column identity checks still apply
 - physical placement, facade placement and Distributed routing are independent. Copy routing must reach the verified replacement storage and must not reach the original storage during a relocation
 - successful validation removes the old table data; cleanup failures are reported through `SqlOperationResult.data`
 - dry runs query ClickHouse metadata because the plan depends on the current table DDL and topology

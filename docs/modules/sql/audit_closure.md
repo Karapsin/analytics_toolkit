@@ -54,7 +54,7 @@ correctness bug: closing a connection cannot cause successful work to replay.
 | 34 | Reconfiguration cleanup can delete a pre-existing `_shard` | fixed | `backends/ch/reconfigure/structural_safety.py::test_local_to_pair_rejects_a_preexisting_companion_before_ddl` |
 | 35 | Cross-cluster migration can copy rows into the live source | fixed | `backends/ch/reconfigure/structural_safety.py::test_relocation_rejects_copy_routing_to_original_storage` |
 | 36 | Partial rename rollback can leave the public table missing | fixed | `backends/ch/reconfigure/structural_safety.py::test_count_failure_rolls_back_acknowledged_cutovers_in_reverse_order` |
-| 37 | Conversion retains invalid MergeTree clauses on Distributed facades | fixed | `backends/ch/reconfigure/structural_safety.py::test_replacement_create_is_plain_and_facade_excludes_physical_properties` |
+| 37 | Conversion retains invalid MergeTree clauses on Distributed facades | fixed | `backends/ch/reconfigure/structural_safety.py::test_replacement_create_is_plain_and_facade_excludes_physical_properties`; `backends/ch/reconfigure/structural_safety.py::test_local_to_pair_reconfiguration_removes_only_facade_column_ttl` |
 | 38 | Reconfiguration changes `rand()` into `randCanonical()` | fixed | `backends/ch/routing_contract.py::test_rand_and_randcanonical_remain_distinct_in_routed_defaults` |
 | 39 | Guarded replacement loses optional Distributed engine arguments | fixed | `backends/ch/replace_routing.py::test_guarded_replacement_preserves_configured_distributed_template_arguments` |
 | 40 | Readiness failures leak created stages | fixed | `dml/load/stage_ownership.py::test_load_readiness_failure_cleans_acknowledged_partial_pair_only`; `dml/transfer/row_batches/stage_ownership.py::test_keyed_worker_readiness_failure_cleans_acknowledged_stage_before_return`; `dml/transfer/row_batches/stage_registration.py::test_keyed_initialization_registers_partial_pair_before_readiness_returns` |
@@ -166,5 +166,15 @@ markers; only an unknown partition sequence produces the synthetic marker.
 `dml/transfer/row_batches/gp_key_literals.py::test_keyed_transfer_selects_timestamp_row_by_emitted_literal_semantics`
 checks Greenplum key selection with non-UTC aware inputs and distinct source
 instants, retaining UTC-aware and naive controls.
+
+Facade TTL handling is also covered by
+`backends/ch/reconfigure/structural_safety.py::test_new_facade_removes_column_ttl_without_mutating_source_ast`
+and `backends/ch/reconfigure/structural_safety.py::test_managed_pair_identity_excludes_only_physical_column_ttl`.
+Physical TTL declarations and permitted column defaults/comments are retained.
+Only column TTL differences are excluded from pair identity; other column
+identity checks remain active.
+The disposable scenario `audit.clickhouse.column_ttl_reconfigure` in
+`integration/core/audit_reconfiguration.py::test_local_to_pair_keeps_column_ttl_only_on_physical_storage`
+checks facade/shard DDL and unexpired rows; it was not run locally.
 
 [SQL module index](index.md)
