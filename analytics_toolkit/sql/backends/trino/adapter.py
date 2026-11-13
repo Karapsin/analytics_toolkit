@@ -418,11 +418,7 @@ class TrinoAdapter(DbApiBackendAdapter):
                 template.format(
                     table=target_table,
                     partition_column=self.quote_identifier(partition_column),
-                    partition_value=(
-                        value
-                        if isinstance(value, str) and value.startswith("<")
-                        else sql_literal(value)
-                    ),
+                    partition_value=(value if partition_values is None else sql_literal(value)),
                 ),
                 query_label,
             )

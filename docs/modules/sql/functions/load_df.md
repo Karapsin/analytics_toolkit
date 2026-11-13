@@ -120,7 +120,9 @@ rows
   replaced target. An exhausted retry retains the recovery stage names.
 - Trino partition upsert also requires `upsert_partition_drop_sql_template` in
   the target connection config so connector-specific partition drop SQL is
-  explicit.
+  explicit. Actual string partition values are quoted as data, including values
+  beginning with `<`; a raw synthetic marker is reserved for unknown partition
+  values in offline plans.
 - For Trino connections with the complete `s3_transfer_staging_schema` and
   `s3_transfer_staging_location` pair, `load_df` writes temporary Parquet files
   to the object-storage prefix, creates the external stage table in the S3

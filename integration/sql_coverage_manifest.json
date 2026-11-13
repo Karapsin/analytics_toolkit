@@ -10556,6 +10556,26 @@
         "tests/sql/dml/load/upsert_storage_scope.py::test_load_df_upsert_mutates_only_verified_existing_storage_scope"
       ]
     },
+    "audit.upsert.trino_string_partitions": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_literal_values.py::test_trino_upsert_treats_marker_shaped_partitions_as_stored_strings",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_partition_literals.py::test_load_df_upsert_quotes_actual_partition_strings"
+      ]
+    },
+    "audit.transfer.gp_aware_key": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_literal_values.py::test_greenplum_keyed_transfer_selects_the_aware_instant_in_a_utc_session",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/row_batches/gp_key_literals.py::test_keyed_transfer_selects_timestamp_row_by_emitted_literal_semantics"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

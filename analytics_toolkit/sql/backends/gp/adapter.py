@@ -12,6 +12,7 @@ from ..dbapi import DbApiBackendAdapter
 from ..models import SourceColumn, TransferAttemptPolicy, TransferInsertPageSizing
 from ..utils import user_filter as _user_filter
 from . import insert as _insert
+from . import key_literals as _key_literals
 from . import metadata_types as _metadata_types
 from . import native_types as _native_types
 from . import operations as _operations
@@ -75,6 +76,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
     supports_create_table_order_by = False
     requires_execute_create_schema_inference = True
     build_execute_create_as_sqls = _operations.build_execute_create_as_sqls
+    render_transfer_literal = _key_literals.render_transfer_literal
     get_table_column_names = _operations.get_table_column_names
     get_writable_table_column_types = _operations.get_writable_table_column_types
 

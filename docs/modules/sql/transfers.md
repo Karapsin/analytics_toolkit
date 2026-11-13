@@ -412,6 +412,10 @@ precedence. Greenplum `bytea` maps to ClickHouse `String`; HTTP and native
 transports preserve the original byte sequence, including embedded nulls and
 bytes that are not valid UTF-8.
 
+Greenplum keyed transfers preserve the instant of aware datetime keys with
+`TIMESTAMP WITH TIME ZONE` literals, including non-UTC offsets. Naive keys keep
+`TIMESTAMP` semantics. See [PostgreSQL's datetime input rules](https://www.postgresql.org/docs/16/datatype-datetime.html#DATATYPE-DATETIME-INPUT).
+
 Existing-target upserts require complete writable rows, including default-bearing
 columns and excluding generated/noninsertable columns. Missing or extra columns
 fail before staging or target mutation; reordered inputs use target column order.
@@ -431,6 +435,10 @@ deletes for upsert finalization. Their complete preservation/incoming payload is
 prepared before partition mutation and retained across transient replay. A retry
 never rereads preservation rows from a partially replaced target. If finalization
 exhausts its retry budget, recovery payload stages are retained.
+
+Trino quotes actual string partition values as data, including values beginning
+with `<`. A raw synthetic partition marker appears only when an offline plan
+does not yet know the partition values.
 
 Key-validated append selects and inserts the named incoming columns in their
 original order, so subsets and reordered inputs have ordinary append semantics.

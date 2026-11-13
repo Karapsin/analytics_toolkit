@@ -158,4 +158,13 @@ disposable `audit.upsert.ch` scenario also covers actual storage cluster `B`
 with an invalid desired caller cluster `A` and independent local staging on both
 ClickHouse transports; it was not run locally.
 
+Backend literal regressions are additionally covered by
+`dml/load/trino_partition_literals.py::test_load_df_upsert_quotes_actual_partition_strings`
+and `dml/load/trino_partition_literals.py::test_unknown_partition_values_keep_only_the_synthetic_dry_plan_marker`.
+Actual Trino string partition values remain data even when they resemble plan
+markers; only an unknown partition sequence produces the synthetic marker.
+`dml/transfer/row_batches/gp_key_literals.py::test_keyed_transfer_selects_timestamp_row_by_emitted_literal_semantics`
+checks Greenplum key selection with non-UTC aware inputs and distinct source
+instants, retaining UTC-aware and naive controls.
+
 [SQL module index](index.md)

@@ -444,7 +444,9 @@ rows = sql.transfer(
   escape braces as `{{event_date}}`.
 - Key placeholders are replaced by predicates such as
   `(event_date) = DATE '2026-04-01'` or `(event_date) IS NULL`; they are not
-  value-only placeholders. Literals use the source backend's syntax. ClickHouse
+  value-only placeholders. Literals use the source backend's syntax. Greenplum
+  aware datetime keys use `TIMESTAMP WITH TIME ZONE`, preserving their represented
+  instant across offsets; naive datetime keys keep `TIMESTAMP` semantics. ClickHouse
   strings escape both backslashes and apostrophes, and datetime keys use
   `toDateTime64` with their full fractional precision. Aware datetime keys
   normalize to UTC; naive keys retain the connection's timezone semantics.
@@ -502,7 +504,9 @@ rows = sql.transfer(
 - Trino partition upsert requires `upsert_partition_drop_sql_template` in the
   target connection config. The template is rendered once per affected
   partition value with `{table}`, `{partition_column}`, and
-  `{partition_value}`.
+  `{partition_value}`. Actual string partition values are quoted as data, even
+  when they begin with `<`. Only unknown partition values in offline plans use
+  a raw synthetic marker.
 - Upsert dry-run plans use `table_schema` when provided, infer simple source
   query output columns when possible, and otherwise show an explicit
   source-column placeholder without opening database connections.

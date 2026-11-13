@@ -94,7 +94,9 @@ every available fractional digit when
 the connector supports that precision. Inference retains its supported connector
 precision. Trino upsert builds a final increment for affected partitions and requires
 `upsert_partition_drop_sql_template` in `.connections` so connector-specific
-partition drop SQL is explicit.
+partition drop SQL is explicit. Actual string partition values are quoted as
+data, including marker-like values such as `<part>`. Only unknown partition
+values in offline plans use a raw synthetic marker.
 
 ClickHouse targets normally create and maintain a distributed/shard table pair.
 Use `ch_only_shard=True` only when the target should intentionally be a local
