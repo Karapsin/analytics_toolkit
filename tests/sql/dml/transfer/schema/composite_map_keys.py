@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
 
 from tests.sql._support.adaptive_transfer import install, require_streaming_fast_path, track_spools
+from tests.sql._support.fakes import FakeDbapiConnection
 from tests.sql._support.load_table import load_df_module
 
 _CASES = [
@@ -91,9 +90,8 @@ def test_valid_composite_cast_preserves_stage_payload_and_existing_schema(monkey
 
 def composite_load(monkeypatch, target, maps):
     mutations, loaded = [], []
-    monkeypatch.setattr(
-        load_df_module, "get_sql_connection", lambda _key: SimpleNamespace(close=lambda: None)
-    )
+    connection = FakeDbapiConnection()
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda _key: connection)
     monkeypatch.setattr(load_df_module, "table_exists", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(
         load_df_module, "get_table_column_types", lambda *_args, **_kwargs: {"id": target}

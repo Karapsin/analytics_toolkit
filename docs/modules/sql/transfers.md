@@ -113,6 +113,17 @@ key can be acknowledged. Aggregate validation runs again before finalization.
 For ClickHouse sources, row-count protection also prevents connection-level
 `query_limit` caps from silently truncating reads.
 
+Before publishing to an existing target, `append`, `truncate_insert` and
+`upsert` check `NOT NULL` and required-column constraints against the complete
+owned stage payload after all keys and writers finish. The check uses the actual
+SQL projection, including casts, before any live append, clear or partition
+mutation. Prepared partition payloads are checked before publication and replay.
+It reads captured stages without another source scan or replay spool; valid
+omissions and empty-input behavior are preserved.
+
+Plans set `target_constraints_validation_pending=True`; execution validates the
+captured payload. Dry runs do not perform this data validation.
+
 Each keyed source stage contains exactly one rendered key and is immutable after
 materialization. It consumes a live-stage credit until a reader drops it after target
 validation. The limit is `effective readers + effective writers`, which bounds

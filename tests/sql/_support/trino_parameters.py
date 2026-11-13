@@ -10,6 +10,7 @@ from trino.dbapi import Cursor
 class DriverParameterConnection:
     def __init__(self) -> None:
         self.statements: list[tuple[str, list[Any], list[str]]] = []
+        self.metadata_statements: list[tuple[str, list[Any], list[str]]] = []
         self.close_calls = 0
         self.cursor_close_calls = 0
 
@@ -29,8 +30,15 @@ class DriverParameterCursor:
     def execute(self, statement: str, values: list[Any] | None = None) -> DriverParameterCursor:
         params = values or []
         rendered = [self.formatter._format_prepared_param(value) for value in params]
-        self.connection.statements.append((statement, params, rendered))
+        if statement.startswith("SELECT column_name, is_nullable, column_default "):
+            self.connection.metadata_statements.append((statement, params, rendered))
+        else:
+            self.connection.statements.append((statement, params, rendered))
         return self
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        # The parameter-binding target has ordinary nullable columns.
+        return []
 
     def close(self) -> None:
         self.connection.cursor_close_calls += 1

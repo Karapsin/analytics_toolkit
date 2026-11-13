@@ -23,16 +23,26 @@ def quote_identifier(self: Any, identifier: str) -> str:
     return f"{self.identifier_quote}{escaped}{self.identifier_quote}"
 
 
-def validate_existing_dataframe_insert_columns(
+def validate_existing_dataframe_insert_columns(  # noqa: PLR0913 -- shared adapter hook signature.
     self: Any,
     connection: Any,
     table_name: str,
     columns: Sequence[str],
     *,
     connection_key: str,
+    null_columns: Sequence[str] = (),
+    row_count: int | None = None,
 ) -> None:
     """Backends without computed columns need no additional insertability probe."""
-    del self, connection, table_name, columns, connection_key
+    del self, connection, table_name, columns, connection_key, null_columns, row_count
+
+
+def get_required_column_defaults(
+    self: Any, connection: Any, table_name: str, *, connection_key: str
+) -> dict[str, bool]:
+    """Return only required-column constraints reported by the backend."""
+    del self, connection, table_name, connection_key
+    return {}
 
 
 def cast_select_expression(self: Any, column_name: str, target_type: str) -> str:

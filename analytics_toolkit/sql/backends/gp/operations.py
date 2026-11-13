@@ -6,12 +6,15 @@ from typing import TYPE_CHECKING, Any
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.common_methods import get_table_column_names as read_names
 from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+from analytics_toolkit.sql.backends.insert_constraints import validate_not_null_input
 from analytics_toolkit.sql.ddl.properties import overlay_with_properties
 
 from ..utils import sql_string_literal
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+_CONSTRAINT_FIELDS = 5
 
 
 def get_table_column_names(
@@ -58,41 +61,83 @@ def get_writable_table_column_types(
         close_cursor(cursor, backend="gp")
 
 
-def validate_existing_dataframe_insert_columns(
+def _read_existing_insert_constraints(
+    connection: Any, table_name: str
+) -> tuple[dict[str, bool], set[str]]:
+    """Snapshot required/default and generated metadata with one GP6-safe query."""
+    from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- registry cycle.
+        split_gp_table_name,
+    )
+
+    schema, relation = split_gp_table_name(table_name)
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "SELECT a.attname, a.attnotnull, a.atthasdef, "
+            "COALESCE(row_to_json(a)->>'attgenerated', ''), "
+            "COALESCE(row_to_json(a)->>'attidentity', '') "
+            "FROM pg_catalog.pg_attribute AS a "
+            "JOIN pg_catalog.pg_class AS c ON c.oid = a.attrelid "
+            "JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = %s AND c.relname = %s "
+            "AND a.attnum > 0 AND NOT a.attisdropped "
+            "AND (a.attnotnull OR COALESCE(row_to_json(a)->>'attgenerated', '') <> '' "
+            "OR COALESCE(row_to_json(a)->>'attidentity', '') = 'a') "
+            "ORDER BY a.attnum",
+            (schema, relation),
+        )
+        rows = cursor.fetchall()
+    finally:
+        close_cursor(cursor, backend="gp")
+    required_defaults = {}
+    noninsertable = set()
+    for row in rows:
+        if (
+            len(row) != _CONSTRAINT_FIELDS
+            or not isinstance(row[1], bool)
+            or not isinstance(row[2], bool)
+            or not isinstance(row[3], str)
+            or not isinstance(row[4], str)
+        ):
+            message = "Cannot verify existing target column constraints from metadata."
+            raise ValueError(message)
+        name, not_null, has_default, generated, identity = row
+        if generated or identity == "a":
+            noninsertable.add(name)
+        if not_null:
+            required_defaults[name] = has_default or bool(generated) or bool(identity)
+    return required_defaults, noninsertable
+
+
+def get_required_column_defaults(
+    adapter: Any, connection: Any, table_name: str, *, connection_key: str
+) -> dict[str, bool]:
+    """Read required fields and actual default/automatic-value availability."""
+    del adapter, connection_key
+    required_defaults, _noninsertable = _read_existing_insert_constraints(connection, table_name)
+    return required_defaults
+
+
+def validate_existing_dataframe_insert_columns(  # noqa: PLR0913 -- shared adapter hook signature.
     adapter: Any,
     connection: Any,
     table_name: str,
     columns: Sequence[str],
     *,
     connection_key: str,
+    null_columns: Sequence[str] = (),
+    row_count: int | None = None,
 ) -> None:
-    """Reject explicit values for generated columns before a committed clear."""
-    from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- registry cycle.
-        split_gp_table_name,
-    )
-
+    """Certify generated/default/required fields before a committed clear."""
     del adapter, connection_key
-    schema, relation = split_gp_table_name(table_name)
-    cursor = connection.cursor()
-    try:
-        cursor.execute(
-            "SELECT a.attname FROM pg_catalog.pg_attribute AS a "
-            "JOIN pg_catalog.pg_class AS c ON c.oid = a.attrelid "
-            "JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace "
-            "WHERE n.nspname = %s AND c.relname = %s "
-            "AND a.attnum > 0 AND NOT a.attisdropped "
-            "AND (COALESCE(row_to_json(a)->>'attgenerated', '') <> '' "
-            "OR COALESCE(row_to_json(a)->>'attidentity', '') = 'a') "
-            "ORDER BY a.attnum",
-            (schema, relation),
-        )
-        noninsertable = {str(row[0]) for row in cursor.fetchall()}
-    finally:
-        close_cursor(cursor, backend="gp")
+    required_defaults, noninsertable = _read_existing_insert_constraints(connection, table_name)
     blocked = [column for column in columns if column in noninsertable]
     if blocked:
         message = "Incoming column(s) cannot be inserted explicitly: " + ", ".join(blocked)
         raise ValueError(message)
+    validate_not_null_input(
+        columns, required_defaults, null_columns=null_columns, row_count=row_count
+    )
 
 
 def build_execute_create_as_sqls(  # noqa: PLR0913

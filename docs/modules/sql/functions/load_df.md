@@ -88,9 +88,15 @@ rows
   before stage creation or target mutation. Backend-supported input columns remain
   available. Valid subset and reordered inputs remain supported
   for `append` and `truncate_insert`; replacement uses its new resolved schema.
+- Nonempty `append`, `truncate_insert` and `upsert` inputs reject converted SQL
+  nulls for `NOT NULL` columns and omitted required columns before target mutation.
+  Backend-supported append/truncate omissions, complete-row upsert requirements
+  and empty-input behavior are preserved.
 - Python `Enum` members resolve through `.value`, recursively, before validation
   and native or text conversion. Underlying strings, exact numbers and nulls keep
   their normal conversion rules.
+- Explicit or existing integer columns convert accepted boolean scalars to native
+  `0`/`1`; automatic boolean and integer inference retain their respective types.
 - An empty dataframe follows `empty_source_policy`. Empty replacement creates a zero-row table with the requested schema. Pass `table_schema` when an empty object-typed column has no unambiguous backend type.
 - `write_mode="upsert"` stages incoming rows and rejects duplicate staged keys
   before any target mutation.

@@ -15,6 +15,8 @@ from numbers import Integral
 from typing import Any, cast
 from uuid import UUID
 
+import numpy as np
+
 from analytics_toolkit.sql.core.exact_values import (
     ExactTemporal,
     integer_text,
@@ -279,7 +281,7 @@ class ResolvedColumn:
             )
         if integer_domain(
             self.target_type, backend=self.target_backend or None
-        ) is not None and isinstance(value, Integral):
+        ) is not None and isinstance(value, (Integral, np.bool_)):
             return int(value)
         if parse_native_type(self.target_type).base.name == "uuid" and isinstance(value, str):
             return UUID(value)

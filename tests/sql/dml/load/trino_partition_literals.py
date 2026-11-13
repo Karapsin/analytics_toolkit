@@ -28,7 +28,7 @@ class _PartitionCursor(FakeDbapiCursor):
         super().execute(statement, params)
         body = strip_query_label(statement)
         if "information_schema.columns" in body:
-            self._rows = [("id", "bigint"), ("month", "varchar")]
+            self._rows = [] if "is_nullable" in body else [("id", "bigint"), ("month", "varchar")]
         elif body.startswith("SELECT DISTINCT"):
             self._rows = [(value,) for value in self.connection.partitions]
         else:

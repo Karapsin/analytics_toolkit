@@ -163,6 +163,8 @@ def dry_run_transfer_options(
         "aggregate_stage_table": stage_tables[0],
         "table_schema": options.table_schema,
         "type_resolution_pending": options.table_schema is None,
+        "target_constraints_validation_pending": True,
+        "target_constraint_validation": "complete_owned_stage_before_live_publication",
         "type_resolution": {
             "precedence": ["explicit_schema", "existing_target", "inferred_schema"],
             "profiling": "complete_selected_input_when_declared_domain_does_not_fit",

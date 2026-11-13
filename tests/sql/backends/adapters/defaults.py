@@ -95,6 +95,30 @@ def test_adapter_default_identifier_checks_empty_name() -> None:
     assert adapter_defaults_module._is_simple_identifier("") is False
 
 
+def test_adapter_default_required_constraints_do_not_probe_the_connection() -> None:
+    assert (
+        get_backend_adapter("ch").get_required_column_defaults(
+            object(), "events", connection_key="ch"
+        )
+        == {}
+    )
+
+
+def test_default_insertability_hook_keeps_extension_adapters_network_free() -> None:
+    adapter = MinimalContractAdapter()
+    assert (
+        adapter.validate_existing_dataframe_insert_columns(
+            object(),
+            "schema.target",
+            ["optional"],
+            connection_key="extension_alias",
+            null_columns=["optional"],
+            row_count=1,
+        )
+        is None
+    )
+
+
 def test_adapter_default_normalization_rejects_empty_values() -> None:
     adapter = get_backend_adapter("gp")
 

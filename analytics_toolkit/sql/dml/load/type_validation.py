@@ -70,7 +70,26 @@ def validate_dataframe_schema(
     allow_timestamp_precision_loss: bool = True,
     destination_timezone: str | None = None,
 ) -> None:
+    _validated_dataframe_profiles(
+        df,
+        schema,
+        backend,
+        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+        destination_timezone=destination_timezone,
+    )
+
+
+def _validated_dataframe_profiles(
+    df: pd.DataFrame,
+    schema: Mapping[str, str],
+    backend: str,
+    *,
+    allow_timestamp_precision_loss: bool = True,
+    destination_timezone: str | None = None,
+) -> dict[str, ColumnProfile]:
+    """Return facts about certified outgoing cells without retaining private values."""
     validate_dataframe_columns(df, schema)
+    profiles = {}
     for index, name in enumerate(df.columns):
         profile = ColumnProfile(
             native_type=schema[str(name)],
@@ -90,12 +109,13 @@ def validate_dataframe_schema(
         resolution = ResolvedColumn(
             schema[str(name)], target_backend=backend, destination_timezone=destination_timezone
         )
-        validate_converted_rows(
+        profiles[str(name)] = validate_converted_rows(
             ((_schema_value(value, schema[str(name)]),) for value in df.iloc[:, index]),
             [resolution],
             backend=backend,
             destination_timezone=destination_timezone,
-        )
+        )[0]
+    return profiles
 
 
 def convert_dataframe_schema(

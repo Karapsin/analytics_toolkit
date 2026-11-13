@@ -38,10 +38,21 @@ available. Valid subsets and
 reordered columns remain supported for `append` and `truncate_insert`.
 Replacement follows its requested or inferred schema and can include new columns.
 
+For nonempty input, `append`, `truncate_insert` and `upsert` validate converted
+SQL nulls and required columns before mutating an existing target. A null for a
+`NOT NULL` column or an omitted required column fails early. Append and truncate
+loads retain valid nullable omissions and Greenplum default, generated and identity
+handling; upserts still require complete writable rows. Empty inputs retain
+`empty_source_policy` behavior.
+
 Python `Enum` members use their logical `.value` before type resolution,
 validation and transport, including nested values. Their underlying values follow
 the usual native conversions and null handling; a string-valued member follows
 the same conversion as its string value.
+
+An explicit or existing integer column converts accepted boolean scalars to
+native `0` and `1`. Automatic inference keeps boolean input boolean and integer
+`0`/`1` input integer.
 
 Object columns whose non-null values are all Python `uuid.UUID` instances infer
 as native `UUID` on Greenplum, Trino, and ClickHouse. ClickHouse uses

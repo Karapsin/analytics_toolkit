@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
 
@@ -16,6 +16,7 @@ from analytics_toolkit.sql.connection.config import resolve_connection_backend
 from analytics_toolkit.sql.execution.backend_options import require_complete_operation
 from analytics_toolkit.sql.execution.plans import SqlOperationMetadata, SqlPlan
 
+from .insert_constraints import validate_staged_not_null_input
 from .table_validation import effective_upsert_key_columns
 
 if TYPE_CHECKING:
@@ -203,6 +204,7 @@ def upsert_stage_table(
     incoming_stage_tables: Sequence[str] | None = None,
     trino_partition_drop_sql_template: str | None = None,
     checkpoint: UpsertCheckpoint | None = None,
+    connection_key: str | None = None,
 ) -> None:
     require_complete_operation("Upsert requires complete source and target coverage.")
     backend = resolve_connection_backend(connection_type)
@@ -219,6 +221,16 @@ def upsert_stage_table(
         ):
             message = "Prepared upsert payload does not match the final stage."
             raise ValueError(message)
+        validate_staged_not_null_input(
+            backend,
+            connection,
+            target_table,
+            [cast("str", checkpoint.final_stage_table)],
+            columns=columns,
+            column_types=column_types,
+            connection_key=connection_key or connection_type,
+            query_label=query_label,
+        )
         for sql in checkpoint.replay_sqls:
             checkpoint.mutation_started = True
             adapter.execute_upsert_command(connection, target_table, sql)
@@ -250,25 +262,43 @@ def upsert_stage_table(
         trino_partition_drop_sql_template=trino_partition_drop_sql_template,
     )
     sqls = adapter.resolve_upsert_execution_sqls(connection, target_table, sqls)
-    if checkpoint is not None and adapter.uses_partition_replacement_upsert():
+    if adapter.uses_partition_replacement_upsert():
         # The first two statements preserve untouched rows and add incoming rows.
         # Certify that complete payload before any partition drop is submitted.
         for sql in sqls[:2]:
             adapter.execute_upsert_command(connection, target_table, sql)
-        checkpoint.final_stage_table = final_stage_table
-        checkpoint.target_table = target_table
-        checkpoint.backend = backend
-        checkpoint.replay_sqls = sqls[2:]
-        checkpoint.prepared = True
-        for sql in checkpoint.replay_sqls:
-            checkpoint.mutation_started = True
+        validate_staged_not_null_input(
+            backend,
+            connection,
+            target_table,
+            [cast("str", final_stage_table)],
+            columns=columns,
+            column_types=column_types,
+            connection_key=connection_key or connection_type,
+            query_label=query_label,
+        )
+        if checkpoint is not None:
+            checkpoint.final_stage_table = final_stage_table
+            checkpoint.target_table = target_table
+            checkpoint.backend = backend
+            checkpoint.replay_sqls = sqls[2:]
+            checkpoint.prepared = True
+        for sql in sqls[2:]:
+            if checkpoint is not None:
+                checkpoint.mutation_started = True
             adapter.execute_upsert_command(connection, target_table, sql)
         return
-    if adapter.uses_partition_replacement_upsert():
-        for sql in sqls:
-            adapter.execute_upsert_command(connection, target_table, sql)
-    else:
-        adapter.execute_commands(connection, sqls)
+    validate_staged_not_null_input(
+        backend,
+        connection,
+        target_table,
+        [stage_table],
+        columns=columns,
+        column_types=column_types,
+        connection_key=connection_key or connection_type,
+        query_label=query_label,
+    )
+    adapter.execute_commands(connection, sqls)
 
 
 def _build_trino_merge_sql(
@@ -424,6 +454,20 @@ def finalize_stage_table(
         connection=connection_key or connection_type,
         backend=backend,
     )
+    if target_exists and (not replace_target_table or write_mode != "replace"):
+        columns = list(insert_column_types) if insert_column_types else None
+        if write_mode == "upsert":
+            columns = list(insert_column_types or target_column_types or sample_batch.columns)
+        validate_staged_not_null_input(
+            backend,
+            connection,
+            target_table,
+            incoming_stage_tables or [stage_table] if write_mode == "upsert" else [stage_table],
+            columns=columns,
+            column_types=insert_column_types,
+            connection_key=connection_key or connection_type,
+            query_label=query_label,
+        )
     get_backend_adapter(backend).finalize_stage_table(
         StageFinalizationRequest(
             connection=connection,

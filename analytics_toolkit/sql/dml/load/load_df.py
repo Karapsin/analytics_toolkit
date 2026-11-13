@@ -88,6 +88,7 @@ from ..table.write_modes import (
     upsert_stage_table,
 )
 from .type_validation import (
+    _validated_dataframe_profiles,
     convert_dataframe_schema,
     normalize_dataframe_columns,
     validate_dataframe_schema,
@@ -681,6 +682,7 @@ def _prepare_load_target(
             connection_key=options.connection_key,
         )
     zone = prepare_dataframe_write_context(options, state, connection, df)
+    null_columns: tuple[str, ...] = ()
     if state.target_column_types is not None:
         validation_df = (
             convert_dataframe_schema(
@@ -689,13 +691,14 @@ def _prepare_load_target(
             if options.table_schema is not None
             else df
         )
-        validate_dataframe_schema(
+        profiles = _validated_dataframe_profiles(
             validation_df,
             state.target_column_types,
             options.connection_backend,
             allow_timestamp_precision_loss=False,
             destination_timezone=zone,
         )
+        null_columns = tuple(name for name, profile in profiles.items() if profile.null_count)
     if options.table_schema is not None:
         validate_dataframe_schema(
             df,
@@ -703,12 +706,18 @@ def _prepare_load_target(
             options.connection_backend,
             destination_timezone=options.destination_context.get("destination_timezone"),
         )
-    if state.original_target_exists and options.write_mode in {"append", "truncate_insert"}:
+    if state.original_target_exists and options.write_mode in {
+        "append",
+        "truncate_insert",
+        "upsert",
+    }:
         get_backend_adapter(options.connection_backend).validate_existing_dataframe_insert_columns(
             connection,
             options.destination_table,
             [str(column) for column in df.columns],
             connection_key=options.connection_key,
+            null_columns=null_columns,
+            row_count=len(df),
         )
     _apply_load_target_write_mode(options, state, connection)
     _ensure_load_target_table(options, state, connection, df)
@@ -1471,6 +1480,7 @@ def _load_dataframe(
                     upsert_partition_column=options.upsert_partition_column,
                     final_stage_table=state.final_upsert_stage_table,
                     checkpoint=state.upsert_checkpoint,
+                    connection_key=options.connection_key,
                     trino_partition_drop_sql_template=(
                         options.trino_upsert_partition_drop_sql_template
                     ),
@@ -1692,6 +1702,7 @@ def _finalize_loaded_dataframe_stage(
                 upsert_partition_column=options.upsert_partition_column,
                 final_stage_table=state.final_upsert_stage_table,
                 checkpoint=state.upsert_checkpoint,
+                connection_key=options.connection_key,
                 trino_partition_drop_sql_template=(
                     options.trino_upsert_partition_drop_sql_template
                 ),
@@ -1763,6 +1774,8 @@ def _resume_load_upsert(options: LoadOptions, state: LoadState, df: pd.DataFrame
             key_columns=options.key_columns or [],
             final_stage_table=state.final_upsert_stage_table,
             checkpoint=state.upsert_checkpoint,
+            connection_key=options.connection_key,
+            column_types=options.table_schema or state.target_column_types,
         ),
     )
 

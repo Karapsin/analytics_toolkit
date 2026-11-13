@@ -247,7 +247,14 @@ def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:
         insert_column_types={"id": "BIGINT", "sub_id": "BIGINT", "score": "INTEGER"},
     )
 
-    assert connection.executed[0] == (
+    metadata_reads = [
+        statement
+        for statement in connection.executed
+        if "FROM pg_catalog.pg_attribute AS a" in statement
+    ]
+    assert metadata_reads
+    statements = [statement for statement in connection.executed if statement not in metadata_reads]
+    assert statements[0] == (
         "DELETE FROM sandbox.target AS target_dst\n"
         "USING sandbox.target__stage AS stage_src\n"
         'WHERE (target_dst."id" = stage_src."id" '
@@ -255,9 +262,7 @@ def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:
         'AND (target_dst."sub_id" = stage_src."sub_id" '
         'OR (target_dst."sub_id" IS NULL AND stage_src."sub_id" IS NULL))'
     )
-    assert connection.executed[1].startswith(
-        'INSERT INTO sandbox.target ("id", "sub_id", "score") '
-    )
+    assert statements[1].startswith('INSERT INTO sandbox.target ("id", "sub_id", "score") ')
 
 
 def test_finalize_stage_table_trino_replace_recreates_target() -> None:
@@ -315,8 +320,19 @@ def test_finalize_stage_table_trino_replace_recreates_target() -> None:
     )
 
 
-def test_finalize_stage_table_trino_upsert_replaces_affected_partitions() -> None:
+def test_finalize_stage_table_trino_upsert_replaces_affected_partitions(monkeypatch) -> None:
     connection = FakeDbapiConnection(rows=[("2026-06-24",)])
+    original_cursor = connection.cursor
+
+    def cursor():
+        result = original_cursor()
+        fetchall = result.fetchall
+        result.fetchall = lambda: (
+            [] if "is_nullable = 'NO'" in connection.executed[-1] else fetchall()
+        )
+        return result
+
+    monkeypatch.setattr(connection, "cursor", cursor)
     batch = pd.DataFrame({"id": [1], "score": [10]})
 
     table_ops_module.finalize_stage_table(
@@ -337,16 +353,21 @@ def test_finalize_stage_table_trino_upsert_replaces_affected_partitions() -> Non
         insert_column_types={"id": "BIGINT", "score": "INTEGER"},
     )
 
-    assert connection.executed[0] == ('SELECT DISTINCT "event_date" FROM sandbox.target__stage')
-    assert connection.executed[1].startswith(
+    metadata_reads = [
+        statement for statement in connection.executed if "is_nullable = 'NO'" in statement
+    ]
+    assert metadata_reads
+    statements = [statement for statement in connection.executed if statement not in metadata_reads]
+    assert statements[0] == ('SELECT DISTINCT "event_date" FROM sandbox.target__stage')
+    assert statements[1].startswith(
         'INSERT INTO sandbox.target__final_stage ("id", "score")\n'
         'SELECT target_dst."id", target_dst."score"\n'
         "FROM sandbox.target AS target_dst"
     )
-    assert connection.executed[3] == (
+    assert statements[3] == (
         "ALTER TABLE sandbox.target DROP PARTITION (\"event_date\" = '2026-06-24')"
     )
-    assert connection.executed[4].startswith('INSERT INTO sandbox.target ("id", "score") ')
+    assert statements[4].startswith('INSERT INTO sandbox.target ("id", "score") ')
 
 
 def test_insert_gp_rows_can_change_page_size_between_calls(monkeypatch) -> None:

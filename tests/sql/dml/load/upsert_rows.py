@@ -227,6 +227,7 @@ def test_key_validated_append_uses_explicit_subset_column_order(monkeypatch):
 
 def test_partition_replay_uses_certified_payload_without_recomputing_target(monkeypatch):
     adapter = get_backend_adapter("trino")
+    connection = FakeDbapiConnection()
     calls = []
     failure = [True]
 
@@ -251,10 +252,10 @@ def test_partition_replay_uses_certified_payload_without_recomputing_target(monk
         ),
     }
     with pytest.raises(ConnectionError):
-        upsert_stage_table("trino", object(), "sandbox.target", "sandbox.incoming", **kwargs)
+        upsert_stage_table("trino", connection, "sandbox.target", "sandbox.incoming", **kwargs)
     assert checkpoint.prepared
     assert checkpoint.mutation_started
-    upsert_stage_table("trino", object(), "sandbox.target", "sandbox.incoming", **kwargs)
+    upsert_stage_table("trino", connection, "sandbox.target", "sandbox.incoming", **kwargs)
     assert (
         len([statement for statement in calls if "FROM sandbox.target AS target_dst" in statement])
         == 1
@@ -262,7 +263,7 @@ def test_partition_replay_uses_certified_payload_without_recomputing_target(monk
     assert len([statement for statement in calls if "DROP PARTITION" in statement]) == 2
     before = list(calls)
     with pytest.raises(ValueError, match="Prepared upsert payload"):
-        upsert_stage_table("trino", object(), "sandbox.other", "sandbox.incoming", **kwargs)
+        upsert_stage_table("trino", connection, "sandbox.other", "sandbox.incoming", **kwargs)
     assert calls == before
 
 

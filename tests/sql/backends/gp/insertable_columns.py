@@ -21,7 +21,13 @@ def test_gp_generated_columns_are_rejected_before_insert(columns, allowed):
 
     cursor = SimpleNamespace(
         execute=execute,
-        fetchall=lambda: [("computed",), ("always_identity",)],
+        fetchall=lambda: [
+            ("id", True, False, "", ""),
+            ("default_value", True, True, "", ""),
+            ("by_default_identity", True, False, "", "d"),
+            ("computed", False, False, "s", ""),
+            ("always_identity", True, False, "", "a"),
+        ],
         close=lambda: closed.append(True),
     )
     connection = SimpleNamespace(cursor=lambda: cursor)

@@ -22,13 +22,19 @@ def test_trino_partial_chunk_replay_is_explicit_at_least_once(
     connections: list[Any] = []
 
     class Cursor:
-        def execute(self, _query: str, params: list[int]) -> None:
+        def execute(self, query: str, params: list[Any] | tuple[Any, ...]) -> None:
             nonlocal submissions
+            if query.startswith("SELECT "):
+                return
             submissions += 1
             accepted.extend(params)
             if submissions == 2:
                 message = "lost acknowledgement on later chunk"
                 raise ConnectionError(message)
+
+        def fetchall(self) -> list[tuple[Any, ...]]:
+            # The existing target's id column is nullable, so the NN probe is empty.
+            return []
 
         def close(self) -> None:
             pass

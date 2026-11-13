@@ -36,6 +36,7 @@ def finalize_partition_upsert(options: Any, state: Any, connection: Any) -> None
         incoming_stage_tables=state.stage_tables,
         trino_partition_drop_sql_template=options.trino_upsert_partition_drop_sql_template,
         checkpoint=state.upsert_checkpoint,
+        connection_key=options.to_db_key,
     )
 
 

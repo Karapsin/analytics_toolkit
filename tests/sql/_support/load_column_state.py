@@ -12,11 +12,15 @@ from tests.sql._support.load_table import gp_insert_module, load_df_module
 
 
 class ExistingColumnStore:
-    def __init__(self, backend, columns, *, kinds=None, native=False, materialized_allowed=False):
+    def __init__(self, backend, columns, **settings):
         self.backend = backend
-        self.kinds = kinds or {}
-        self.native = native
-        self.materialized_allowed = materialized_allowed
+        self.kinds = settings.pop("kinds", None) or {}
+        self.native = settings.pop("native", False)
+        self.materialized_allowed = settings.pop("materialized_allowed", False)
+        self.not_null = set(settings.pop("not_null", ()))
+        self.defaults = settings.pop("defaults", None) or {}
+        assert not settings
+        self.next_identity = 1000
         self.schema = {
             name: ("Nullable(Int64)" if name == "value" else "Int64")
             if backend == "ch"
@@ -37,11 +41,47 @@ class ExistingColumnStore:
         self.metadata_queries = []
 
     def execute(self, statement, params=None):
+        if "information_schema.columns" in statement:
+            assert tuple(params) == ("sandbox", "events")
+            self.metadata_queries.append(statement)
+            if "is_nullable" in statement:
+                return [
+                    (
+                        name,
+                        "NO" if name in self.not_null else "YES",
+                        str(self.defaults[name]) if name in self.defaults else None,
+                    )
+                    for name in self.schema
+                    if name in self.not_null or "is_nullable = 'NO'" not in statement
+                ]
+            return list(self.schema.items())
         if "pg_catalog.pg_attribute" in statement:
             assert tuple(params) == ("sandbox", "events")
             self.metadata_queries.append(statement)
-            if "formatted_type" in statement:
-                return list(self.schema.items())
+            if "pg_catalog.format_type(" in statement:
+                return [
+                    (name, native)
+                    for name, native in self.schema.items()
+                    if "attgenerated" not in statement
+                    or self.kinds.get(name) not in {"GENERATED", "IDENTITY_ALWAYS"}
+                ]
+            if "a.attnotnull" in statement:
+                return [
+                    (
+                        name,
+                        name in self.not_null,
+                        name in self.defaults,
+                        "s" if kind == "GENERATED" else "",
+                        "a"
+                        if kind == "IDENTITY_ALWAYS"
+                        else "d"
+                        if kind == "IDENTITY_DEFAULT"
+                        else "",
+                    )
+                    for name in self.schema
+                    if (kind := self.kinds.get(name, "")) in {"GENERATED", "IDENTITY_ALWAYS"}
+                    or name in self.not_null
+                ]
             return [
                 (name,)
                 for name, kind in self.kinds.items()
@@ -92,10 +132,24 @@ class ExistingColumnStore:
                 for name, value in zip(names, values)
                 if self.kinds.get(name) != "EPHEMERAL"
             )
-            for name, kind in self.kinds.items():
-                if kind in {"GENERATED", "MATERIALIZED", "ALIAS"} and name not in names:
-                    row[name] = row["id"] * 2
+            self._populate_omitted_columns(row, names)
+            if any(row[name] is None for name in self.not_null):
+                message = "Server rejected NULL in a NOT NULL column."
+                raise ValueError(message)
             self.rows.append(row)
+
+    def _populate_omitted_columns(self, row, names):
+        for name, kind in self.kinds.items():
+            if name in names:
+                continue
+            if kind in {"GENERATED", "MATERIALIZED", "ALIAS"}:
+                row[name] = row["id"] * 2
+            elif kind in {"IDENTITY_ALWAYS", "IDENTITY_DEFAULT"}:
+                row[name] = self.next_identity
+                self.next_identity += 1
+        for name, value in self.defaults.items():
+            if name not in names:
+                row[name] = value
 
 
 class ColumnCursor:
@@ -197,11 +251,19 @@ def existing_column_target(
     def execute_values(cursor, statement, rows, page_size, **_kwargs):
         del page_size
         if real_gp_adaptation:
-            from psycopg2.extensions import adapt  # noqa: PLC0415 - optional real-driver boundary
+            from psycopg2.extensions import (  # noqa: PLC0415 - optional real-driver boundary
+                QuotedString,
+                adapt,
+            )
 
             for row in rows:
                 for value in row:
-                    adapt(value).getquoted()
+                    adapted = adapt(value)
+                    if isinstance(adapted, QuotedString):
+                        # A standalone adapter lacks the real connection's UTF8
+                        # client encoding and otherwise defaults to Latin-1.
+                        adapted.encoding = "utf-8"
+                    adapted.getquoted()
         placeholders = ", ".join("(" + ", ".join("NULL" for _ in row) + ")" for row in rows)
         sql = statement % placeholders
         cursor.store.execute(sql, [value for row in rows for value in row])

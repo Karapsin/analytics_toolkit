@@ -130,6 +130,7 @@ class BackendAdapter:
     read_dataframe = _common_methods.read_dataframe
     get_table_column_names = _common_methods.get_table_column_names
     get_writable_table_column_types = _common_methods.get_writable_table_column_types
+    get_required_column_defaults = _common_methods.get_required_column_defaults
     validate_existing_dataframe_insert_columns = (
         _common_methods.validate_existing_dataframe_insert_columns
     )

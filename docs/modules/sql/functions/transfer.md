@@ -302,6 +302,12 @@ rows = sql.transfer(
   integer, decimal and temporal representations before text. Every keyed slice
   contributes to this one resolved schema; the adaptive path has an all-key
   barrier and uses one target stage.
+- Existing-target `append`, `truncate_insert` and `upsert` validate `NOT NULL`
+  and required columns against the complete owned stage payload after all keys
+  and writers finish, before any live publication. Validation uses the actual
+  SQL projection and casts; prepared partition payloads are checked before
+  mutation and replay. It adds no source scan or replay spool. Dry plans set
+  `target_constraints_validation_pending=True` and defer this data validation.
 - Map keys additionally require metadata proof that conversion preserves
   distinct destination-native identities, recursively. This applies to both
   source-to-stage and stage-to-existing-target conversions; an explicit stage

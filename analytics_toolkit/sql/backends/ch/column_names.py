@@ -30,13 +30,15 @@ def get_writable_table_column_types(
     }
 
 
-def validate_existing_dataframe_insert_columns(
+def validate_existing_dataframe_insert_columns(  # noqa: PLR0913 - adapter insertability contract
     adapter: Any,
     connection: Any,
     table_name: str,
     columns: Sequence[str],
     *,
     connection_key: str,
+    null_columns: Sequence[str] = (),
+    row_count: int | None = None,
 ) -> None:
     """Certify the actual dataframe writer's explicit-column contract."""
     from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- registry cycle.
@@ -45,7 +47,7 @@ def validate_existing_dataframe_insert_columns(
 
     from .routing import query_local  # noqa: PLC0415 -- backend registry cycle.
 
-    del connection_key
+    del connection_key, null_columns, row_count
     table = TableIdentifier.parse(table_name, adapter.backend).render_quoted(adapter.backend)
     rows = getattr(query_local(connection, f"DESCRIBE TABLE {table}"), "result_rows", None) or []
     kinds = {

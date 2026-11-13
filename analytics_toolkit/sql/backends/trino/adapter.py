@@ -14,6 +14,7 @@ from ..models import SourceColumn
 from ..utils import sql_in_list as _sql_in_list
 from ..utils import sql_literal
 from ..utils import user_filter as _user_filter
+from . import column_constraints as _column_constraints
 from . import insert as _insert
 from . import operations as _operations
 from . import parquet_stage as _parquet_stage
@@ -38,6 +39,10 @@ class TrinoAdapter(DbApiBackendAdapter):
     supports_show_tables_catalog_filter = True
     forbidden_airflow_file_override_fields = _parquet_stage.FORBIDDEN_CREDENTIAL_FIELDS
     build_execute_create_as_sqls = _operations.build_execute_create_as_sqls
+    get_required_column_defaults = _column_constraints.get_required_column_defaults
+    validate_existing_dataframe_insert_columns = (
+        _column_constraints.validate_existing_dataframe_insert_columns
+    )
 
     def __init__(self) -> None:
         super().__init__(backend="trino", commit_commands=False)

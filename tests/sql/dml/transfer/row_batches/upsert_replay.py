@@ -14,11 +14,13 @@ from analytics_toolkit.sql.dml.transfer.flow.upsert_finalization import (
 from analytics_toolkit.sql.dml.transfer.runtime.models import TransferStageState
 from analytics_toolkit.sql.dml.transfer.runtime.retry import run_with_retry
 
+from tests.sql._support.fakes import FakeDbapiConnection
 from tests.sql._support.row_batches import make_progress_options
 
 
 def test_live_partition_finalization_retains_complete_payload_between_attempts(monkeypatch):
     options = make_progress_options(
+        to_db_key="trino",
         to_db_backend="trino",
         write_mode="upsert",
         key_columns=["id"],
@@ -38,15 +40,18 @@ def test_live_partition_finalization_retains_complete_payload_between_attempts(m
     statements = []
     monkeypatch.setattr(adapter, "execute_command", lambda _connection, sql: statements.append(sql))
     monkeypatch.setattr(adapter, "fetch_upsert_partition_values", lambda *_a, **_k: ["Jan"])
-    finalize_partition_upsert(options, state, object())
+    connection = FakeDbapiConnection()
+    finalize_partition_upsert(options, state, connection)
     payload = state.upsert_checkpoint
     assert payload is not None
     assert payload.prepared
     assert payload.target_table == options.target_table
-    finalize_partition_upsert(options, state, object())
+    finalize_partition_upsert(options, state, connection)
     assert state.upsert_checkpoint is payload
     assert sum("FROM sandbox.target AS target_dst" in statement for statement in statements) == 1
     assert sum("DROP PARTITION" in statement for statement in statements) == 2
+    assert len(connection.executed) == 2
+    assert all("is_nullable = 'NO'" in query for query in connection.executed)
 
 
 @pytest.mark.parametrize("prepared", [None, False, True])

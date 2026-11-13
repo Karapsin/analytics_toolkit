@@ -215,4 +215,31 @@ Members are normalized through `.value` before certification and conversion,
 including nested values. Native exact numbers, nulls and strings keep their
 ordinary representations, while map-key collision checks remain active.
 
+Boolean-to-integer certification is additionally covered by
+`dml/load/numpy_scalars.py::test_numpy_boolean_integer_load_reaches_real_gp_adaptation_as_zero_and_one`,
+`core/numpy_scalars.py::test_numpy_boolean_enum_and_default_inference_keep_their_logical_family`,
+and `core/numpy_scalars.py::test_numpy_boolean_does_not_broaden_other_authoritative_numeric_policies`.
+Accepted boolean inputs for authoritative integer columns reach transport as
+native `0`/`1`; inference and other authoritative numeric policies are preserved.
+
+Existing-target nullability is additionally covered by
+`dml/load/not_null_columns.py::test_existing_not_null_column_rejects_null_before_clearing_seed_rows`,
+`dml/load/not_null_columns.py::test_omitted_required_not_null_column_rejects_before_clearing_seed_rows`,
+`dml/load/not_null_columns.py::test_complete_upsert_with_null_nonkey_required_value_rejects_before_staging`,
+`dml/load/not_null_columns.py::test_native_array_with_null_elements_is_not_a_sql_null_column`,
+and `dml/load/not_null_columns.py::test_explicit_text_encoding_of_null_container_is_not_a_sql_null_column`.
+These check converted column nulls before mutation, while preserving non-null
+containers, encoded text and valid append/truncate omissions. Complete-row upsert
+requirements remain unchanged.
+
+Captured transfer payloads are additionally covered by
+`dml/transfer/not_null_targets.py::test_existing_not_null_transfer_rejects_before_clearing_seed_rows`,
+`dml/transfer/not_null_targets.py::test_late_key_null_rejects_all_private_stages_before_any_live_publication`,
+`dml/transfer/not_null_targets.py::test_partition_upsert_null_rejects_before_any_partition_mutation`,
+`dml/table/stage_constraints.py::test_stage_constraint_probe_matches_native_casts_and_exact_identifier_identity`,
+and `dml/table/stage_constraints.py::test_prepared_partition_replay_validates_the_same_payload_before_submission`.
+Every key and writer contributes before live publication. Actual staged SQL
+projections and prepared replay payloads retain their nullability checks;
+dry plans leave this validation pending.
+
 [SQL module index](index.md)

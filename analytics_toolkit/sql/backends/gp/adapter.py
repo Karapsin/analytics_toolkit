@@ -79,6 +79,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
     render_transfer_literal = _key_literals.render_transfer_literal
     get_table_column_names = _operations.get_table_column_names
     get_writable_table_column_types = _operations.get_writable_table_column_types
+    get_required_column_defaults = _operations.get_required_column_defaults
     validate_existing_dataframe_insert_columns = (
         _operations.validate_existing_dataframe_insert_columns
     )
