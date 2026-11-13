@@ -105,6 +105,30 @@ appending to an existing table. Nested UUIDs, exact decimals and nulls remain
 native; array parameters use the resolved destination type. Quoted custom type
 names retain their exact identity during table introspection.
 
+Supported Greenplum built-ins follow exact quoted identity, including recognized
+`pg_catalog`-qualified names, while rendering the supplied schema SQL.
+`NUMERIC(p)` has scale zero, SQL `CHAR` defaults to length one, and bare `BPCHAR`
+has unbounded input validation. Redundant fractional zeros can be removed to fit
+a numeric scale exactly; nonzero excess fractional digits are rejected.
+
+Greenplum `TIME` and `INTERVAL` accept native `datetime.time` and
+`datetime.timedelta` values, including microsecond-aligned pandas timedeltas.
+Existing and inferred native schemas require exact precision. An explicit schema
+can request PostgreSQL rounding at precision 0–6 and native interval field
+restrictions. Rounding retains the `24:00` boundary and separate interval day/time
+components. Finer nanoseconds require explicit rounding or exact typed text
+through inference. Mixed or unresolved clock awareness also uses exact typed text
+during inference.
+Use SQL `INTERVAL(p)` for precision; quoted or catalog-qualified interval typmod
+argument forms are rejected.
+
+Declared `TIME` keeps wall-clock fields and discards a supplied zone. `TIMETZ`
+(`TIME WITH TIME ZONE`)
+without an offset uses the server's current date and session timezone; resolved
+offsets require whole seconds and magnitude below 16 hours. A timedelta carries
+day-time components and cannot recover the original calendar-month identity of
+a decoded SQL interval.
+
 Greenplum `JSON` and `JSONB`, including their `pg_catalog`-qualified forms,
 accept dictionaries, lists, encoded JSON document strings and supported psycopg2
 `Json` wrappers. Strings retain their document text. Serialization and validation
@@ -132,6 +156,16 @@ keys; authoritative maps reject such collisions before target mutation instead
 of discarding an entry. Map-key identity also uses the destination types inside
 composite `ROW` keys,
 so padding or rounding in a field cannot silently merge entries.
+
+Existing or explicit Trino `TIME` schemas accept native time values. Bare `TIME`
+defaults to precision 3; the engine range is 0–12, subject to connector support.
+Existing precision must fit exactly; explicit conversion uses native rounding
+with midnight wrapping to `00:00`. Zoned offsets require whole minutes within
+±14 hours. Unresolved named zones fail before mutation rather than inventing a
+client date; matching and cross-zone casts use server policy. Nonempty native
+`TIME` payloads require native insertion instead of incompatible Hive/Parquet
+staging. Omitting a nullable target `TIME` column remains valid, and empty-input
+policies retain native SQL handling.
 
 When Python serializes dataframe values to text, authoritative width checks use
 the complete encoded strings, including structured-text metadata. Oversized

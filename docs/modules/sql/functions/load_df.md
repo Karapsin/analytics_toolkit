@@ -99,6 +99,20 @@ rows
   their normal conversion rules.
 - Explicit or existing integer columns convert accepted boolean scalars to native
   `0`/`1`; automatic boolean and integer inference retain their respective types.
+- Supported Greenplum built-ins retain qualified/quoted identity and the supplied
+  schema SQL. `NUMERIC(p)` uses scale zero, SQL `CHAR` length one, and bare `BPCHAR`
+  unbounded input validation. Excess fractional zeros can align exactly; nonzero
+  excess fractions reject before mutation.
+- Greenplum `TIME`/`INTERVAL` preserve supported native time/timedelta values.
+  Existing and inferred precision must fit exactly; explicit precision requests
+  use native rounding and interval field restrictions. See the
+  [backend notes](../dataframe-loading.md#backend-notes) for `TIME`/`TIMETZ`
+  zone handling and the calendar-month limitation of decoded timedeltas.
+- Existing or explicit Trino `TIME` uses native binding with strict existing
+  precision or requested native rounding; midnight wraps to `00:00`. Offsets use
+  whole minutes within ±14 hours, and unresolved named zones fail before mutation.
+  Nonempty native `TIME` payloads require native insertion; valid omitted nullable
+  columns and empty-input policies retain their existing behavior.
 - Greenplum `JSON`/`JSONB` and their `pg_catalog`-qualified forms preserve native
   dictionaries/lists, encoded document strings and supported `Json` wrappers.
   The validated serialized documents are retained through retries; custom

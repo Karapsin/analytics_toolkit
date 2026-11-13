@@ -20,6 +20,13 @@ class DataframePreparationPolicy:
     """Default policies leave dataframe payloads and execution previews alone."""
 
     load_execution_preview_requires_schema: bool = False
+    accepts_unparameterized_decimal_floats: bool = False
+
+    def canonical_native_type(self, native_type: str) -> str:
+        """Keep backend type identities unless its adapter recognizes an alias."""
+        from .decimal_values import decimal_target_type  # noqa: PLC0415 -- native defaults.
+
+        return decimal_target_type(native_type, getattr(self, "backend", ""))
 
     def prepare_dataframe_payload(
         self, df: pd.DataFrame, schema: Mapping[str, str] | None
@@ -27,6 +34,12 @@ class DataframePreparationPolicy:
         """Backends without an owned payload codec need no prepared frame."""
         del self, df, schema
         return None
+
+    def validate_dataframe_staging_schema(
+        self, schema: Mapping[str, str], *, use_parquet: bool
+    ) -> None:
+        """Backends without an alternate dataframe stage have no extra restriction."""
+        del self, schema, use_parquet
 
 
 def column_list_sql(self: Any, columns: Sequence[str]) -> str:

@@ -10807,6 +10807,44 @@
         "tests/sql/dml/load/gp_json.py::test_public_native_json_arrays_keep_sql_array_rank_and_json_element_values"
       ]
     },
+    "audit.load.gp_temporal.time": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_temporal_values.py::test_greenplum_native_time_and_interval_existing_and_explicit_loads[audit.load.gp_temporal.time]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_temporal_values.py::test_native_time_and_interval_load_through_real_gp_execute_values",
+        "tests/sql/dml/load/gp_temporal_values.py::test_full_precision_native_temporals_preserve_null_positions_and_exact_values",
+        "tests/sql/dml/load/gp_temporal_values.py::test_incompatible_native_temporal_value_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.load.gp_temporal.interval": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_temporal_values.py::test_greenplum_native_time_and_interval_existing_and_explicit_loads[audit.load.gp_temporal.interval]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_temporal_values.py::test_native_time_and_interval_load_through_real_gp_execute_values",
+        "tests/sql/dml/load/gp_temporal_values.py::test_full_precision_native_temporals_preserve_null_positions_and_exact_values",
+        "tests/sql/dml/load/gp_temporal_values.py::test_incompatible_native_temporal_value_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.load.trino_time": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_time_values.py::test_trino_time_values_preserve_precision_and_stage_only_incoming_columns",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_time_values.py::test_native_time_uses_real_trino_adapter_and_sdk_formatter",
+        "tests/sql/dml/load/trino_time_values.py::test_explicit_time_precision_uses_native_rounding_and_midnight_wrap",
+        "tests/sql/dml/load/trino_time_values.py::test_explicit_precision_conversion_preserves_existing_time6_destination",
+        "tests/sql/dml/load/trino_time_values.py::test_unsupported_parquet_time_stage_rejects_before_clearing_target",
+        "tests/sql/dml/load/trino_time_values.py::test_parquet_append_omitting_nullable_time_stages_only_incoming_columns"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

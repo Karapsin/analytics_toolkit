@@ -232,6 +232,64 @@ def truncate_temporal(value: Any, scale: int) -> Any:
     return value
 
 
+def _encode_time_zone(
+    zone: dt.tzinfo | None, wall: dt.time, offset: dt.timedelta | None, label: str | None
+) -> Any:
+    if zone is None:
+        return None
+    name = getattr(zone, "key", None) or getattr(zone, "zone", None)
+    if name is not None:
+        candidate = wall.replace(tzinfo=canonical_named_zone(name))
+        if candidate.utcoffset() == offset and candidate.tzname() == label:
+            return ["named", name]
+    if offset is None:
+        msg = "Clock timezone cannot be replayed without inventing a date."
+        raise TypeError(msg)
+    return ["fixed", offset.days, offset.seconds, offset.microseconds, label]
+
+
+def _encode_clock(value: dt.time) -> list[Any]:
+    offset, label = value.utcoffset(), value.tzname()
+    wall = dt.time(value.hour, value.minute, value.second, value.microsecond, fold=value.fold)
+    descriptor = _encode_time_zone(value.tzinfo, wall, offset, label)
+    if offset is not None:
+        zone = dt.timezone(offset, label) if label is not None else dt.timezone(offset)
+        wall = wall.replace(tzinfo=zone)
+    return ["time", wall.isoformat(), descriptor, value.fold]
+
+
+def _decode_time(payload: Any) -> dt.time:
+    value = dt.time.fromisoformat(payload[0])
+    descriptor = payload[1]
+    zone = None
+    if descriptor is not None:
+        if descriptor[0] == "named":
+            zone = canonical_named_zone(descriptor[1])
+        elif descriptor[0] == "fixed":
+            offset = dt.timedelta(
+                days=descriptor[1], seconds=descriptor[2], microseconds=descriptor[3]
+            )
+            zone = (
+                dt.timezone(offset, descriptor[4])
+                if descriptor[4] is not None
+                else dt.timezone(offset)
+            )
+        else:
+            msg = "Unknown exact clock timezone encoding."
+            raise ValueError(msg)
+    return value.replace(tzinfo=zone, fold=int(payload[2]))
+
+
+def _decode_calendar_value(tag: str, payload: Any) -> Any:
+    if tag == "date":
+        return dt.date.fromisoformat(payload[0])
+    if tag == "time":
+        return _decode_time(payload)
+    if tag == "pandas_timedelta":
+        return pd.Timedelta(np.timedelta64(_parse_integer_text(payload[0]), payload[1]))
+    return dt.timedelta(days=payload[0], seconds=payload[1], microseconds=payload[2])
+
+
 def encode_value(value: Any) -> Any:  # noqa: C901, PLR0911, PLR0912 - tagged scalar codec
     """Tagged JSON tree; SQL NULL and nested containers retain their identity."""
     value = unwrap_enum(value)
@@ -254,6 +312,17 @@ def encode_value(value: Any) -> Any:  # noqa: C901, PLR0911, PLR0912 - tagged sc
         return ["datetime", timestamp.isoformat(), str(timestamp.tz) if timestamp.tz else None]
     if isinstance(value, dt.date):
         return ["date", value.isoformat()]
+    if isinstance(value, dt.time):
+        return _encode_clock(value)
+    if isinstance(value, pd.Timedelta):
+        raw = value.asm8
+        return [
+            "pandas_timedelta",
+            integer_text(int(raw.view(np.int64))),
+            np.datetime_data(raw.dtype)[0],
+        ]
+    if isinstance(value, dt.timedelta):
+        return ["timedelta", value.days, value.seconds, value.microseconds]
     if isinstance(value, UUID):
         return ["uuid", str(value)]
     if isinstance(value, (bytes, bytearray, memoryview)):
@@ -302,8 +371,8 @@ def decode_value(encoded: Any) -> Any:  # noqa: C901, PLR0911 - tagged scalar co
     if tag == "datetime":
         value = pd.Timestamp(payload[0])
         return value.tz_convert(payload[1]) if payload[1] else value
-    if tag == "date":
-        return dt.date.fromisoformat(payload[0])
+    if tag in {"date", "time", "pandas_timedelta", "timedelta"}:
+        return _decode_calendar_value(tag, payload)
     if tag == "uuid":
         return UUID(payload[0])
     if tag == "bytes":

@@ -27,9 +27,14 @@ from analytics_toolkit.sql.core.exact_values import (
 )
 
 from .ch.value_validation import _permits_null
-from .gp.json_values import validate_json_profile
+from .decimal_values import required_fractional_scale, resolve_decimal_type, validate_decimal_type
 from .inferred_types import resolve_column_type
-from .native_values import convert_native_value
+from .native_values import (
+    _float_width,
+    canonical_native_type,
+    convert_native_value,
+    validate_backend_profile,
+)
 from .temporal_context import TIMEZONE_POLICY_VERSION
 from .temporal_values import timestamp_scale, timestamp_value, validate_timestamp_range
 from .text_types import binary_profile_fits
@@ -39,6 +44,7 @@ __all__ = [
     "ColumnProfile",
     "NativeType",
     "ResolvedColumn",
+    "_float_width",
     "_permits_null",
     "decimal_domain",
     "declared_domain_fits",
@@ -143,10 +149,8 @@ def parse_native_type(  # noqa: C901, PLR0912 - balanced native type grammar
 
 
 def integer_domain(type_name: str | None, *, backend: str | None = None) -> tuple[int, int] | None:
-    base = parse_native_type(type_name).base
+    base = parse_native_type(canonical_native_type(type_name, backend)).base
     name = base.name
-    if backend == "gp" and name == "int8":
-        return -(2**63), 2**63 - 1
     widths = {
         "tinyint": 8,
         "smallint": 16,
@@ -203,10 +207,11 @@ class ResolvedColumn:
         value = unwrap_enum(value)
         if is_null(value):
             return None
+        target_type = canonical_native_type(self.target_type, self.target_backend)
         native, value = convert_native_value(value, self)
         if native:
             return value
-        textual = parse_native_type(self.target_type).base.name in {
+        textual = parse_native_type(target_type).base.name in {
             "string",
             "text",
             "varchar",
@@ -216,7 +221,7 @@ class ResolvedColumn:
         }
         native_bytes = (
             isinstance(value, (bytes, bytearray, memoryview))
-            and parse_native_type(self.target_type).base.name == "string"
+            and parse_native_type(target_type).base.name == "string"
         )
         if self.text_fallback or (textual and not native_bytes):
             scale = (
@@ -230,21 +235,21 @@ class ResolvedColumn:
             )
         if (
             self.target_backend in {"gp", "trino"}
-            and parse_native_type(self.target_type).base.name in {"bytea", "varbinary"}
+            and parse_native_type(target_type).base.name in {"bytea", "varbinary"}
             and isinstance(value, str)
         ):
             return value.encode("utf-8")
-        if is_timestamp_type(self.target_type):
+        if is_timestamp_type(target_type):
             value = timestamp_value(
-                truncate_temporal(value, timestamp_scale(self.target_type)),
-                self.target_type,
+                truncate_temporal(value, timestamp_scale(target_type)),
+                target_type,
                 self.destination_timezone,
             )
         if isinstance(value, ExactTemporal):
             if (
                 self.target_backend != "ch"
-                and is_timestamp_type(self.target_type)
-                and timestamp_scale(self.target_type) <= _TRINO_TIMESTAMP_SCALE
+                and is_timestamp_type(target_type)
+                and timestamp_scale(target_type) <= _TRINO_TIMESTAMP_SCALE
             ):
                 return value.calendar_datetime()
             return (
@@ -252,27 +257,21 @@ class ResolvedColumn:
                 if self.target_backend == "ch"
                 or (
                     self.target_backend == "trino"
-                    and timestamp_scale(self.target_type) > _MAX_TEMPORAL_SCALE
+                    and timestamp_scale(target_type) > _MAX_TEMPORAL_SCALE
                 )
                 else value.timestamp()
             )
-        if parse_native_type(self.target_type).base.name in {
-            "decimal",
-            "numeric",
-            "number",
-        } and isinstance(value, Integral):
-            return Decimal(int(value))
-        if parse_native_type(self.target_type).base.name in _FLOAT_TYPES | {"boolean", "bool"}:
+        if parse_native_type(target_type).base.name in _FLOAT_TYPES | {"boolean", "bool"}:
             return (
                 bool(value)
-                if parse_native_type(self.target_type).base.name in {"boolean", "bool"}
+                if parse_native_type(target_type).base.name in {"boolean", "bool"}
                 else float(value)
             )
         if integer_domain(
-            self.target_type, backend=self.target_backend or None
+            target_type, backend=self.target_backend or None
         ) is not None and isinstance(value, (Integral, np.bool_)):
             return int(value)
-        if parse_native_type(self.target_type).base.name == "uuid" and isinstance(value, str):
+        if parse_native_type(target_type).base.name == "uuid" and isinstance(value, str):
             return UUID(value)
         return value
 
@@ -334,6 +333,9 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
         destination_timezone=destination_timezone,
     )
     fallback = target is None
+    if fallback and not profile.text_encoding_valid:
+        msg = "Selected input has no supported exact native representation or text encoding."
+        raise ValueError(msg)
     if target is None:
         target = {"gp": "TEXT", "trino": "VARCHAR", "ch": "String"}[target_backend]
     if (
@@ -395,23 +397,16 @@ def _resolve_native(  # noqa: C901, PLR0911, PLR0912 - explicit native precedenc
         if temporal is not None:
             return temporal
         return {"gp": "TEXT", "trino": "VARCHAR", "ch": "String"}[backend]
+    if backend == "gp" and families in ({"time"}, {"interval"}):
+        from .gp.temporal_values import infer_clock_interval_type  # noqa: PLC0415 -- native policy.
+
+        return infer_clock_interval_type(profile)
     if families <= {"integer"}:
         return _integer_type(
             profile.minimum_integer or 0, profile.maximum_integer or 0, backend, source_type
         )
     if families <= {"integer", "decimal"}:
-        precision = max(1, profile.integral_digits + profile.fractional_digits)
-        if backend == "gp" and precision > _GP_DECLARED_NUMERIC_PRECISION:
-            return (
-                "NUMERIC"
-                if profile.integral_digits <= _GP_NUMERIC_INTEGRAL_DIGITS
-                and profile.fractional_digits <= _GP_NUMERIC_FRACTIONAL_DIGITS
-                else None
-            )
-        if precision > {"gp": 1000, "trino": 38, "ch": 76}[backend]:
-            return None
-        name = {"gp": "NUMERIC", "trino": "DECIMAL", "ch": "Decimal"}[backend]
-        return f"{name}({precision}, {profile.fractional_digits})"
+        return resolve_decimal_type(profile, backend)
     if families == {"boolean"}:
         return "Bool" if backend == "ch" else "BOOLEAN"
     if families == {"float"}:
@@ -484,9 +479,22 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
 ) -> None:
     """Validate authoritative targets without widening or changing their family."""
     destination_timezone = destination_timezone or profile.destination_timezone
+    target_type = canonical_native_type(target_type, backend)
+    validate_decimal_type(target_type, backend)
     outer_type = parse_native_type(target_type)
     base = outer_type.base
-    if backend == "gp" and validate_json_profile(profile, target_type):
+    if (
+        base.name in {"text", "varchar", "char", "character", "character varying", "string"}
+        and not profile.text_encoding_valid
+    ):
+        msg = "Selected input cannot be encoded exactly for authoritative text."
+        raise ValueError(msg)
+    if validate_backend_profile(
+        profile,
+        target_type,
+        backend,
+        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+    ):
         return
     if backend == "ch" and profile.null_count and not _permits_null(target_type):
         msg = "Selected input contains NULL for a nonnullable authoritative column."
@@ -562,7 +570,7 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         if (
             not profile.families <= {"integer", "decimal"}
             or profile.integral_digits > precision - scale
-            or profile.fractional_digits > scale
+            or required_fractional_scale(profile) > scale
         ):
             msg = "Selected input exceeds authoritative decimal precision or scale."
             raise ValueError(msg)
@@ -570,7 +578,7 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         if (
             not profile.families <= {"integer", "decimal"}
             or profile.integral_digits > _GP_NUMERIC_INTEGRAL_DIGITS
-            or profile.fractional_digits > _GP_NUMERIC_FRACTIONAL_DIGITS
+            or required_fractional_scale(profile) > _GP_NUMERIC_FRACTIONAL_DIGITS
         ):
             msg = "Selected input exceeds authoritative numeric domain."
             raise ValueError(msg)
@@ -662,21 +670,6 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         raise ValueError(msg)
 
 
-def _float_width(type_name: str | None, backend: str | None) -> int | None:
-    native = parse_native_type(type_name).base
-    if native.name not in _FLOAT_TYPES:
-        return None
-    if native.name in {"float32", "float4", "real", "single"}:
-        return 32
-    if native.name == "float":
-        if backend == "ch":
-            return 32
-        if native.arguments:
-            return 32 if int(native.arguments[0]) <= _FLOAT32_PRECISION else 64
-        return 64
-    return 64
-
-
 def _date_domain(type_name: str | None, backend: str | None) -> tuple[dt.date, dt.date] | None:
     native = parse_native_type(type_name).base.name
     if native not in {"date", "date32"}:
@@ -721,6 +714,8 @@ def declared_domain_fits(  # noqa: C901, PLR0911, PLR0912 - exact declared domai
     source_backend: str | None = None,
 ) -> bool:
     """Whether metadata alone proves exact transport (no adaptive scan required)."""
+    source_type = canonical_native_type(source_type, source_backend)
+    target_type = canonical_native_type(target_type, target_backend)
     if not source_type or not target_type:
         return False
     if (

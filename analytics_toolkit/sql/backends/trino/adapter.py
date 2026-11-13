@@ -18,6 +18,7 @@ from . import column_constraints as _column_constraints
 from . import insert as _insert
 from . import operations as _operations
 from . import parquet_stage as _parquet_stage
+from . import time_values as _time_values
 
 _TRINO_MAX_DECIMAL_PRECISION = 38
 
@@ -38,6 +39,9 @@ class TrinoAdapter(DbApiBackendAdapter):
     requires_upsert_partition_drop_template = True
     supports_show_tables_catalog_filter = True
     forbidden_airflow_file_override_fields = _parquet_stage.FORBIDDEN_CREDENTIAL_FIELDS
+    load_execution_preview_requires_schema = True
+    prepare_dataframe_payload = _time_values.prepare_dataframe_payload
+    validate_dataframe_staging_schema = _time_values.validate_staging_schema
     build_execute_create_as_sqls = _operations.build_execute_create_as_sqls
     get_required_column_defaults = _column_constraints.get_required_column_defaults
     validate_existing_dataframe_insert_columns = (

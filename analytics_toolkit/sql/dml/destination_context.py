@@ -24,9 +24,12 @@ def freeze_destination_timezone(
         raise InvalidSqlInputError(message)
     cache["timezone_policy_version"] = TIMEZONE_POLICY_VERSION
     adapter = get_backend_adapter(backend)
+    normalized_schema = {
+        name: adapter.canonical_native_type(native) for name, native in (schema or {}).items()
+    }
     required = (
         required
-        or adapter.requires_destination_timezone(schema or {})
+        or adapter.requires_destination_timezone(normalized_schema)
         or cache.get("destination_timezone") is not None
     )
     zone = cast("str | None", adapter.destination_write_timezone(connection, required=required))

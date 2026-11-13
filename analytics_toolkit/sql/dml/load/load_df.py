@@ -725,6 +725,10 @@ def _prepare_load_target(
             null_columns=null_columns,
             row_count=len(df),
         )
+    if options.use_parquet_staging and not df.empty:
+        get_backend_adapter(options.connection_backend).validate_dataframe_staging_schema(
+            _incoming_column_types(options, state, df), use_parquet=True
+        )
     _apply_load_target_write_mode(options, state, connection)
     _ensure_load_target_table(options, state, connection, df)
     _load_target_column_metadata(options, state, connection, df)
@@ -1027,7 +1031,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             table_name=options.destination_table,
         )
 
-    if options.use_parquet_staging:
+    if options.use_parquet_staging and not df.empty:
         _add_parquet_load_plan_steps(plan, options, df, metadata)
     elif options.write_mode == "upsert":
         stage_table = _dry_run_load_stage_name(options, "dry_run")
@@ -1232,6 +1236,8 @@ def _add_parquet_load_plan_steps(
     metadata: SqlOperationMetadata,
 ) -> None:
     adapter = get_backend_adapter(options.connection_backend)
+    incoming_types = _incoming_column_types(options, None, df)
+    adapter.validate_dataframe_staging_schema(incoming_types, use_parquet=True)
     uses_partition_replacement_upsert = adapter.uses_partition_replacement_upsert()
     parquet_schema = options.s3_transfer_staging_schema
     stage_table = build_stage_table_name(
@@ -1254,7 +1260,7 @@ def _add_parquet_load_plan_steps(
         [
             build_create_parquet_stage_table_sql(
                 stage_table,
-                options.table_schema,
+                incoming_types,
                 stage_external_location,
                 query_label=options.query_label,
                 ddl_properties=options.parquet_ddl_properties,
@@ -1406,7 +1412,7 @@ def _load_dataframe(
     df: pd.DataFrame,
     on_progress: Any | None = None,
 ) -> int:
-    if options.use_parquet_staging:
+    if options.use_parquet_staging and not df.empty:
         return _load_dataframe_via_parquet_stage(
             options=options,
             state=state,
@@ -1594,6 +1600,7 @@ def _load_dataframe_via_parquet_stage(
     on_progress: Any | None,
 ) -> int:
     pa, pq, fsspec_module = ensure_parquet_staging_dependencies()
+    incoming_types = _incoming_column_types(options, state, df)
     _run_load_target_action(
         options,
         "create_stage",
@@ -1601,6 +1608,7 @@ def _load_dataframe_via_parquet_stage(
             options,
             state,
             connection_ref["connection"],
+            incoming_types,
         ),
     )
     if state.stage_external_location is None or state.overlap_stage_table is None:
@@ -1615,7 +1623,7 @@ def _load_dataframe_via_parquet_stage(
         storage_options=options.parquet_storage_options,
         row_group_size=PARQUET_STAGE_DEFAULT_MAX_ROW_GROUP_SIZE,
         on_progress=on_progress,
-        column_types=options.table_schema or state.target_column_types,
+        column_types=incoming_types,
     )
     _run_load_target_action(
         options,
@@ -1634,13 +1642,18 @@ def _create_load_parquet_stage_table(
     options: LoadOptions,
     state: LoadState,
     connection: Any,
+    column_types: Mapping[str, str] | None = None,
 ) -> None:
     parquet_schema = options.s3_transfer_staging_schema
     if not parquet_schema:
         raise ValueError("s3_transfer_staging_schema is required for Parquet staging.")
     if not options.s3_transfer_staging_location:
         raise ValueError("s3_transfer_staging_location is required for Parquet staging.")
-    stage_column_types = options.table_schema or state.target_column_types
+    stage_column_types = (
+        column_types
+        if column_types is not None
+        else options.table_schema or state.target_column_types
+    )
     if stage_column_types is None:
         raise ValueError(
             "Could not resolve target schema before creating a Parquet load stage "

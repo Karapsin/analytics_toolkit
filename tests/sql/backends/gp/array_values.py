@@ -57,6 +57,9 @@ def test_public_gp_table_info_retains_exact_array_element_typmods_and_declared_r
         ("timestamp(3) without time zone[]", "TIMESTAMP(3)[]"),
         ("time(6) with time zone[]", "TIME(6) WITH TIME ZONE[]"),
         ("text", "TEXT"),
+        ("bpchar", "BPCHAR"),
+        ("bpchar[]", "BPCHAR[]"),
+        ("bpchar(5)[]", "CHARACTER(5)[]"),
     ],
 )
 def test_gp_catalog_type_canonicalization_preserves_exact_native_shape(native, expected):
@@ -69,6 +72,7 @@ def test_gp_catalog_type_canonicalization_preserves_exact_native_shape(native, e
         ("_int4", None, None, "INTEGER[]"),
         ("_numeric", 18, 4, "NUMERIC(18, 4)[]"),
         ("_uuid", None, None, "UUID[]"),
+        ("_bpchar", None, None, "BPCHAR[]"),
         ("_CaseType", None, None, '"CaseType"[]'),
     ],
 )
@@ -93,7 +97,7 @@ def test_gp_array_metadata_without_an_element_type_is_rejected(udt):
         (1005, "smallint[]"),
         (1007, "integer[]"),
         (1009, "text[]"),
-        (1014, "character[]"),
+        (1014, "bpchar[]"),
         (1015, "character varying[]"),
         (1016, "bigint[]"),
         (1021, "real[]"),
@@ -124,6 +128,11 @@ def test_gp_query_array_oids_have_native_types_instead_of_unknown_integer_codes(
 
 def test_gp_numeric_array_query_metadata_retains_available_precision_and_scale():
     assert get_backend("gp").type_code_name(1231, 30, 9) == "numeric(30,9)[]"
+
+
+@pytest.mark.parametrize(("oid", "native"), [(18, '"char"'), (1042, "bpchar")])
+def test_gp_character_query_oids_retain_distinct_unknown_width_identities(oid, native):
+    assert get_backend("gp").type_code_name(oid, None, None) == native
 
 
 def test_gp_array_insert_uses_actual_psycopg_adaptation_and_authoritative_type_casts():

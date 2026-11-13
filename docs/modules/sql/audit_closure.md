@@ -258,4 +258,41 @@ also cover explicit two-dimensional arrays under catalog rank erasure; they were
 not run locally. Default query decoding still maps SQL NULL and JSON null to
 `None` and can leave original SQL array rank ambiguous.
 
+Greenplum native time/interval compatibility is additionally covered by
+`dml/load/gp_temporal_values.py::test_native_time_and_interval_load_through_real_gp_execute_values`,
+`dml/load/gp_temporal_values.py::test_full_precision_native_temporals_preserve_null_positions_and_exact_values`,
+`dml/load/gp_temporal_values.py::test_existing_temporal_precision_rejects_inexact_values_before_clear`,
+`dml/load/gp_temporal_values.py::test_explicit_lower_temporal_precision_uses_native_rounding`,
+`core/clock_values.py::test_clock_roundtrips_real_spool_without_inventing_a_date`,
+and `core/clock_values.py::test_pandas_duration_retains_asm8_ticks_and_unit_through_real_spool`.
+The disposable `audit.load.gp_temporal.time` and `audit.load.gp_temporal.interval`
+cases in
+`integration/core/audit_gp_temporal_values.py::test_greenplum_native_time_and_interval_existing_and_explicit_loads`
+cover native microseconds and nulls; they were not run locally. Timedelta values
+carry day-time components and do not establish calendar-month identity.
+
+Supported Greenplum built-in identities and exact decimal alignment are covered by
+`dml/load/gp_type_identity.py::test_explicit_mapped_builtin_identity_loads_with_real_psycopg_adaptation`,
+`dml/load/gp_type_identity.py::test_builtin_typmod_defaults_reject_overflow_before_any_write`,
+`dml/load/gp_type_identity.py::test_numeric_default_scale_accepts_exact_zero_fractional_alignment`,
+`core/decimal_alignment.py::test_authoritative_zero_scale_accepts_redundant_fractional_zeros`,
+`core/decimal_alignment.py::test_legacy_decimal_profile_requires_raw_scale_without_observed_zero_proof`,
+and `core/decimal_alignment.py::test_merging_legacy_unknown_scale_and_proven_zeros_keeps_unknown_raw_requirement`.
+Raw schema SQL and quoted identity are retained. Only redundant fractional zeros
+can be discarded; unknown profile facts do not authorize loss of a nonzero digit.
+
+Existing and explicit Trino `TIME` compatibility is covered by
+`dml/load/trino_time_values.py::test_native_time_uses_real_trino_adapter_and_sdk_formatter`,
+`dml/load/trino_time_values.py::test_existing_time_precision_rejects_inexact_values_before_clearing_target`,
+`dml/load/trino_time_values.py::test_explicit_time_precision_uses_native_rounding_and_midnight_wrap`,
+`dml/load/trino_time_values.py::test_clock_retry_reuses_captured_offset_after_lost_insert_acknowledgement`,
+`dml/load/trino_time_values.py::test_inferred_clock_column_uses_exact_typed_text_without_native_time_upgrade`,
+`dml/load/trino_time_values.py::test_unsupported_parquet_time_stage_rejects_before_clearing_target`,
+and `dml/load/trino_time_values.py::test_parquet_append_omitting_nullable_time_stages_only_incoming_columns`.
+The disposable `audit.load.trino_time` case in
+`integration/core/audit_trino_time_values.py::test_trino_time_values_preserve_precision_and_stage_only_incoming_columns`
+uses Iceberg `TIME(6)` and explicit conversions against the existing schema; it
+was not run locally. These restore native clock binding without adding interval,
+connector or native-time inference features.
+
 [SQL module index](index.md)

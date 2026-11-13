@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
 
+from .native_values import canonical_native_type
 from .type_resolution import validate_profile
 from .value_profiles import ColumnProfile
 
@@ -24,10 +25,10 @@ def validate_converted_rows(
 ) -> list[ColumnProfile]:
     profiles = [
         ColumnProfile(
-            native_type=resolution.target_type,
+            native_type=canonical_native_type(resolution.target_type, backend),
             source_backend=backend,
             destination_timezone=resolution.destination_timezone or destination_timezone,
-            temporal_type=resolution.target_type,
+            temporal_type=canonical_native_type(resolution.target_type, backend),
         )
         for resolution in resolutions
     ]

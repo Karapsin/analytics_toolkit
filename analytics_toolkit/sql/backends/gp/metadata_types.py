@@ -23,7 +23,7 @@ _SCALAR_NAMES = {
     "decimal": "NUMERIC",
     "varchar": "VARCHAR",
     "character varying": "VARCHAR",
-    "bpchar": "CHARACTER",
+    "bpchar": "BPCHAR",
     "character": "CHARACTER",
     "timestamp": "TIMESTAMP",
     "timestamp without time zone": "TIMESTAMP",
@@ -85,6 +85,8 @@ def canonical_catalog_type(native: str) -> str:
     if name is None:
         return native  # Quoted, schema-qualified domains/enums retain their identity.
     arguments = f"({', '.join(parsed.arguments)})" if parsed.arguments else ""
+    if name == "BPCHAR" and arguments:
+        name = "CHARACTER"
     if name.endswith(" WITH TIME ZONE"):
         return name[: -len(" WITH TIME ZONE")] + arguments + " WITH TIME ZONE" + suffix
     return name + arguments + suffix
@@ -113,4 +115,6 @@ def format_gp_information_schema_type(
     if normalized == "numeric" and numeric_precision is not None:
         scale = f", {numeric_scale}" if numeric_scale is not None else ""
         return f"NUMERIC({numeric_precision}{scale})"
+    if normalized == "character" and str(udt_name).lower() == "bpchar":
+        return "BPCHAR"
     return _SCALAR_NAMES.get(normalized, str(udt_name or data_type).upper())

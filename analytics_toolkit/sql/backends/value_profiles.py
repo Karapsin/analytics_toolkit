@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field
 from decimal import Decimal
+from math import gcd
 from numbers import Integral, Real
 from typing import Any
 from uuid import UUID
@@ -23,6 +24,7 @@ from analytics_toolkit.sql.core.exact_values import (
     unwrap_enum,
 )
 
+from .decimal_values import minimal_fractional_scale, required_fractional_scale
 from .nested_values import array_item
 
 _MAP_ARGUMENT_COUNT = 2
@@ -77,6 +79,12 @@ class ColumnProfile:
     text_has_nul: bool = False
     utf8_valid: bool = True
     native_constraints_valid: bool = True
+    text_encoding_valid: bool = True
+    interval_days_nonzero: bool = False
+    interval_time_gcd: int = 0
+    time_zone_unresolved: bool = False
+    minimal_nonzero_fractional_scale: int | None = None
+    trino_time_constraints_valid: bool = True
 
     def add(self, value: Any) -> None:  # noqa: C901, PLR0912, PLR0915 - family profile dispatch
         value = array_item(value)
@@ -108,7 +116,14 @@ class ColumnProfile:
             value = tuple(value.get(name) for name in names)
             family = "tuple"
         self.families.add(family)
-        self.maximum_text_length = max(self.maximum_text_length, len(typed_text(value) or ""))
+        try:
+            text_length = len(typed_text(value) or "")
+        except (TypeError, ValueError):
+            # A native value need not implement the unrelated fallback codec.
+            # Defer that incompatibility until a text destination is selected.
+            self.text_encoding_valid = False
+        else:
+            self.maximum_text_length = max(self.maximum_text_length, text_length)
         if family == "integer":
             integer = int(value)
             self.minimum_integer = (
@@ -130,6 +145,9 @@ class ColumnProfile:
                 self.families.add("nonfinite")
             else:
                 self.integral_digits = max(self.integral_digits, integral)
+                self.minimal_nonzero_fractional_scale = max(
+                    required_fractional_scale(self), minimal_fractional_scale(value)
+                )
                 self.fractional_digits = max(self.fractional_digits, scale)
                 self.maximum_numeric_magnitude = max(
                     self.maximum_numeric_magnitude, value.copy_abs()
@@ -189,6 +207,18 @@ class ColumnProfile:
                 else max(self.maximum_timestamp_ns, ticks)
             )
             self._add_date(stamp.date())
+        elif family in {"time", "interval"}:
+            from .gp.temporal_values import (  # noqa: PLC0415 -- backend native clock facts.
+                observe_temporal_value,
+            )
+
+            observe_temporal_value(self, value)
+            if family == "time":
+                from .trino.time_values import (  # noqa: PLC0415 -- backend clock facts.
+                    observe_time_value,
+                )
+
+                observe_time_value(self, value)
         elif family == "date":
             self._observe_temporal(value)
             self.minimum_date_only = (
@@ -342,6 +372,9 @@ class ColumnProfile:
             if values:
                 setattr(self, attribute, reducer(values))
         self.integral_digits = max(self.integral_digits, other.integral_digits)
+        self.minimal_nonzero_fractional_scale = max(
+            required_fractional_scale(self), required_fractional_scale(other)
+        )
         self.fractional_digits = max(self.fractional_digits, other.fractional_digits)
         self.temporal_scale = max(self.temporal_scale, other.temporal_scale)
         self.aware |= other.aware
@@ -351,10 +384,12 @@ class ColumnProfile:
         )
         self.all_uuid_strings &= other.all_uuid_strings
         self.maximum_text_length = max(self.maximum_text_length, other.maximum_text_length)
+        self.text_encoding_valid &= other.text_encoding_valid
         self.maximum_byte_length = max(self.maximum_byte_length, other.maximum_byte_length)
         self.text_has_nul |= other.text_has_nul
         self.utf8_valid &= other.utf8_valid
         self.native_constraints_valid &= other.native_constraints_valid
+        self._merge_clock_facts(other)
         self.gp_array_compatible &= other.gp_array_compatible
         self.map_duplicate_keys |= other.map_duplicate_keys
         self.map_null_keys |= other.map_null_keys
@@ -379,8 +414,19 @@ class ColumnProfile:
             self.tuple_width = other.tuple_width
         return self
 
+    def _merge_clock_facts(self, other: ColumnProfile) -> None:
+        self.interval_days_nonzero |= other.interval_days_nonzero
+        self.interval_time_gcd = gcd(self.interval_time_gcd, other.interval_time_gcd)
+        self.time_zone_unresolved |= other.time_zone_unresolved
+        self.trino_time_constraints_valid &= other.trino_time_constraints_valid
+
 
 def _family(value: Any) -> str:  # noqa: C901, PLR0911 - ordered scalar-family dispatch
+    from .gp.temporal_values import temporal_family  # noqa: PLC0415 -- native value markers.
+
+    temporal = temporal_family(value)
+    if temporal is not None:
+        return temporal
     if isinstance(value, (bool, np.bool_)):
         return "boolean"
     if isinstance(value, Integral):

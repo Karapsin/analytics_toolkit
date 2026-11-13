@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime as dt
+
 from tests.sql._support.adapters import (
     Any,
     InvalidSqlInputError,
@@ -105,13 +107,40 @@ def test_adapter_default_required_constraints_do_not_probe_the_connection() -> N
 
 
 @pytest.mark.parametrize(
-    "adapter", [MinimalContractAdapter(), get_backend_adapter("trino"), get_backend_adapter("ch")]
+    ("adapter", "requires_schema"),
+    [
+        (MinimalContractAdapter(), False),
+        (get_backend_adapter("trino"), True),
+        (get_backend_adapter("ch"), False),
+    ],
 )
-def test_adapter_default_payload_preparation_preserves_unowned_input(adapter) -> None:
+def test_adapter_default_payload_preparation_preserves_unowned_input(
+    adapter, requires_schema
+) -> None:
     original = pd.DataFrame({"payload": [{"unowned": True}]})
     assert adapter.prepare_dataframe_payload(original, {"payload": "JSONB"}) is None
     assert original.iloc[0, 0] == {"unowned": True}
-    assert adapter.load_execution_preview_requires_schema is False
+    assert adapter.load_execution_preview_requires_schema is requires_schema
+
+
+def test_trino_owns_native_time_preparation_without_changing_the_caller() -> None:
+    adapter = get_backend_adapter("trino")
+    original = pd.DataFrame({"clock": [dt.time(12, tzinfo=dt.timezone.utc)]})
+    prepared = adapter.prepare_dataframe_payload(original, {"clock": "TIME(6) WITH TIME ZONE"})
+    assert prepared is not None
+    assert prepared.iloc[0, 0] == original.iloc[0, 0]
+    assert prepared.iloc[0, 0].tzname() == "UTC+00:00"
+    assert original.iloc[0, 0].tzname() == "UTC"
+
+
+@pytest.mark.parametrize("use_parquet", [False, True])
+def test_default_staging_validation_preserves_extension_adapter_policy(use_parquet) -> None:
+    assert (
+        MinimalContractAdapter().validate_dataframe_staging_schema(
+            {"extension": "CUSTOM_NATIVE_TYPE"}, use_parquet=use_parquet
+        )
+        is None
+    )
 
 
 def test_gp_owns_its_dataframe_preparation_and_preview_policy() -> None:

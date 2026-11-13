@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from copy import deepcopy
 
 import pandas as pd
@@ -196,3 +197,65 @@ def test_parquet_append_plan_names_incoming_columns_and_cleans_owned_resources(
     assert statements["drop_stage"].target_table == stage
     assert location in statements["load_stage"].sql
     assert location in statements["cleanup_stage_location"].sql
+
+
+@pytest.mark.parametrize("planning_flag", ["dry_run", "return_sql"])
+def test_parquet_upsert_plan_prepares_complete_payload_and_cleans_both_owned_stages(
+    monkeypatch, write_sql_connections, planning_flag
+):
+    _write_trino_connections(
+        write_sql_connections,
+        s3_transfer_staging_location="s3://bucket/tmp/analytics_toolkit_transfer",
+    )
+    opened = []
+
+    def unexpected_connection(key):
+        opened.append(key)
+        message = "Offline partition-upsert planning opened a SQL connection."
+        raise AssertionError(message)
+
+    monkeypatch.setattr(load_df_module, "get_sql_connection", unexpected_connection)
+    frame = pd.DataFrame({"payload": ["incoming"], "id": [7], "month": [dt.date(2026, 1, 1)]})
+    original = frame.copy(deep=True)
+    plan = sql.load_df(
+        "trino_stage",
+        "iceberg.sandbox.events",
+        frame,
+        table_schema={"id": "BIGINT", "month": "DATE", "payload": "VARCHAR"},
+        write_mode="upsert",
+        key_columns=["id"],
+        upsert_partition_column="month",
+        **{planning_flag: True},
+    )
+
+    assert isinstance(plan, SqlPlan)
+    assert opened == []
+    pd.testing.assert_frame_equal(frame, original)
+    assert plan.options["use_parquet_staging"] is True
+    assert plan.options["upsert_requires_complete_writable_rows"] is True
+    assert plan.options["upsert_partition_column"] == "month"
+    incoming = plan.metadata.stage_table
+    location = plan.metadata.stage_external_location
+    creates = [step for step in plan.statements if step.phase == "create_final_upsert_stage"]
+    assert len(creates) == 1
+    prepared = creates[0].target_table
+    assert len({incoming, prepared, "iceberg.sandbox.events"}) == 3
+    ddl = parse_one(creates[0].sql, read="trino")
+    assert isinstance(ddl, exp.Create)
+    assert {column.name for column in ddl.find_all(exp.ColumnDef)} == set(frame.columns)
+    phases = [step.phase for step in plan.statements]
+    assert phases.index("load_stage") < phases.index("create_final_upsert_stage")
+    assert phases.index("create_final_upsert_stage") < phases.index("upsert_target")
+    assert "clear_target" not in phases
+    assert "drop_target" not in phases
+    upserts = [step for step in plan.statements if step.phase == "upsert_target"]
+    assert upserts
+    assert any(prepared in step.sql for step in upserts)
+    drops = [step for step in plan.statements if step.phase == "drop_stage"]
+    assert [step.target_table for step in drops] == [incoming, prepared]
+    assert max(plan.statements.index(step) for step in upserts) < plan.statements.index(drops[0])
+    cleanup = [step for step in plan.statements if step.phase == "cleanup_stage_location"]
+    assert len(cleanup) == 1
+    assert location in cleanup[0].sql
+    assert plan.statements.index(drops[-1]) < plan.statements.index(cleanup[0])
+    assert phases[-2:] == ["analyze", "count_target"]

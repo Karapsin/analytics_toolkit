@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.conversion_profiles import validate_converted_rows
 from analytics_toolkit.sql.core.exact_values import unwrap_enum
 from analytics_toolkit.sql.core.type_resolution import (
@@ -16,6 +17,7 @@ from analytics_toolkit.sql.core.type_resolution import (
     ResolvedColumn,
     decimal_domain,
     integer_domain,
+    parse_native_type,
     validate_profile,
 )
 
@@ -52,12 +54,20 @@ def normalize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
-def _schema_value(value: Any, target_type: str) -> Any:
+def _schema_value(value: Any, target_type: str, backend: str | None = None) -> Any:
     value = unwrap_enum(value)
+    adapter = get_backend_adapter(backend) if backend is not None else None
+    if adapter is not None:
+        target_type = adapter.canonical_native_type(target_type)
     # Caller-requested numeric schemas have historically accepted float inputs.
     # Validate the deliberate conversion rather than changing inferred types.
     if isinstance(value, Real) and not isinstance(value, Integral):
-        if decimal_domain(target_type) is not None:
+        native = parse_native_type(target_type)
+        if decimal_domain(target_type) is not None or (
+            adapter is not None
+            and adapter.accepts_unparameterized_decimal_floats
+            and native.base.name in {"numeric", "decimal"}
+        ):
             return Decimal(str(value))
         if integer_domain(target_type) is not None and float(value).is_integer():
             return int(float(value))
@@ -95,15 +105,17 @@ def _validated_dataframe_profiles(
     if prepared is not None:
         df = prepared
     profiles = {}
+    adapter = get_backend_adapter(backend)
     for index, name in enumerate(df.columns):
+        native_type = adapter.canonical_native_type(schema[str(name)])
         profile = ColumnProfile(
-            native_type=schema[str(name)],
+            native_type=native_type,
             source_backend=backend,
             destination_timezone=destination_timezone,
-            temporal_type=schema[str(name)],
+            temporal_type=native_type,
         )
         for value in df.iloc[:, index]:
-            profile.add(_schema_value(value, schema[str(name)]))
+            profile.add(_schema_value(value, schema[str(name)], backend))
         validate_profile(
             profile,
             schema[str(name)],
@@ -115,7 +127,7 @@ def _validated_dataframe_profiles(
             schema[str(name)], target_backend=backend, destination_timezone=destination_timezone
         )
         profiles[str(name)] = validate_converted_rows(
-            ((_schema_value(value, schema[str(name)]),) for value in df.iloc[:, index]),
+            ((_schema_value(value, schema[str(name)], backend),) for value in df.iloc[:, index]),
             [resolution],
             backend=backend,
             destination_timezone=destination_timezone,
@@ -144,7 +156,7 @@ def convert_dataframe_schema(
         columns.append(
             pd.Series(
                 [
-                    resolution.convert(_schema_value(value, native_type))
+                    resolution.convert(_schema_value(value, native_type, backend))
                     for value in df.iloc[:, index]
                 ],
                 dtype=object,

@@ -31,24 +31,53 @@ _MAX_ARRAY_DIMENSIONS = 6
 def prepare_dataframe_payload(
     self: Any, df: pd.DataFrame, schema: Mapping[str, str] | None
 ) -> pd.DataFrame | None:
-    """Own only JSON document columns before target mutation and data replay."""
+    """Own JSON documents and exact temporal components before mutation/replay."""
     del self
+    from .temporal_values import (  # noqa: PLC0415 -- runtime dataframe codec.
+        freeze_clock_interval_value,
+        is_gp_clock_interval_type,
+        temporal_family,
+    )
+    from .type_identity import canonical_builtin_type  # noqa: PLC0415 -- native identity.
+
+    def is_temporal(native: str) -> bool:
+        native = canonical_builtin_type(native) or native
+        while native.rstrip().endswith("[]"):
+            native = native.rstrip()[:-2]
+        return is_gp_clock_interval_type(native)
+
     if schema is None:
-        return None
-    json_columns = [
+        inferred = {}
+        for index, name in enumerate(df.columns):
+            families = {
+                temporal_family(_logical_value(value))
+                for value in df.iloc[:, index]
+                if not _is_null(_logical_value(value))
+            }
+            if families in ({"time"}, {"interval"}):
+                inferred[str(name)] = "TIME" if families == {"time"} else "INTERVAL"
+        schema = inferred
+
+    payload_columns = [
         (index, name, schema[str(name)])
         for index, name in enumerate(df.columns)
-        if str(name) in schema and is_json_type(schema[str(name)])
+        if str(name) in schema
+        and (is_json_type(schema[str(name)]) or is_temporal(schema[str(name)]))
     ]
-    if not json_columns:
+    if not payload_columns:
         return None
     import pandas as pd  # noqa: PLC0415 -- dataframe codec boundary.
 
     prepared = df.copy(deep=False)
-    for index, name, native in json_columns:
+    for index, name, native in payload_columns:
         # Replacing the column leaves the caller's buffers and other dtypes intact.
         prepared[name] = pd.Series(
-            [convert_json_value(value, native) for value in df.iloc[:, index]],
+            [
+                convert_json_value(value, native)
+                if is_json_type(native)
+                else freeze_clock_interval_value(value, native)
+                for value in df.iloc[:, index]
+            ],
             index=df.index,
             dtype=object,
         )

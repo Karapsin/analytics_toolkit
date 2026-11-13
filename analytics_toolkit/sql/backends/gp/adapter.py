@@ -23,6 +23,7 @@ from .connectivity import validate_connection
 
 _GP_OID_TYPES = {
     16: "boolean",
+    18: '"char"',
     17: "bytea",
     20: "bigint",
     21: "smallint",
@@ -30,7 +31,7 @@ _GP_OID_TYPES = {
     25: "text",
     700: "real",
     701: "double precision",
-    1042: "character",
+    1042: "bpchar",
     1043: "character varying",
     1082: "date",
     1083: "time",
@@ -44,7 +45,7 @@ _GP_OID_TYPES = {
     1005: "smallint[]",
     1007: "integer[]",
     1009: "text[]",
-    1014: "character[]",
+    1014: "bpchar[]",
     1015: "character varying[]",
     1016: "bigint[]",
     1021: "real[]",
@@ -65,6 +66,14 @@ GP_IDENTIFIER_MAX_BYTES = _stage.GP_IDENTIFIER_MAX_BYTES
 class GreenplumAdapter(DbApiBackendAdapter):
     prepare_dataframe_payload = _json_values.prepare_dataframe_payload
     load_execution_preview_requires_schema = True
+    accepts_unparameterized_decimal_floats = True
+
+    def canonical_native_type(self, native_type: str) -> str:
+        from .type_identity import canonical_builtin_type  # noqa: PLC0415 -- backend grammar.
+
+        del self
+        return canonical_builtin_type(native_type) or native_type
+
     validate_connection = validate_connection
     display_name = "Greenplum"
     sqlglot_dialect = "postgres"

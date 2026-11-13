@@ -101,6 +101,6 @@ def test_numpy_boolean_does_not_broaden_other_authoritative_numeric_policies(nat
 def test_numpy_temporal_objects_are_rejected_without_epoch_integer_coercion(unit):
     value = np.datetime64("2025-01-01", unit)
     frame = pd.DataFrame({"value": pd.Series([value], dtype=object)})
-    with pytest.raises(TypeError, match="Unsupported exact replay value type"):
+    with pytest.raises(ValueError, match="authoritative timestamp"):
         validate_dataframe_schema(frame, {"value": "TIMESTAMP(6)"}, "gp")
     assert frame.iloc[0, 0] is value
