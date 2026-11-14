@@ -371,4 +371,16 @@ on minimum/current formatter paths. The disposable
 compares parameter casts with independent native SQL controls in one engine-only
 query. It creates no JSON storage table and was not run locally.
 
+Trino native IP casts are additionally covered by
+`dml/load/trino_ipaddress_casts.py::test_trino_ipaddress_casts_valid_ipv4_reaches_native_target`,
+`dml/load/trino_ipaddress_casts.py::test_trino_ipaddress_casts_native_key_aliases_fail_before_stage`,
+`backends/trino/ip_values.py::test_ipaddress_casts_reject_incompatible_container_wire_and_post_cast_key_collisions`,
+and `backends/trino/ip_values.py::test_ipaddress_casts_native_clock_views_keep_both_final_and_stage_equality_domains`.
+These preserve input wire values and packed bytes, validate native 16-byte IP
+key identity, and retain declared clock equality in IP-bearing composite keys.
+The disposable `audit.load.trino_ipaddress_parameters` case in
+`integration/core/audit_trino_ipaddress_parameters.py::test_trino_ipaddress_parameters_keep_native_canonical_and_binary_identity`
+compares seven parameters with independent native literals in one SDK query.
+It performs no DNS lookup or storage DDL and was not run locally.
+
 [SQL module index](index.md)

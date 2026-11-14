@@ -26,6 +26,7 @@ from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 from analytics_toolkit.sql.dml.ddl_options import resolve_operation_ddl
 
 from ...backends import get_backend_adapter
+from ...backends.native_values import dataframe_key_validation_frames
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     SqlOperationContext,
@@ -729,6 +730,13 @@ def _prepare_load_target(
         get_backend_adapter(options.connection_backend).validate_dataframe_staging_schema(
             _incoming_column_types(options, state, df), use_parquet=True
         )
+    for key_df in dataframe_key_validation_frames(
+        df,
+        options.key_columns,
+        (state.target_column_types, options.table_schema),
+        options.connection_backend,
+    ):
+        _validate_dataframe_key_uniqueness(key_df, options.key_columns)
     _apply_load_target_write_mode(options, state, connection)
     _ensure_load_target_table(options, state, connection, df)
     _load_target_column_metadata(options, state, connection, df)

@@ -13,13 +13,29 @@ from .gp.temporal_values import (
     validate_clock_interval_profile,
 )
 from .nested_types import convert_nested, nested_descriptor
+from .trino.ip_values import key_validation_frames as trino_key_validation_frames
+from .trino.ip_values import validate_ip_profile, validate_ip_transport_value
 from .trino.json_values import validate_json_profile as validate_trino_json_profile
 from .trino.json_values import validate_json_transport_value
 from .trino.time_values import convert_time_value, is_time_type, validate_time_profile
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping, Sequence
+
+    import pandas as pd
+
     from .type_resolution import ResolvedColumn
     from .value_profiles import ColumnProfile
+
+
+def dataframe_key_validation_frames(
+    df: pd.DataFrame,
+    key_columns: Sequence[str] | None,
+    schemas: Sequence[Mapping[str, str] | None],
+    backend: str,
+) -> Iterable[pd.DataFrame]:
+    """Supply backend-native key identities without changing dataframe payloads."""
+    return trino_key_validation_frames(df, key_columns, schemas) if backend == "trino" else ()
 
 
 def canonical_native_type(native_type: str | None, backend: str | None) -> str:
@@ -37,6 +53,7 @@ def validate_transport_value(value: Any, native_type: str, backend: str) -> None
         from .trino.parameters import normalize_value  # noqa: PLC0415 -- native transport.
 
         validate_json_transport_value(value, native_type)
+        validate_ip_transport_value(value, native_type)
         normalize_value(value, native_type)
 
 
@@ -48,10 +65,14 @@ def validate_backend_profile(
     allow_timestamp_precision_loss: bool,
 ) -> bool:
     if backend == "trino":
-        return validate_trino_json_profile(profile, native_type) or validate_time_profile(
-            profile,
-            native_type,
-            allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+        return (
+            validate_trino_json_profile(profile, native_type)
+            or validate_ip_profile(profile, native_type)
+            or validate_time_profile(
+                profile,
+                native_type,
+                allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+            )
         )
     if backend != "gp":
         return False

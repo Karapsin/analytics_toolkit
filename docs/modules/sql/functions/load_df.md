@@ -101,6 +101,9 @@ rows
   `0`/`1`; automatic boolean and integer inference retain their respective types.
 - Trino binary columns preserve `bytes`, `bytearray` and `memoryview` payloads,
   including nested native containers. SQL NULL remains NULL.
+- Existing or explicit Trino `IPADDRESS` accepts IPv4/IPv6 text and 4- or 16-byte
+  packed addresses. Numeric IPv6 scopes from 0 to 2147483647 are accepted. Named
+  interface scopes reject before mutation; use unscoped text or packed bytes.
 - Supported Greenplum built-ins retain qualified/quoted identity and the supplied
   schema SQL. `NUMERIC(p)` uses scale zero, SQL `CHAR` length one, and bare `BPCHAR`
   unbounded input validation. Excess fractional zeros can align exactly; nonzero
