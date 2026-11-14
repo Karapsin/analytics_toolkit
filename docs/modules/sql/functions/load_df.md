@@ -99,6 +99,8 @@ rows
   their normal conversion rules.
 - Explicit or existing integer columns convert accepted boolean scalars to native
   `0`/`1`; automatic boolean and integer inference retain their respective types.
+- Trino binary columns preserve `bytes`, `bytearray` and `memoryview` payloads,
+  including nested native containers. SQL NULL remains NULL.
 - Supported Greenplum built-ins retain qualified/quoted identity and the supplied
   schema SQL. `NUMERIC(p)` uses scale zero, SQL `CHAR` length one, and bare `BPCHAR`
   unbounded input validation. Excess fractional zeros can align exactly; nonzero

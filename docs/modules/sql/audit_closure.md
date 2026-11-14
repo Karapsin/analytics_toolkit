@@ -346,4 +346,11 @@ These preserve fixed-offset display labels, verified named zones, exact fraction
 and folds through real certified spools, including nested values, and reject
 legacy records that cannot establish awareness from an encoded offset.
 
+Trino buffered binary parameters are additionally covered by
+`dml/load/trino_binary_buffers.py::test_trino_binary_buffer_memoryview_load_uses_supported_native_parameters`
+and `backends/trino/binary_parameters.py::test_recursive_binary_native_leaves_reach_real_sdk_without_mutating_callers`.
+The public regression uses the hash-verified minimum 0.320 formatter, with the
+current 0.340 SDK as a positive control. The minimum-version fixture is limited
+to formatter code running with current dependency imports.
+
 [SQL module index](index.md)

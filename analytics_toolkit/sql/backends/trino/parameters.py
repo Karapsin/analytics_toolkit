@@ -87,7 +87,7 @@ def _normalize(value: Any, target_type: str | None) -> Any:  # noqa: PLR0911 -- 
     return _scalar(value, target_type)
 
 
-def _scalar(value: Any, target_type: str | None) -> Any:  # noqa: PLR0911 -- scalar driver families.
+def _scalar(value: Any, target_type: str | None) -> Any:
     _nested, types, exact = _policies()
     family = types.parse_native_type(target_type).base.name
     if family in {"varchar", "char", "string", "text"}:
@@ -100,8 +100,14 @@ def _scalar(value: Any, target_type: str | None) -> Any:  # noqa: PLR0911 -- sca
         value = int(value)  # Retain the historical explicit BIGINT conversion.
     if target_type:
         value = types.ResolvedColumn(target_type, target_backend="trino").convert(value)
+    return _primitive_parameter(value, target_type)
+
+
+def _primitive_parameter(value: Any, target_type: str | None) -> Any:
     if isinstance(value, Enum):
         value = value.value
+    if isinstance(value, (bytearray, memoryview)):
+        return bytes(value)
     if isinstance(value, (bool, np.bool_)):
         return bool(value)
     if isinstance(value, Integral):
