@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from sqlglot import parse_one
+
 from tests.sql._support.reconfigure import (
     SHARD_DDL,
     TABLE_DDL,
@@ -50,6 +52,25 @@ def test_backend_metadata_helpers_cover_empty_and_unqualified_cases() -> None:
     assert reconfigure_backend._qualify_with_database("analytics.local_events", "other") == (
         "analytics.local_events"
     )
+
+
+@pytest.mark.parametrize(
+    ("table", "replacement", "database"),
+    [
+        ("analytics.events", "events_backup", "analytics"),
+        ("`a.with.dot`.events", "backup.shard", "a.with.dot"),
+        ("` space db `.events", " backup ", " space db "),
+    ],
+)
+def test_exported_qualify_like_preserves_exact_database_and_replacement_identity(
+    table: str, replacement: str, database: str
+) -> None:
+    rendered = reconfigure_backend._qualify_like(table, replacement)
+    parsed = parse_one(f"SELECT * FROM {rendered}", read="clickhouse").find(exp.Table)
+
+    assert parsed is not None
+    assert (parsed.db, parsed.name) == (database, replacement)
+    assert parsed.catalog == ""
 
 
 def test_cluster_count_uses_current_database_for_unqualified_table() -> None:

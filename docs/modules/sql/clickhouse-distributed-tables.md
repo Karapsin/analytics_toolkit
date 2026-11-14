@@ -231,11 +231,10 @@ preserving the row count.
 Coverage and topology rejections stop the current operation immediately;
 the SQL retry parameters do not poll until a shard recovers. Production
 schedulers can retry the whole job after recovery. Ordinary transient
-connection failures before a live write retain the normal retry behavior.
-Once a live write has been submitted, a later failure conservatively stops
-automatic retries for the entire operation, including a multi-statement batch,
-and retains recovery artifacts. This prevents replaying an earlier successful
-mutation while retrying a later failed statement.
+connection and data-write failures retain bounded retries, including after
+submission or a lost acknowledgement. Replays may repeat already committed
+effects. Uncertain toolkit-managed structural cutovers stop structural replay
+and retain recovery artifacts.
 New toolkit-private stages are disposable under both policies, including stages
 created with `IF NOT EXISTS`: the toolkit checks absence in the actual creation
 scope before claiming ownership. A transient failure while populating an owned

@@ -82,6 +82,7 @@ Statements:
 - `to_defaults=True` treats the connection's regular ClickHouse DDL defaults as authoritative and fails before DDL when required defaults are missing
 - local/pair conversion and physical-cluster relocation must be performed as separate operations
 - cross-cluster migration requires a managed Distributed/`_shard` pair and both cluster names must be visible from the configured connection
+- managed reconfiguration requires the Distributed engine's actual database and table to identify the deterministic `_shard` companion in the facade's database; cross-database references fail before DDL
 - Atomic and Shared databases use `EXCHANGE TABLES`; other database engines use a rename fallback. Each submitted cutover records its inverse and acknowledgement; rollback reverses only acknowledged steps
 - an uncertain cutover or rollback stops structural replay and retains replacements and backups for recovery, with the original error and resource scopes reported
 - local-to-pair conversion rejects an existing deterministic companion before DDL; a name ending in `_shard` alone never establishes resource ownership
@@ -90,7 +91,7 @@ Statements:
   columns; physical replacement storage retains those TTL declarations.
   Column TTL differences alone do not invalidate an otherwise verified pair;
   remaining column identity checks still apply
-- physical placement, facade placement and Distributed routing are independent. Copy routing must reach the verified replacement storage and must not reach the original storage during a relocation
+- physical placement, facade placement and Distributed routing are independent. Every rebuild or conversion copy must reach exactly the verified replacement endpoints. Physical relocation must not route copies to the original endpoints; rebuilding on the same endpoints remains valid
 - successful validation removes the old table data; cleanup failures are reported through `SqlOperationResult.data`
 - dry runs query ClickHouse metadata because the plan depends on the current table DDL and topology
 

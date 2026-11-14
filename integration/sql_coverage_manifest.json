@@ -10989,6 +10989,28 @@
         "tests/sql/backends/ch/reconfigure/structural_safety.py::test_managed_pair_identity_excludes_only_physical_column_ttl"
       ]
     },
+    "audit.clickhouse.cross_database_reconfigure_ownership": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_cross_database_facade_never_adopts_a_populated_local_suffix",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/ownership.py::test_public_reconfiguration_rejects_cross_database_storage_before_any_ddl",
+        "tests/sql/backends/ch/reconfigure/ownership.py::test_public_reconfiguration_keeps_same_database_managed_storage_identity"
+      ]
+    },
+    "audit.clickhouse.same_physical_routing_reconfigure": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_same_physical_rebuild_rejects_a_disjoint_facade_route",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/copy_routing.py::test_same_physical_rebuild_rejects_wrong_copy_route_before_any_ddl",
+        "tests/sql/backends/ch/reconfigure/copy_routing.py::test_same_physical_rebuild_accepts_verified_endpoint_aliases_and_macros"
+      ]
+    },
     "audit.clickhouse.routing_metadata": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_routing_bindings_and_current_database_metadata",

@@ -31,6 +31,7 @@ class DestinationTopology:
     distributed_cluster: str | None
     desired_shard_table: str
     cross_cluster: bool
+    copy_required: bool = False
 
 
 def validate_destination(connection: Any, topology: DestinationTopology) -> None:
@@ -50,7 +51,7 @@ def validate_destination(connection: Any, topology: DestinationTopology) -> None
                 f"Destination already contains {desired_shard_table}; refusing to overwrite it."
             )
             raise InvalidSqlInputError(message)
-    if not target_pair or (not cross_cluster and source_pair):
+    if not target_pair or (not cross_cluster and source_pair and not topology.copy_required):
         return
     if target_cluster is None or distributed_cluster is None:
         message = "Cannot verify replacement storage routing."

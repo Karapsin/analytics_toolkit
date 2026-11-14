@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# ruff: noqa: BLE001, C901, EM101, EM102, F401, PERF203, PLR0912, PLR0913, PLR0915, S101, S112, S608, TC002, TRY003, TRY301
+# ruff: noqa: BLE001, C901, EM101, EM102, F401, PERF203, PLR0912, PLR0913, PLR0915, S101, S112, S608, TRY003, TRY301
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -157,7 +157,10 @@ def plan_ch_table_reconfiguration(
                 f"ClickHouse table {table} has an unsupported Distributed engine definition."
             )
         qualified_table = _qualify_with_database(table, database_name)
-        shard_table = _qualify_like(qualified_table, shard_ref.table)
+        shard_table = exp.Table(
+            this=exp.to_identifier(shard_ref.table),
+            db=exp.to_identifier(shard_ref.database),
+        ).sql(dialect="clickhouse")
         expected_shard = build_ch_shard_table_name(qualified_table)
         if _unquoted_table_name(shard_table) != _unquoted_table_name(expected_shard):
             raise InvalidSqlInputError(
@@ -222,19 +225,6 @@ def plan_ch_table_reconfiguration(
         build_ch_shard_table_name(_qualify_with_database(table, database_name))
         if target_pair
         else _qualify_with_database(table, database_name)
-    )
-
-    validate_destination(
-        connection,
-        DestinationTopology(
-            source_pair=source_pair,
-            target_pair=target_pair,
-            source_cluster=source_cluster_resolved,
-            target_cluster=target_cluster_resolved,
-            distributed_cluster=policy.distributed_cluster,
-            desired_shard_table=desired_shard_table,
-            cross_cluster=cross_cluster,
-        ),
     )
 
     structural_change = any(
@@ -324,6 +314,20 @@ def plan_ch_table_reconfiguration(
             "ch_distributed_on_cluster is required when an existing Distributed facade "
             "must be recreated or removed."
         )
+
+    validate_destination(
+        connection,
+        DestinationTopology(
+            source_pair=source_pair,
+            target_pair=target_pair,
+            source_cluster=source_cluster_resolved,
+            target_cluster=target_cluster_resolved,
+            distributed_cluster=policy.distributed_cluster,
+            desired_shard_table=desired_shard_table,
+            cross_cluster=cross_cluster,
+            copy_required=structural_effective or (wrapper_effective and settings_effective),
+        ),
+    )
 
     if topology_change:
         return _plan_topology_conversion(

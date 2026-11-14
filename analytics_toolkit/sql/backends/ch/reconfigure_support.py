@@ -186,8 +186,12 @@ def resolve_optional_cluster(
 def is_cross_cluster(connection: Any, source: str | None, target: str | None) -> bool:
     if source is None or target is None or source == target:
         return False
-    source_hosts = cluster_hosts(connection, source)
-    target_hosts = cluster_hosts(connection, target)
+    source_hosts = {
+        (address or host, port) for host, address, port in cluster_hosts(connection, source)
+    }
+    target_hosts = {
+        (address or host, port) for host, address, port in cluster_hosts(connection, target)
+    }
     if not source_hosts:
         raise InvalidSqlInputError(f"ClickHouse source cluster {source!r} has no hosts.")
     if not target_hosts:
