@@ -149,6 +149,12 @@ rows = sql.create_table(
 - Query inputs whose declared types cannot prove an exact fit are scanned completely
   before target creation or replacement. The certified rows are replayed from a local
   exact-value checkpoint; target retries do not rerun the mutable source query.
+  Greenplum types whose assignment rules require the server use an owned, typed
+  checkpoint before live DDL. Native SQL copies first freeze the query in the
+  target connection's SQL context, then certify its actual projection and casts;
+  Python inputs use the parameter writer's assignment rules. The native checkpoint
+  retains values across publication retries. Creating these private tables requires
+  CREATE permission in the target staging schema and USAGE on the selected types.
   Replacements also freeze queries bound to the existing target before destructive
   DDL; ClickHouse includes its verified physical storage. Uncertain source namespace
   bindings are frozen conservatively. Metadata-proven, disjoint

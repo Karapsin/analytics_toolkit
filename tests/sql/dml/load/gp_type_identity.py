@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import datetime as dt
+from copy import deepcopy
 from decimal import Decimal
 from uuid import UUID
 
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.backends.gp.native_assignment import NativeAssignmentError
+from sqlglot import exp
 
 from tests.sql._support.load_encoded_values import configure_load
 
@@ -179,9 +182,14 @@ def test_unknown_or_distinct_quoted_type_never_gets_a_builtin_compatibility_bypa
     monkeypatch, write_sql_connections, native_type
 ):
     connection = configure_load(
-        monkeypatch, write_sql_connections, exists=True, schema={"value": "INTEGER"}
+        monkeypatch,
+        write_sql_connections,
+        exists=True,
+        schema={"value": "INTEGER"},
+        missing_types=(native_type,),
     )
-    with pytest.raises(ValueError, match="authoritative native type"):
+    resources = deepcopy(connection.table_rows)
+    with pytest.raises(NativeAssignmentError, match="SQLSTATE 42704") as failure:
         sql.load_df(
             "encoded_gp",
             "public.encoded_target",
@@ -192,7 +200,21 @@ def test_unknown_or_distinct_quoted_type_never_gets_a_builtin_compatibility_bypa
             timeout_increment=0,
         )
     assert connection.bound_rows == []
-    assert connection.executed == []
+    assert failure.value.sqlstate == "42704"
+    assert failure.value.analytics_toolkit_sql_retry_safe is False
+    assert connection.rejected_type_declarations == [native_type]
+    assert connection.table_rows == resources
+    statements = connection.catalog_statements
+    assert len(statements) == len(connection.executed)
+    private_creates = [statement for statement in statements if isinstance(statement, exp.Create)]
+    assert len(private_creates) == 1
+    assert private_creates[0].this.this.name != "encoded_target"
+    assert all(
+        not isinstance(
+            statement, (exp.Insert, exp.Update, exp.Delete, exp.TruncateTable, exp.Drop, exp.Alter)
+        )
+        for statement in statements
+    )
 
 
 @pytest.mark.parametrize(

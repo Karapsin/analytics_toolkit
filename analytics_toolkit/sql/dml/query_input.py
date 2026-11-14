@@ -12,9 +12,21 @@ from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.query_source_binding import query_may_read_target
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
-from analytics_toolkit.sql.dml.ddl_options import resolve_cluster_routed_source_staging_ch_policy
+from analytics_toolkit.sql.dml.ddl_options import (
+    resolve_cluster_routed_source_staging_ch_policy,
+    resolve_operation_ddl,
+)
 from analytics_toolkit.sql.dml.destination_context import freeze_destination_timezone
 from analytics_toolkit.sql.dml.load.load_sql_table import insert_rows_batch
+from analytics_toolkit.sql.dml.query_native_assignment import (
+    close_query_assignment,
+    describe_query_assignment,
+    prepare_native_sql_assignment,
+    prepare_python_query_assignment,
+    query_assignment_recoverable,
+    replay_query_assignment,
+    requires_query_assignment,
+)
 from analytics_toolkit.sql.dml.table.table_validation import validate_key_columns_in_columns
 from analytics_toolkit.sql.dml.transfer.flow.adaptive_input import (
     AdaptiveTransferContext,
@@ -36,7 +48,10 @@ from analytics_toolkit.sql.dml.transfer.runtime.models import (
     TransferStageState,
 )
 from analytics_toolkit.sql.dml.transfer.runtime.retry import run_with_retry
-from analytics_toolkit.sql.dml.transfer.schema import inspect_source_query_schema
+from analytics_toolkit.sql.dml.transfer.schema import (
+    inspect_source_query_schema,
+    map_source_schema_to_target,
+)
 from analytics_toolkit.sql.execution.backend_options import backend_operation
 
 if TYPE_CHECKING:
@@ -70,6 +85,8 @@ class PreparedQueryInput:
     def describe(self, metadata: SqlOperationMetadata) -> None:
         if not self.frozen:
             return
+        if describe_query_assignment(self, metadata):
+            return
         cache = self.options.input_resolution
         metadata.input_count = cache.get("input_count")
         metadata.source_rows = metadata.input_count
@@ -99,14 +116,19 @@ def prepare_query_input(
             (target_connection_ref or connection_ref)["connection"],
             prepared.schema,
         )
+        if requires_query_assignment(prepared.schema, prepared.options.to_db_backend):
+            _prepare_assignment(
+                prepared, connection_ref, target_connection_ref or connection_ref, cache
+            )
         return cast("PreparedQueryInput", prepared)
     config = get_connection_config(request.alias)
     target_alias = request.target_alias or request.alias
     target_backend = request.target_backend or request.backend
+    target_config = get_connection_config(target_alias)
     identity = resolve_destination_identity(request.target_table, target_backend)
     resolution = cache.setdefault(
         "transfer_input_resolution",
-        configuration_identity_from_configs([config, get_connection_config(target_alias)]),
+        configuration_identity_from_configs([config, target_config]),
     )
     source_schema = resolution.get("source_schema", source_schema)
     if source_schema is None:
@@ -119,6 +141,11 @@ def prepare_query_input(
     if not columns or len(columns) != len(set(columns)):
         message = "Query creation requires inspectable, uniquely named source columns."
         raise InvalidSqlInputError(message)
+    target_types = request.schema or map_source_schema_to_target(
+        source_schema, target_backend, source_backend=request.backend
+    )
+    pending_native = requires_query_assignment(target_types, target_backend)
+    target_ddl = resolve_operation_ddl(target_config) if pending_native else None
     options = TransferOptions(
         from_db_key=request.alias,
         from_db_backend=request.backend,
@@ -136,6 +163,9 @@ def prepare_query_input(
         retry_cnt=cache.get("retry_cnt", 5),
         timeout_increment=cache.get("timeout_increment", 5),
         source_transfer_staging_schema=config.transfer_staging_schema,
+        transfer_staging_schema=target_config.transfer_staging_schema,
+        staging_ddl_properties=target_ddl.staging_properties if target_ddl is not None else None,
+        staging_ch_policy=target_ddl.staging_ch_policy if target_ddl is not None else None,
         source_staging_ch_policy=(
             resolve_cluster_routed_source_staging_ch_policy(config)
             if config.transfer_staging_schema is not None
@@ -150,11 +180,27 @@ def prepare_query_input(
         source_column_types={column.name: column.native_type for column in source_schema},
         internal_columns=resolve_internal_columns(columns, target_backend),
     )
+    if pending_native and not request.source_values_in_python:
+        freeze_destination_timezone(
+            resolution,
+            target_backend,
+            (target_connection_ref or connection_ref)["connection"],
+            target_types,
+        )
+        state.stage_column_types = target_types
+        resolution.update(source_schema=source_schema, native_assignment_pending=True)
+        prepared = PreparedQueryInput(options, state, target_types, columns, frozen=True)
+        cache["prepared_query_input"] = prepared
+        _prepare_assignment(
+            prepared, connection_ref, target_connection_ref or connection_ref, cache
+        )
+        return prepared
     context = AdaptiveTransferContext(
         options.retry_cnt,
         options.retry_cnt,
-        force_freeze=request.force_freeze,
+        force_freeze=request.force_freeze or pending_native,
         source_values_in_python=request.source_values_in_python,
+        allow_pending_native_assignment=pending_native,
     )
     frozen = resolve_adaptive_input(
         options,
@@ -168,7 +214,30 @@ def prepare_query_input(
     prepared = PreparedQueryInput(options, state, state.stage_column_types or {}, columns, frozen)
     if frozen:
         cache["prepared_query_input"] = prepared
+    if pending_native:
+        _prepare_assignment(
+            prepared, connection_ref, target_connection_ref or connection_ref, cache
+        )
     return prepared
+
+
+def _prepare_assignment(
+    prepared: PreparedQueryInput,
+    source_ref: dict[str, Any],
+    target_ref: dict[str, Any],
+    cache: dict[str, Any],
+) -> None:
+    try:
+        if "spool" in prepared.options.input_resolution:
+            prepare_python_query_assignment(prepared, source_ref, target_ref)
+        else:
+            prepare_native_sql_assignment(
+                prepared.options, prepared.schema, prepared.columns, target_ref
+            )
+    except BaseException:
+        if not query_assignment_recoverable(prepared.options):
+            cache.pop("prepared_query_input", None)
+        raise
 
 
 def validate_query_columns(
@@ -244,6 +313,15 @@ def replay_query_input(
 ) -> int:
     options = prepared.options
     total = 0
+    if requires_query_assignment(prepared.schema, options.to_db_backend) or any(
+        getattr(resolution, "native_assignment_required", False)
+        for resolution in options.input_resolution.get("resolutions", [])
+    ):
+        total = replay_query_assignment(prepared, connection_ref)
+        prepared.describe(metadata)
+        metadata.inserted_rows = metadata.affected_rows = total
+        metadata.data_write_replay_possible = options.retry_cnt > 1
+        return total
     for batch in resolved_source_batches(options, iter):
         require_frozen_configuration(options)
         freeze_destination_timezone(
@@ -333,4 +411,7 @@ def close_query_input(cache: dict[str, Any]) -> None:
             backend=options.to_db_backend,
             phase="recovery",
         )
-    close_frozen_input(options)
+    try:
+        close_query_assignment(options)
+    finally:
+        close_frozen_input(options)

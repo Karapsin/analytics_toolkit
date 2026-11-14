@@ -111,6 +111,17 @@ Supported Greenplum built-ins follow exact quoted identity, including recognized
 has unbounded input validation. Redundant fractional zeros can be removed to fit
 a numeric scale exactly; nonzero excess fractional digits are rejected.
 
+For authoritative Greenplum native types without a local conversion model,
+including `CIDR` and domains, loading first assigns the complete input to an
+owned persistent table with the resolved native schema. When an explicit schema
+differs from the existing target, native assignment validates both authorities
+before any live destination change. Row counts, nulls and native keys are checked;
+final insertion and retries copy the certified rows without adapting Python
+values again. The staging schema needs `CREATE` permission and the types need
+`USAGE` permission. Known local conversion paths remain unchanged, and existing
+schemas are never migrated automatically. Dry runs create no stages and mark
+`plan.options["native_assignment_validation_pending"] = True`.
+
 Greenplum `TIME` and `INTERVAL` accept native `datetime.time` and
 `datetime.timedelta` values, including microsecond-aligned pandas timedeltas.
 Existing and inferred native schemas require exact precision. An explicit schema

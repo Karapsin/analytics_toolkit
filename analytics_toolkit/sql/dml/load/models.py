@@ -8,6 +8,7 @@ from analytics_toolkit.sql.dml.table.upsert_checkpoint import UpsertCheckpoint
 if TYPE_CHECKING:
     import pandas as pd
 
+    from analytics_toolkit.sql.backends.gp.native_assignment import NativeAssignmentCertificate
     from analytics_toolkit.sql.dml.empty_source import EmptySourcePolicy
 
 
@@ -65,3 +66,10 @@ class LoadState:
     owned_stage_resources: list[tuple[str, str, Any]] = field(default_factory=list)
     stage_candidates: list[str] = field(default_factory=list)
     prepared_json_dataframe: pd.DataFrame | None = field(default=None, repr=False, compare=False)
+    native_assignment_checkpoint: NativeAssignmentCertificate | None = field(
+        default=None, repr=False
+    )
+    native_assignment_target_prepared: bool = False
+    native_assignment_source_checkpoint: NativeAssignmentCertificate | None = field(
+        default=None, repr=False
+    )

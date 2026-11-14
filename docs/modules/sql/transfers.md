@@ -340,6 +340,12 @@ must fit the destination calendar and precision range before destination mutatio
 bytes, and `Enum8`/`Enum16` values must belong to the declared labels or codes.
 Unrecognized authoritative native types require proven identical source metadata
 or typed-stage validation before the operation can certify them.
+For Greenplum types requiring server assignment, the complete captured payload
+is certified in owned persistent native tables before live publication. This
+includes the final SQL projection and casts when the requested stage schema
+differs from the destination. Retries reuse the certified native rows. Creating
+the checkpoints requires staging-schema `CREATE` and type `USAGE` permissions;
+dry plans leave this validation pending without materializing data.
 
 ClickHouse timestamp interpretation is bound to the operation's actual write
 timezone and policy version, separately from SQL schema identity. Explicit

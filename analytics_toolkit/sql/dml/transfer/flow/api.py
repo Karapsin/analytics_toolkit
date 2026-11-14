@@ -48,6 +48,7 @@ from .concurrency import resolve_transfer_concurrency
 from .dry_run import build_transfer_table_plan as build_dry_run_transfer_table_plan
 from .keys import normalize_transfer_slices
 from .logging import TransferAttemptLogState, build_transfer_operation_context
+from .native_assignment import annotate_assignment_metadata
 from .row_counts import best_effort_transfer_target_count
 from .runtime_identity import prepare_transfer_runtime
 from .source import normalize_transfer_source
@@ -365,6 +366,7 @@ def _build_transfer_metadata_result(
             completed_attempt_options.input_resolution.get("resolutions", []),
         )
     ]
+    annotate_assignment_metadata(completed_attempt_options, metadata)
     metadata.input_count = completed_attempt_options.input_resolution.get("input_count")
     row_count_result = completed_attempt_options.row_count_result
     if row_count_result is not None:

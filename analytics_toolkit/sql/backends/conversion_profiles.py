@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
 
-from .native_values import canonical_native_type, validate_transport_value
+from .native_values import (
+    canonical_native_type,
+    requires_native_assignment,
+    validate_transport_value,
+)
 from .type_resolution import validate_profile
 from .value_profiles import ColumnProfile
 
@@ -23,6 +27,16 @@ def validate_converted_rows(
     backend: str,
     destination_timezone: str | None = None,
 ) -> list[ColumnProfile]:
+    if any(
+        resolution.native_assignment_required
+        and (
+            resolution.target_backend != backend
+            or not requires_native_assignment(resolution.target_type, backend)
+        )
+        for resolution in resolutions
+    ):
+        message = "Pending native assignment requires a nonlocal Greenplum destination type."
+        raise ValueError(message)
     profiles = [
         ColumnProfile(
             native_type=canonical_native_type(resolution.target_type, backend),
@@ -42,6 +56,10 @@ def validate_converted_rows(
             validate_transport_value(converted, resolution.target_type, backend)
             profile.add(converted)
     for profile, resolution in zip(profiles, resolutions):
+        if resolution.native_assignment_required and requires_native_assignment(
+            resolution.target_type, backend
+        ):
+            continue
         validate_profile(
             profile,
             resolution.target_type,

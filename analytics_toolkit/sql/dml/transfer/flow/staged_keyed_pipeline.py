@@ -366,6 +366,7 @@ def _prepare_attempt(
         options.retry_cnt if insert_retry_cnt is None else insert_retry_cnt,
         existing_types_reader=get_existing_target_insert_types,
         open_connection=get_sql_connection,
+        allow_pending_native_assignment=True,
     )
     if resolve_adaptive_input(options, refs, stage_state, source_schema, adaptive_context):
         return AdaptiveInputReady(adaptive_context)

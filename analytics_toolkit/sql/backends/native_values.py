@@ -51,6 +51,15 @@ def canonical_native_type(native_type: str | None, backend: str | None) -> str:
     return decimal_target_type(value, backend or "")
 
 
+def requires_native_assignment(native_type: str, backend: str) -> bool:
+    """Identify native schemas whose values need an owned assignment checkpoint."""
+    if backend != "gp":
+        return False
+    from .gp import native_assignment  # noqa: PLC0415 -- backend-owned checkpoint policy.
+
+    return native_assignment.requires_native_assignment(native_type)
+
+
 def validate_transport_value(value: Any, native_type: str, backend: str) -> None:
     """Certify the real parameter normalizer while retaining native profile values."""
     if backend == "trino":

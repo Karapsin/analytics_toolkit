@@ -61,6 +61,7 @@ from .logging import (
     format_transfer_key_log_fragment,
     format_transfer_slice_log_label,
 )
+from .native_assignment import native_insert_parameter_types, native_insert_retry_arguments
 from .parquet_batches import (
     initialize_parquet_stage_for_first_batch as _initialize_parquet_stage_for_first_batch_impl,
 )
@@ -801,10 +802,11 @@ def load_stage_batches(
                     require_stage_table(stage_state),
                     batch.columns,
                     batch.rows,
-                    retry_fn=run_with_retry,
                     retry_cnt=insert_retry_cnt,
                     timeout_increment=options.timeout_increment,
-                    target_column_types=stage_state.stage_column_types,
+                    target_column_types=native_insert_parameter_types(
+                        options, stage_state, target_ref["connection"]
+                    ),
                     gp_insert_chunk_size=options.gp_insert_chunk_size,
                     trino_insert_chunk_size=options.trino_insert_chunk_size,
                     query_label=options.query_label,
@@ -821,6 +823,7 @@ def load_stage_batches(
                     connection_key=options.to_db_key,
                     rollback_fn=rollback_quietly,
                     replace_connection_fn=replace_connection,
+                    **native_insert_retry_arguments(options, run_with_retry),
                 ),
             )
             progress_tracker.complete_batch(inserted_rows)

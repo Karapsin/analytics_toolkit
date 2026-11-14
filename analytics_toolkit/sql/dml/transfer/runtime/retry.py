@@ -20,6 +20,7 @@ from analytics_toolkit.sql.execution.operation_runner import _format_duration
 
 T = TypeVar("T")
 _MAX_SAFE_EXCEPTION_TYPE_CHARS = 80
+_SQLSTATE_CODE_LENGTH = 5
 
 _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES = {
     "ALREADY_EXISTS",
@@ -136,6 +137,8 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
         return True
     class_names = _exception_class_names(exc)
     if class_names & {
+        "DataError",
+        "IntegrityError",
         "SyntaxError",
         "UndefinedObject",
         "UndefinedTable",
@@ -154,7 +157,7 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
         return True
 
     sqlstate = str(getattr(exc, "pgcode", "") or getattr(exc, "sqlstate", "")).strip()
-    if sqlstate in {
+    if (len(sqlstate) == _SQLSTATE_CODE_LENGTH and sqlstate[:2] in {"22", "23"}) or sqlstate in {
         "42601",  # syntax_error
         "42704",  # undefined_object
         "42P01",  # undefined_table

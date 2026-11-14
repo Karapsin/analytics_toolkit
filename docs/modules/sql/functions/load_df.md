@@ -108,6 +108,14 @@ rows
   schema SQL. `NUMERIC(p)` uses scale zero, SQL `CHAR` length one, and bare `BPCHAR`
   unbounded input validation. Excess fractional zeros can align exactly; nonzero
   excess fractions reject before mutation.
+- Other authoritative Greenplum native types, including `CIDR` and domains, are
+  validated by inserting into owned persistent staging tables before changing the
+  live destination. Explicit and existing target schemas both retain authority;
+  final insertion and retries reuse the certified native rows without adapting
+  the Python values again. A retry cannot publish through a changed connection
+  alias or checkpoint identity. This path requires staging-schema `CREATE` and type
+  `USAGE` permissions. Offline plans set
+  `plan.options["native_assignment_validation_pending"] = True` and create no stages.
 - Existing or explicit Greenplum `INET` keeps valid address strings unchanged on
   the wire, including array elements. Native host bits and masks are preserved;
   key validation compares address family, address and prefix length. Invalid

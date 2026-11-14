@@ -26,6 +26,23 @@ class _StandalonePsycopgPostgres(Postgres):
         STRING_ESCAPES: ClassVar[list[str]] = ["'", "\\"]
 
 
+class _UndefinedFixtureTypeError(ValueError):
+    pgcode = "42704"
+
+
+def _json_catalog_type_exists(native):
+    if native.this == exp.DataType.Type.ARRAY:
+        return _json_catalog_type_exists(native.expressions[0])
+    if native.this in {exp.DataType.Type.JSON, exp.DataType.Type.JSONB}:
+        return True
+    identity = native.args.get("kind")
+    parts = [identity.this, identity.expression] if isinstance(identity, exp.Dot) else [identity]
+    if not all(isinstance(part, exp.Identifier) for part in parts):
+        return False
+    names = tuple(part.name if part.args.get("quoted") else part.name.lower() for part in parts)
+    return names in {("json",), ("jsonb",), ("pg_catalog", "json"), ("pg_catalog", "jsonb")}
+
+
 class JsonDatabase(TransferDatabase):
     def __init__(self, native_type, *, exists):
         super().__init__(
@@ -39,6 +56,18 @@ class JsonDatabase(TransferDatabase):
         self.sql_null_rows = []
         self.opens = 0
         self.lost_insert_acknowledgements = 0
+        self.rejected_type_creates = []
+
+    def execute(self, connection, statement, params=None):
+        tree = parse_one(self._ddl_schema_prefix(statement), read=self.dialect)
+        if isinstance(tree, exp.Create) and any(
+            not _json_catalog_type_exists(column.kind) for column in tree.this.expressions
+        ):
+            self.commands.append(statement)
+            self.rejected_type_creates.append(statement)
+            message = "The requested type does not exist in the fixture catalog."
+            raise _UndefinedFixtureTypeError(message)
+        return super().execute(connection, statement, params)
 
     def _insert(self, tree, identity, params):
         assert params is None

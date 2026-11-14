@@ -397,4 +397,31 @@ The disposable `audit.load.gp_inet_parameters` case in
 compares four parameters with independent native INET controls in one query.
 It creates no table and was not run locally.
 
+Greenplum native assignment compatibility is additionally covered by
+`dml/load/gp_cidr_casts.py::test_gp_cidr_casts_valid_string_reaches_native_execute_values`,
+`dml/load/gp_cidr_casts.py::test_gp_cidr_casts_registered_driver_adapts_once_for_checkpoint_and_replay`,
+`dml/load/gp_cidr_casts.py::test_gp_cidr_casts_explicit_and_final_authorities_use_native_assignment_without_readaptation`,
+and `dml/load/gp_cidr_casts.py::test_gp_cidr_casts_incompatible_final_authority_rejects_before_live_clear`.
+These certify actual typed assignments before publication and reuse the captured
+native rows through retries. Offline plans remain free of stage creation.
+`backends/gp/native_assignment.py::test_domain_assignment_rejects_values_that_an_explicit_cast_can_truncate`
+and `dml/load/gp_cidr_casts.py::test_gp_cidr_casts_domain_array_last_element_cannot_truncate_before_assignment`
+cover assignment semantics with real driver adaptation and fake native oracles;
+the latter does not claim arrays-of-domains support in the disposable GP6 stack.
+Checkpoint identity is covered by
+`dml/load/native_assignment.py::test_native_checkpoint_cannot_publish_to_reconfigured_alias_after_lost_target_ack`
+and `dml/load/native_assignment.py::test_initial_open_snapshot_cannot_be_hidden_by_restoring_the_alias`.
+Transfer coverage includes
+`dml/transfer/gp_native_assignment.py::test_gp_native_transfer_certifies_the_actual_final_explicit_cast_chain`
+and `dml/transfer/gp_native_assignment.py::test_gp_native_transfer_inner_retry_stops_deterministic_assignment_failures`.
+Query creation is covered by
+`dml/table/create_from_sql/gp_native_assignment.py::test_gp_query_native_cross_alias_projection_runs_in_target_context`,
+`dml/table/create_from_sql/gp_native_assignment.py::test_gp_query_native_lost_ack_reuses_certified_sql_payload`,
+and `dml/table/create_from_sql/gp_native_assignment.py::test_gp_query_native_dry_plan_has_pending_validation_without_materialization`.
+These retain each consumer's actual assignment or SQL-cast semantics. The
+disposable `audit.load.gp_native_assignment` case in
+`integration/core/audit_gp_assignment_preflight.py::test_greenplum_native_assignment_certifies_cidr_and_scalar_domain_before_clear`
+covers GP6-supported CIDR, MACADDR, a scalar domain and CIDR arrays. It was not run
+locally and makes no domain-array support claim.
+
 [SQL module index](index.md)

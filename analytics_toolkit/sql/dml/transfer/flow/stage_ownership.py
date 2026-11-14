@@ -33,12 +33,14 @@ def stage_creation_callbacks(state: Any) -> dict[str, Any]:
     return {"on_stage_candidate": visible, "on_resource_created": owned}
 
 
-def cleanup_acknowledged_stages(options: Any, state: Any, run_target: Any) -> None:
+def cleanup_acknowledged_stages(
+    options: Any, state: Any, run_target: Any, *, retained_resources: frozenset[str] = frozenset()
+) -> None:
 
     seen: set[str] = set()
     first_error: Exception | None = None
     for resource, stage in reversed(state.owned_stage_resources):
-        if resource in seen:
+        if resource in seen or resource in retained_resources:
             continue
         seen.add(resource)
         try:

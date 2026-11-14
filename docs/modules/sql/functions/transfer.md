@@ -302,6 +302,10 @@ rows = sql.transfer(
   integer, decimal and temporal representations before text. Every keyed slice
   contributes to this one resolved schema; the adaptive path has an all-key
   barrier and uses one target stage.
+- Greenplum types requiring server assignment use complete owned native
+  checkpoints before live publication, including final SQL casts into an
+  existing target. Retries reuse those rows. This requires staging-schema
+  `CREATE` and type `USAGE` permissions; offline plans leave validation pending.
 - Trino source timestamps retain raw precision 0–12 before driver rounding,
   including nested map keys. Default inferred timestamps remain precision 6;
   explicit or existing capable destinations can retain precision 9 or 12

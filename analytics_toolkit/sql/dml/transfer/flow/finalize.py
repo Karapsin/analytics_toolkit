@@ -55,6 +55,7 @@ from analytics_toolkit.sql.execution.backend_options import (
     preserve_recovery_artifacts,
 )
 
+from .native_assignment import assignment_replacement_schema, native_cleanup_arguments
 from .parquet_stage import cleanup_parquet_stage_location
 from .stage_ownership import cleanup_acknowledged_stages, stage_creation_callbacks
 from .upsert_finalization import (
@@ -147,6 +148,8 @@ def finalize_loaded_stage(  # noqa: PLR0913
     else:
         stage_state.insert_column_types = source_stage_column_types
         target_column_types = source_stage_column_types
+
+    target_column_types = assignment_replacement_schema(options, target_column_types)
 
     _ensure_final_upsert_stage_table(
         options,
@@ -728,6 +731,7 @@ def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
                     operation,
                     target_connection_runner=target_connection_runner,
                 ),
+                **native_cleanup_arguments(options, failed=drop_created_target),
             )
         except Exception as exc:  # noqa: BLE001 -- retain primary cleanup error after all owned drops.
             stage_cleanup_error = exc

@@ -20,10 +20,18 @@ known.
 
 Query-based creation reads the source query's native column metadata and maps it
 to the target backend. It can create an empty target table or create and insert
-the query result. Cross-backend inserts delegate to the transfer workflow after
-the target is created with [sql.transfer](functions/transfer.md). If Python
+the query result. Cross-backend inserts use the staging and conversion machinery
+of [sql.transfer](functions/transfer.md). If Python
 already owns the rows, [sql.load_df](functions/load_df.md) is usually the
 simpler workflow.
+
+Greenplum native types, including domains, are validated by assignment into an
+owned typed checkpoint when their rules cannot be proved locally. This completes
+before target creation or replacement. A same-backend native SQL copy freezes
+the query in the target connection's context and certifies the original SQL
+projection and casts. A Python transfer certifies the actual parameter assignment.
+The completed payload survives publication retries, and dry-run plans leave this
+validation pending without materializing data.
 
 The `sql` input also accepts setup statements followed by a final `SELECT`,
 including CTE queries. Setup runs on the source connection before the final

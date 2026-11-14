@@ -409,9 +409,12 @@ def test_nonbuiltin_json_named_type_is_not_treated_as_builtin_before_mutation(
     original_rows = deepcopy(database.target.rows)
     frame = pd.DataFrame({"payload": pd.Series([{"x": 1}], dtype=object)})
 
-    with pytest.raises(ValueError, match=r"authoritative|certify"):
+    with pytest.raises(ValueError, match=r"native assignment creation.*42704") as caught:
         load(frame, table_schema={"payload": explicit_type}, write_mode="truncate_insert")
 
+    assert caught.value.sqlstate == "42704"
+    assert len(database.rejected_type_creates) == 1
     assert database.target.rows == original_rows
     assert database.live_mutations == []
     assert database.bound_rows == []
+    assert set(database.tables) == {("sandbox", "events")}

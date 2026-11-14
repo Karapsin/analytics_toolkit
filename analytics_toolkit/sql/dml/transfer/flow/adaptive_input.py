@@ -17,9 +17,12 @@ from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.conversion_profiles import validate_converted_rows
 from analytics_toolkit.sql.backends.models import SourceColumn
+from analytics_toolkit.sql.backends.native_values import requires_native_assignment
 from analytics_toolkit.sql.backends.stage_ownership import single_resource_policy
 from analytics_toolkit.sql.connection.config import get_connection_config
-from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
+from analytics_toolkit.sql.connection.get_sql_connection import (
+    get_sql_connection as _get_sql_connection,
+)
 from analytics_toolkit.sql.core.replay_spool import FrozenInputIdentity, ReplaySpool
 from analytics_toolkit.sql.core.type_resolution import (
     ColumnProfile,
@@ -30,13 +33,22 @@ from analytics_toolkit.sql.core.type_resolution import (
     timestamp_scale,
 )
 from analytics_toolkit.sql.ddl.schema import validate_table_schema_columns
-from analytics_toolkit.sql.dml.destination_context import freeze_destination_timezone
+from analytics_toolkit.sql.dml.destination_context import (
+    freeze_destination_timezone as _freeze_destination_timezone,
+)
 from analytics_toolkit.sql.dml.load.stage import cleanup_stage_table
 from analytics_toolkit.sql.dml.table.table_validation import validate_complete_upsert_columns
 from analytics_toolkit.sql.dml.transfer.flow import row_counts
 from analytics_toolkit.sql.dml.transfer.flow.conversion_validation import (
     resolve_final_conversions,
     validate_final_conversions,
+)
+from analytics_toolkit.sql.dml.transfer.flow.native_assignment import (
+    close_assignment_checkpoint,
+    validate_pending_final_conversions,
+)
+from analytics_toolkit.sql.dml.transfer.flow.resolved_transfer import (
+    run_resolved_checkpoint_transfer,
 )
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
     disable_query_limit_for_transfer_reads,
@@ -51,7 +63,9 @@ from analytics_toolkit.sql.dml.transfer.runtime.models import (
 )
 from analytics_toolkit.sql.dml.transfer.runtime.retry import (
     close_connection_ref,
-    run_with_fresh_connection,
+)
+from analytics_toolkit.sql.dml.transfer.runtime.retry import (
+    run_with_fresh_connection as _run_with_fresh_connection,
 )
 from analytics_toolkit.sql.dml.transfer.schema import (
     get_existing_target_insert_types,
@@ -59,6 +73,10 @@ from analytics_toolkit.sql.dml.transfer.schema import (
 )
 from analytics_toolkit.sql.execution.backend_options import current_backend_operation
 from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
+
+get_sql_connection = _get_sql_connection
+freeze_destination_timezone = _freeze_destination_timezone
+run_with_fresh_connection = _run_with_fresh_connection
 
 
 class AdaptiveTransferCompleteError(Exception):
@@ -84,6 +102,7 @@ class AdaptiveTransferContext:
     target_host_connection_runner: Any = None
     force_freeze: bool = False
     source_values_in_python: bool = True
+    allow_pending_native_assignment: bool = False
 
 
 @dataclass(frozen=True)
@@ -96,6 +115,7 @@ class _ResolutionSchema:
     columns: list[SourceColumn]
     target_types: dict[str, str]
     authoritative: bool
+    allow_pending_native_assignment: bool = False
 
 
 @dataclass
@@ -434,6 +454,15 @@ def _resolve_scan(
             authoritative_type=schema.target_types[column.name] if schema.authoritative else None,
             allow_timestamp_precision_loss=options.table_schema is not None,
             destination_timezone=options.input_resolution.get("destination_timezone"),
+            **(
+                {"allow_pending_native_assignment": True}
+                if schema.allow_pending_native_assignment
+                and schema.authoritative
+                and requires_native_assignment(
+                    schema.target_types[column.name], options.to_db_backend
+                )
+                else {}
+            ),
         )
         for column, profile in zip(schema.columns, scan.profiles)
     ]
@@ -455,6 +484,10 @@ def _validate_resolved_input(
         )
     except (TypeError, ValueError, OverflowError):
         _reject("Selected input cannot be converted to the resolved destination schema.")
+    if schema.allow_pending_native_assignment and validate_pending_final_conversions(
+        options, state, schema.columns, resolutions, profiles, spool
+    ):
+        return
     targets = resolve_final_conversions(
         schema.columns,
         resolutions,
@@ -593,7 +626,20 @@ def resolve_adaptive_input(
     source_validation = context.source_values_in_python and get_backend_adapter(
         options.from_db_backend
     ).requires_value_certification([column.native_type for column in source_schema])
-    needs_profile = (context.force_freeze or contextual_profile or source_validation) or any(
+    cross_alias_native = (
+        context.allow_pending_native_assignment
+        and options.from_db_key.lower() != options.to_db_key.lower()
+        and any(
+            requires_native_assignment(native_type, options.to_db_backend)
+            for native_type in (
+                *target_types.values(),
+                *(state.insert_column_types or {}).values(),
+            )
+        )
+    )
+    needs_profile = (
+        context.force_freeze or contextual_profile or source_validation or cross_alias_native
+    ) or any(
         not declared_domain_fits(
             column.native_type,
             target_types[column.name],
@@ -621,7 +667,12 @@ def resolve_adaptive_input(
             options,
             refs,
             state,
-            _ResolutionSchema(source_schema, target_types, authoritative),
+            _ResolutionSchema(
+                source_schema,
+                target_types,
+                authoritative,
+                allow_pending_native_assignment=context.allow_pending_native_assignment,
+            ),
             context,
         )
         cached.update(
@@ -669,85 +720,7 @@ def run_resolved_transfer(
     state: TransferStageState,
     context: AdaptiveTransferContext,
 ) -> int:
-    # One shared stage suffices once all selected keys have crossed the barrier.
-    frozen_options = replace(options, transfer_slices=None, table_schema=state.stage_column_types)
-    target_runner = context.target_connection_runner or (
-        lambda role, operation: run_with_fresh_connection(
-            options.to_db_key,
-            role,
-            operation,
-            open_connection=context.open_connection or get_sql_connection,
-        )
-    )
-
-    def runner(role: str, operation: Any) -> Any:
-        require_frozen_configuration(options)
-
-        def checked(ref: dict[str, Any]) -> Any:
-            freeze_destination_timezone(
-                options.input_resolution, options.to_db_backend, ref["connection"]
-            )
-            return operation(ref)
-
-        return target_runner(role, checked)
-
-    # Orchestration imports are local to avoid the public transfer import cycle.
-    from analytics_toolkit.sql.dml.transfer.flow.attempt import load_stage_batches  # noqa: PLC0415
-    from analytics_toolkit.sql.dml.transfer.flow.finalize import (  # noqa: PLC0415
-        finalize_loaded_stage,
-    )
-    from analytics_toolkit.sql.dml.transfer.flow.row_counts import (  # noqa: PLC0415
-        validate_loaded_stage_row_count,
-    )
-    from analytics_toolkit.sql.dml.transfer.flow.stage import (  # noqa: PLC0415
-        ensure_transfer_target_table,
-    )
-
-    options.input_resolution["target_connection_runner"] = runner
-    try:
-        runner(
-            "prepare_frozen_target",
-            lambda target_ref: ensure_transfer_target_table(
-                frozen_options,
-                TransferConnectionRefs(source=refs.source, target=target_ref),
-                state,
-                state.source_columns,
-            ),
-        )
-        total_rows = load_stage_batches(
-            frozen_options,
-            refs,
-            state,
-            context.read_retry_cnt,
-            context.insert_retry_cnt,
-        )
-        validate_loaded_stage_row_count(
-            options=frozen_options,
-            connection_refs=refs,
-            stage_state=state,
-            total_rows=total_rows,
-            open_connection=context.open_connection or get_sql_connection,
-            target_connection_runner=runner,
-        )
-        finalize_loaded_stage(
-            frozen_options,
-            refs,
-            state,
-            total_rows,
-            target_connection_runner=runner,
-            target_host_connection_runner=context.target_host_connection_runner,
-        )
-        object.__setattr__(options, "row_count_result", frozen_options.row_count_result)
-        object.__setattr__(options, "final_target_rows", frozen_options.final_target_rows)
-        object.__setattr__(
-            options,
-            "transfer_concurrency",
-            replace(options.transfer_concurrency, effective_read=1, effective_write=1),
-        )
-        return total_rows
-
-    finally:
-        options.input_resolution.pop("target_connection_runner", None)
+    return run_resolved_checkpoint_transfer(options, refs, state, context)
 
 
 def run_certified_transfer_attempt(
@@ -760,6 +733,7 @@ def run_certified_transfer_attempt(
         create_stage_state,
     )
 
+    context = replace(context, allow_pending_native_assignment=True)
     refs = TransferConnectionRefs()
     state: TransferStageState | None = None
     primary: BaseException | None = None
@@ -820,6 +794,7 @@ def maybe_run_adaptive_transfer(
     context: AdaptiveTransferContext,
 ) -> int | None:
     """Run the complete frozen path, or return None for ordinary streaming."""
+    context = replace(context, allow_pending_native_assignment=True)
     if not resolve_adaptive_input(options, refs, state, source_schema, context):
         return None
     return run_resolved_transfer(options, refs, state, context)
@@ -890,6 +865,7 @@ def resolved_source_batches(
 
 
 def close_frozen_input(options: TransferOptions) -> None:
+    close_assignment_checkpoint(options)
     remove_configuration_guard(options)
     spool = options.input_resolution.pop("spool", None)
     if spool is not None:

@@ -10932,6 +10932,19 @@
         "tests/sql/dml/load/gp_inet_casts.py::test_gp_inet_casts_valid_string_reaches_native_execute_values"
       ]
     },
+    "audit.load.gp_native_assignment": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_assignment_preflight.py::test_greenplum_native_assignment_certifies_cidr_and_scalar_domain_before_clear",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_cidr_casts.py::test_gp_cidr_casts_valid_string_reaches_native_execute_values",
+        "tests/sql/dml/load/gp_cidr_casts.py::test_gp_cidr_casts_domain_assignment_rejects_before_live_create_or_clear",
+        "tests/sql/dml/load/gp_cidr_casts.py::test_gp_cidr_casts_unknown_array_leaves_use_native_assignment_before_clear",
+        "tests/sql/dml/load/gp_cidr_casts.py::test_gp_cidr_casts_domain_array_last_element_cannot_truncate_before_assignment"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

@@ -110,6 +110,7 @@ def resolve_column_type(  # noqa: PLR0913 - preserve column and authority contex
     *,
     allow_timestamp_precision_loss: bool = True,
     destination_timezone: str | None = None,
+    allow_pending_native_assignment: bool = False,
 ) -> ResolvedColumn:
     from .type_resolution import resolve_profile  # noqa: PLC0415 - native resolution cycle
 
@@ -121,4 +122,5 @@ def resolve_column_type(  # noqa: PLR0913 - preserve column and authority contex
         authoritative_type=authoritative_type,
         allow_timestamp_precision_loss=allow_timestamp_precision_loss,
         destination_timezone=destination_timezone,
+        allow_pending_native_assignment=allow_pending_native_assignment,
     )

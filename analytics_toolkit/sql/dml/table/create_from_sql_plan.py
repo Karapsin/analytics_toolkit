@@ -7,6 +7,7 @@ import pandas as pd
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.core.type_resolution import native_candidates
 from analytics_toolkit.sql.ddl.api import _build_create_table_sqls, _gp_partition_plan_option
+from analytics_toolkit.sql.dml.query_native_assignment import requires_query_assignment
 from analytics_toolkit.sql.execution.plan_steps import (
     add_create_table_placeholder_step,
     add_create_table_steps,
@@ -54,6 +55,11 @@ def _build_create_table_from_sql_plan(  # noqa: PLR0913
         options={
             "insert_data": insert_data,
             "pending_input_validation": insert_data,
+            "native_assignment_validation_pending": (
+                insert_data
+                and table_schema is not None
+                and requires_query_assignment(table_schema, target_backend)
+            ),
             "type_resolution_pending": insert_data and table_schema is None,
             "type_resolution": {
                 "status": "pending" if insert_data else "metadata_only",

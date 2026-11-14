@@ -33,6 +33,7 @@ from .native_values import (
     _float_width,
     canonical_native_type,
     convert_native_value,
+    requires_native_assignment,
     validate_backend_profile,
 )
 from .temporal_context import TIMEZONE_POLICY_VERSION
@@ -202,11 +203,16 @@ class ResolvedColumn:
     certified_input_count: int = 0
     target_backend: str = ""
     destination_timezone: str | None = None
+    native_assignment_required: bool = False
 
     def convert(self, value: Any) -> Any:  # noqa: C901, PLR0911 - preserve explicit destination conversions
         value = unwrap_enum(value)
         if is_null(value):
             return None
+        if self.native_assignment_required and requires_native_assignment(
+            self.target_type, self.target_backend
+        ):
+            return value
         target_type = canonical_native_type(self.target_type, self.target_backend)
         native, value = convert_native_value(value, self)
         if native:
@@ -284,6 +290,7 @@ class ResolvedColumn:
             "certified_input_count": self.certified_input_count,
             "destination_timezone": self.destination_timezone,
             "timezone_policy_version": TIMEZONE_POLICY_VERSION,
+            **({"native_assignment_required": True} if self.native_assignment_required else {}),
         }
 
 
@@ -296,26 +303,32 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
     authoritative_type: str | None = None,
     allow_timestamp_precision_loss: bool = True,
     destination_timezone: str | None = None,
+    allow_pending_native_assignment: bool = False,
 ) -> ResolvedColumn:
     destination_timezone = destination_timezone or profile.destination_timezone
     if authoritative_type is not None:
-        validate_profile(
-            profile,
-            authoritative_type,
-            target_backend,
-            allow_timestamp_precision_loss=allow_timestamp_precision_loss,
-            source_type=source_type,
-            source_backend=source_backend,
-            destination_timezone=destination_timezone,
+        native_assignment = allow_pending_native_assignment and requires_native_assignment(
+            authoritative_type, target_backend
         )
+        if not native_assignment:
+            validate_profile(
+                profile,
+                authoritative_type,
+                target_backend,
+                allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+                source_type=source_type,
+                source_backend=source_backend,
+                destination_timezone=destination_timezone,
+            )
         return ResolvedColumn(
             authoritative_type,
             source_type or "",
             source_backend,
-            "authoritative",
-            certified_input_count=profile.count,
+            "native_assignment_pending" if native_assignment else "authoritative",
+            certified_input_count=0 if native_assignment else profile.count,
             target_backend=target_backend,
             destination_timezone=destination_timezone,
+            native_assignment_required=native_assignment,
         )
     target = _declared_target(source_type, source_backend, target_backend)
     if target is None or not declared_domain_fits(

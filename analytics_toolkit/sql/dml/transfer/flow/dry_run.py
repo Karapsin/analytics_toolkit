@@ -9,6 +9,7 @@ from sqlglot import exp, parse_one
 from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 
 from ....backends import get_backend_adapter
+from ....backends.native_values import requires_native_assignment
 from ....core.identifiers import sqlglot_dialect
 from ....core.type_resolution import native_candidates
 from ....ddl.api import _build_create_table_sqls
@@ -29,6 +30,7 @@ from ...table.write_modes import (
     build_upsert_stage_sqls,
 )
 from ..runtime.models import TransferOptions
+from .native_assignment import native_assignment_plan_options
 from .parquet_stage import build_create_parquet_stage_table_sql, build_stage_external_location
 
 
@@ -163,6 +165,7 @@ def dry_run_transfer_options(
         "aggregate_stage_table": stage_tables[0],
         "table_schema": options.table_schema,
         "type_resolution_pending": options.table_schema is None,
+        **native_assignment_plan_options(options, requires_native_assignment),
         "target_constraints_validation_pending": True,
         "target_constraint_validation": "complete_owned_stage_before_live_publication",
         "type_resolution": {

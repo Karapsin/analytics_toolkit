@@ -129,6 +129,21 @@ from .json_values import (
 )
 from .load_sql_table import insert_table_batch
 from .models import LoadOptions, LoadState
+from .native_assignment import (
+    assignment_required,
+    assignment_validation_pending,
+    can_cleanup_assignment,
+    checkpoint_options,
+    has_assignment_checkpoint,
+    insert_checkpoint_rows,
+    load_input_dataframe,
+    prepare_load_profiles,
+    publish_assignment_checkpoint,
+    record_assignment_configuration,
+    require_assignment_identity,
+    run_assignment_operation,
+    validated_local_profiles,
+)
 from .stage import (
     STAGE_TABLE_NAME_MAX_ATTEMPTS,
     build_stage_table_name,
@@ -282,8 +297,21 @@ def load_df(
                         ),
                     )
 
-                input_df, operation_metadata.type_resolutions = convert_prepared_load_dataframe(
-                    options, state, df
+                input_df, operation_metadata.type_resolutions = load_input_dataframe(
+                    options,
+                    state,
+                    df,
+                    lambda: _run_load_target_action(
+                        options,
+                        "prepare_target",
+                        lambda ref: _prepare_load_target(
+                            options=options,
+                            state=state,
+                            connection=ref["connection"],
+                            df=df,
+                        ),
+                    ),
+                    convert_prepared_load_dataframe,
                 )
                 progress_bar = _make_load_progress_bar(
                     total=len(df),
@@ -293,7 +321,13 @@ def load_df(
                 progress_tracker = _ProgressTracker(progress_bar)
                 try:
                     if state.upsert_checkpoint.prepared:
-                        _resume_load_upsert(options, state, input_df)
+                        _resume_load_upsert(
+                            checkpoint_options(options, state)
+                            if state.native_assignment_checkpoint is not None
+                            else options,
+                            state,
+                            input_df,
+                        )
                         inserted_rows = len(input_df)
                     else:
                         inserted_rows = _load_dataframe(
@@ -345,14 +379,12 @@ def load_df(
             sql_preview=sql_preview(options.destination_table),
         )
 
-    return run_retrying_operation(
-        operation_name=(
-            f"loading DataFrame into {options.connection_key}.{options.destination_table}"
-        ),
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        operation=operation,
-        context_factory=context,
+    return run_assignment_operation(
+        options,
+        operation,
+        context,
+        lambda: retained_upsert_state,
+        (run_retrying_operation, _cleanup_load),
     )
 
 
@@ -549,6 +581,7 @@ def _build_load_options(
         ch_sharding_key=options.ch_sharding_key,
         ch_only_shard=options.ch_only_shard,
     )
+    record_assignment_configuration(options, config)
     return options
 
 
@@ -629,7 +662,12 @@ def _handle_empty_dataframe_load(
 def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
     if options.table_schema is not None:
         validate_table_schema_columns(options.table_schema, df.columns)
-        validate_dataframe_schema(
+        validator = (
+            validated_local_profiles
+            if assignment_required(options.table_schema, options.connection_backend)
+            else validate_dataframe_schema
+        )
+        validator(
             df,
             options.table_schema,
             options.connection_backend,
@@ -688,31 +726,14 @@ def _prepare_load_target(
     if prepared is not None:
         state.prepared_json_dataframe = prepared
         df = prepared
-    zone = prepare_dataframe_write_context(options, state, connection, df)
-    null_columns: tuple[str, ...] = ()
-    if state.target_column_types is not None:
-        validation_df = (
-            convert_dataframe_schema(
-                df, options.table_schema, options.connection_backend, destination_timezone=zone
-            )[0]
-            if options.table_schema is not None
-            else df
-        )
-        profiles = _validated_dataframe_profiles(
-            validation_df,
-            state.target_column_types,
-            options.connection_backend,
-            allow_timestamp_precision_loss=False,
-            destination_timezone=zone,
-        )
-        null_columns = tuple(name for name, profile in profiles.items() if profile.null_count)
-    if options.table_schema is not None:
-        validate_dataframe_schema(
-            df,
-            options.table_schema,
-            options.connection_backend,
-            destination_timezone=options.destination_context.get("destination_timezone"),
-        )
+    prepare_dataframe_write_context(options, state, connection, df)
+    null_columns = prepare_load_profiles(
+        options,
+        state,
+        connection,
+        df,
+        (_validated_dataframe_profiles, convert_dataframe_schema),
+    )
     if state.original_target_exists and options.write_mode in {
         "append",
         "truncate_insert",
@@ -737,9 +758,12 @@ def _prepare_load_target(
         options.connection_backend,
     ):
         _validate_dataframe_key_uniqueness(key_df, options.key_columns)
+    require_assignment_identity(options, state)
     _apply_load_target_write_mode(options, state, connection)
     _ensure_load_target_table(options, state, connection, df)
     _load_target_column_metadata(options, state, connection, df)
+    if state.native_assignment_checkpoint is not None:
+        state.native_assignment_target_prepared = True
 
 
 def _apply_load_target_write_mode(
@@ -945,6 +969,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
             "table_schema": options.table_schema,
+            "native_assignment_validation_pending": assignment_validation_pending(options),
             "partition_by": options.partition_by,
             "order_by": options.order_by,
             "ch_engine": options.ch_engine,
@@ -1420,6 +1445,14 @@ def _load_dataframe(
     df: pd.DataFrame,
     on_progress: Any | None = None,
 ) -> int:
+    if state.native_assignment_checkpoint is not None:
+        return publish_assignment_checkpoint(
+            options,
+            state,
+            df,
+            _run_load_target_action,
+            _finalize_loaded_dataframe_stage,
+        )
     if options.use_parquet_staging and not df.empty:
         return _load_dataframe_via_parquet_stage(
             options=options,
@@ -1735,7 +1768,11 @@ def _finalize_loaded_dataframe_stage(
                 state.overlap_stage_table,
                 columns=[str(column) for column in df.columns],
                 key_columns=options.key_columns or [],
-                column_types=options.table_schema or state.target_column_types,
+                column_types=(
+                    None
+                    if state.native_assignment_checkpoint is not None
+                    else options.table_schema or state.target_column_types
+                ),
                 query_label=options.query_label,
                 upsert_partition_column=options.upsert_partition_column,
                 final_stage_table=state.final_upsert_stage_table,
@@ -1757,7 +1794,11 @@ def _finalize_loaded_dataframe_stage(
             target_exists=True,
             sample_batch=df,
             target_column_types=state.target_column_types,
-            insert_column_types=state.target_column_types,
+            insert_column_types=(
+                None
+                if state.native_assignment_checkpoint is not None
+                else state.target_column_types
+            ),
             write_mode="replace",
             gp_distributed_by_key=options.gp_distributed_by_key,
             gp_partitions=options.gp_partitions,
@@ -1785,6 +1826,9 @@ def _finalize_loaded_dataframe_stage(
             replace_target_table=False,
         )
 
+    if state.native_assignment_checkpoint is not None:
+        insert_checkpoint_rows(options, state, connection)
+        return
     insert_from_table(
         options.connection_backend,
         connection,
@@ -1908,6 +1952,9 @@ def _cleanup_load(
     drop_created_target: bool = False,
 ) -> None:
 
+    if not can_cleanup_assignment(options):
+        time_print("Preserving native assignment resources after a destination identity change.")
+        return
     if preserve_recovery_artifacts():
         time_print("Preserving ClickHouse load recovery artifacts after an uncertain mutation.")
         return
@@ -2007,8 +2054,12 @@ def _cleanup_load(
 def _retain_or_cleanup_load(
     options: LoadOptions, state: LoadState | None, error: Exception | None
 ) -> LoadState | None:
-    if error is not None and state is not None and state.upsert_checkpoint.prepared:
-        time_print("Retaining certified upsert payload for replay and recovery.")
+    if (
+        error is not None
+        and state is not None
+        and (state.upsert_checkpoint.prepared or has_assignment_checkpoint(state))
+    ):
+        time_print("Retaining certified native payload for replay and recovery.")
         return state
     if error is None:
         clear_data_replay_retention()

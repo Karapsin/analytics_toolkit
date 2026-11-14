@@ -149,6 +149,7 @@ def test_load_df_failure_cleanup_drops_only_target_absent_at_start(
         retry_cnt=1,
         timeout_increment=1,
         query_label=None,
+        destination_context={},
     )
 
     monkeypatch.setattr(
