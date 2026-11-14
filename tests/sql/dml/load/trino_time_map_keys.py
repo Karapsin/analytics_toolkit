@@ -95,9 +95,9 @@ def test_trino_time_map_rounding_keeps_distinct_native_wall_clocks(monkeypatch, 
     requested_key = "ROW(clock TIME(3), code BIGINT)" if nested_row else "TIME(3)"
     existing_key = "ROW(clock TIME(6), code BIGINT)" if nested_row else "TIME(6)"
     expected_wire_keys = (
-        "ROW(TIME '12:00:00.123000',7),ROW(TIME '13:00:00.123000',7)"
+        "ROW('12:00:00.123000',7),ROW('13:00:00.123000',7)"
         if nested_row
-        else "TIME '12:00:00.123000',TIME '13:00:00.123000'"
+        else "'12:00:00.123000','13:00:00.123000'"
     )
     database = native_clock_map_target(
         monkeypatch,
@@ -132,7 +132,7 @@ def test_trino_time_map_native_distinct_pairs_do_not_collapse_before_binding(mon
         "MAP(TIME(6), VARCHAR)",
         original_rows=[{dt.time(1): "original"}],
         expected_cast=ClockMapCast(
-            "MAP(ARRAY[TIME '12:00:00.000000',TIME '11:00:00.000000'], ARRAY['first','second'])",
+            "MAP(ARRAY['12:00:00','11:00:00'], ARRAY['first','second'])",
             expected,
         ),
     )
@@ -155,8 +155,7 @@ def test_trino_time_map_zoned_distinct_instants_retain_both_offset_keys(monkeypa
         "MAP(TIME(6) WITH TIME ZONE, VARCHAR)",
         original_rows=[{dt.time(1, tzinfo=UTC): "original"}],
         expected_cast=ClockMapCast(
-            "MAP(ARRAY[TIME '12:00:00.000000 +00:00',TIME '12:00:00.000000 +01:00'],"
-            " ARRAY['first','second'])",
+            "MAP(ARRAY['12:00:00+00:00','12:00:00+01:00'], ARRAY['first','second'])",
             incoming,
         ),
     )

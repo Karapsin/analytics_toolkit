@@ -186,7 +186,7 @@ def test_positional_row_clocks_reach_real_sdk_without_float_or_timezone_loss(row
     prepared = clocks.prepare_dataframe_payload(None, frame, {"payload": native})
     actual = normalize_value(prepared.iloc[0, 0], native)
 
-    assert render_parameter(actual) == "ROW(TIME '12:30:45.123456 +01:00',9007199254740993)"
+    assert render_parameter(actual) == "ROW('12:30:45.123456+01:00',9007199254740993)"
     assert zone.calls == 1
     assert frame.iloc[0, 0] is row
     assert row[0] is clock
@@ -223,7 +223,7 @@ def test_clock_snapshot_uses_captured_offset_for_native_binding_with_unverified_
     assert snapshot.tzname() == "UTC+03:00"
     native = clocks.prepare_dataframe_payload(None, frozen, {"clock": "TIME(6) WITH TIME ZONE"})
     assert render_parameter(normalize_value(native.iloc[0, 0], "TIME(6) WITH TIME ZONE")) == (
-        "TIME '12:30:45.123456 +03:00'"
+        "'12:30:45.123456+03:00'"
     )
     assert zone.calls == 1
     assert frame.iloc[0, 0] is clock
@@ -256,7 +256,7 @@ def test_clock_snapshot_spool_and_text_roundtrip_cannot_replace_captured_offset_
 
     assert actual == (
         dt.timedelta(hours=3),
-        "TIME '12:30:45.123456 +03:00'",
+        "'12:30:45.123456+03:00'",
         expected_text,
     )
     assert restored.hour == clock.hour
@@ -284,7 +284,7 @@ def test_clock_snapshot_retains_captured_timezone_name_when_only_named_offset_ma
             render_parameter(normalize_value(restored, "TIME(6) WITH TIME ZONE")),
         )
 
-    assert actual == (label, label, typed_text(expected), "TIME '12:30:45.123456 +00:00'")
+    assert actual == (label, label, typed_text(expected), "'12:30:45.123456+00:00'")
     assert zone.calls == 1
     assert frame.iloc[0, 0] is clock
     assert not spool.path.exists()

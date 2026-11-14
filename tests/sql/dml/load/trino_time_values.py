@@ -37,11 +37,11 @@ def load(frame, **options):
 @pytest.mark.parametrize(
     ("native_type", "value", "wire"),
     [
-        ("TIME(6)", dt.time(12, 30, 45, 123456), "TIME '12:30:45.123456'"),
+        ("TIME(6)", dt.time(12, 30, 45, 123456), "'12:30:45.123456'"),
         (
             "TIME(6) WITH TIME ZONE",
             dt.time(12, 30, 45, 123456, tzinfo=dt.timezone(dt.timedelta(hours=3))),
-            "TIME '12:30:45.123456 +03:00'",
+            "'12:30:45.123456+03:00'",
         ),
     ],
 )
@@ -82,7 +82,7 @@ def test_enum_clock_and_null_follow_native_time_binding_without_changing_caller(
 
     assert database.rows == [None, ClockCell.CLOCK.value, None]
     inserts = [wire for statement, _params, wire in database.statements if "INSERT" in statement]
-    assert inserts == [["NULL", "TIME '12:30:45.123456'"], ["NULL"]]
+    assert inserts == [["NULL", "'12:30:45.123456'"], ["NULL"]]
     assert all(frame.iloc[index, 0] is original for index, original in enumerate(incoming))
 
 
@@ -107,7 +107,7 @@ def test_aware_native_time_captures_offset_independently_of_timezone_name(monkey
     assert database.rows == [None, value, None]
     assert database.rows[1].utcoffset() == value.utcoffset()
     assert database.mutations == ["clear", "insert", "insert"]
-    assert database.statements[-2][2][1].startswith("TIME '12:30:45.123456 ")
+    assert database.statements[-2][2][1] == repr(value.isoformat())
     assert value.tzinfo is timezone
     assert frame.iloc[1, 0] is value
 
@@ -163,9 +163,9 @@ def test_explicit_time_precision_uses_native_rounding_and_midnight_wrap(
             "TIME(3)",
             dt.time(12, 30, 45, 123789),
             dt.time(12, 30, 45, 124000),
-            "TIME '12:30:45.124000'",
+            "'12:30:45.124000'",
         ),
-        ("TIME(0)", dt.time(23, 59, 59, 999999), dt.time(0), "TIME '00:00:00.000000'"),
+        ("TIME(0)", dt.time(23, 59, 59, 999999), dt.time(0), "'00:00:00'"),
     ],
 )
 def test_explicit_precision_conversion_preserves_existing_time6_destination(
@@ -254,7 +254,7 @@ def test_aware_time_to_plain_time_retains_native_wallclock_cast(monkeypatch):
     assert load(frame, write_mode="truncate_insert") == 1
 
     assert database.rows == [value.replace(tzinfo=None)]
-    assert database.statements[-1][2] == ["TIME '12:30:45.123456 +03:00'"]
+    assert database.statements[-1][2] == ["'12:30:45.123456'"]
     assert "CAST(? AS TIME(6))" in database.statements[-1][0]
 
 
@@ -266,7 +266,7 @@ def test_naive_time_to_zoned_time_leaves_session_timezone_to_native_cast(monkeyp
 
     assert load(frame, write_mode="append") == 1
 
-    assert database.statements[-1][2] == ["TIME '12:30:45.123456'"]
+    assert database.statements[-1][2] == ["'12:30:45.123456'"]
     assert f"CAST(? AS {native})" in database.statements[-1][0]
     assert frame.iloc[0, 0] is value
 
@@ -299,7 +299,7 @@ def test_clock_retry_reuses_captured_offset_after_lost_insert_acknowledgement(mo
     assert database.lost_insert_acknowledgements == 0
     assert database.mutations == ["insert", "insert"]
     wire = [values for _statement, _params, values in database.statements]
-    assert wire == [["TIME '12:30:45.123456 +03:00'"]] * 2
+    assert wire == [["'12:30:45.123456+03:00'"]] * 2
     assert all(value.utcoffset() == dt.timedelta(hours=3) for value in database.rows[-2:])
     assert frame.iloc[0, 0] is clock
     assert clock.tzinfo is zone

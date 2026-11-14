@@ -8,17 +8,15 @@ from decimal import Decimal
 from enum import Enum
 from functools import lru_cache
 from numbers import Integral
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 from uuid import UUID
 
 import numpy as np
 import pandas as pd
 
-if TYPE_CHECKING:
-    from analytics_toolkit.sql.core.exact_values import ExactClock
-
 _MICROSECOND_PRECISION = 6
 _NANOSECOND_PRECISION = 9
+_TIME_FAMILIES = {"time", "time with time zone", "time without time zone"}
 
 
 @lru_cache(maxsize=1)
@@ -100,6 +98,8 @@ def _scalar(value: Any, target_type: str | None) -> Any:
         value = int(value)  # Retain the historical explicit BIGINT conversion.
     if target_type:
         value = types.ResolvedColumn(target_type, target_backend="trino").convert(value)
+    if isinstance(value, (dt.time, exact.ExactClock)) and family in _TIME_FAMILIES:
+        return _clock_parameter(value, target_type)
     return _primitive_parameter(value, target_type)
 
 
@@ -131,7 +131,11 @@ def _text_parameter(value: Any, target_type: str | None) -> str:
 
 
 def _clock_parameter(value: Any, target_type: str | None) -> Any:
-    from .time_values import convert_time_value, is_time_type  # noqa: PLC0415
+    from .time_values import (  # noqa: PLC0415
+        convert_time_value,
+        is_time_type,
+        time_parameter_value,
+    )
 
     _nested, types, exact = _policies()
     if target_type and not is_time_type(target_type):
@@ -145,8 +149,8 @@ def _clock_parameter(value: Any, target_type: str | None) -> Any:
             )
             raise ValueError(message)
         target_type = "TIME(6)" + (" WITH TIME ZONE" if value.offset_minutes is not None else "")
-    converted = convert_time_value(value, target_type)
-    return converted.isoformat() if isinstance(converted, exact.ExactClock) else converted
+        return convert_time_value(value, target_type)
+    return time_parameter_value(value, target_type)
 
 
 def _temporal_parameter(value: Any, target_type: str | None, family: str) -> Any:
@@ -241,6 +245,8 @@ def literal(value: Any, target_type: str | None) -> str:  # noqa: C901, PLR0911,
             )
         return f"CAST({body} AS {target_type})"
     family = types.parse_native_type(target_type).base.name
+    if isinstance(value, dt.time) and family in _TIME_FAMILIES:
+        return _clock_literal(value, target_type)
     if isinstance(value, (dt.datetime, pd.Timestamp, np.datetime64, exact.ExactTemporal)):
         if family == "date":
             calendar = (
@@ -293,15 +299,15 @@ def _literal_timestamp_precision(value: Any) -> int:
 
 
 def _clock_literal(value: Any, target_type: str | None) -> str:
-    from .time_values import convert_time_value, is_time_type  # noqa: PLC0415
+    from .time_values import is_time_type, time_parameter_value  # noqa: PLC0415
 
     if target_type and not is_time_type(target_type):
         return literal(_clock_parameter(value, target_type), target_type)
     native = target_type or (
         f"TIME({value.scale})" + (" WITH TIME ZONE" if value.offset_minutes is not None else "")
     )
-    converted = cast("dt.time | ExactClock", convert_time_value(value, native))
-    return f"CAST('{converted.isoformat()}' AS {native})"
+    converted = cast("str", time_parameter_value(value, native))
+    return f"CAST('{converted}' AS {native})"
 
 
 def _untyped_container_literal(value: Any) -> str | None:

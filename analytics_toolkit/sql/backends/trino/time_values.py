@@ -212,6 +212,23 @@ def convert_time_value(value: Any, native_type: str) -> dt.time | ExactClock | N
     return converted.replace(fold=value.fold if isinstance(value, dt.time) else 0)
 
 
+def time_parameter_value(value: Any, native_type: str) -> str | None:
+    """Represent resolved clocks exactly for every supported SDK formatter."""
+    from analytics_toolkit.sql.core.exact_values import ExactClock  # noqa: PLC0415
+
+    spec = _checked_type(native_type)
+    converted = convert_time_value(value, native_type)
+    if converted is None:
+        return None
+    if not spec.with_timezone:
+        return (
+            ExactClock(converted.ticks, converted.scale).isoformat()
+            if isinstance(converted, ExactClock)
+            else converted.replace(tzinfo=None).isoformat()
+        )
+    return converted.isoformat()
+
+
 def time_key_value_and_identity(
     value: Any, native_type: str | None
 ) -> tuple[bool, dt.time | ExactClock | None, int | None]:

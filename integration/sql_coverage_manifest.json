@@ -10886,6 +10886,18 @@
         "tests/sql/backends/trino/exact_temporal_reads.py::test_microsecond_aligned_high_precision_clock_keeps_native_time"
       ]
     },
+    "audit.load.trino_clock_parameters": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_clock_parameters.py::test_trino_clock_parameters_cast_scalars_and_mixed_arrays_on_native_engine",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_clock_parameters.py::test_trino_clock_parameters_aware_time_keeps_native_cast_semantics",
+        "tests/sql/dml/load/trino_clock_parameters.py::test_trino_clock_parameters_nested_casts_keep_offsets_and_plain_wall_fields",
+        "tests/sql/dml/load/trino_clock_parameters.py::test_trino_clock_parameters_mixed_array_has_one_native_cast_input_family"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

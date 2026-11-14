@@ -353,4 +353,11 @@ The public regression uses the hash-verified minimum 0.320 formatter, with the
 current 0.340 SDK as a positive control. The minimum-version fixture is limited
 to formatter code running with current dependency imports.
 
+Native clock parameter compatibility is additionally covered by
+`dml/load/trino_clock_parameters.py::test_trino_clock_parameters_aware_time_keeps_native_cast_semantics`
+and `dml/load/trino_clock_parameters.py::test_trino_clock_parameters_nested_casts_keep_offsets_and_plain_wall_fields`.
+The minimum-formatter regressions preserve offsets for zoned clocks and
+wall-clock fields for plain `TIME` casts, with the installed SDK as a positive
+control. The fixture has the same formatter-only scope described above.
+
 [SQL module index](index.md)
