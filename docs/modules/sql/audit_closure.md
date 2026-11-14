@@ -123,7 +123,7 @@ Composite-key equality is additionally covered by
 `core/composite_map_keys.py::test_composite_key_collisions_are_detected_before_materialization`,
 `dml/transfer/schema/composite_map_keys.py::test_composite_map_key_collision_stops_transfer_before_mutation`,
 `dml/transfer/schema/composite_map_keys.py::test_composite_map_key_collision_stops_load_before_truncate_create_or_insert`,
-and `dml/transfer/schema/composite_map_keys.py::test_safe_same_and_widened_composite_keys_keep_lazy_streaming`.
+and `dml/transfer/schema/composite_map_keys.py::test_same_and_widened_composite_keys_certify_source_before_publication`.
 These check destination-native equality inside `ROW` key fields, including
 `CHAR` padding and `REAL` rounding, without losing valid entries or changing
 the caller's stage schema.
@@ -336,5 +336,14 @@ generations before destination writes. The disposable
 `integration/core/audit_trino_exact_reads.py::test_trino_engine_reads_preserve_exact_temporals_and_nanosecond_map_keys`
 uses engine-only timestamp/clock expressions through precision 12, with no
 high-precision table DDL or format upgrade; it was not run locally.
+
+Datetime replay certification is additionally covered by
+`core/exact_values.py::test_native_fixed_offset_datetime_custom_label_certifies_and_replays`,
+`core/exact_values.py::test_fixed_datetime_labels_offsets_and_fractions_survive_nested_native_replay`,
+`core/exact_values.py::test_native_datetime_replay_keeps_naive_or_verified_iana_fold_and_nanoseconds`,
+and `core/exact_values.py::test_legacy_datetime_display_label_without_an_encoded_offset_cannot_invent_awareness`.
+These preserve fixed-offset display labels, verified named zones, exact fractions
+and folds through real certified spools, including nested values, and reject
+legacy records that cannot establish awareness from an encoded offset.
 
 [SQL module index](index.md)

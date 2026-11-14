@@ -28,6 +28,7 @@ _INTEGER_CHUNK_DIGITS = 1000
 _INTEGER_CHUNK_BASE = 10**_INTEGER_CHUNK_DIGITS
 _LEGACY_TICKS_FIELDS = 3
 _WALL_TICKS_FIELDS = 4
+_LEGACY_DATETIME_FIELDS = 2
 _DAY_SECONDS = 86400
 _DAY_MINUTES = 1440
 
@@ -318,7 +319,10 @@ def truncate_temporal(value: Any, scale: int) -> Any:
 
 
 def _encode_time_zone(
-    zone: dt.tzinfo | None, wall: dt.time, offset: dt.timedelta | None, label: str | None
+    zone: dt.tzinfo | None,
+    wall: dt.time | dt.datetime,
+    offset: dt.timedelta | None,
+    label: str | None,
 ) -> Any:
     if zone is None:
         return None
@@ -343,26 +347,73 @@ def _encode_clock(value: dt.time) -> list[Any]:
     return ["time", wall.isoformat(), descriptor, value.fold]
 
 
+def _decode_time_zone(descriptor: Any) -> dt.tzinfo | None:
+    if descriptor is None:
+        return None
+    if descriptor[0] == "named":
+        return canonical_named_zone(descriptor[1])
+    if descriptor[0] == "fixed":
+        offset = dt.timedelta(days=descriptor[1], seconds=descriptor[2], microseconds=descriptor[3])
+        return (
+            dt.timezone(offset, descriptor[4]) if descriptor[4] is not None else dt.timezone(offset)
+        )
+    msg = "Unknown exact clock timezone encoding."
+    raise ValueError(msg)
+
+
 def _decode_time(payload: Any) -> dt.time:
     value = dt.time.fromisoformat(payload[0])
-    descriptor = payload[1]
-    zone = None
-    if descriptor is not None:
-        if descriptor[0] == "named":
-            zone = canonical_named_zone(descriptor[1])
-        elif descriptor[0] == "fixed":
-            offset = dt.timedelta(
-                days=descriptor[1], seconds=descriptor[2], microseconds=descriptor[3]
-            )
-            zone = (
-                dt.timezone(offset, descriptor[4])
-                if descriptor[4] is not None
-                else dt.timezone(offset)
-            )
-        else:
-            msg = "Unknown exact clock timezone encoding."
-            raise ValueError(msg)
+    zone = _decode_time_zone(payload[1])
     return value.replace(tzinfo=zone, fold=int(payload[2]))
+
+
+def _encode_datetime(value: dt.datetime | pd.Timestamp) -> list[Any]:
+    offset, label = value.utcoffset(), value.tzname()
+    wall = pd.Timestamp(
+        year=value.year,
+        month=value.month,
+        day=value.day,
+        hour=value.hour,
+        minute=value.minute,
+        second=value.second,
+        microsecond=value.microsecond,
+        nanosecond=value.nanosecond if isinstance(value, pd.Timestamp) else 0,
+    )
+    calendar = wall.to_pydatetime(warn=False).replace(fold=value.fold)
+    descriptor = _encode_time_zone(value.tzinfo, calendar, offset, label)
+    return ["datetime", wall.isoformat(), descriptor, value.fold]
+
+
+def _decode_datetime(payload: Any) -> pd.Timestamp:
+    value = pd.Timestamp(payload[0])
+    descriptor = payload[1]
+    if not isinstance(descriptor, str):
+        fold = int(payload[2]) if len(payload) > _LEGACY_DATETIME_FIELDS else value.fold
+        return pd.Timestamp(
+            year=value.year,
+            month=value.month,
+            day=value.day,
+            hour=value.hour,
+            minute=value.minute,
+            second=value.second,
+            microsecond=value.microsecond,
+            nanosecond=value.nanosecond,
+            tzinfo=_decode_time_zone(descriptor) if descriptor is not None else value.tzinfo,
+            fold=fold,
+        )
+    # Version-one generations stored a display string in the timezone slot.
+    # Trust a resolvable name only when it agrees with the encoded ISO offset.
+    try:
+        candidate = value.tz_convert(canonical_named_zone(descriptor))
+    except ValueError:
+        candidate = None
+    if candidate is not None and candidate.utcoffset() == value.utcoffset():
+        return candidate
+    offset = value.utcoffset()
+    if offset is None:
+        msg = "Legacy datetime timezone label has no encoded UTC offset."
+        raise ValueError(msg)
+    return value.tz_convert(dt.timezone(offset, descriptor))
 
 
 def _decode_calendar_value(tag: str, payload: Any) -> Any:
@@ -410,8 +461,7 @@ def encode_value(value: Any) -> Any:  # noqa: C901, PLR0911, PLR0912 - tagged sc
             value.timezone_name,
         ]
     if isinstance(value, (dt.datetime, pd.Timestamp)):
-        timestamp = pd.Timestamp(value)
-        return ["datetime", timestamp.isoformat(), str(timestamp.tz) if timestamp.tz else None]
+        return _encode_datetime(value)
     if isinstance(value, dt.date):
         return ["date", value.isoformat()]
     if isinstance(value, dt.time):
@@ -472,8 +522,7 @@ def decode_value(encoded: Any) -> Any:  # noqa: C901, PLR0911 - tagged scalar co
             bool(payload[4]) if len(payload) > _WALL_TICKS_FIELDS else False,
         )
     if tag == "datetime":
-        value = pd.Timestamp(payload[0])
-        return value.tz_convert(payload[1]) if payload[1] else value
+        return _decode_datetime(payload)
     if tag in {"date", "time", "clock_ticks", "pandas_timedelta", "timedelta"}:
         return _decode_calendar_value(tag, payload)
     if tag == "uuid":

@@ -392,3 +392,131 @@ def test_precision12_wall_input_localizes_once_but_legacy_instant_coordinates_st
     legacy = ExactTemporal(1, 12, None, False)
     assert localize_value(legacy, native, zone) is legacy
     assert not legacy.wall_time
+
+
+def test_native_fixed_offset_datetime_custom_label_certifies_and_replays():
+    zone = dt.timezone(dt.timedelta(hours=3), "desk")
+    value = dt.datetime(2025, 1, 1, 12, 34, 56, 123456, tzinfo=zone)
+
+    with ReplaySpool(["event_at"]) as spool:
+        spool.write_rows([(value,)])
+        spool.certify()
+        rows = list(spool.iter_rows())
+        assert len(rows) == 1
+        replayed = rows[0][0]
+
+    assert replayed == value
+    assert replayed.utcoffset() == dt.timedelta(hours=3)
+    assert replayed.tzname() == "desk"
+
+
+def assert_datetime_facts(actual, source, expected_ns):
+    assert isinstance(actual, pd.Timestamp)
+    assert actual.value == expected_ns
+    assert actual.utcoffset() == source.utcoffset()
+    assert actual.tzname() == source.tzname()
+    assert actual.fold == source.fold
+    assert (actual.hour, actual.minute, actual.second, actual.microsecond) == (
+        source.hour,
+        source.minute,
+        source.second,
+        source.microsecond,
+    )
+    assert actual.nanosecond == getattr(source, "nanosecond", 0)
+
+
+@pytest.mark.parametrize("as_timestamp", [False, True])
+@pytest.mark.parametrize("fold", [0, 1])
+@pytest.mark.parametrize(
+    ("offset", "label"),
+    [
+        (dt.timedelta(hours=3), "desk"),
+        (-dt.timedelta(hours=3, minutes=15, seconds=30), "desk"),
+        (dt.timedelta(hours=3, seconds=30, microseconds=123456), "desk"),
+        (dt.timedelta(hours=3), "UTC"),
+    ],
+)
+def test_fixed_datetime_labels_offsets_and_fractions_survive_nested_native_replay(
+    offset, label, fold, as_timestamp
+):
+    wall = dt.datetime(2025, 1, 1, 12, 34, 56, 123456, tzinfo=dt.timezone.utc)
+    value = wall.replace(tzinfo=dt.timezone(offset, label), fold=fold)
+    nanosecond = 789 if as_timestamp else 0
+    if as_timestamp:
+        value = pd.Timestamp(
+            year=2025,
+            month=1,
+            day=1,
+            hour=12,
+            minute=34,
+            second=56,
+            microsecond=123456,
+            nanosecond=nanosecond,
+            tzinfo=value.tzinfo,
+            fold=fold,
+        )
+    delta = wall - offset - dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc)
+    expected_ns = (delta.days * 86400 + delta.seconds) * 10**9 + delta.microseconds * 1000
+    expected_ns += nanosecond
+    if as_timestamp:
+        assert value.value == expected_ns
+    tagged = encode_value(value)
+    assert tagged[1] == "2025-01-01T12:34:56." + ("123456789" if as_timestamp else "123456")
+    assert_datetime_facts(decode_value(tagged), value, expected_ns)
+    pairs = OrderedMapPairs(((value, "first"), (value, "second")))
+    with ReplaySpool(["scalar", "array", "map", "pairs"]) as spool:
+        spool.write_rows([(value, [None, value], {"at": value}, pairs)])
+        spool.certify()
+        rows = list(spool.iter_rows())
+    scalar, array, mapping, restored_pairs = rows[0]
+    assert array[0] is None
+    assert isinstance(restored_pairs, OrderedMapPairs)
+    assert [item for _key, item in restored_pairs.items()] == ["first", "second"]
+    for item in (scalar, array[1], mapping["at"], *restored_pairs.keys()):
+        assert_datetime_facts(item, value, expected_ns)
+    assert exact.ENCODING_VERSION == 1
+
+
+@pytest.mark.parametrize("as_timestamp", [False, True])
+@pytest.mark.parametrize("zone", [None, "America/New_York"])
+def test_native_datetime_replay_keeps_naive_or_verified_iana_fold_and_nanoseconds(
+    zone, as_timestamp
+):
+    wall = dt.datetime(2024, 11, 3, 1, 30, 0, 123456, tzinfo=dt.timezone.utc)
+    value = wall.replace(tzinfo=None, fold=1)
+    offset = dt.timedelta(0)
+    if zone:
+        value = value.replace(tzinfo=exact.canonical_named_zone(zone))
+        offset = -dt.timedelta(hours=5)
+    if as_timestamp:
+        value = pd.Timestamp(value).replace(nanosecond=789, fold=1)
+    delta = wall - offset - dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc)
+    expected_ns = (delta.days * 86400 + delta.seconds) * 10**9 + delta.microseconds * 1000
+    expected_ns += 789 if as_timestamp else 0
+    restored = decode_value(encode_value(value))
+    assert_datetime_facts(restored, value, expected_ns)
+    assert str(restored.tzinfo) == zone if zone else restored.tzinfo is None
+
+
+@pytest.mark.parametrize(
+    ("text", "zone", "offset", "label"),
+    [
+        ("2025-01-01T12:34:56.123456789+03:00", "desk", dt.timedelta(hours=3), "desk"),
+        ("2025-01-01T12:34:56.123456789+03:00", "UTC", dt.timedelta(hours=3), "UTC"),
+        ("2025-01-01T12:34:56.123456789+03:00", "Europe/Moscow", dt.timedelta(hours=3), "MSK"),
+        ("2025-01-01T12:34:56.123456789", None, None, None),
+    ],
+)
+def test_legacy_v1_datetime_records_keep_iana_or_fixed_labels_without_guessing_offset(
+    text, zone, offset, label
+):
+    restored = decode_value(["datetime", text, zone])
+    assert restored.utcoffset() == offset
+    assert restored.tzname() == label
+    assert restored.microsecond == 123456
+    assert restored.nanosecond == 789
+
+
+def test_legacy_datetime_display_label_without_an_encoded_offset_cannot_invent_awareness():
+    with pytest.raises(ValueError, match="no encoded UTC offset"):
+        decode_value(["datetime", "2025-01-01T12:34:56.123456789", "desk"])

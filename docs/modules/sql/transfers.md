@@ -368,6 +368,11 @@ row count and checksum. Recovery validates all frames, the checksum and count
 before replay. Ordinary completion and failures before mutation remove local
 checkpoints.
 
+Replay checkpoints keep a verified IANA timezone identity or an explicit numeric
+fixed offset and display name. Custom display names remain attached to their
+numeric offsets. Datetime fractional precision and fold markers survive nested
+replay. Destination timezone policy and schema still govern writes.
+
 Inference tries exact integers, decimal/numeric and temporal/native nested types
 before text. Every inferred native candidate is validated against the complete
 profile before destination publication. Date/timestamp calendar bounds and raw
