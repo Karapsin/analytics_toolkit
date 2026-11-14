@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 from .ch.value_validation import validate_constrained_value
 from .decimal_values import convert_decimal_value, decimal_target_type
 from .gp.json_values import convert_json_value, is_json_type
+from .gp.network_values import convert_network_value, is_network_type, validate_network_profile
+from .gp.network_values import key_validation_frames as gp_key_validation_frames
 from .gp.temporal_values import (
     convert_clock_interval_value,
     is_gp_clock_interval_type,
@@ -35,7 +37,9 @@ def dataframe_key_validation_frames(
     backend: str,
 ) -> Iterable[pd.DataFrame]:
     """Supply backend-native key identities without changing dataframe payloads."""
-    return trino_key_validation_frames(df, key_columns, schemas) if backend == "trino" else ()
+    if backend == "trino":
+        return trino_key_validation_frames(df, key_columns, schemas)
+    return gp_key_validation_frames(df, key_columns, schemas) if backend == "gp" else ()
 
 
 def canonical_native_type(native_type: str | None, backend: str | None) -> str:
@@ -82,10 +86,14 @@ def validate_backend_profile(
         return validate_builtin_profile(profile, native_type)
     from .gp.json_values import validate_json_profile  # noqa: PLC0415 -- native policy.
 
-    return validate_json_profile(profile, native_type) or validate_clock_interval_profile(
-        profile,
-        native_type,
-        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+    return (
+        validate_network_profile(profile, native_type)
+        or validate_json_profile(profile, native_type)
+        or validate_clock_interval_profile(
+            profile,
+            native_type,
+            allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+        )
     )
 
 
@@ -116,6 +124,8 @@ def convert_native_value(value: Any, resolution: ResolvedColumn) -> tuple[bool, 
 
 
 def _convert_gp_value(value: Any, target_type: str, resolution: ResolvedColumn) -> tuple[bool, Any]:
+    if is_network_type(target_type):
+        return True, convert_network_value(value, target_type)
     if is_gp_clock_interval_type(target_type):
         return True, convert_clock_interval_value(value, target_type)
     if is_json_type(target_type):

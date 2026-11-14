@@ -10922,6 +10922,16 @@
         "tests/sql/dml/load/trino_ipaddress_casts.py::test_trino_ipaddress_casts_native_key_aliases_fail_before_stage"
       ]
     },
+    "audit.load.gp_inet_parameters": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_inet_parameters.py::test_greenplum_inet_parameters_preserve_native_hosts_and_masks",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_inet_casts.py::test_gp_inet_casts_valid_string_reaches_native_execute_values"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

@@ -37,6 +37,7 @@ _CATALOG_TYPES = {
     "uuid": "UUID",
     "json": "JSON",
     "jsonb": "JSONB",
+    "inet": "INET",
     "char": '"char"',
 }
 _CATALOG_ARRAY_TYPES = {

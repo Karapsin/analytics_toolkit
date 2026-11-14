@@ -383,4 +383,18 @@ The disposable `audit.load.trino_ipaddress_parameters` case in
 compares seven parameters with independent native literals in one SDK query.
 It performs no DNS lookup or storage DDL and was not run locally.
 
+Greenplum native INET casts are additionally covered by
+`dml/load/gp_inet_casts.py::test_gp_inet_casts_valid_string_reaches_native_execute_values`,
+`dml/load/gp_inet_casts.py::test_gp_inet_casts_native_arrays_retain_real_psycopg_leaf_casts`,
+`dml/load/gp_inet_casts.py::test_gp_inet_casts_native_key_aliases_reject_before_any_write`,
+and `backends/gp/network_values.py::test_inet_values_native_key_views_retain_partition_mask_and_family`.
+These preserve wire spelling, host bits, masks and family, including array
+elements, while validating native effective-key identity before writes.
+`dml/load/gp_inet_casts.py::test_gp_inet_casts_mixed_naive_aware_timetz_keys_reject_before_write`
+covers the explicit-offset requirement for mixed-awareness clock key values.
+The disposable `audit.load.gp_inet_parameters` case in
+`integration/core/audit_gp_inet_parameters.py::test_greenplum_inet_parameters_preserve_native_hosts_and_masks`
+compares four parameters with independent native INET controls in one query.
+It creates no table and was not run locally.
+
 [SQL module index](index.md)

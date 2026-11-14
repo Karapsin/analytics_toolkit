@@ -108,6 +108,11 @@ rows
   schema SQL. `NUMERIC(p)` uses scale zero, SQL `CHAR` length one, and bare `BPCHAR`
   unbounded input validation. Excess fractional zeros can align exactly; nonzero
   excess fractions reject before mutation.
+- Existing or explicit Greenplum `INET` keeps valid address strings unchanged on
+  the wire, including array elements. Native host bits and masks are preserved;
+  key validation compares address family, address and prefix length. Invalid
+  values reject before mutation. For INET-bearing composite keys, mixed
+  naive/aware `TIMETZ` key values require explicit offsets for every clock value.
 - Greenplum `TIME`/`INTERVAL` preserve supported native time/timedelta values.
   Existing and inferred precision must fit exactly; explicit precision requests
   use native rounding and interval field restrictions. See the
