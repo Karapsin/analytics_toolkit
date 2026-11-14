@@ -360,4 +360,15 @@ The minimum-formatter regressions preserve offsets for zoned clocks and
 wall-clock fields for plain `TIME` casts, with the installed SDK as a positive
 control. The fixture has the same formatter-only scope described above.
 
+Trino native JSON casts are additionally covered by
+`dml/load/trino_json_casts.py::test_trino_json_casts_accept_arbitrary_varchar_without_parsing_document_text`,
+`dml/load/trino_json_casts.py::test_trino_json_casts_sql_null_remains_distinct_from_json_string_null`,
+and `backends/trino/json_values.py::test_json_casts_decimal_transport_is_native_fixed_point_across_actual_sdks`.
+These retain string-cast semantics, SQL NULL and exact native numeric parameters
+on minimum/current formatter paths. The disposable
+`audit.load.trino_json_parameters` case in
+`integration/core/audit_trino_json_parameters.py::test_trino_json_parameters_keep_native_cast_semantics_on_engine`
+compares parameter casts with independent native SQL controls in one engine-only
+query. It creates no JSON storage table and was not run locally.
+
 [SQL module index](index.md)

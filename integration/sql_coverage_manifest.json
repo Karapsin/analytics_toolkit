@@ -10898,6 +10898,18 @@
         "tests/sql/dml/load/trino_clock_parameters.py::test_trino_clock_parameters_mixed_array_has_one_native_cast_input_family"
       ]
     },
+    "audit.load.trino_json_parameters": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_json_parameters.py::test_trino_json_parameters_keep_native_cast_semantics_on_engine",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_json_casts.py::test_trino_json_casts_accept_arbitrary_varchar_without_parsing_document_text",
+        "tests/sql/dml/load/trino_json_casts.py::test_trino_json_casts_sql_null_remains_distinct_from_json_string_null",
+        "tests/sql/dml/load/trino_json_casts.py::test_trino_json_casts_supported_native_values_keep_original_cast_semantics"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

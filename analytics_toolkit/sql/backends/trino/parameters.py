@@ -19,6 +19,39 @@ _NANOSECOND_PRECISION = 9
 _TIME_FAMILIES = {"time", "time with time zone", "time without time zone"}
 
 
+class _FixedDecimal(Decimal):
+    """Keep native Decimal values valid for SDKs using str for DECIMAL literals."""
+
+    def __str__(self) -> str:
+        return format(self, "f")
+
+
+def _fixed_decimal_parameters(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return (
+            value
+            if isinstance(value, _FixedDecimal) or str(value) == format(value, "f")
+            else _FixedDecimal(value)
+        )
+    if isinstance(value, (list, tuple)):
+        converted = [_fixed_decimal_parameters(item) for item in value]
+        if all(item is original for item, original in zip(converted, value)):
+            return value
+        return tuple(converted) if isinstance(value, tuple) else converted
+    if isinstance(value, dict):
+        pairs = [
+            (_fixed_decimal_parameters(key), _fixed_decimal_parameters(item))
+            for key, item in value.items()
+        ]
+        if all(
+            key is original_key and item is original_item
+            for (key, item), (original_key, original_item) in zip(pairs, value.items())
+        ):
+            return value
+        return dict(pairs)
+    return value
+
+
 @lru_cache(maxsize=1)
 def _policies() -> Any:
     # The registry imports insertion helpers before core.capabilities exists.
@@ -116,7 +149,7 @@ def _primitive_parameter(value: Any, target_type: str | None) -> Any:
         return float(value)
     if isinstance(value, np.ndarray):
         return _normalize(value.tolist(), target_type)
-    return value
+    return _fixed_decimal_parameters(value)
 
 
 def _text_parameter(value: Any, target_type: str | None) -> str:

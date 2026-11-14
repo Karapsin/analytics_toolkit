@@ -13,6 +13,8 @@ from .gp.temporal_values import (
     validate_clock_interval_profile,
 )
 from .nested_types import convert_nested, nested_descriptor
+from .trino.json_values import validate_json_profile as validate_trino_json_profile
+from .trino.json_values import validate_json_transport_value
 from .trino.time_values import convert_time_value, is_time_type, validate_time_profile
 
 if TYPE_CHECKING:
@@ -34,6 +36,7 @@ def validate_transport_value(value: Any, native_type: str, backend: str) -> None
     if backend == "trino":
         from .trino.parameters import normalize_value  # noqa: PLC0415 -- native transport.
 
+        validate_json_transport_value(value, native_type)
         normalize_value(value, native_type)
 
 
@@ -45,7 +48,7 @@ def validate_backend_profile(
     allow_timestamp_precision_loss: bool,
 ) -> bool:
     if backend == "trino":
-        return validate_time_profile(
+        return validate_trino_json_profile(profile, native_type) or validate_time_profile(
             profile,
             native_type,
             allow_timestamp_precision_loss=allow_timestamp_precision_loss,

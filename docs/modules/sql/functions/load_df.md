@@ -124,6 +124,9 @@ rows
   different source tick scales reject before mutation; supported sub-microsecond
   differences remain distinct. Zoned keys require awareness or a resolved
   destination timezone policy.
+- Trino `JSON` inserts use native `CAST` rules: strings become JSON strings,
+  including document-looking text and `'null'`; `None` remains SQL NULL.
+  To interpret document text, use `json_parse` explicitly in SQL.
 - Greenplum `JSON`/`JSONB` and their `pg_catalog`-qualified forms preserve native
   dictionaries/lists, encoded document strings and supported `Json` wrappers.
   The validated serialized documents are retained through retries; custom
