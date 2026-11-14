@@ -4,6 +4,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from .ch.client_validation import (
+    is_legacy_json_type,
+    normalize_legacy_json_value,
+    validate_legacy_json_profile,
+    validate_legacy_json_value,
+)
+from .ch.network_values import convert_network_value as convert_ch_network_value
+from .ch.network_values import declared_network_fits
+from .ch.network_values import is_network_type as is_ch_network_type
+from .ch.network_values import key_validation_frames as ch_key_validation_frames
+from .ch.network_values import validate_network_profile as validate_ch_network_profile
+from .ch.storage_types import logical_storage_type
 from .ch.value_validation import validate_constrained_value
 from .decimal_values import convert_decimal_value, decimal_target_type
 from .gp.json_values import convert_json_value, is_json_type
@@ -35,8 +47,14 @@ def dataframe_key_validation_frames(
     key_columns: Sequence[str] | None,
     schemas: Sequence[Mapping[str, str] | None],
     backend: str,
+    *,
+    destination_timezone: str | None = None,
 ) -> Iterable[pd.DataFrame]:
     """Supply backend-native key identities without changing dataframe payloads."""
+    if backend == "ch":
+        return ch_key_validation_frames(
+            df, key_columns, schemas, destination_timezone=destination_timezone
+        )
     if backend == "trino":
         return trino_key_validation_frames(df, key_columns, schemas)
     return gp_key_validation_frames(df, key_columns, schemas) if backend == "gp" else ()
@@ -48,7 +66,17 @@ def canonical_native_type(native_type: str | None, backend: str | None) -> str:
         from .gp.type_identity import canonical_builtin_type  # noqa: PLC0415 -- native grammar.
 
         return canonical_builtin_type(value) or value
+    if backend == "ch":
+        value = logical_storage_type(value)
     return decimal_target_type(value, backend or "")
+
+
+def backend_domain_fits(
+    source_type: str, target_type: str, target_backend: str, source_backend: str | None
+) -> bool | None:
+    if source_backend == target_backend == "ch":
+        return declared_network_fits(source_type, target_type)
+    return None
 
 
 def requires_native_assignment(native_type: str, backend: str) -> bool:
@@ -62,6 +90,8 @@ def requires_native_assignment(native_type: str, backend: str) -> bool:
 
 def validate_transport_value(value: Any, native_type: str, backend: str) -> None:
     """Certify the real parameter normalizer while retaining native profile values."""
+    if backend == "ch" and is_legacy_json_type(canonical_native_type(native_type, backend)):
+        validate_legacy_json_value(value, canonical_native_type(native_type, backend))
     if backend == "trino":
         from .trino.parameters import normalize_value  # noqa: PLC0415 -- native transport.
 
@@ -77,6 +107,10 @@ def validate_backend_profile(
     *,
     allow_timestamp_precision_loss: bool,
 ) -> bool:
+    if backend == "ch":
+        return validate_ch_network_profile(profile, native_type) or validate_legacy_json_profile(
+            profile, native_type
+        )
     if backend == "trino":
         return (
             validate_trino_json_profile(profile, native_type)
@@ -111,12 +145,9 @@ def convert_native_value(value: Any, resolution: ResolvedColumn) -> tuple[bool, 
     from .type_resolution import parse_native_type  # noqa: PLC0415 -- native grammar cycle.
 
     target_type = canonical_native_type(resolution.target_type, resolution.target_backend)
-    if resolution.target_backend == "trino" and is_time_type(target_type):
-        return True, convert_time_value(value, target_type)
-    if resolution.target_backend == "gp":
-        handled, converted = _convert_gp_value(value, target_type, resolution)
-        if handled:
-            return True, converted
+    handled, converted = _convert_backend_value(value, target_type, resolution)
+    if handled:
+        return True, converted
     handled, converted = convert_decimal_value(value, target_type, resolution.target_backend)
     if handled:
         return True, converted
@@ -129,6 +160,22 @@ def convert_native_value(value: Any, resolution: ResolvedColumn) -> tuple[bool, 
             resolution.target_backend,
             destination_timezone=resolution.destination_timezone,
         )
+    return False, value
+
+
+def _convert_backend_value(
+    value: Any, target_type: str, resolution: ResolvedColumn
+) -> tuple[bool, Any]:
+    if resolution.target_backend == "ch" and is_ch_network_type(target_type):
+        if resolution.source_backend == "ch" and is_ch_network_type(resolution.source_type):
+            value = convert_ch_network_value(value, resolution.source_type)
+        return True, convert_ch_network_value(value, target_type)
+    if resolution.target_backend == "ch" and is_legacy_json_type(target_type):
+        return True, normalize_legacy_json_value(value, target_type)
+    if resolution.target_backend == "trino" and is_time_type(target_type):
+        return True, convert_time_value(value, target_type)
+    if resolution.target_backend == "gp":
+        return _convert_gp_value(value, target_type, resolution)
     return False, value
 
 

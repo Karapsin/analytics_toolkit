@@ -918,6 +918,10 @@ x86_64 hosts, runs the marked integration tests, captures failure logs, and
 always removes its containers and volumes. It must not be redirected to
 external database endpoints.
 
+Focused checks use the prepared checkout's `.venv` interpreter and dependencies.
+Its version-marked SDK dependencies can differ from the canonical Python 3.14
+coverage environment; a focused result covers the prepared environment.
+
 Managed pre-commit checks run as separate static, coverage and artifact commands,
 stopping before downstream work when a stage fails. Coverage and artifacts use
 Python 3.14; static tooling retains its pinned Python 3.11 environment. The full

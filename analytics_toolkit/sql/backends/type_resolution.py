@@ -31,6 +31,7 @@ from .decimal_values import required_fractional_scale, resolve_decimal_type, val
 from .inferred_types import resolve_column_type
 from .native_values import (
     _float_width,
+    backend_domain_fits,
     canonical_native_type,
     convert_native_value,
     requires_native_assignment,
@@ -502,6 +503,9 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
     ):
         msg = "Selected input cannot be encoded exactly for authoritative text."
         raise ValueError(msg)
+    if backend == "ch" and profile.null_count and not _permits_null(target_type):
+        msg = "Selected input contains NULL for a nonnullable authoritative column."
+        raise ValueError(msg)
     if validate_backend_profile(
         profile,
         target_type,
@@ -509,9 +513,6 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         allow_timestamp_precision_loss=allow_timestamp_precision_loss,
     ):
         return
-    if backend == "ch" and profile.null_count and not _permits_null(target_type):
-        msg = "Selected input contains NULL for a nonnullable authoritative column."
-        raise ValueError(msg)
     if (
         base.name in {"varchar", "char", "character", "character varying"}
         and base.arguments
@@ -742,6 +743,9 @@ def declared_domain_fits(  # noqa: C901, PLR0911, PLR0912 - exact declared domai
     nested_fit = declared_nested_fits(source_type, target_type, target_backend, source_backend)
     if nested_fit is not None:
         return nested_fit
+    backend_fit = backend_domain_fits(source_type, target_type, target_backend, source_backend)
+    if backend_fit is not None:
+        return backend_fit
     source, target = parse_native_type(source_type).base, parse_native_type(target_type).base
     if source_backend == target_backend and source_type.strip() == target_type.strip():
         return True

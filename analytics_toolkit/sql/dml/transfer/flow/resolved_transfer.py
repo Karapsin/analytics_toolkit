@@ -10,6 +10,7 @@ from analytics_toolkit.sql.backends.gp.native_assignment import native_assignmen
 from analytics_toolkit.sql.dml.transfer.runtime.models import TransferConnectionRefs
 from analytics_toolkit.sql.dml.transfer.runtime.retry import is_non_retryable_sql_error
 
+from .client_validation import require_client_write_certificate
 from .native_assignment import (
     certify_loaded_assignment,
     complete_assignment_publication,
@@ -62,6 +63,11 @@ def run_resolved_checkpoint_transfer(
 
     options.input_resolution["target_connection_runner"] = runner
     try:
+        if "client_write_plan" in options.input_resolution:
+            runner(
+                "certify_frozen_client_writer",
+                lambda ref: require_client_write_certificate(options, ref["connection"], state),
+            )
         pending_native = native_assignment_pending(options)
         total_rows = (
             restore_assignment_checkpoint(options, state, runner) if pending_native else None

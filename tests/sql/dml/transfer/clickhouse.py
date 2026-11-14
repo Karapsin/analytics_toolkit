@@ -366,7 +366,9 @@ def test_transfer_table_preserves_greenplum_bytea_as_clickhouse_string(monkeypat
     )
 
     assert transferred_rows == 1
-    assert target.inserts[0]["data"] == [(1, b"\x00\xff\x80", "Кириллица")]
+    assert target.inserts[0]["data"] == [(1, b"\x00\xff\x80", "Кириллица".encode())]
+    assert bytes(source._rows[0][1]) == b"\x00\xff\x80"
+    assert source._rows[0][2] == "Кириллица"
     assert target.inserts[0]["column_type_names"] == ["Int64", "String", "String"]
     target_creates = [
         command

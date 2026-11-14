@@ -10945,6 +10945,28 @@
         "tests/sql/dml/load/gp_cidr_casts.py::test_gp_cidr_casts_domain_array_last_element_cannot_truncate_before_assignment"
       ]
     },
+    "audit.load.clickhouse_ip_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_ip_values.py::test_clickhouse_ip_columns_keep_native_values_before_authoritative_mutation",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_network_addresses.py::test_ch_network_addresses_reach_real_driver_column_encoding",
+        "tests/sql/dml/load/ch_network_addresses.py::test_ch_network_addresses_invalid_last_value_rejects_before_live_clear_or_new_ddl"
+      ]
+    },
+    "audit.load.clickhouse_storage_aliases": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_storage_aliases.py::test_clickhouse_storage_aliases_preserve_native_rows_and_unflattened_metadata",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_native_aliases.py::test_ch_native_aliases_keep_public_schema_values_and_real_driver_bytes",
+        "tests/sql/dml/load/ch_native_aliases.py::test_ch_native_aliases_invalid_last_value_preserves_live_rows_before_encoding"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

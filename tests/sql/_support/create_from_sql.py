@@ -19,6 +19,27 @@ ch_fast_path_module = importlib.import_module(
 sql_module = importlib.import_module("analytics_toolkit.sql")
 
 
+def observe_selected_query_target(monkeypatch: Any, source: Any, target: Any) -> None:
+    """Forbid unowned validation connections and require profiling before DDL."""
+    adaptive = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.adaptive_input")
+
+    def unexpected_connection(_key: str) -> None:
+        message = "Query validation must reuse its already selected target connection."
+        raise AssertionError(message)
+
+    monkeypatch.setattr(adaptive, "get_sql_connection", unexpected_connection)
+    command = target.command
+
+    def checked_command(sql: str, settings: dict[str, object] | None = None) -> Any:
+        if sql.startswith(("CREATE TABLE", "DROP TABLE")):
+            assert max((cursor.read_offset for cursor in source.cursors), default=0) == len(
+                source.source_rows
+            )
+        return command(sql, settings=settings)
+
+    monkeypatch.setattr(target, "command", checked_command)
+
+
 def acknowledged_create(operation: Any) -> Any:
     """Model a successful target CREATE acknowledgement at the domain boundary."""
 

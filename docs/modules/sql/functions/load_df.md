@@ -104,6 +104,22 @@ rows
 - Existing or explicit Trino `IPADDRESS` accepts IPv4/IPv6 text and 4- or 16-byte
   packed addresses. Numeric IPv6 scopes from 0 to 2147483647 are accepted. Named
   interface scopes reject before mutation; use unscoped text or packed bytes.
+- Existing or explicit ClickHouse `IPv4`/`IPv6` accepts address text, Python
+  address objects, packed bytes and unsigned integers in the declared family's
+  range. IPv6 integer `1` means `::1`; explicit IPv4 text, objects or packed bytes
+  promoted to IPv6 become IPv4-mapped addresses. Both transports use the same
+  native address values. Scoped addresses reject before mutation, and SQL NULL
+  requires a `Nullable` type. These rules apply inside native containers too.
+- ClickHouse keeps supported aliases in the supplied schema SQL. Python writes
+  also require support from the selected client's codecs for the actual writer
+  column types. Required value checks cover every converted batch before live
+  mutation. Certified retries reject changed connection or client settings before
+  another write. Metadata-only type-domain proofs report no scanned-row count.
+  Empty operations finalized entirely in SQL do not instantiate row codecs;
+  offline plans leave unresolved client validation pending.
+- ClickHouse HTTP `String` writes encode text as UTF-8 bytes and preserve binary
+  values and SQL NULL, recursively inside native containers. Native writes
+  retain the configured string encoding.
 - Supported Greenplum built-ins retain qualified/quoted identity and the supplied
   schema SQL. `NUMERIC(p)` uses scale zero, SQL `CHAR` length one, and bare `BPCHAR`
   unbounded input validation. Excess fractional zeros can align exactly; nonzero

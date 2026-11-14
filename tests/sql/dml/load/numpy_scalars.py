@@ -105,7 +105,11 @@ def test_numpy_boolean_producers_publish_integers_without_mutating_input(
         ),
         (np.float32(1.25), 1.25, ["DOUBLE PRECISION", "DOUBLE", "Nullable(Float64)"]),
         (np.float64(np.pi), float(np.pi), ["DOUBLE PRECISION", "DOUBLE", "Nullable(Float64)"]),
-        (np.str_("hé🙂"), "hé🙂", ["TEXT", "VARCHAR", "Nullable(String)"]),
+        (
+            np.str_("hé🙂"),
+            {"gp": "hé🙂", "trino": "hé🙂", "ch": b"h\xc3\xa9\xf0\x9f\x99\x82"},
+            ["TEXT", "VARCHAR", "Nullable(String)"],
+        ),
         (np.bytes_(b"\x00\xff"), b"\x00\xff", ["BYTEA", "VARBINARY", "Nullable(String)"]),
         (
             Decimal("12345678901234567890.123456789"),

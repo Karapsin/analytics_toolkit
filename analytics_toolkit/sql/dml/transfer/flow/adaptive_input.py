@@ -39,6 +39,11 @@ from analytics_toolkit.sql.dml.destination_context import (
 from analytics_toolkit.sql.dml.load.stage import cleanup_stage_table
 from analytics_toolkit.sql.dml.table.table_validation import validate_complete_upsert_columns
 from analytics_toolkit.sql.dml.transfer.flow import row_counts
+from analytics_toolkit.sql.dml.transfer.flow.client_validation import (
+    certify_frozen_client_input,
+    prepare_client_write_validation,
+    raise_pending_client_write_error,
+)
 from analytics_toolkit.sql.dml.transfer.flow.conversion_validation import (
     resolve_final_conversions,
     validate_final_conversions,
@@ -383,6 +388,7 @@ def _profile_batch(
     _check_generation_scope(options, scan.observed_scope)
     if list(source_batch.columns) != list(scan.spool.columns):
         _reject("Source columns changed while freezing selected input.")
+    raise_pending_client_write_error(options, source_batch.rows)
     batch = normalize_source_batch(
         options, source_connection, source_batch, state.source_column_types or {}
     )
@@ -605,8 +611,18 @@ def resolve_adaptive_input(
         context,
     )
     cached = options.input_resolution
+    client_profile = False
 
     def target_zone(ref: dict[str, Any]) -> str | None:
+        nonlocal client_profile
+        if context.source_values_in_python:
+            client_profile = prepare_client_write_validation(
+                options,
+                ref["connection"],
+                source_schema,
+                target_types,
+                authoritative=authoritative,
+            )
         return freeze_destination_timezone(
             cached, options.to_db_backend, ref["connection"], target_types
         )
@@ -638,7 +654,11 @@ def resolve_adaptive_input(
         )
     )
     needs_profile = (
-        context.force_freeze or contextual_profile or source_validation or cross_alias_native
+        context.force_freeze
+        or contextual_profile
+        or source_validation
+        or cross_alias_native
+        or client_profile
     ) or any(
         not declared_domain_fits(
             column.native_type,
@@ -690,6 +710,7 @@ def resolve_adaptive_input(
             for column, resolution in zip(cached["source_schema"], resolutions)
         ):
             _reject("Destination schema differs from certified transfer input.")
+    certify_frozen_client_input(options, context)
     native = cached.get("native_snapshot")
     if native is not None:
         # Install the certified replacement first, so a failed source cleanup

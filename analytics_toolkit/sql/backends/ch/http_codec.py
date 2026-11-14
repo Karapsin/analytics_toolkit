@@ -155,7 +155,7 @@ def exact_http_type(
         datatype._write_column_binary = MethodType(_datetime_write, datatype)  # noqa: SLF001
     if isinstance(datatype, Map):
         datatype.read_column_data = MethodType(_map_column, datatype)
-    for attribute in ("element_type", "key_type", "value_type"):
+    for attribute in ("element_type", "key_type", "value_type", "tuple_array"):
         child = getattr(datatype, attribute, None)
         if child is not None:
             setattr(

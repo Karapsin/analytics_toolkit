@@ -8,6 +8,7 @@ import json
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
+from ipaddress import IPv4Address, IPv6Address, ip_address
 from numbers import Integral, Real
 from typing import TYPE_CHECKING, Any, Tuple
 from uuid import UUID
@@ -31,6 +32,7 @@ _WALL_TICKS_FIELDS = 4
 _LEGACY_DATETIME_FIELDS = 2
 _DAY_SECONDS = 86400
 _DAY_MINUTES = 1440
+_INVALID_IP_ENCODING = "Invalid exact IP address encoding."
 
 
 def integer_text(value: int) -> str:
@@ -274,6 +276,7 @@ def dataframe_from_columns(
     types: Sequence[str] | None = None,
     *,
     index: Any = None,
+    object_dtype: bool = False,
 ) -> pd.DataFrame:
     """Construct columns positionally, never coercing exact scalars through float."""
     from analytics_toolkit.sql.dml.io.dataframes import (  # noqa: PLC0415 - avoid backend registry import cycles
@@ -281,6 +284,16 @@ def dataframe_from_columns(
     )
 
     del types
+    if object_dtype:
+        frame = pd.DataFrame(
+            {
+                position: pd.Series(values, index=index, dtype=object)
+                for position, values in enumerate(columns)
+            },
+            index=index,
+        )
+        frame.columns = list(names)
+        return frame
     frame = construct(
         names,
         columns,
@@ -477,6 +490,8 @@ def encode_value(value: Any) -> Any:  # noqa: C901, PLR0911, PLR0912 - tagged sc
         return ["timedelta", value.days, value.seconds, value.microseconds]
     if isinstance(value, UUID):
         return ["uuid", str(value)]
+    if isinstance(value, (IPv4Address, IPv6Address)):
+        return ["ip", str(value)]
     if isinstance(value, (bytes, bytearray, memoryview)):
         return ["bytes", base64.b64encode(bytes(value)).decode("ascii")]
     if isinstance(value, str):
@@ -499,6 +514,19 @@ def _decoded_map(pairs: tuple[tuple[Any, Any], ...], *, ordered: bool) -> Any:
     except (TypeError, ValueError):
         return OrderedMapPairs(pairs)
     return mapping if len(mapping) == len(pairs) else OrderedMapPairs(pairs)
+
+
+def _decode_identity_value(tag: str, value: Any) -> Any:
+    if tag == "uuid":
+        return UUID(value)
+    if tag == "bytes":
+        return base64.b64decode(value, validate=True)
+    if isinstance(value, str):
+        try:
+            return ip_address(value)
+        except ValueError:
+            raise ValueError(_INVALID_IP_ENCODING) from None
+    raise ValueError(_INVALID_IP_ENCODING)
 
 
 def decode_value(encoded: Any) -> Any:  # noqa: C901, PLR0911 - tagged scalar codec
@@ -525,10 +553,8 @@ def decode_value(encoded: Any) -> Any:  # noqa: C901, PLR0911 - tagged scalar co
         return _decode_datetime(payload)
     if tag in {"date", "time", "clock_ticks", "pandas_timedelta", "timedelta"}:
         return _decode_calendar_value(tag, payload)
-    if tag == "uuid":
-        return UUID(payload[0])
-    if tag == "bytes":
-        return base64.b64decode(payload[0], validate=True)
+    if tag in {"uuid", "ip", "bytes"}:
+        return _decode_identity_value(tag, payload[0])
     if tag in {"array", "tuple"}:
         values = [decode_value(value) for value in payload[0]]
         return tuple(values) if tag == "tuple" else values
@@ -571,7 +597,7 @@ def typed_text(  # noqa: C901, PLR0911 - scalar-family encoding
                 + ("+00:00" if timestamp.tz else "")
             )
         return str(timestamp.isoformat())
-    if isinstance(value, (dt.date, UUID)):
+    if isinstance(value, (dt.date, UUID, IPv4Address, IPv6Address)):
         return str(value)
     if isinstance(value, (bytes, bytearray, memoryview)):
         return "base64:" + base64.b64encode(bytes(value)).decode("ascii")

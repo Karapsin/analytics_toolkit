@@ -66,6 +66,8 @@ class LoadState:
     owned_stage_resources: list[tuple[str, str, Any]] = field(default_factory=list)
     stage_candidates: list[str] = field(default_factory=list)
     prepared_json_dataframe: pd.DataFrame | None = field(default=None, repr=False, compare=False)
+    client_validated_dataframe: pd.DataFrame | None = field(default=None, repr=False, compare=False)
+    client_type_resolutions: list[dict[str, Any]] = field(default_factory=list, repr=False)
     native_assignment_checkpoint: NativeAssignmentCertificate | None = field(
         default=None, repr=False
     )

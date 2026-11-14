@@ -290,7 +290,7 @@ def test_ch_create_table_as_table_schema_overrides_inferred_types(
     assert "`amount` Float64" in shard_sql
     assert "`dt` Date" not in shard_sql
     assert f"DESCRIBE TABLE ({QUERY})" in fake_client.queries
-    assert fake_client.data_inserts[-1][2] == [("2026-01-01", "1", 1.25)]
+    assert fake_client.data_inserts[-1][2] == [(b"2026-01-01", b"1", 1.25)]
 
 
 def test_ch_create_table_as_dry_run_uses_table_schema() -> None:

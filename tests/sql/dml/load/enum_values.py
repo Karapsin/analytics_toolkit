@@ -162,8 +162,9 @@ def test_nested_map_enums_publish_logical_keys_and_native_values(monkeypatch, ba
 
     assert _load(backend, frame) == 1
 
-    assert store.rows == [{"id": {"ready": 2**53 + 1, "empty": None}}]
-    assert type(store.rows[0]["id"]["ready"]) is int
+    ready_key, empty_key = (b"ready", b"empty") if backend == "ch" else ("ready", "empty")
+    assert store.rows == [{"id": {ready_key: 2**53 + 1, empty_key: None}}]
+    assert type(store.rows[0]["id"][ready_key]) is int
     pd.testing.assert_frame_equal(frame, original_frame)
 
 

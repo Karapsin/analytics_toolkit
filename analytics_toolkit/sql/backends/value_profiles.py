@@ -94,22 +94,42 @@ class ColumnProfile:
             return
         from .nested_types import nested_descriptor  # noqa: PLC0415 - bounded source schema hints
 
-        kind, child_types = nested_descriptor(self.native_type or "")
+        native_hint = self.native_type or ""
+        if self.source_backend == "ch":
+            from .ch.storage_types import (  # noqa: PLC0415 -- CH logical value domains only.
+                logical_storage_type,
+            )
+
+            native_hint = logical_storage_type(native_hint)
+        kind, child_types = nested_descriptor(native_hint)
+        if self.native_type and self.source_backend == "ch":
+            from .ch.client_validation import (  # noqa: PLC0415 -- legacy Object value facts.
+                observe_legacy_json_value,
+            )
+            from .ch.network_values import (  # noqa: PLC0415 -- complete CH network domain facts.
+                observe_network_value,
+            )
+
+            observe_network_value(self, value)
+            observe_legacy_json_value(self, value)
         if self.native_type:
             from .type_resolution import (  # noqa: PLC0415 - scalar grammar cycle
                 parse_native_type,
             )
 
-            if parse_native_type(self.native_type).base.name in {"enum8", "enum16", "fixedstring"}:
+            if parse_native_type(native_hint).base.name in {"enum8", "enum16", "fixedstring"}:
                 from .ch.value_validation import (  # noqa: PLC0415 - scalar grammar cycle
                     validate_constrained_value,
                 )
 
                 try:
-                    validate_constrained_value(value, self.native_type)
+                    validate_constrained_value(value, native_hint)
                 except ValueError:
                     self.native_constraints_valid = False
         family = _family(value)
+        if self.source_backend == "ch" and family == "array" and kind == "tuple":
+            value = tuple(value)
+            family = "tuple"
         if family == "map" and kind in {"tuple", "row"}:
             names = [name for name, _ in child_types]
             self.structurally_compatible &= isinstance(value, dict) and set(value) == set(names)

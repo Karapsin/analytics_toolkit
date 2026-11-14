@@ -424,4 +424,45 @@ disposable `audit.load.gp_native_assignment` case in
 covers GP6-supported CIDR, MACADDR, a scalar domain and CIDR arrays. It was not run
 locally and makes no domain-array support claim.
 
+ClickHouse native address compatibility is additionally covered by
+`dml/load/ch_network_addresses.py::test_ch_network_addresses_reach_real_driver_column_encoding`,
+`dml/load/ch_network_addresses.py::test_ch_network_addresses_invalid_last_value_rejects_before_live_clear_or_new_ddl`,
+and `dml/load/ch_network_addresses.py::test_ch_network_addresses_equivalent_native_keys_reject_before_append_stage_creation`.
+`core/network_values.py::test_address_family_survives_certified_binary_replay`
+and `dml/transfer/ch_network_replay.py::test_ch_network_replay_public_transfer_keeps_native_addresses_and_exact_wire`
+cover exact address objects in replay and actual transport codecs. These retain
+the declared address family, nullable values and native key equality.
+
+ClickHouse client capability and value certification are additionally covered by
+`dml/load/ch_native_aliases.py::test_ch_native_aliases_keep_public_schema_values_and_real_driver_bytes`,
+`backends/ch/client_validation.py::test_client_validation_certifies_actual_alias_binary`,
+`backends/ch/client_validation.py::test_client_validation_rejects_nonnullable_null_before_sdk_default_fill`,
+and `backends/ch/client_validation.py::test_client_validation_encodes_ordinary_normalization_physical_mismatch`.
+These preserve raw schema declarations while checking the selected client's
+actual writer types and converted values.
+`backends/ch/client_validation.py::test_declared_domain_proof_preserves_unknown_count_and_rejects_narrowing`
+keeps metadata-domain proofs distinct from complete value encoding.
+`dml/load/client_validation.py::test_client_validation_empty_sql_only_creation_needs_no_unsupported_http_encoder`
+and `dml/table/create_from_sql/client_validation.py::test_query_server_sql_copy_never_constructs_client_codecs`
+cover SQL-only paths without client row codecs.
+`dml/table/create_from_sql/client_validation.py::test_frozen_query_invalid_last_object_is_rejected_before_live_ddl`
+and `dml/transfer/ch_client_validation.py::test_ch_client_validation_late_object_failure_scans_all_keys_before_publication`
+cover complete frozen-input validation before publication.
+`dml/load/client_validation.py::test_client_validation_retry_rejects_changed_alias_before_reusing_certified_values`
+and `dml/table/create_from_sql/client_validation.py::test_frozen_query_retry_rejects_changed_actual_client_configuration`
+cover frozen client and connection scope during certified retries.
+`backends/ch/object_ddl.py::test_ch_legacy_object_ddl_preserves_native_type_and_structural_round_trip`,
+`backends/ch/wait_type_comparison.py::test_ch_wait_type_comparison_recognizes_sql_integer_aliases`,
+and `backends/ch/wait_type_comparison.py::test_ch_wait_type_comparison_preserves_enum_label_whitespace`
+cover legacy Object declarations and alias-aware readiness comparisons without
+erasing literal contents. The disposable cases
+`integration/core/audit_ch_ip_values.py::test_clickhouse_ip_columns_keep_native_values_before_authoritative_mutation`
+and `integration/core/audit_ch_storage_aliases.py::test_clickhouse_storage_aliases_preserve_native_rows_and_unflattened_metadata`
+pair native-address and structural-alias behavior with the fast regressions.
+They were not run locally.
+`dml/load/ch_binary_strings.py::test_ch_binary_strings_mixed_unicode_and_bytes_keep_exact_http_encoding`
+and `backends/ch/string_transport.py::test_http_string_transport_nested_values_keep_exact_bytes_and_null_order`
+cover mixed text/binary HTTP String batches with real codecs, including nested
+bytes and SQL NULL.
+
 [SQL module index](index.md)

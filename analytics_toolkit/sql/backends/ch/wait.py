@@ -4,6 +4,9 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
+from sqlglot import exp
+from sqlglot.errors import ParseError
+
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.connection.errors import SqlConfigError
 from analytics_toolkit.sql.ddl.schema import normalize_table_schema
@@ -14,6 +17,7 @@ from .ddl import (
     build_ch_shard_table_name,
     split_ch_table_name_for_distributed_engine,
 )
+from .dialect import ClickHouseDialect
 from .readiness import run_ch_readiness_wait
 from .routing import query_local
 from .wait_policy import waits_for_distributed, waits_for_shard
@@ -618,7 +622,7 @@ def _build_ch_expected_schema_condition(
     return " OR ".join(
         "("
         f"name = {_sql_string_literal(column_name)} "
-        "AND replaceRegexpAll(type, '\\\\s+', '') = "
+        "AND type = "
         f"{_sql_string_literal(_normalize_ch_type_for_comparison(column_type))}"
         ")"
         for column_name, column_type in expected_column_types.items()
@@ -626,8 +630,12 @@ def _build_ch_expected_schema_condition(
 
 
 def _normalize_ch_type_for_comparison(column_type: str) -> str:
-    """Ignore formatting whitespace in ClickHouse's canonical type names."""
-    return "".join(column_type.split())
+    """Render canonical native aliases without altering string literal contents."""
+    try:
+        native = exp.DataType.build(column_type, dialect=ClickHouseDialect)
+        return native.sql(dialect=ClickHouseDialect)
+    except (ParseError, ValueError):
+        return column_type.strip()
 
 
 def _describe_ch_cluster_schema_mismatch(

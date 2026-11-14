@@ -208,6 +208,30 @@ partition drop SQL is explicit. Actual string partition values are quoted as
 data, including marker-like values such as `<part>`. Only unknown partition
 values in offline plans use a raw synthetic marker.
 
+Existing or explicit ClickHouse `IPv4` and `IPv6` types accept address text, Python
+`ipaddress` objects, packed bytes and unsigned integers in the declared 32- or
+128-bit range. Integer IPv6 input follows that declared family: `1` is `::1`
+on both transports. IPv4 text, objects and 4-byte values promoted to IPv6 use
+IPv4-mapped addresses. Native addresses retain the same values through replay
+checkpoints; scoped addresses fail before mutation because the native columns
+cannot retain a scope. SQL NULL requires `Nullable`, including nested values.
+
+ClickHouse retains the supplied schema SQL, including supported aliases.
+Python value writes additionally require the selected client's actual column
+codecs and physical writer types to support the values. When value encoding is
+required, validation covers every converted batch in the complete owned input
+before live destination changes. Optional type-resolution metadata distinguishes
+this from a metadata-only type-domain proof, which reports no scanned-row count.
+Certified retries reject changed connection or client settings before another
+write.
+Empty operations finalized entirely in SQL do not instantiate row codecs, and
+offline plans defer unresolved client validation without materializing data.
+
+ClickHouse HTTP `String` writes encode text as UTF-8 bytes and retain binary
+values unchanged, so mixed text/binary batches use one wire format. This applies
+recursively inside native containers and preserves SQL NULL. Native writes keep
+their configured string encoding.
+
 ClickHouse targets normally create and maintain a distributed/shard table pair.
 Use `ch_only_shard=True` only when the target should intentionally be a local
 ClickHouse table. ClickHouse upsert builds a final increment for affected

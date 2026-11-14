@@ -452,6 +452,9 @@ class ClusterRoutingClient:
         column_oriented: bool,
         **kwargs: Any,
     ) -> Any:
+        if column_oriented:
+            data = list(data.itertuples(index=False, name=None))
+            column_oriented = False
         context = self._client.create_insert_context(
             table=original_table,
             column_names=column_names,

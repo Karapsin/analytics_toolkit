@@ -94,6 +94,12 @@ from .type_validation import (
     normalize_dataframe_columns,
     validate_dataframe_schema,
 )
+from .client_validation import (
+    client_creation_schema,
+    client_input_dataframe,
+    client_validation_pending,
+    prepare_load_client_values,
+)
 from analytics_toolkit.sql.dml.destination_context import (
     freeze_destination_timezone,
     infer_dataframe_write_schema,
@@ -311,7 +317,9 @@ def load_df(
                             df=df,
                         ),
                     ),
-                    convert_prepared_load_dataframe,
+                    lambda opts, target_state, frame: client_input_dataframe(
+                        opts, target_state, frame, convert_prepared_load_dataframe
+                    ),
                 )
                 progress_bar = _make_load_progress_bar(
                     total=len(df),
@@ -751,11 +759,19 @@ def _prepare_load_target(
         get_backend_adapter(options.connection_backend).validate_dataframe_staging_schema(
             _incoming_column_types(options, state, df), use_parquet=True
         )
+    prepare_load_client_values(
+        options,
+        state,
+        connection,
+        df,
+        (convert_prepared_load_dataframe, _incoming_column_types),
+    )
     for key_df in dataframe_key_validation_frames(
         df,
         options.key_columns,
         (state.target_column_types, options.table_schema),
         options.connection_backend,
+        destination_timezone=options.destination_context.get("destination_timezone"),
     ):
         _validate_dataframe_key_uniqueness(key_df, options.key_columns)
     require_assignment_identity(options, state)
@@ -831,11 +847,14 @@ def _create_load_target_table(
     create_kwargs: dict[str, Any] = {}
     if options.query_label is not None:
         create_kwargs["query_label"] = options.query_label
-    if options.table_schema is not None or options.destination_context.get(
-        "context_inferred_schema"
+    client_schema = client_creation_schema(options)
+    if (
+        options.table_schema is not None
+        or client_schema is not None
+        or options.destination_context.get("context_inferred_schema")
     ):
         create_kwargs["table_schema"] = (
-            options.table_schema or options.destination_context["inferred_schema"]
+            options.table_schema or client_schema or options.destination_context["inferred_schema"]
         )
     create_kwargs.update(
         get_backend_adapter(options.connection_backend).build_load_target_create_kwargs(
@@ -970,6 +989,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
             "table_schema": options.table_schema,
             "native_assignment_validation_pending": assignment_validation_pending(options),
+            "pending_client_write_validation": client_validation_pending(options, df),
             "partition_by": options.partition_by,
             "order_by": options.order_by,
             "ch_engine": options.ch_engine,
@@ -1866,7 +1886,12 @@ def _incoming_column_types(
     options: LoadOptions, state: LoadState | None, df: pd.DataFrame
 ) -> dict[str, str]:
     adapter = get_backend_adapter(options.connection_backend)
-    types = options.table_schema or (state.target_column_types if state is not None else None) or {}
+    types = (
+        options.table_schema
+        or (state.target_column_types if state is not None else None)
+        or client_creation_schema(options)
+        or {}
+    )
     return {
         str(column): types.get(str(column)) or adapter.infer_dataframe_column_type(df[column])
         for column in df.columns

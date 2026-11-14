@@ -24,6 +24,7 @@ from ..runtime.models import (
     TransferOptions,
     TransferStageState,
 )
+from .client_validation import validate_created_client_stage
 
 
 def create_stage_state(
@@ -205,6 +206,7 @@ def initialize_stage_for_first_batch(
         connection_key=options.to_db_key,
         current_column_types=stage_state.stage_column_types,
     )
+    validate_created_client_stage(options, connection_refs.target["connection"], stage_state)
 
 
 def _with_internal_column_types(

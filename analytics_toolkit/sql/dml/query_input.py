@@ -18,6 +18,12 @@ from analytics_toolkit.sql.dml.ddl_options import (
 )
 from analytics_toolkit.sql.dml.destination_context import freeze_destination_timezone
 from analytics_toolkit.sql.dml.load.load_sql_table import insert_rows_batch
+from analytics_toolkit.sql.dml.query_client_validation import (
+    describe_query_client_validation,
+    guarded_query_retry,
+    query_validation_connection,
+    validate_query_client_input,
+)
 from analytics_toolkit.sql.dml.query_native_assignment import (
     close_query_assignment,
     describe_query_assignment,
@@ -84,6 +90,7 @@ class PreparedQueryInput:
 
     def describe(self, metadata: SqlOperationMetadata) -> None:
         if not self.frozen:
+            describe_query_client_validation(self, metadata)
             return
         if describe_query_assignment(self, metadata):
             return
@@ -98,6 +105,7 @@ class PreparedQueryInput:
             }
             for column, resolution in zip(cache["source_schema"], cache["resolutions"])
         ]
+        describe_query_client_validation(self, metadata)
 
 
 def prepare_query_input(
@@ -120,6 +128,12 @@ def prepare_query_input(
             _prepare_assignment(
                 prepared, connection_ref, target_connection_ref or connection_ref, cache
             )
+        validate_query_client_input(
+            prepared,
+            target_connection_ref or connection_ref,
+            python_consumer=prepared.frozen
+            or prepared.options.input_resolution.get("query_python_consumer", False),
+        )
         return cast("PreparedQueryInput", prepared)
     config = get_connection_config(request.alias)
     target_alias = request.target_alias or request.alias
@@ -145,6 +159,13 @@ def prepare_query_input(
         source_schema, target_backend, source_backend=request.backend
     )
     pending_native = requires_query_assignment(target_types, target_backend)
+    native_sql_copy = get_backend_adapter(
+        target_backend
+    ).should_insert_create_table_from_sql_directly(
+        source_backend=request.backend, source_key=request.alias, target_key=target_alias
+    )
+    python_source = request.source_values_in_python and not native_sql_copy
+    resolution["query_python_consumer"] = python_source
     target_ddl = resolve_operation_ddl(target_config) if pending_native else None
     options = TransferOptions(
         from_db_key=request.alias,
@@ -199,18 +220,19 @@ def prepare_query_input(
         options.retry_cnt,
         options.retry_cnt,
         force_freeze=request.force_freeze or pending_native,
-        source_values_in_python=request.source_values_in_python,
+        source_values_in_python=python_source,
         allow_pending_native_assignment=pending_native,
     )
-    frozen = resolve_adaptive_input(
-        options,
-        TransferConnectionRefs(
-            source=connection_ref, target=target_connection_ref or connection_ref
-        ),
-        state,
-        source_schema,
-        context,
-    )
+    with query_validation_connection(options, target_connection_ref or connection_ref):
+        frozen = resolve_adaptive_input(
+            options,
+            TransferConnectionRefs(
+                source=connection_ref, target=target_connection_ref or connection_ref
+            ),
+            state,
+            source_schema,
+            context,
+        )
     prepared = PreparedQueryInput(options, state, state.stage_column_types or {}, columns, frozen)
     if frozen:
         cache["prepared_query_input"] = prepared
@@ -218,6 +240,11 @@ def prepare_query_input(
         _prepare_assignment(
             prepared, connection_ref, target_connection_ref or connection_ref, cache
         )
+    validate_query_client_input(
+        prepared,
+        target_connection_ref or connection_ref,
+        python_consumer=prepared.frozen or python_source,
+    )
     return prepared
 
 
@@ -313,6 +340,7 @@ def replay_query_input(
 ) -> int:
     options = prepared.options
     total = 0
+    validate_query_client_input(prepared, connection_ref, python_consumer=True)
     if requires_query_assignment(prepared.schema, options.to_db_backend) or any(
         getattr(resolution, "native_assignment_required", False)
         for resolution in options.input_resolution.get("resolutions", [])
@@ -336,7 +364,7 @@ def replay_query_input(
             options.target_table,
             batch.columns,
             batch.rows,
-            retry_fn=run_with_retry,
+            retry_fn=guarded_query_retry(options, run_with_retry),
             retry_cnt=options.retry_cnt,
             timeout_increment=options.timeout_increment,
             target_column_types=prepared.schema,

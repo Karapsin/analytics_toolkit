@@ -28,6 +28,7 @@ from analytics_toolkit.sql.dml.transfer.runtime.retry import (
 from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
 from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
 
+from .frozen_retry import frozen_input_retry
 from .stage_ownership import stage_creation_callbacks
 
 if TYPE_CHECKING:
@@ -115,6 +116,7 @@ def native_assignment_plan_options(
 
 
 def native_insert_retry_arguments(options: TransferOptions, retry: Any) -> dict[str, Any]:
+    retry = frozen_input_retry(options, retry)
     if not native_assignment_pending(options):
         return {"retry_fn": retry}
 

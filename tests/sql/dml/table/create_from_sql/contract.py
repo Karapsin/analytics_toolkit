@@ -14,6 +14,7 @@ from tests.sql._support.create_from_sql import (
     ch_fast_path_module,
     create_module,
     importlib,
+    observe_selected_query_target,
     pytest,
     sql_module,
 )
@@ -267,8 +268,10 @@ def test_create_table_from_sql_profiles_explicit_cross_backend_schema_before_cre
     source.source_rows = [(index, Decimal("1.25")) for index in range(5)]
     target = FakeClickHouseClient()
     transfer_calls: list[dict[str, object]] = []
+    opened: list[str] = []
 
     def fake_get_sql_connection(connection_key: str) -> object:
+        opened.append(connection_key)
         if connection_key == "gp":
             return source
         if connection_key == "ch":
@@ -281,6 +284,7 @@ def test_create_table_from_sql_profiles_explicit_cross_backend_schema_before_cre
 
     monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
     monkeypatch.setattr(create_module, "transfer_table", fake_transfer_table)
+    observe_selected_query_target(monkeypatch, source, target)
 
     inserted_rows = create_module.create_table_from_sql(
         "gp",
@@ -295,10 +299,17 @@ def test_create_table_from_sql_profiles_explicit_cross_backend_schema_before_cre
     )
 
     assert inserted_rows == 5
+    assert opened == ["gp", "ch"]
+    assert source.close_calls == target.close_calls == 1
     assert not transfer_calls
     assert target.data_inserts == [
-        ("analytics.events", ["id", "amount"], [(str(index), 1.25) for index in range(5)])
+        (
+            "analytics.events",
+            ["id", "amount"],
+            [(str(index).encode("utf-8"), 1.25) for index in range(5)],
+        )
     ]
+    assert source.source_rows == [(index, Decimal("1.25")) for index in range(5)]
     assert any(
         command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
         and "`id` String" in command

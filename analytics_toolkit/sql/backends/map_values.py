@@ -123,6 +123,12 @@ def _key_identity(
     from .nested_values import row_items  # noqa: PLC0415 - exact row arity and field identity
     from .type_resolution import _permits_null  # noqa: PLC0415 -- native nullability.
 
+    if backend == "ch":
+        from .ch.storage_types import (  # noqa: PLC0415 -- native alias key domain.
+            logical_storage_type,
+        )
+
+        key_type = logical_storage_type(key_type or "")
     if key is None:
         if backend == "ch" and key_type is not None and _permits_null(key_type):
             return None
@@ -157,6 +163,20 @@ def _scalar_key_identity(
     )
 
     native = parse_native_type(key_type).base
+    if backend == "ch":
+        from .ch.network_values import (  # noqa: PLC0415 -- CH native network key equality.
+            is_network_type,
+            network_key_identity,
+        )
+
+        if is_network_type(key_type or ""):
+            return network_key_identity(key, key_type or "")
+        if native.name in {"enum8", "enum16"}:
+            from .ch.value_validation import (  # noqa: PLC0415 -- exact native Enum equality.
+                enum_value_code,
+            )
+
+            return enum_value_code(key, key_type or "")
     if backend == "trino":
         from .trino.time_values import (  # noqa: PLC0415 -- destination clock identity.
             time_key_identity,

@@ -25,7 +25,7 @@ def _permits_null(type_name: str) -> bool:
 
 
 @lru_cache(maxsize=1024)
-def enum_members(type_name: str) -> tuple[frozenset[str], frozenset[int]]:
+def enum_entries(type_name: str) -> tuple[tuple[str, int], ...]:
     from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 - native grammar cycle
         parse_native_type,
     )
@@ -60,10 +60,23 @@ def enum_members(type_name: str) -> tuple[frozenset[str], frozenset[int]]:
     if not labels or len(set(labels)) != len(labels) or len(set(codes)) != len(codes):
         msg = "ClickHouse Enum labels and codes must be nonempty and unique."
         raise ValueError(msg)
-    return frozenset(labels), frozenset(codes)
+    return tuple(zip(labels, codes))
+
+
+@lru_cache(maxsize=1024)
+def enum_members(type_name: str) -> tuple[frozenset[str], frozenset[int]]:
+    entries = enum_entries(type_name)
+    return frozenset(label for label, _code in entries), frozenset(code for _label, code in entries)
 
 
 _ENUM_WIDTHS = {"enum8": 8, "enum16": 16}
+
+
+def enum_value_code(value: Any, type_name: str) -> int:
+    candidate = validate_constrained_value(value, type_name)
+    return (
+        dict(enum_entries(type_name))[candidate] if isinstance(candidate, str) else int(candidate)
+    )
 
 
 def validate_constrained_value(value: Any, type_name: str) -> Any:

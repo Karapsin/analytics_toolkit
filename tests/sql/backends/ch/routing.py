@@ -451,7 +451,7 @@ def test_cluster_routing_client_routes_http_and_native_binary_inserts() -> None:
     assert http_raw.insert_contexts[0].table == ("FUNCTION cluster('core', 'db', 'events', rand())")
     assert http_raw.insert_contexts[0].data == [(1,), (2,)]
     assert http_raw.insert_contexts[1].table == ("FUNCTION cluster('core', 'db', 'events', rand())")
-    assert http_raw.insert_contexts[1].data is dataframe
+    assert http_raw.insert_contexts[1].data == [(1,), (2,)]
     assert native_raw.inserts[0]["table"] == ("FUNCTION cluster('core', 'db', 'events', rand())")
     assert native_raw.inserts[1]["table"] == ("FUNCTION cluster('core', 'db', 'events', rand())")
 

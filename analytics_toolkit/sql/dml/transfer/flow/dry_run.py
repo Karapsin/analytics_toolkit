@@ -30,6 +30,7 @@ from ...table.write_modes import (
     build_upsert_stage_sqls,
 )
 from ..runtime.models import TransferOptions
+from .client_validation import client_validation_plan_options
 from .native_assignment import native_assignment_plan_options
 from .parquet_stage import build_create_parquet_stage_table_sql, build_stage_external_location
 
@@ -166,6 +167,7 @@ def dry_run_transfer_options(
         "table_schema": options.table_schema,
         "type_resolution_pending": options.table_schema is None,
         **native_assignment_plan_options(options, requires_native_assignment),
+        **client_validation_plan_options(options),
         "target_constraints_validation_pending": True,
         "target_constraint_validation": "complete_owned_stage_before_live_publication",
         "type_resolution": {

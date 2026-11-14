@@ -9,6 +9,7 @@ from ....dml.load.load_sql_table import insert_rows_batch
 from ....dml.load.stage import cleanup_stage_table, create_stage_table
 from ..runtime.models import RowBatch, TransferConnectionRefs, TransferOptions, TransferStageState
 from ..runtime.retry import replace_connection, rollback_quietly, run_with_retry
+from .frozen_retry import frozen_input_retry
 from .parquet_stage import (
     create_parquet_stage_table,
     ensure_parquet_staging_dependencies,
@@ -144,7 +145,7 @@ def write_source_staged_batch(
         stage_table,
         batch.columns,
         batch.rows,
-        retry_fn=retry_fn,
+        retry_fn=frozen_input_retry(options, retry_fn),
         retry_cnt=insert_retry_cnt,
         timeout_increment=options.timeout_increment,
         target_column_types=stage_state.stage_column_types,

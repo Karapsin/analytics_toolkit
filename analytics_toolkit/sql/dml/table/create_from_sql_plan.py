@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.client_validation import supports_client_validation
 from analytics_toolkit.sql.core.type_resolution import native_candidates
 from analytics_toolkit.sql.ddl.api import _build_create_table_sqls, _gp_partition_plan_option
 from analytics_toolkit.sql.dml.query_native_assignment import requires_query_assignment
@@ -55,6 +56,10 @@ def _build_create_table_from_sql_plan(  # noqa: PLR0913
         options={
             "insert_data": insert_data,
             "pending_input_validation": insert_data,
+            "client_write_validation_pending": (
+                insert_data and supports_client_validation(target_backend)
+            ),
+            "client_write_validation_condition": "python_value_replay",
             "native_assignment_validation_pending": (
                 insert_data
                 and table_schema is not None

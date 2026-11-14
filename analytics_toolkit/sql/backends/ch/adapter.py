@@ -588,7 +588,12 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> None:
         connection.insert(
             table=table_name,
-            data=_insert.normalize_rows(columns, rows, column_types),
+            data=_insert.normalize_rows(
+                columns,
+                rows,
+                column_types,
+                native_transport=bool(getattr(connection, "is_native_transport", False)),
+            ),
             column_names=list(columns),
             column_type_names=_insert.column_type_names(columns, column_types),
         )

@@ -172,6 +172,8 @@ def _resolve_population_columns(
             joined = _query_columns(connection, schema, query, plan)
             if dry and options["insert_data"]:
                 plan.options["pending_input_validation"] = True
+                plan.options["client_write_validation_pending"] = True
+                plan.options["client_write_validation_condition"] = "python_value_replay"
                 plan.options["pending_source_overlap_check"] = bool(
                     options["drop_target_if_exists"] or options.get("ch_replace_table")
                 )
