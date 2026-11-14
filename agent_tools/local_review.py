@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_tools import (
+    agent_runtimes,
     bootstrap_process,
     review_iterations,
     sessions,
@@ -176,7 +177,7 @@ def arguments(root: Path, job: Path, subject: dict[str, str]) -> list[str]:
             "-",
         ]
     )
-    return args
+    return agent_runtimes.with_source_review_effort("codex", args)
 
 
 def provider(source: Path, root: Path, subject: dict[str, str], job: Path) -> list[str]:
@@ -464,7 +465,8 @@ def _reviewer_command(
             )
             raise RuntimeError(msg)
         environment = {key: value for key, value in os.environ.items() if key not in ENV_DENY}
-        return runtime, None, arguments(root, job, subject), environment
+        command = agent_runtimes.with_source_review_effort(runtime, arguments(root, job, subject))
+        return runtime, None, command, environment
     runtime = adapter.select_reviewer(os.environ, sessions.load(root))
     source, schema = trusted_runtime(root, job, subject["base"])
     spec = adapter.RUNTIMES[runtime]
@@ -475,6 +477,9 @@ def _reviewer_command(
         schema,
         session_id,
     )
+    # The dev-base adapter remains authoritative for isolation and source access.
+    # Its older versions may omit this fixed, performance-only Codex setting.
+    command = agent_runtimes.with_source_review_effort(runtime, command)
     missing = adapter.policy_violations(runtime, command)
     if missing:
         msg = "Reviewer isolation policy is incomplete: " + ", ".join(missing)

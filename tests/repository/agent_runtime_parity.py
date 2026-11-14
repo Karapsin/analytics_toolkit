@@ -147,6 +147,7 @@ def test_reviewer_argv_satisfies_every_capability_and_shares_the_schema(
 ) -> None:
     args, schema = _reviewer_args(runtime, tmp_path)
     assert agent_runtimes.policy_violations(runtime, args) == []
+    assert agent_runtimes.with_source_review_effort(runtime, args) == args
     if runtime == "claude":
         assert args[args.index("--json-schema") + 1].encode() == schema.read_bytes()
         config = json.loads(Path(args[args.index("--mcp-config") + 1]).read_text())
@@ -156,6 +157,7 @@ def test_reviewer_argv_satisfies_every_capability_and_shares_the_schema(
         assert "--resume" not in args
         assert "--continue" not in args
     else:
+        assert args[-3:] == ["-c", 'model_reasoning_effort="high"', "-"]
         assert args[args.index("--output-schema") + 1] == str(schema)
         assert "resume" not in args
     weakened = [flag for flag in args if flag not in {"--restricted", "--ephemeral"}]
@@ -179,6 +181,28 @@ def test_built_in_codex_reviewer_is_identical_to_the_adapter(
         "/bin/codex", tmp_path, provider, schema, "unused"
     )
     assert built_in == adapter
+
+
+@pytest.mark.parametrize("runtime", ["codex", "claude"])
+@pytest.mark.parametrize("stdin", [False, True])
+def test_source_review_effort_preserves_other_flags_and_is_idempotent(
+    runtime: str, stdin: bool
+) -> None:
+    command = [runtime, "exec", "-c", 'model_reasoning_effort="low"', "--json"]
+    if stdin:
+        command.append("-")
+    original = list(command)
+    result = agent_runtimes.with_source_review_effort(runtime, command)
+    assert command == original
+    assert agent_runtimes.with_source_review_effort(runtime, result) == result
+    if runtime == "claude":
+        assert result == original
+    else:
+        expected = original[:-1] if stdin else original
+        expected = [*expected, "-c", 'model_reasoning_effort="high"']
+        if stdin:
+            expected.append("-")
+        assert result == expected
 
 
 def test_shared_reviewer_contract_is_byte_identical() -> None:

@@ -252,6 +252,11 @@ A small initial sample or estimated remaining size is not a reason to end a
 no-findings round while inspection can continue. Concrete defects may still
 stop for repair; actual tool failures, uncertainty or incomplete inspection
 still require rejection and never justify approval or reduced coverage.
+Codex source reviews request fixed `high` reasoning effort. The orchestrator
+also applies this setting when the immutable dev-base adapter predates it;
+the selected model, source access and isolation checks stay unchanged.
+Higher effort does not guarantee completion: every diff page and task obligation
+must still be inspected before approval.
 
 The private task journal persists pending attempts and signed round outcomes.
 An OS lock prevents concurrent invocations from creating independent first

@@ -106,6 +106,7 @@ def claude_launch_env() -> dict[str, str]:
 # --- Shared fresh reviewer contract ----------------------------------------
 
 REVIEW_TIMEOUT = 1800
+CODEX_REVIEW_EFFORT_CONFIG = 'model_reasoning_effort="high"'
 REVIEW_PROMPT = (
     "You are a fresh independent read-only source reviewer, separate from all "
     "candidate authors. This local review is the only source review before merge; "
@@ -270,6 +271,17 @@ def policy_violations(runtime: str, args: Sequence[str]) -> list[str]:
 # --- Runtime adapters --------------------------------------------------------
 
 
+def with_source_review_effort(runtime: str, command: Sequence[str]) -> list[str]:
+    """Apply the fixed Codex effort even when an immutable older adapter omits it."""
+    args = list(command)
+    if runtime == "codex":
+        position = len(args) - 1 if args and args[-1] == "-" else len(args)
+        override = ["-c", CODEX_REVIEW_EFFORT_CONFIG]
+        if args[max(0, position - 2) : position] != override:
+            args[position:position] = override
+    return args
+
+
 @dataclass(frozen=True)
 class Runtime:
     name: str
@@ -366,7 +378,7 @@ def _codex_reviewer(
             "-",
         ]
     )
-    return args
+    return with_source_review_effort("codex", args)
 
 
 def claude_source_config(provider: list[str]) -> str:

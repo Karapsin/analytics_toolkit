@@ -134,6 +134,61 @@ def install_fake(
     return control, thread
 
 
+@pytest.mark.parametrize("weakened", [False, True])
+def test_legacy_codex_adapter_gets_fixed_high_effort_without_losing_isolation(
+    adapter_base: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, weakened: bool
+) -> None:
+    """An older immutable adapter lacks effort; the caller must retain all its flags."""
+    install_fake(tmp_path, monkeypatch, "codex", "approve")
+    monkeypatch.setenv("ATK_LOCAL_REVIEWER", "codex")
+    bootstrap = sessions.state_path(adapter_base).with_name("atk-local-review-bootstrap")
+    path = bootstrap / "agent_runtimes.py"
+    legacy = (
+        path.read_text()
+        + """
+from dataclasses import replace as _legacy_replace
+_original_codex_reviewer = RUNTIMES["codex"].reviewer_argv
+def _legacy_codex_reviewer(*args):
+    global legacy_command
+    command = _original_codex_reviewer(*args)
+    legacy_command = []
+    index = 0
+    while index < len(command):
+        if (command[index] == "-c" and index + 1 < len(command)
+                and command[index + 1].startswith("model_reasoning_effort=")):
+            index += 2
+        else:
+            legacy_command.append(command[index])
+            index += 1
+    if WEAKENED:
+        legacy_command.remove("--ephemeral")
+    return list(legacy_command)
+RUNTIMES["codex"] = _legacy_replace(RUNTIMES["codex"], reviewer_argv=_legacy_codex_reviewer)
+""".replace("WEAKENED", repr(weakened))
+    )
+    path.write_text(legacy)
+    manifest_path = bootstrap / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"][local_review.RUNTIME_ADAPTER] = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest))
+    subject = local_review.binding(adapter_base, git(adapter_base, "rev-parse", "HEAD"))
+    job = tmp_path / "review-job"
+    job.mkdir()
+    if weakened:
+        with pytest.raises(RuntimeError, match="Reviewer isolation policy is incomplete"):
+            local_review._reviewer_command(adapter_base, job, subject, str(uuid.uuid4()))
+        return
+    runtime, adapter, command, _environment = local_review._reviewer_command(
+        adapter_base, job, subject, str(uuid.uuid4())
+    )
+    assert runtime == "codex"
+    assert command[-3:] == ["-c", 'model_reasoning_effort="high"', "-"]
+    assert [*command[:-3], "-"] == adapter.legacy_command
+    assert agent_runtimes.policy_violations(runtime, command) == []
+    assert "-m" not in command
+    assert "--model" not in command
+
+
 @pytest.mark.parametrize("runtime", ["codex", "claude"])
 def test_adapter_review_records_runtime_identity_and_isolation(
     adapter_base: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: str
@@ -154,6 +209,7 @@ def test_adapter_review_records_runtime_identity_and_isolation(
     prompt = (control / "input.txt").read_text(encoding="utf-8")
     assert prompt.startswith(agent_runtimes.REVIEW_PROMPT)
     if runtime == "claude":
+        assert not any(value.startswith("model_reasoning_effort=") for value in args)
         session = args[args.index("--session-id") + 1]
         assert str(uuid.UUID(session, version=4)) == session
         assert payload["reviewer_id"] == "reviewer:" + session
@@ -164,6 +220,7 @@ def test_adapter_review_records_runtime_identity_and_isolation(
         assert args[args.index("--tools") + 1] == ""
         assert json.loads(args[args.index("--json-schema") + 1])["additionalProperties"] is False
     else:
+        assert args[-3:] == ["-c", 'model_reasoning_effort="high"', "-"]
         assert payload["reviewer_id"].startswith("reviewer:")
         assert (
             len({r["payload"]["reviewer_id"] for r in payload["review_iterations"]["rounds"]}) == 2
