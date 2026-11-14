@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.query_source_binding import query_may_read_target
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
@@ -55,6 +56,7 @@ class QueryInputRequest:
     force_freeze: bool = False
     target_alias: str | None = None
     target_backend: str | None = None
+    source_values_in_python: bool = True
 
 
 @dataclass
@@ -152,6 +154,7 @@ def prepare_query_input(
         options.retry_cnt,
         options.retry_cnt,
         force_freeze=request.force_freeze,
+        source_values_in_python=request.source_values_in_python,
     )
     frozen = resolve_adaptive_input(
         options,
@@ -210,6 +213,13 @@ def prepare_generic_query_input(
             force_freeze=overlap,
             target_alias=options.target_key,
             target_backend=options.target_backend,
+            source_values_in_python=not get_backend_adapter(
+                options.target_backend
+            ).should_insert_create_table_from_sql_directly(
+                source_backend=options.source_backend,
+                source_key=options.source_key,
+                target_key=options.target_key,
+            ),
         ),
         connection_ref,
         options.input_resolution,

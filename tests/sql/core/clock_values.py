@@ -9,16 +9,25 @@ import struct
 import numpy as np
 import pandas as pd
 import pytest
+from analytics_toolkit.sql.backends.value_profiles import ColumnProfile
 from analytics_toolkit.sql.core.exact_values import (
     ENCODING_VERSION,
+    MAX_EXACT_SCALE,
+    MAX_TEMPORAL_SCALE,
+    ExactClock,
     OrderedMapPairs,
+    dataframe_from_rows,
     decode_value,
     encode_value,
     typed_text,
 )
 from analytics_toolkit.sql.core.replay_spool import ReplaySpool
 from analytics_toolkit.sql.core.temporal_zones import canonical_named_zone
-from analytics_toolkit.sql.core.type_resolution import ResolvedColumn
+from analytics_toolkit.sql.core.type_resolution import (
+    ResolvedColumn,
+    resolve_profile,
+    validate_profile,
+)
 
 
 @pytest.mark.parametrize(
@@ -306,3 +315,149 @@ def test_unknown_clock_zone_key_still_rejects_and_cleans_partial_spool(route):
     else:
         with pytest.raises(ValueError, match="timezone"):
             _roundtrip_clock(value, route)
+
+
+@pytest.mark.parametrize("scale", range(13))
+def test_exact_clock_model_preserves_each_scale_without_an_invented_date(scale):
+    ticks = 3723 * 10**scale + (1 if scale else 0)
+    value = ExactClock(ticks, scale)
+
+    expected = "01:02:03" + (f".{1:0{scale}d}" if scale else "")
+    assert value.isoformat() == expected
+    assert value.ticks_floor(12) == ticks * 10 ** (12 - scale)
+    actual = value.time()
+    if scale > 6:
+        assert actual is value
+    else:
+        assert type(actual) is dt.time
+        assert actual == dt.time(1, 2, 3, 10 ** (6 - scale) if scale else 0)
+    assert value.offset_minutes is None
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        ({"ticks": 0, "scale": -1}, "between zero and twelve"),
+        ({"ticks": 0, "scale": 13}, "between zero and twelve"),
+        ({"ticks": -1, "scale": 12}, "within one day"),
+        ({"ticks": 86400 * 10**12, "scale": 12}, "within one day"),
+        ({"ticks": 0, "scale": 12, "offset_minutes": -1440}, "within one day"),
+        ({"ticks": 0, "scale": 12, "offset_minutes": 1440}, "within one day"),
+        ({"ticks": 0, "scale": 12, "timezone_name": "unbound label"}, "fixed UTC offset"),
+    ],
+)
+def test_exact_clock_constructor_rejects_unrepresentable_coordinates(arguments, message):
+    with pytest.raises(ValueError, match=message):
+        ExactClock(**arguments)
+
+
+@pytest.mark.parametrize("scale", range(7, 13))
+def test_exact_clock_with_only_zero_submicrosecond_digits_uses_python_time(scale):
+    ticks = 3723 * 10**scale + 123456 * 10 ** (scale - 6)
+    value = ExactClock(ticks, scale, 0, "captured UTC")
+
+    actual = value.time()
+
+    assert type(actual) is dt.time
+    assert actual.replace(tzinfo=None) == dt.time(1, 2, 3, 123456)
+    assert actual.utcoffset() == dt.timedelta()
+    assert actual.tzname() == "captured UTC"
+    assert value.ticks == ticks
+    assert value.scale == scale
+
+
+@pytest.mark.parametrize(
+    ("offset", "name", "suffix"),
+    [(None, None, ""), (0, None, "+00:00"), (330, "captured +05:30", "+05:30")],
+)
+def test_exact_clock_tag_preserves_naive_versus_aware_and_captured_zone_name(offset, name, suffix):
+    value = ExactClock(1, 12, offset, name)
+
+    tagged = encode_value(value)
+    replayed = decode_value(tagged)
+
+    assert tagged == ["clock_ticks", "1", 12, offset, name]
+    assert replayed == value
+    assert replayed.offset_minutes == offset
+    assert replayed.timezone_name == name
+    assert replayed.isoformat() == f"00:00:00.000000000001{suffix}"
+
+
+def test_version_one_real_spool_retains_nested_picosecond_clocks_and_sql_null():
+    naive, aware = ExactClock(1, 12), ExactClock(2, 12, 0, "captured UTC")
+    mapping = OrderedMapPairs(((naive, [aware, None]), (naive, [naive, None])))
+    row = ([naive, None, aware], {"clock": aware}, mapping, None)
+
+    with ReplaySpool(["array", "map", "ordered", "null"]) as spool:
+        spool.write_rows([row, (None, None, None, pd.NaT)])
+        spool.certify()
+        raw = spool.path.read_bytes()
+        magic = b"ATK-ROWS\x01\n"
+        size_start = len(magic)
+        frame_start = size_start + struct.calcsize(">Q")
+        size = struct.unpack(">Q", raw[size_start:frame_start])[0]
+        tagged = json.loads(raw[frame_start : frame_start + size])
+        rows = list(spool.iter_rows())
+
+        assert ENCODING_VERSION == 1
+        assert raw.startswith(magic)
+        assert tagged[1][0][1][0] == ["clock_ticks", "1", 12, None, None]
+        assert tagged[1][0][1][2] == ["clock_ticks", "2", 12, 0, "captured UTC"]
+        assert rows[0] == row
+        assert isinstance(rows[0][2], OrderedMapPairs)
+        assert len(rows[0][2]) == 2
+        assert rows[1] == (None, None, None, None)
+        assert list(spool.iter_rows()) == rows
+
+
+def test_positional_dataframe_retains_picosecond_clocks_and_duplicate_labels():
+    first, second = ExactClock(1, 12), ExactClock(2, 12, 0)
+    rows = [(first, second), (None, None), (second, first)]
+
+    frame = dataframe_from_rows(["clock", "clock"], rows)
+
+    assert list(frame.columns) == ["clock", "clock"]
+    assert frame.dtypes.tolist() == [object, object]
+    assert list(frame.itertuples(index=False, name=None)) == rows
+    assert frame.iloc[0, 0] is first
+    assert frame.iloc[0, 1] is second
+
+
+@pytest.mark.parametrize(
+    ("ticks", "rounded"), [(1, "00:00:00.000000"), (500000, "00:00:00.000001")]
+)
+def test_clock_profiles_retain_precision_before_explicit_native_rounding(ticks, rounded):
+    value = ExactClock(ticks, 12)
+    profile = ColumnProfile()
+    profile.add(None)
+    profile.add(value)
+
+    assert profile.families == {"time"}
+    assert profile.temporal_scale > 6
+    validate_profile(profile, "TIME(12)", "trino", allow_timestamp_precision_loss=False)
+    with pytest.raises(ValueError, match="precision"):
+        validate_profile(profile, "TIME(6)", "gp", allow_timestamp_precision_loss=False)
+    validate_profile(profile, "TIME(6)", "gp")
+    assert ResolvedColumn("TIME(6)", target_backend="gp").convert(value) == rounded
+
+
+@pytest.mark.parametrize(
+    ("backend", "native"), [("gp", "TEXT"), ("trino", "VARCHAR"), ("ch", "String")]
+)
+def test_unrepresentable_inferred_clock_uses_exact_typed_text_without_ch_precision_expansion(
+    backend, native
+):
+    value = ExactClock(1, 12)
+    profile = ColumnProfile()
+    profile.add(value)
+
+    resolved = resolve_profile(profile, backend)
+    document = json.loads(resolved.convert(value))
+
+    assert resolved.target_type == native
+    assert resolved.text_fallback
+    assert document["v"] == 1
+    assert decode_value(document["value"]) == value
+    assert resolved.convert(None) is None
+    assert MAX_EXACT_SCALE == 12
+    assert MAX_TEMPORAL_SCALE == 9

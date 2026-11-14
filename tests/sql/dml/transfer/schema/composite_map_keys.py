@@ -7,8 +7,10 @@ import datetime as dt
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.backends.trino.parameters import normalize_value, timestamp_text
+from analytics_toolkit.sql.core.exact_values import ExactTemporal, OrderedMapPairs
 
-from tests.sql._support.adaptive_transfer import install, require_streaming_fast_path, track_spools
+from tests.sql._support.adaptive_transfer import install, track_spools
 from tests.sql._support.fakes import FakeDbapiConnection
 from tests.sql._support.load_table import load_df_module
 
@@ -155,7 +157,7 @@ def test_valid_composite_map_load_retains_both_values(monkeypatch, case):
 
 
 @pytest.mark.parametrize("target_key", ["ROW(k VARCHAR(2))", "ROW(k VARCHAR(4))"])
-def test_safe_same_and_widened_composite_keys_keep_lazy_streaming(monkeypatch, target_key):
+def test_same_and_widened_composite_keys_certify_source_before_publication(monkeypatch, target_key):
     values = {("a",): "first", ("a ",): "second"}
     scenario = install(
         monkeypatch,
@@ -168,16 +170,18 @@ def test_safe_same_and_widened_composite_keys_keep_lazy_streaming(monkeypatch, t
     )
     target = "MAP(" + target_key + ", VARCHAR)"
     scenario.existing_types = {"id": target}
-    require_streaming_fast_path(monkeypatch)
+    paths = track_spools(monkeypatch)
 
     assert scenario.run() == 1
 
     assert scenario.schemas == [{"id": target}]
     assert scenario.loaded == [[(values,)]]
     assert scenario.read_count == 1
-    assert scenario.events.index("create_target") < scenario.events.index(
-        "complete:SELECT id FROM source"
+    assert scenario.events.index("complete:SELECT id FROM source") < scenario.events.index(
+        "create_target"
     )
+    assert paths
+    assert all(not path.exists() for path in paths)
 
 
 def time_map_transfer(monkeypatch, values, *, stage_type=None):
@@ -251,6 +255,91 @@ def test_frozen_time_map_cast_keeps_sql_distinct_wall_keys_and_the_existing_sche
     assert scenario.existing_types == {"id": "MAP(TIME(6), VARCHAR)"}
     assert scenario.read_count == 1
     assert scenario.finalizations == 1
+    assert scenario.events.index("complete:SELECT id FROM source") < scenario.events.index(
+        "create_target"
+    )
+    assert paths
+    assert all(not path.exists() for path in paths)
+
+
+def timestamp_map_transfer(monkeypatch, maps, *, stage_type=None):
+    scenario = install(
+        monkeypatch,
+        native_type="Map(DateTime64(9, 'UTC'), String)",
+        rows=[(value,) for value in maps],
+        write_mode="truncate_insert",
+        table_schema={"id": stage_type} if stage_type is not None else None,
+    )
+    scenario.existing_types = {"id": "MAP(TIMESTAMP(12) WITH TIME ZONE, VARCHAR)"}
+    return scenario
+
+
+def test_frozen_timestamp_map_last_row_loses_key_distinctness_only_at_the_explicit_stage(
+    monkeypatch,
+):
+    safe = OrderedMapPairs(((ExactTemporal(10**9, 9, "UTC"), "safe"),))
+    collision = OrderedMapPairs(
+        ((ExactTemporal(1, 9, "UTC"), "first"), (ExactTemporal(2, 9, "UTC"), "second"))
+    )
+    stage_type = "MAP(TIMESTAMP(6) WITH TIME ZONE, VARCHAR)"
+    scenario = timestamp_map_transfer(monkeypatch, [safe, collision], stage_type=stage_type)
+    paths = track_spools(monkeypatch)
+
+    with pytest.raises(ValueError, match="cannot be converted to the resolved destination schema"):
+        scenario.run()
+
+    assert scenario.read_count == 1
+    assert "complete:SELECT id FROM source" in scenario.events
+    assert "create_target" not in scenario.events
+    assert scenario.schemas == []
+    assert scenario.loaded == []
+    assert scenario.finalizations == 0
+    assert scenario.existing_types == {"id": "MAP(TIMESTAMP(12) WITH TIME ZONE, VARCHAR)"}
+    assert len(collision) == 2
+    assert paths
+    assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize("explicit_stage", [False, True])
+def test_frozen_timestamp_map_keeps_native_distinct_instants_before_parameter_conversion(
+    monkeypatch, explicit_stage
+):
+    ticks = (1000, 2000) if explicit_stage else (1, 2)
+    source = OrderedMapPairs(
+        (
+            (ExactTemporal(ticks[0], 9, "UTC"), "first"),
+            (ExactTemporal(ticks[1], 9, "UTC"), "second"),
+        )
+    )
+    precision = 6 if explicit_stage else 12
+    stage_type = f"MAP(TIMESTAMP({precision}) WITH TIME ZONE, VARCHAR)"
+    scenario = timestamp_map_transfer(
+        monkeypatch, [source], stage_type=stage_type if explicit_stage else None
+    )
+    paths = track_spools(monkeypatch)
+
+    result = scenario.run(metadata=True)
+
+    actual = scenario.loaded[0][0][0]
+    assert result.rows == 1
+    assert result.metadata.input_count == 1
+    assert scenario.schemas == [{"id": stage_type}]
+    assert len(actual) == 2
+    assert all(not isinstance(key, str) for key in actual)
+    normalized = normalize_value(actual, stage_type)
+    wire = {
+        key if isinstance(key, str) else timestamp_text(key, precision): value
+        for key, value in normalized.items()
+    }
+    fractions = ("000001", "000002") if explicit_stage else ("000000001000", "000000002000")
+    assert wire == {
+        f"1970-01-01 00:00:00.{fractions[0]} UTC": "first",
+        f"1970-01-01 00:00:00.{fractions[1]} UTC": "second",
+    }
+    assert scenario.existing_types == {"id": "MAP(TIMESTAMP(12) WITH TIME ZONE, VARCHAR)"}
+    assert scenario.read_count == 1
+    assert scenario.finalizations == 1
+    assert len(source) == 2
     assert scenario.events.index("complete:SELECT id FROM source") < scenario.events.index(
         "create_target"
     )

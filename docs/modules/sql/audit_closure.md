@@ -307,4 +307,34 @@ The disposable `audit.load.trino_time_map_keys` case in
 also checks native wall-clock keys and unchanged physical `TIME(6)` precision;
 it was not run locally.
 
+Exact Trino timestamp map-key certification is additionally covered by
+`dml/load/trino_timestamp_map_keys.py::test_trino_timestamp_map_equal_instants_cannot_clear_existing_rows`,
+`dml/load/trino_timestamp_map_keys.py::test_trino_timestamp_map_nanosecond_distinctions_reach_native_p12`,
+and `dml/load/trino_timestamp_map_keys.py::test_trino_timestamp_map_dst_fold_keeps_distinct_native_instants`.
+These exercise the native parameter path, equivalent instants at different
+source scales, distinct fractional ticks and composite keys before target
+mutation. The disposable `audit.load.trino_timestamp_map_keys` case in
+`integration/core/audit_trino_timestamp_map_keys.py::test_trino_timestamp_map_identity_rejects_equivalent_exact_keys_before_clear`
+pairs engine-only precision-12 expressions with a physical Iceberg precision-6
+map. It does not require a precision-12 table or a format upgrade and was not
+run locally.
+
+Raw Trino temporal reads and transfer certification are additionally covered by
+`backends/trino/exact_reads.py::test_exact_reads_public_scalar_keeps_raw_nanosecond_timestamp`,
+`backends/trino/exact_reads.py::test_exact_reads_public_map_preserves_nanosecond_distinct_keys`,
+`backends/trino/exact_reads.py::test_exact_reads_all_supported_timestamp_precisions_keep_raw_negative_ticks`,
+and `backends/trino/exact_reads.py::test_exact_reads_public_date_free_clock_preserves_all_native_ticks`.
+These use actual SDK HTTP/raw JSON values before timestamp rounding.
+`dml/transfer/exact_trino_values.py::test_exact_trino_transfer_late_nanoseconds_choose_whole_column_text`,
+`dml/transfer/exact_trino_values.py::test_exact_trino_transfer_profiles_every_key_before_native_schema_publication`,
+`dml/transfer/exact_trino_values.py::test_exact_trino_transfer_retry_replays_certified_pages_without_requery`,
+`dml/transfer/exact_trino_values.py::test_exact_trino_transfer_ambiguous_late_wire_cannot_publish_a_partial_generation`,
+and `dml/transfer/exact_trino_values.py::test_exact_trino_transfer_late_plain_calendar_failure_cannot_publish_partial_input`
+cover complete-input resolution, exact replay and rejection of partial
+generations before destination writes. The disposable
+`audit.read.trino_exact_temporal` case in
+`integration/core/audit_trino_exact_reads.py::test_trino_engine_reads_preserve_exact_temporals_and_nanosecond_map_keys`
+uses engine-only timestamp/clock expressions through precision 12, with no
+high-precision table DDL or format upgrade; it was not run locally.
+
 [SQL module index](index.md)

@@ -9,7 +9,7 @@ from copy import deepcopy
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
-from analytics_toolkit.sql.core.exact_values import decode_value
+from analytics_toolkit.sql.core.exact_values import ExactClock, decode_value
 from sqlglot import exp, parse_one
 
 from tests.sql._support.gp_temporal_values import temporal_target
@@ -24,6 +24,56 @@ def load(frame, **options):
         timeout_increment=0,
         **options,
     )
+
+
+@pytest.mark.parametrize("offset", [None, 0])
+def test_exact_clock_aligned_picosecond_source_loads_into_native_gp_time(monkeypatch, offset):
+    native = "TIME(6)" + (" WITH TIME ZONE" if offset is not None else "")
+    database = temporal_target(monkeypatch, native)
+    raw = ExactClock((12 * 3600 + 30 * 60) * 10**12 + 123456000000, 12, offset)
+    frame = pd.DataFrame({"payload": pd.Series([None, raw, None], dtype=object)})
+    assert load(frame, write_mode="truncate_insert") == 3
+    assert database.target.rows == [{"payload": None}, {"payload": raw.time()}, {"payload": None}]
+    assert database.target.schema == {"payload": native}
+    assert frame.iloc[1, 0] is raw
+    assert (raw.scale, raw.offset_minutes) == (12, offset)
+
+
+def test_exact_clock_single_picosecond_rejects_existing_native_gp_time_before_clear(monkeypatch):
+    database = temporal_target(monkeypatch, "TIME(6)")
+    seed = deepcopy(database.target.rows)
+    raw = ExactClock(1, 12)
+    frame = pd.DataFrame({"payload": pd.Series([raw], dtype=object)})
+    with pytest.raises(ValueError, match="precision or fields"):
+        load(frame, write_mode="truncate_insert")
+    assert database.target.rows == seed
+    assert not database.live_mutations
+    assert frame.iloc[0, 0] is raw
+    assert raw.ticks == 1
+
+
+def test_explicit_gp_clock_precision_rounds_raw_picoseconds_without_mutating_caller(monkeypatch):
+    database = temporal_target(monkeypatch, "TIME(6)")
+    raw = ExactClock(123456789012, 12)
+    frame = pd.DataFrame({"payload": pd.Series([raw], dtype=object)})
+    assert load(frame, write_mode="truncate_insert", table_schema={"payload": "TIME(6)"}) == 1
+    assert database.target.rows == [{"payload": dt.time(0, 0, 0, 123457)}]
+    assert database.target.schema == {"payload": "TIME(6)"}
+    assert frame.iloc[0, 0] is raw
+    assert (raw.ticks, raw.scale) == (123456789012, 12)
+
+
+@pytest.mark.parametrize("offset", [None, 0])
+def test_inferred_gp_text_preserves_exact_clock_when_native_precision_cannot(monkeypatch, offset):
+    database = temporal_target(monkeypatch, "TIME(6)", exists=False)
+    raw = ExactClock(1, 12, offset)
+    frame = pd.DataFrame({"payload": pd.Series([raw], dtype=object)})
+    assert load(frame, write_mode="append") == 1
+    assert database.target.schema == {"payload": "TEXT"}
+    encoded = json.loads(database.target.rows[0]["payload"])
+    assert encoded["v"] == 1
+    assert decode_value(encoded["value"]) == raw
+    assert frame.iloc[0, 0] is raw
 
 
 @pytest.mark.parametrize(

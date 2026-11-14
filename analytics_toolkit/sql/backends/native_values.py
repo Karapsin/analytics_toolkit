@@ -29,6 +29,14 @@ def canonical_native_type(native_type: str | None, backend: str | None) -> str:
     return decimal_target_type(value, backend or "")
 
 
+def validate_transport_value(value: Any, native_type: str, backend: str) -> None:
+    """Certify the real parameter normalizer while retaining native profile values."""
+    if backend == "trino":
+        from .trino.parameters import normalize_value  # noqa: PLC0415 -- native transport.
+
+        normalize_value(value, native_type)
+
+
 def validate_backend_profile(
     profile: ColumnProfile,
     native_type: str,

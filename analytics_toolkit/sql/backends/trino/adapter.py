@@ -15,6 +15,7 @@ from ..utils import sql_in_list as _sql_in_list
 from ..utils import sql_literal
 from ..utils import user_filter as _user_filter
 from . import column_constraints as _column_constraints
+from . import exact_reads as _exact_reads
 from . import insert as _insert
 from . import operations as _operations
 from . import parquet_stage as _parquet_stage
@@ -40,6 +41,7 @@ class TrinoAdapter(DbApiBackendAdapter):
     supports_show_tables_catalog_filter = True
     forbidden_airflow_file_override_fields = _parquet_stage.FORBIDDEN_CREDENTIAL_FIELDS
     load_execution_preview_requires_schema = True
+    requires_value_certification = _exact_reads.requires_value_certification
     prepare_dataframe_payload = _time_values.prepare_dataframe_payload
     validate_dataframe_staging_schema = _time_values.validate_staging_schema
     build_execute_create_as_sqls = _operations.build_execute_create_as_sqls

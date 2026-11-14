@@ -8,11 +8,14 @@ from decimal import Decimal
 from enum import Enum
 from functools import lru_cache
 from numbers import Integral
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from analytics_toolkit.sql.core.exact_values import ExactClock
 
 _MICROSECOND_PRECISION = 6
 _NANOSECOND_PRECISION = 9
@@ -88,12 +91,10 @@ def _scalar(value: Any, target_type: str | None) -> Any:  # noqa: PLR0911 -- sca
     _nested, types, exact = _policies()
     family = types.parse_native_type(target_type).base.name
     if family in {"varchar", "char", "string", "text"}:
-        return (
-            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-            if isinstance(value, (dict, list))
-            else str(value)
-        )
-    if isinstance(value, (dt.datetime, pd.Timestamp, np.datetime64, exact.ExactTemporal)):
+        return _text_parameter(value, target_type)
+    if isinstance(
+        value, (dt.datetime, pd.Timestamp, np.datetime64, exact.ExactTemporal, exact.ExactClock)
+    ):
         return _temporal_parameter(value, target_type, family)
     if family == "bigint":
         value = int(value)  # Retain the historical explicit BIGINT conversion.
@@ -112,8 +113,40 @@ def _scalar(value: Any, target_type: str | None) -> Any:  # noqa: PLR0911 -- sca
     return value
 
 
+def _text_parameter(value: Any, target_type: str | None) -> str:
+    _nested, types, exact = _policies()
+    if isinstance(value, exact.ExactClock):
+        return cast("str", types.ResolvedColumn(target_type, target_backend="trino").convert(value))
+    return (
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        if isinstance(value, (dict, list))
+        else str(value)
+    )
+
+
+def _clock_parameter(value: Any, target_type: str | None) -> Any:
+    from .time_values import convert_time_value, is_time_type  # noqa: PLC0415
+
+    _nested, types, exact = _policies()
+    if target_type and not is_time_type(target_type):
+        return types.ResolvedColumn(target_type, target_backend="trino").convert(value)
+    if target_type is None:
+        ordinary = value.time()
+        if isinstance(ordinary, exact.ExactClock):
+            message = (
+                "Sub-microsecond Trino clock parameters require an explicit TIME precision "
+                "in table_schema or resolved target metadata."
+            )
+            raise ValueError(message)
+        target_type = "TIME(6)" + (" WITH TIME ZONE" if value.offset_minutes is not None else "")
+    converted = convert_time_value(value, target_type)
+    return converted.isoformat() if isinstance(converted, exact.ExactClock) else converted
+
+
 def _temporal_parameter(value: Any, target_type: str | None, family: str) -> Any:
     _nested, types, exact = _policies()
+    if isinstance(value, exact.ExactClock):
+        return _clock_parameter(value, target_type)
     if isinstance(value, np.datetime64):
         value = pd.Timestamp(value)
     if family == "date":
@@ -176,6 +209,8 @@ def literal(value: Any, target_type: str | None) -> str:  # noqa: C901, PLR0911,
     nested, types, exact = _policies()
     if is_null(value):
         return "NULL"
+    if isinstance(value, exact.ExactClock):
+        return _clock_literal(value, target_type)
     kind, children = nested.nested_descriptor(target_type or "")
     if kind:
         _validate(value, target_type or "")
@@ -211,7 +246,7 @@ def literal(value: Any, target_type: str | None) -> str:  # noqa: C901, PLR0911,
         precision = (
             types.timestamp_scale(target_type)
             if target_type
-            else (_NANOSECOND_PRECISION if _submicrosecond(value) else _MICROSECOND_PRECISION)
+            else _literal_timestamp_precision(value)
         )
         return "TIMESTAMP '" + timestamp_text(value, precision) + "'"
     if not target_type:
@@ -238,6 +273,29 @@ def literal(value: Any, target_type: str | None) -> str:  # noqa: C901, PLR0911,
     if isinstance(value, str) or not target_type:
         return f"'{escaped}'"
     return f"CAST('{escaped}' AS {target_type})"
+
+
+def _literal_timestamp_precision(value: Any) -> int:
+    _nested, _types, exact = _policies()
+    if not _submicrosecond(value):
+        return _MICROSECOND_PRECISION
+    return (
+        max(_NANOSECOND_PRECISION, value.scale)
+        if isinstance(value, exact.ExactTemporal)
+        else _NANOSECOND_PRECISION
+    )
+
+
+def _clock_literal(value: Any, target_type: str | None) -> str:
+    from .time_values import convert_time_value, is_time_type  # noqa: PLC0415
+
+    if target_type and not is_time_type(target_type):
+        return literal(_clock_parameter(value, target_type), target_type)
+    native = target_type or (
+        f"TIME({value.scale})" + (" WITH TIME ZONE" if value.offset_minutes is not None else "")
+    )
+    converted = cast("dt.time | ExactClock", convert_time_value(value, native))
+    return f"CAST('{converted.isoformat()}' AS {native})"
 
 
 def _untyped_container_literal(value: Any) -> str | None:

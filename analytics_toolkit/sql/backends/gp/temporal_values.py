@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from analytics_toolkit.sql.backends.value_profiles import ColumnProfile
+    from analytics_toolkit.sql.core.exact_values import ExactClock
 
 _SECOND = 10**9
 _DAY_SECONDS = 86400
@@ -113,9 +114,37 @@ def is_gp_clock_interval_type(native_type: str) -> bool:
 
 
 def temporal_family(value: Any) -> str | None:
-    if isinstance(value, (dt.time, TimeTransport)):
+    if isinstance(value, (dt.time, TimeTransport)) or _exact_clock(value) is not None:
         return "time"
     return "interval" if isinstance(value, (dt.timedelta, IntervalTransport)) else None
+
+
+def _exact_clock(value: Any) -> ExactClock | None:
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 -- registry cycle.
+        ExactClock,
+    )
+
+    return value if isinstance(value, ExactClock) else None
+
+
+def _exact_clock_offset(value: ExactClock) -> int | None:
+    offset = value.offset_minutes * _MINUTE_UNITS if value.offset_minutes is not None else None
+    if offset is not None and abs(offset) >= _OFFSET_LIMIT:
+        message = "Greenplum TIME offset exceeds its native range."
+        raise ValueError(message)
+    return offset
+
+
+def _observe_exact_clock(profile: ColumnProfile, value: ExactClock) -> None:
+    offset = _exact_clock_offset(value)
+    scale = value.scale
+    fraction = value.ticks % 10**scale
+    while scale and fraction % 10 == 0:
+        fraction //= 10
+        scale -= 1
+    profile.temporal_scale = max(profile.temporal_scale, scale)
+    profile.aware |= offset is not None
+    profile.naive |= offset is None
 
 
 def _time_parts(value: Any) -> tuple[int, int | None]:
@@ -209,7 +238,10 @@ def _fraction_scale(ticks: int) -> int:
 def observe_temporal_value(profile: ColumnProfile, value: Any) -> None:
     """Accumulate exact native facts; never retain an input value in a profile."""
     try:
-        if temporal_family(value) == "time":
+        clock = _exact_clock(value)
+        if clock is not None:
+            _observe_exact_clock(profile, clock)
+        elif temporal_family(value) == "time":
             ticks, offset = _time_parts(value)
             profile.temporal_scale = max(profile.temporal_scale, _fraction_scale(ticks))
             profile.aware |= offset is not None
@@ -366,6 +398,8 @@ def freeze_clock_interval_value(value: Any, native_type: str) -> Any:
         message = "A supported Greenplum TIME/INTERVAL destination is required."
         raise ValueError(message)
     if spec.family == "time":
+        if _exact_clock(value) is not None:
+            return value  # Immutable coordinates preserve sub-microticks for exact text fallback.
         if isinstance(value, dt.time):
             return _snapshot_time(value)
         return _time_text(*_time_parts(value), digits=9)
@@ -388,6 +422,16 @@ def convert_clock_interval_value(value: Any, native_type: str) -> Any:
         raise ValueError(message)
     unit = 10 ** (9 - spec.precision)
     if spec.family == "time":
+        clock = _exact_clock(value)
+        if clock is not None:
+            offset = _exact_clock_offset(clock)
+            if clock.scale >= spec.precision:
+                clock_unit = 10 ** (clock.scale - spec.precision)
+                rounded = _round_ticks(clock.ticks, clock_unit) // clock_unit
+            else:
+                rounded = clock.ticks * 10 ** (spec.precision - clock.scale)
+            micros = rounded * 10 ** (_MAX_PRECISION - spec.precision)
+            return _time_text(micros * 1000, offset if spec.with_timezone else None, digits=6)
         ticks, offset = _time_parts(value)
         return _time_text(
             _round_ticks(ticks, unit), offset if spec.with_timezone else None, digits=6

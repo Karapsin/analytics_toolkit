@@ -4,15 +4,18 @@ import datetime as dt
 from uuid import UUID
 
 import numpy as np
+import pandas as pd
 import pytest
 from analytics_toolkit.sql.backends.map_values import converted_map
 from analytics_toolkit.sql.backends.nested_values import row_items
+from analytics_toolkit.sql.backends.trino.parameters import normalize_value, timestamp_text
 from analytics_toolkit.sql.backends.type_resolution import (
     ColumnProfile,
     ResolvedColumn,
     validate_profile,
 )
-from analytics_toolkit.sql.core.exact_values import OrderedMapPairs
+from analytics_toolkit.sql.core.exact_values import ExactTemporal, OrderedMapPairs
+from analytics_toolkit.sql.core.temporal_zones import canonical_named_zone
 
 IDENTIFIER = "abcdefab-cdef-abcd-efab-cdefabcdefab"
 
@@ -287,3 +290,181 @@ def test_time_map_profile_keeps_raw_precision_despite_rounded_identity_conversio
     assert profile.children[0].temporal_scale == 6
     with pytest.raises(ValueError, match="precision"):
         validate_profile(profile, native, "trino", allow_timestamp_precision_loss=False)
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (ExactTemporal(1, 0, "UTC"), ExactTemporal(1000, 3, "UTC")),
+        (ExactTemporal(1, 0, "UTC"), ExactTemporal(1, 0, "Europe/Paris")),
+    ],
+    ids=["equal-ticks-at-different-scales", "utc-and-cet-same-instant"],
+)
+def test_timestamp_instant_aliases_reject_before_late_parameter_string_normalization(first, second):
+    assert first != second
+    source = {first: "first", second: "second"}
+    native = "MAP(TIMESTAMP(12) WITH TIME ZONE, VARCHAR)"
+
+    with pytest.raises(ValueError, match="Converted map keys are not unique"):
+        ResolvedColumn(native, target_backend="trino").convert(source)
+
+
+def test_timestamp_dst_fold_keys_preserve_distinct_sql_instants_despite_python_equality():
+    zone = canonical_named_zone("America/New_York")
+    first = dt.datetime(2025, 11, 2, 1, 30, tzinfo=zone, fold=0)
+    second = dt.datetime(2025, 11, 2, 1, 30, tzinfo=zone, fold=1)
+    assert first == second
+    source = OrderedMapPairs(((first, "first"), (second, "second")))
+    native = "MAP(TIMESTAMP(12) WITH TIME ZONE, VARCHAR)"
+
+    result = ResolvedColumn(native, target_backend="trino").convert(source)
+
+    assert len(result) == 2
+    assert all(not isinstance(key, str) for key in result)
+    assert normalize_value(result, native) == {
+        "2025-11-02 05:30:00.000000000000 UTC": "first",
+        "2025-11-02 06:30:00.000000000000 UTC": "second",
+    }
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_timestamp_instant_identity_recurses_through_row_keys(nested):
+    first = ExactTemporal(1, 0, "UTC")
+    second = ExactTemporal(1000, 3, "UTC")
+    if nested:
+        first, second = ((first,),), ((second,),)
+        key_type = "ROW(outer_key ROW(stamp TIMESTAMP(12) WITH TIME ZONE))"
+    else:
+        first, second = (first,), (second,)
+        key_type = "ROW(stamp TIMESTAMP(12) WITH TIME ZONE)"
+
+    with pytest.raises(ValueError, match="Converted map keys are not unique"):
+        ResolvedColumn(f"MAP({key_type}, VARCHAR)", target_backend="trino").convert(
+            {first: "first", second: "second"}
+        )
+
+
+def test_timestamp_instant_identity_recurses_through_hashable_array_key_payloads():
+    first = (ExactTemporal(1, 0, "UTC"),)
+    second = (ExactTemporal(1000, 3, "UTC"),)
+
+    with pytest.raises(ValueError, match="Converted map keys are not unique"):
+        converted_map(
+            [(first, "first"), (second, "second")],
+            "trino",
+            mapping_input=False,
+            key_type="ARRAY(TIMESTAMP(12) WITH TIME ZONE)",
+        )
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "key_type"),
+    [
+        (
+            ExactTemporal(1, 0, "UTC"),
+            pd.Timestamp("1970-01-01T00:00:01+00:00"),
+            "TIMESTAMP(12) WITH TIME ZONE",
+        ),
+        (
+            ExactTemporal(1, 0, "UTC"),
+            dt.datetime(1970, 1, 1, 0, 0, 1, tzinfo=dt.timezone.utc),
+            "TIMESTAMP(12) WITH TIME ZONE",
+        ),
+        (
+            ExactTemporal(1, 0),
+            np.datetime64("1970-01-01T00:00:01", "ns"),
+            "TIMESTAMP(12)",
+        ),
+    ],
+    ids=["exact-and-pandas", "exact-and-python", "exact-and-numpy-naive"],
+)
+def test_timestamp_map_identity_compares_existing_temporal_carriers_by_native_value(
+    first, second, key_type
+):
+    source = OrderedMapPairs(((first, "first"), (second, "second")))
+
+    with pytest.raises(ValueError, match="Converted map keys are not unique"):
+        ResolvedColumn(f"MAP({key_type}, VARCHAR)", target_backend="trino").convert(source)
+
+
+def test_distinct_nanosecond_timestamp_keys_keep_native_values_until_parameter_conversion():
+    first = pd.Timestamp("2025-01-01T00:00:00.123456789+05:30")
+    second = ExactTemporal(first.tz_convert("UTC").value + 1, 9, "UTC")
+    source = {first: "first", second: "second"}
+    native = "MAP(TIMESTAMP(12) WITH TIME ZONE, VARCHAR)"
+
+    result = ResolvedColumn(native, target_backend="trino").convert(source)
+
+    assert len(result) == 2
+    assert all(not isinstance(key, str) for key in result)
+    assert normalize_value(result, native) == {
+        "2024-12-31 18:30:00.123456789000 UTC": "first",
+        "2024-12-31 18:30:00.123456790000 UTC": "second",
+    }
+    assert first.utcoffset() == dt.timedelta(hours=5, minutes=30)
+    assert len(source) == 2
+
+
+def test_timestamp_map_profile_flags_equal_instants_despite_distinct_raw_tick_scales():
+    native = "MAP(TIMESTAMP(12) WITH TIME ZONE, VARCHAR)"
+    profile = ColumnProfile(native_type=native, source_backend="trino")
+    profile.add({ExactTemporal(1, 0, "UTC"): "first", ExactTemporal(1000, 3, "UTC"): "second"})
+
+    assert profile.map_duplicate_keys
+    with pytest.raises(ValueError, match="keys in the authoritative map schema"):
+        validate_profile(profile, native, "trino")
+
+
+def test_timestamp_map_profile_keeps_dst_fold_instants_distinct_without_losing_raw_precision():
+    zone = canonical_named_zone("America/New_York")
+    first = dt.datetime(2025, 11, 2, 1, 30, 0, 123456, tzinfo=zone, fold=0)
+    second = first.replace(fold=1)
+    native = "MAP(TIMESTAMP(12) WITH TIME ZONE, VARCHAR)"
+    profile = ColumnProfile(native_type=native, source_backend="trino")
+    profile.add(OrderedMapPairs(((first, "first"), (second, "second"))))
+
+    assert not profile.map_duplicate_keys
+    assert profile.map_comparable_keys
+    assert profile.children[0].temporal_scale == 6
+    validate_profile(profile, native, "trino")
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_wall", "offset"),
+    [
+        ("2025-01-01T12:00:00.123456789+00:00", "12:00:00", dt.timedelta()),
+        (
+            "2025-01-01T12:00:00.123456789+05:30",
+            "06:30:00",
+            dt.timedelta(hours=5, minutes=30),
+        ),
+    ],
+)
+@pytest.mark.parametrize("precision", [6, 12])
+def test_timestamp_map_frozen_context_keeps_actual_parameter_projection_idempotent(
+    raw, expected_wall, offset, precision
+):
+    first = pd.Timestamp(raw)
+    source = {first: "value"}
+    native = f"MAP(TIMESTAMP({precision}), VARCHAR)"
+    conversion = ResolvedColumn(
+        native, target_backend="trino", destination_timezone="America/New_York"
+    )
+
+    result = conversion.convert(source)
+    repeated = conversion.convert(result)
+
+    assert len(result) == 1
+    assert len(repeated) == 1
+    assert all(not isinstance(key, str) for key in result)
+    fraction = "123456" if precision == 6 else "123456789000"
+    expected = f"2025-01-01 {expected_wall}.{fraction}"
+    for version in (result, repeated):
+        normalized = normalize_value(version, native)
+        assert len(normalized) == 1
+        key = next(iter(normalized))
+        text = key if isinstance(key, str) else timestamp_text(key, precision)
+        assert (text[:-4] if text.endswith(" UTC") else text) == expected
+        assert list(normalized.values()) == ["value"]
+    assert list(source) == [first]
+    assert first.utcoffset() == offset

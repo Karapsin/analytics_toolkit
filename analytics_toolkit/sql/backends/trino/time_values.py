@@ -6,7 +6,7 @@ import datetime as dt
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from analytics_toolkit.sql.backends.value_profiles import ColumnProfile
+    from analytics_toolkit.sql.core.exact_values import ExactClock
 
-_DAY_MICROSECONDS = 86400 * 10**6
 _MINUTE_MICROSECONDS = 60 * 10**6
 _OFFSET_LIMIT = 14 * 60 * _MINUTE_MICROSECONDS
 _MAX_PRECISION = 12
@@ -89,12 +89,14 @@ def _offset(value: dt.time) -> dt.timedelta | None:
     return offset
 
 
-def freeze_time_value(value: Any) -> dt.time:
+def freeze_time_value(value: Any) -> dt.time | ExactClock:
     """Capture a clock before choosing native TIME or exact typed text."""
-    from analytics_toolkit.sql.core.exact_values import unwrap_enum  # noqa: PLC0415
+    from analytics_toolkit.sql.core.exact_values import ExactClock, unwrap_enum  # noqa: PLC0415
     from analytics_toolkit.sql.core.temporal_zones import canonical_named_zone  # noqa: PLC0415
 
     value = unwrap_enum(value)
+    if isinstance(value, ExactClock):
+        return value
     if not isinstance(value, dt.time):
         message = "Selected input is incompatible with authoritative Trino TIME values."
         raise TypeError(message)
@@ -118,8 +120,16 @@ def freeze_time_value(value: Any) -> dt.time:
     )
 
 
-def _snapshot_time(value: Any) -> dt.time:
+def _snapshot_time(value: Any) -> dt.time | ExactClock:
+    from analytics_toolkit.sql.core.exact_values import ExactClock  # noqa: PLC0415
+
     value = freeze_time_value(value)
+    if isinstance(value, ExactClock):
+        if value.offset_minutes is not None and abs(value.offset_minutes) > 14 * 60:
+            message = "Trino TIME offsets must be whole minutes within -14:00 and +14:00."
+            raise ValueError(message)
+        ordinary = value.time()
+        return value if isinstance(ordinary, ExactClock) else _snapshot_time(ordinary)
     offset = _offset(value)
     zone = None
     if offset is not None:
@@ -132,6 +142,17 @@ def _snapshot_time(value: Any) -> dt.time:
     return dt.time(
         value.hour, value.minute, value.second, value.microsecond, tzinfo=zone, fold=value.fold
     )
+
+
+def _clock_coordinates(value: dt.time | ExactClock) -> ExactClock:
+    from analytics_toolkit.sql.core.exact_values import ExactClock  # noqa: PLC0415
+
+    if isinstance(value, ExactClock):
+        return value
+    offset = value.utcoffset()
+    minutes = None if offset is None else (offset.days * 86400 + offset.seconds) // 60
+    ticks = (value.hour * 3600 + value.minute * 60 + value.second) * 10**6 + value.microsecond
+    return ExactClock(ticks, _NATIVE_PRECISION, minutes, value.tzname())
 
 
 def observe_time_value(profile: ColumnProfile, value: Any) -> None:
@@ -164,27 +185,36 @@ def validate_time_profile(
     return True
 
 
-def convert_time_value(value: Any, native_type: str) -> dt.time | None:
+def convert_time_value(value: Any, native_type: str) -> dt.time | ExactClock | None:
     """Round intentional precision conversions; leave timezone casts to Trino."""
-    from analytics_toolkit.sql.core.exact_values import is_null, unwrap_enum  # noqa: PLC0415
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
+        ExactClock,
+        is_null,
+        unwrap_enum,
+    )
 
     spec = _checked_type(native_type)
     value = unwrap_enum(value)
     if is_null(value):
         return None
     value = _snapshot_time(value)
-    ticks = (value.hour * 3600 + value.minute * 60 + value.second) * 10**6 + value.microsecond
-    unit = 10 ** max(0, _NATIVE_PRECISION - spec.precision)
-    ticks = ((ticks + unit // 2) // unit * unit) % _DAY_MICROSECONDS
-    seconds, fraction = divmod(ticks, 10**6)
-    hour, seconds = divmod(seconds, 3600)
-    minute, second = divmod(seconds, 60)
-    return dt.time(hour, minute, second, fraction, tzinfo=value.tzinfo, fold=value.fold)
+    clock = _clock_coordinates(value)
+    if clock.scale > spec.precision:
+        unit = 10 ** (clock.scale - spec.precision)
+        ticks = (clock.ticks + unit // 2) // unit
+    else:
+        ticks = clock.ticks_floor(spec.precision)
+    ticks %= 86400 * 10**spec.precision
+    converted = ExactClock(ticks, spec.precision, clock.offset_minutes, clock.timezone_name).time()
+    if isinstance(converted, ExactClock):
+        return converted
+    converted = cast("dt.time", _snapshot_time(converted))
+    return converted.replace(fold=value.fold if isinstance(value, dt.time) else 0)
 
 
 def time_key_value_and_identity(
     value: Any, native_type: str | None
-) -> tuple[bool, dt.time | None, int | None]:
+) -> tuple[bool, dt.time | ExactClock | None, int | None]:
     """Return a lossless key payload and its native Trino equality identity."""
     if not is_time_type(native_type or ""):
         return False, None, None
@@ -194,25 +224,25 @@ def time_key_value_and_identity(
     if value is None:
         message = "Trino TIME map keys cannot be NULL."
         raise ValueError(message)
-    ticks = (value.hour * 3600 + value.minute * 60 + value.second) * 10**6 + value.microsecond
+    clock = _clock_coordinates(value)
+    identity_scale = max(_NATIVE_PRECISION, spec.precision)
+    ticks = clock.ticks_floor(identity_scale)
     if spec.with_timezone:
-        offset = value.utcoffset()
-        if offset is None:
+        if clock.offset_minutes is None:
             message = (
                 "Cannot certify Trino TIME WITH TIME ZONE map keys without a fixed UTC offset; "
                 "the native cast uses the session timezone at query start."
             )
             raise ValueError(message)
-        ticks -= (offset.days * 86400 + offset.seconds) * 10**6 + offset.microseconds
-    ticks %= _DAY_MICROSECONDS
+        ticks -= clock.offset_minutes * 60 * 10**identity_scale
+    ticks %= 86400 * 10**identity_scale
     if spec.with_timezone:
         # Python-equal aware keys are native-equal too. Retain their stored
         # offsets; the separate modulo-day identity detects the reverse case.
         return True, value, ticks
-    seconds, fraction = divmod(ticks, 10**6)
-    hour, seconds = divmod(seconds, 3600)
-    minute, second = divmod(seconds, 60)
-    return True, dt.time(hour, minute, second, fraction), ticks
+    from analytics_toolkit.sql.core.exact_values import ExactClock  # noqa: PLC0415
+
+    return True, ExactClock(clock.ticks, clock.scale).time(), ticks
 
 
 def time_key_identity(value: Any, native_type: str | None) -> tuple[bool, int | None]:
@@ -284,14 +314,18 @@ def prepare_dataframe_payload(
 ) -> pd.DataFrame | None:
     """Own timezone callbacks once before validation, mutation and data replay."""
     del self
-    from analytics_toolkit.sql.core.exact_values import is_null, unwrap_enum  # noqa: PLC0415
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
+        ExactClock,
+        is_null,
+        unwrap_enum,
+    )
 
     columns: list[tuple[int, Any, str | None]] = []
     if schema is None:
         for index, name in enumerate(df.columns):
             logical_values = (unwrap_enum(value) for value in df.iloc[:, index])
             values = [value for value in logical_values if not is_null(value)]
-            if values and all(isinstance(value, dt.time) for value in values):
+            if values and all(isinstance(value, (dt.time, ExactClock)) for value in values):
                 columns.append((index, name, None))
     else:
         columns = [

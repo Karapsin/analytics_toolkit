@@ -196,7 +196,11 @@ def convert_nested(
         from .map_values import converted_map  # noqa: PLC0415 - preserve converted key identity
 
         return converted_map(
-            pairs, backend, mapping_input=isinstance(value, dict), key_type=children[0][1]
+            pairs,
+            backend,
+            mapping_input=isinstance(value, dict),
+            key_type=children[0][1],
+            destination_timezone=destination_timezone,
         )
     return value
 

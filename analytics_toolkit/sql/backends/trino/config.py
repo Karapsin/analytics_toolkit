@@ -156,4 +156,6 @@ def open_connection(
     if config.source:
         connect_kwargs["source"] = config.source
 
-    return trino.dbapi.connect(**connect_kwargs)
+    from .exact_reads import connect_exact  # noqa: PLC0415 -- optional native driver.
+
+    return connect_exact(trino.dbapi.connect, **connect_kwargs)

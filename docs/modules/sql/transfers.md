@@ -311,12 +311,26 @@ Same-ClickHouse transfers retain native widths through 256 bits, Date32,
 DateTime64 precision and timezone, and nested native types. Inferred Trino
 timestamps use explicit precision 6 for the supported Iceberg contract.
 
+Trino source decoding preserves raw timestamp fractions through precision 12,
+including nested values and distinct map keys, before SDK rounding. Explicit or
+existing destinations that support precision 9 or 12 retain those native ticks;
+default inferred Trino timestamps remain precision 6. Greenplum microsecond and
+ClickHouse precision-9 limits remain unchanged. A lower inferred precision must
+fit every value exactly; an explicit reduction remains a caller conversion.
+No connector or table-format upgrade is performed. Date-free clocks retain
+their ticks and offset without acquiring a date.
+
 When source metadata cannot prove an exact destination representation, transfer
 profiles the complete selected input before creating or mutating the destination.
 Every keyed slice contributes to one schema. The adaptive path freezes the rows
 in a run-owned, length-framed, versioned checkpoint and replays those rows rather
 than running a mutable source query again. Declared types that fit retain the
-streaming path. Explicit `table_schema` and existing destination types remain
+streaming path unless complete source-value validation is required. Trino
+`DATE`/`TIMESTAMP` sources and map-key conversions requiring certification are
+read completely before any destination write. A late ambiguous wire value or
+unsupported calendar invalidates the incomplete generation and releases its
+local checkpoint. Other scalar, date-free clock and proven-safe map paths
+remain lazy. Explicit `table_schema` and existing destination types remain
 authoritative: inference never widens an existing table or changes its numeric
 columns into text. Explicitly requested timestamp precision reduction is a
 deliberate caller conversion. Date values supplied to timestamp columns become

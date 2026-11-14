@@ -12,6 +12,7 @@ import pyarrow.parquet as pq
 import pytest
 from analytics_toolkit.sql.backends.models import SourceColumn
 from analytics_toolkit.sql.backends.trino.parquet_stage import _infer_trino_type_from_values
+from analytics_toolkit.sql.core.exact_values import ExactTemporal
 from analytics_toolkit.sql.dml.transfer.flow.parquet_stage import (
     row_batch_to_arrow_table,
     write_batch_to_parquet_stage,
@@ -42,6 +43,34 @@ TYPES = {
     "uuid": "UUID",
     "event_at": "TIMESTAMP(6) WITH TIME ZONE",
 }
+
+
+@pytest.mark.parametrize("zoned", [False, True])
+@pytest.mark.parametrize("dataframe", [False, True])
+def test_picosecond_timestamps_keep_exact_text_in_physical_parquet_stage(zoned, dataframe):
+    native = "TIMESTAMP(12)" + (" WITH TIME ZONE" if zoned else "")
+    value = ExactTemporal(123456789012, 12, "UTC" if zoned else None, wall_time=not zoned)
+    location = f"memory://exact-picosecond-stage/{zoned}/{dataframe}"
+    kwargs = {
+        "stage_external_location": location,
+        "pa": pa,
+        "pq": pq,
+        "fsspec_module": fsspec,
+        "row_group_size": 2,
+        "column_types": {"event_at": native},
+    }
+    if dataframe:
+        frame = pd.DataFrame({"event_at": pd.Series([value, None], dtype=object)})
+        assert write_dataframe_to_parquet_stage(frame, **kwargs) == 2
+    else:
+        batch = RowBatch(["event_at"], [(value,), (None,)])
+        assert write_batch_to_parquet_stage(batch, file_index=0, **kwargs) == 2
+    with fsspec.open(f"{location}/part-00000.parquet", "rb") as stream:
+        table = pq.read_table(pa.BufferReader(stream.read()))
+    assert table.schema.field("event_at").type == pa.string()
+    expected = "1970-01-01T00:00:00.123456789012" + ("+00:00" if zoned else "")
+    assert table.column("event_at").to_pylist() == [expected, None]
+    assert value.ticks == 123456789012
 
 
 def assert_exact(table):

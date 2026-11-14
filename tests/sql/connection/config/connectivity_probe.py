@@ -23,6 +23,7 @@ from analytics_toolkit.sql.connection.validation import (
 
 from tests.sql._support.connection_config import (
     _direct_trino_config,
+    _expected_trino_read_options,
     _install_fake_trino,
     config_module,
     connection_module,
@@ -131,6 +132,9 @@ def test_trino_validation_budget_and_no_retry(configured, expected, monkeypatch)
         )
     assert calls[0]["request_timeout"] == expected
     assert calls[0]["max_attempts"] == 1
+    assert len(calls) == 1
+    for name, value in _expected_trino_read_options().items():
+        assert calls[0][name] == value
 
 
 @pytest.mark.parametrize("driver", ["http", "native"])

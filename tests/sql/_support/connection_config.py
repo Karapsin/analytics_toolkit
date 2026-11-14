@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import importlib
+import inspect
 import json
 import os
 import subprocess
@@ -10,6 +11,7 @@ import types
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import NoReturn
 
 import analytics_toolkit.general as general_module
 import pandas as pd
@@ -141,25 +143,51 @@ def _write_cert(relative_path: str, contents: str = "CERT\n") -> Path:
     return path
 
 
+class _ConfigTrinoConnection:
+    """Support lazy client decoration without permitting query execution."""
+
+    def _create_request(self) -> NoReturn:
+        message = "Configuration-only Trino clients must not create requests."
+        raise AssertionError(message)
+
+    def cursor(self, **_kwargs: object) -> NoReturn:
+        message = "Configuration-only Trino clients must not execute queries."
+        raise AssertionError(message)
+
+
+def _expected_trino_read_options() -> dict[str, object]:
+    parameters = inspect.signature(importlib.import_module("trino.dbapi").Connection).parameters
+    if "legacy_primitive_types" in parameters:
+        expected: dict[str, object] = {"legacy_primitive_types": True}
+    else:
+        assert "experimental_python_types" in parameters
+        expected = {"experimental_python_types": False}
+    if "encoding" in parameters:
+        expected["encoding"] = None
+    return expected
+
+
 def _install_fake_trino(
     monkeypatch: pytest.MonkeyPatch,
     connect_calls: list[dict[str, object]],
-) -> None:
+) -> type:
     class FakeBasicAuthentication:
         def __init__(self, user: str, password: str | None) -> None:
             self.user = user
             self.password = password
 
-    fake_auth = types.ModuleType("trino.auth")
-    fake_auth.BasicAuthentication = FakeBasicAuthentication
-    fake_auth.OAuth2Authentication = lambda: object()
-    fake_trino = types.ModuleType("trino")
-    fake_trino.auth = fake_auth
-    fake_trino.dbapi = types.SimpleNamespace(
-        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
-    )
-    monkeypatch.setitem(sys.modules, "trino", fake_trino)
-    monkeypatch.setitem(sys.modules, "trino.auth", fake_auth)
+    def connect(**kwargs: object) -> _ConfigTrinoConnection:
+        connect_calls.append(kwargs)
+        return _ConfigTrinoConnection()
+
+    # Retain the installed SDK's native signatures and mapper modules. Replacing
+    # the package can contaminate cached interface discovery in later read tests.
+    native_auth = importlib.import_module("trino.auth")
+    native_dbapi = importlib.import_module("trino.dbapi")
+    monkeypatch.setattr(native_auth, "BasicAuthentication", FakeBasicAuthentication)
+    monkeypatch.setattr(native_auth, "OAuth2Authentication", lambda: object())
+    monkeypatch.setattr(native_dbapi, "connect", connect)
+    return FakeBasicAuthentication
 
 
 def _direct_trino_config(**overrides: object) -> types.SimpleNamespace:
@@ -194,6 +222,7 @@ __all__ = [
     "SqlTableReadinessError",
     "UnsupportedConnectionTypeError",
     "_direct_trino_config",
+    "_expected_trino_read_options",
     "_fake_drop_target_sqls",
     "_install_fake_trino",
     "_resolve_calling_base_dir",

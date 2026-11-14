@@ -5,6 +5,8 @@ from decimal import Decimal
 
 import pandas as pd
 import pytest
+from analytics_toolkit.sql.backends.conversion_profiles import validate_converted_rows
+from analytics_toolkit.sql.backends.native_values import validate_transport_value
 from analytics_toolkit.sql.backends.type_resolution import (
     ColumnProfile,
     ResolvedColumn,
@@ -13,6 +15,7 @@ from analytics_toolkit.sql.backends.type_resolution import (
     resolve_profile,
     validate_profile,
 )
+from analytics_toolkit.sql.core.exact_values import ExactTemporal, OrderedMapPairs
 from analytics_toolkit.sql.dml.load.type_validation import (
     _schema_value,
     convert_dataframe_schema,
@@ -178,3 +181,29 @@ def test_backend_default_decimal_shape_precedes_explicit_float_conversion(backen
     assert converted.iloc[0, 0] == Decimal(123)
     assert converted.iloc[0, 0].as_tuple().exponent == 0
     assert type(frame.iloc[0, 0]) is float
+
+
+def test_transport_certification_keeps_exact_timestamp_profiles_before_text_binding():
+    value = ExactTemporal(1, 9, "UTC")
+    native = "TIMESTAMP(12) WITH TIME ZONE"
+    profile = validate_converted_rows(
+        [(value,), (None,)], [ResolvedColumn(native, target_backend="trino")], backend="trino"
+    )[0]
+
+    assert profile.count == 2
+    assert profile.null_count == 1
+    assert profile.families == {"timestamp"}
+    assert profile.minimum_timestamp_ns == profile.maximum_timestamp_ns == 1
+    assert profile.temporal_scale == 9
+    assert profile.native_type == native
+    assert value == ExactTemporal(1, 9, "UTC")
+
+
+def test_transport_preflight_rejects_real_untyped_timestamp_parameter_aliases():
+    first, second = ExactTemporal(1, 0, "UTC"), ExactTemporal(1000, 3, "UTC")
+    value = OrderedMapPairs(((first, "first"), (second, "second")))
+
+    with pytest.raises(ValueError, match="distinct, non-NULL, comparable keys"):
+        validate_transport_value(value, "", "trino")
+
+    assert list(value.items()) == [(first, "first"), (second, "second")]

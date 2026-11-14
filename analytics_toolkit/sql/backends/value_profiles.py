@@ -185,7 +185,7 @@ class ColumnProfile:
                 scale -= 1
             self.temporal_scale = max(self.temporal_scale, scale)
             if exact:
-                ticks = value.ticks * 10 ** (9 - value.scale)
+                ticks = value.ticks_floor(9)
                 stamp = value.calendar_datetime(utc=True)
             else:
                 if stamp.tzinfo is not None:
@@ -303,7 +303,10 @@ class ColumnProfile:
                                 destination_timezone=self.destination_timezone,
                             ).convert(key)
                             normalized_key = profile_map_key_identity(
-                                normalized_key, child_types[0][1], self.source_backend or ""
+                                normalized_key,
+                                child_types[0][1],
+                                self.source_backend or "",
+                                self.destination_timezone,
                             )
                         self.map_duplicate_keys |= normalized_key in seen
                         seen.add(normalized_key)

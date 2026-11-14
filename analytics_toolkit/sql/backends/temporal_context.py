@@ -17,6 +17,7 @@ from analytics_toolkit.sql.core.temporal_zones import (
 )
 
 __all__ = ["TIMEZONE_POLICY_VERSION", "canonical_named_zone", "localize_wall", "timezone_info"]
+_MICROSECOND_SCALE = 6
 
 if TYPE_CHECKING:
     from .value_profiles import ColumnProfile
@@ -48,7 +49,7 @@ def localize_value(value: Any, target: str, destination_timezone: str | None = N
     )
 
     if isinstance(value, ExactTemporal):
-        return value
+        return _localize_exact_wall(value, effective_timezone(target, destination_timezone))
     is_date = isinstance(value, dt.date) and not isinstance(value, dt.datetime)
     if not isinstance(value, (dt.date, pd.Timestamp)):
         return value
@@ -65,18 +66,32 @@ def localize_value(value: Any, target: str, destination_timezone: str | None = N
     return value.tz_localize(selected)
 
 
+def _localize_exact_wall(value: Any, zone: str | None) -> Any:
+    """Resolve only explicitly marked wall coordinates, retaining every raw tick."""
+    if not value.wall_time or zone is None:
+        return value
+    from analytics_toolkit.sql.core.exact_values import ExactTemporal  # noqa: PLC0415
+
+    selected = localize_wall(value.calendar_datetime().replace(tzinfo=None), timezone_info(zone))
+    offset = selected.utcoffset() or dt.timedelta(0)
+    offset_us = (offset.days * 86400 + offset.seconds) * 10**6 + offset.microseconds
+    scale = value.scale
+    offset_ticks = (
+        offset_us * 10 ** (scale - _MICROSECOND_SCALE)
+        if scale >= _MICROSECOND_SCALE
+        else offset_us // 10 ** (_MICROSECOND_SCALE - scale)
+    )
+    return ExactTemporal(value.ticks_floor(scale) - offset_ticks, scale, zone)
+
+
 def context_ticks(value: Any, zone: str | None) -> int:
     """Localize wall time without overflowing pandas' nanosecond container."""
     from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - value cycle
-        MAX_TEMPORAL_SCALE,
         ExactTemporal,
     )
 
     if isinstance(value, ExactTemporal):
-        if not 0 <= value.scale <= MAX_TEMPORAL_SCALE:
-            msg = "Raw timestamp scale must be between zero and nine."
-            raise ValueError(msg)
-        return int(value.ticks * 10 ** (9 - value.scale))
+        return int(_localize_exact_wall(value, zone).ticks_floor(9))
     fraction = value.nanosecond if isinstance(value, pd.Timestamp) else 0
     stamp = value.to_pydatetime(warn=False) if isinstance(value, pd.Timestamp) else value
     if not isinstance(stamp, dt.datetime):
@@ -109,7 +124,7 @@ def observe_context(profile: ColumnProfile, value: Any) -> None:
     zone = effective_timezone(profile.temporal_type, profile.destination_timezone)
     raw = isinstance(value, ExactTemporal)
     date_only = isinstance(value, dt.date) and not isinstance(value, dt.datetime)
-    naive = not raw and (date_only or value.tzinfo is None)
+    naive = value.wall_time if raw else date_only or value.tzinfo is None
     ticks = context_ticks(value, None)
     low, high = (
         ("minimum_naive_timestamp_ns", "maximum_naive_timestamp_ns")

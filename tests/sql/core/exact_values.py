@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 from decimal import Decimal
 from uuid import UUID
 
@@ -11,6 +12,13 @@ from analytics_toolkit.sql.backends.ch.insert import (
     normalize_batch,
     normalize_typed_batch,
     normalize_typed_row,
+)
+from analytics_toolkit.sql.backends.temporal_context import localize_value
+from analytics_toolkit.sql.backends.type_resolution import (
+    ColumnProfile,
+    ResolvedColumn,
+    resolve_profile,
+    validate_profile,
 )
 from analytics_toolkit.sql.core import exact_values as exact
 from analytics_toolkit.sql.core.exact_values import (
@@ -24,6 +32,7 @@ from analytics_toolkit.sql.core.exact_values import (
     is_null,
     typed_text,
 )
+from analytics_toolkit.sql.core.replay_spool import ReplaySpool
 
 
 @pytest.mark.parametrize("position", [0, 1, 2])
@@ -155,7 +164,7 @@ def test_typed_text_preserves_exact_values_and_utc_awareness() -> None:
     assert normalize_typed_row(["data"], [Decimal("1E+5")], {"data": "String"}) == ("100000",)
 
 
-@pytest.mark.parametrize("scale", range(10))
+@pytest.mark.parametrize("scale", range(13))
 @pytest.mark.parametrize("timezone", [None, "UTC", "Europe/Moscow"])
 def test_raw_temporal_ticks_text_retains_full_scale_and_timezone(scale, timezone):
     value = ExactTemporal(-1, scale, timezone)
@@ -183,8 +192,9 @@ def test_raw_temporal_outside_pandas_nanosecond_range_keeps_ticks() -> None:
     assert value.timestamp() == value
     assert typed_text(value) == "2299-01-01T00:00:00.0000001+00:00"
     assert decode_value(encode_value(value)) == value
-    with pytest.raises(ValueError, match="scale"):
-        ExactTemporal(1, 10).timestamp()
+    for scale in (-1, exact.MAX_EXACT_SCALE + 1):
+        with pytest.raises(ValueError, match="scale"):
+            ExactTemporal(1, scale).timestamp()
     with pytest.raises(ValueError, match="timezone"):
         ExactTemporal(0, 0, "Not/A/Timezone").calendar_datetime()
 
@@ -258,3 +268,127 @@ def test_raw_offset_naive_clock_identity_survives_text_and_spool_tags() -> None:
     assert value.calendar_datetime(utc=True).tzinfo is None
     assert decode_value(encode_value(value)) == value
     assert decode_value(["ticks", "1", 7, "UTC"]) == ExactTemporal(1, 7, "UTC")
+
+
+@pytest.mark.parametrize("scale", [10, 11, 12])
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_subnanosecond_timestamps_only_narrow_when_actual_ticks_are_aligned(scale, sign):
+    raw = ExactTemporal(sign, scale, "UTC")
+    assert raw.timestamp() is raw
+    assert raw.ticks_floor(9) == (-1 if sign < 0 else 0)
+    assert raw.ticks_floor(12) == sign * 10 ** (12 - scale)
+    assert decode_value(encode_value(raw)) == raw
+    assert typed_text(raw) == raw.isoformat(utc=True)
+
+    nanoseconds = sign * 123456789
+    aligned = ExactTemporal(nanoseconds * 10 ** (scale - 9), scale, "UTC")
+    native = aligned.timestamp()
+    assert isinstance(native, pd.Timestamp)
+    assert native.value == nanoseconds
+    assert native.tzinfo is not None
+    assert aligned.scale == scale
+    assert aligned.ticks == nanoseconds * 10 ** (scale - 9)
+    assert exact.MAX_TEMPORAL_SCALE == 9
+    assert exact.MAX_EXACT_SCALE == 12
+
+
+def test_precision12_wall_provenance_and_old_tick_tags_survive_certified_replay():
+    legacy = ExactTemporal(-1, 12, "UTC")
+    wall = ExactTemporal(1, 12, wall_time=True)
+    pairs = OrderedMapPairs(((legacy, "before"), (wall, [None, legacy])))
+    row = (legacy, wall, pairs, None)
+    with ReplaySpool(["instant", "wall", "map", "null"]) as spool:
+        spool.write_rows([row])
+        spool.certify()
+        assert spool.row_count == 1
+        assert spool.path.read_bytes().startswith(b"ATK-ROWS\x01\n")
+        assert list(spool.iter_rows()) == [row]
+        assert list(spool.iter_rows()) == [row]
+    assert encode_value(legacy) == ["ticks", "-1", 12, "UTC", False]
+    assert encode_value(wall) == ["ticks", "1", 12, None, False, True]
+    assert decode_value(["ticks", "1", 9, None]) == ExactTemporal(1, 9)
+    assert decode_value(["ticks", "1", 9, "UTC", True]) == ExactTemporal(1, 9, "UTC", True)
+    payload = json.loads(typed_text(pairs, source_backend="trino", source_type="MAP"))
+    assert payload["v"] == 1
+    assert decode_value(payload["value"]) == pairs
+    assert typed_text(legacy) == "1969-12-31T23:59:59.999999999999+00:00"
+    assert typed_text(wall) == "1970-01-01T00:00:00.000000000001"
+
+
+@pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
+def test_precision12_inference_uses_complete_tick_alignment_before_native_or_text(backend):
+    aligned = ExactTemporal(123456 * 10**6, 12, "UTC")
+    profile = ColumnProfile()
+    profile.add(aligned)
+    native = resolve_profile(profile, backend)
+    assert not native.text_fallback
+    assert profile.temporal_scale == 6
+    assert (
+        native.target_type
+        == {
+            "gp": "TIMESTAMP WITH TIME ZONE",
+            "trino": "TIMESTAMP(6) WITH TIME ZONE",
+            "ch": "DateTime64(6, 'UTC')",
+        }[backend]
+    )
+
+    last = ExactTemporal(1, 12, "UTC")
+    profile.add(last)
+    fallback = resolve_profile(profile, backend)
+    assert profile.temporal_scale == 12
+    assert isinstance(profile.minimum_timestamp_ns, int)
+    assert profile.minimum_timestamp_ns == 0
+    assert fallback.text_fallback
+    assert fallback.convert(last) == "1970-01-01T00:00:00.000000000001+00:00"
+    assert fallback.convert(None) is None
+
+
+def test_precision12_explicit_native_schema_retains_ticks_and_strict_existing_precision_rejects():
+    value = ExactTemporal(1, 12, "UTC")
+    profile = ColumnProfile()
+    profile.add(value)
+    native = resolve_profile(
+        profile,
+        "trino",
+        authoritative_type="TIMESTAMP(12) WITH TIME ZONE",
+        allow_timestamp_precision_loss=False,
+    )
+    assert not native.text_fallback
+    assert native.convert(value) == value
+    with pytest.raises(ValueError, match="timestamp precision"):
+        resolve_profile(
+            profile,
+            "gp",
+            authoritative_type="TIMESTAMP(6) WITH TIME ZONE",
+            allow_timestamp_precision_loss=False,
+        )
+    narrowed = resolve_profile(profile, "gp", authoritative_type="TIMESTAMP(6) WITH TIME ZONE")
+    assert narrowed.convert(value) == dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc)
+    with pytest.raises(ValueError, match="timestamp scale"):
+        validate_profile(profile, "DateTime64(12, 'UTC')", "ch")
+
+
+@pytest.mark.parametrize(
+    ("backend", "native"), [("trino", "TIMESTAMP(12) WITH TIME ZONE"), ("ch", "DateTime64(9)")]
+)
+def test_precision12_wall_input_localizes_once_but_legacy_instant_coordinates_stay_fixed(
+    backend, native
+):
+    zone = "America/New_York"
+    raw = ExactTemporal(1, 12, wall_time=True)
+    localized = localize_value(raw, native, zone)
+    assert localized == ExactTemporal(18000 * 10**12 + 1, 12, zone)
+    assert localize_value(localized, native, zone) is localized
+    assert raw == ExactTemporal(1, 12, wall_time=True)
+    profile = ColumnProfile(destination_timezone=zone, temporal_type=native)
+    profile.add(raw)
+    assert profile.temporal_scale == 12
+    assert profile.minimum_context_timestamp_ns == 18000 * 10**9
+    assert isinstance(profile.minimum_context_timestamp_ns, int)
+    converted = ResolvedColumn(native, target_backend=backend, destination_timezone=zone).convert(
+        raw
+    )
+    assert converted == (localized if backend == "trino" else ExactTemporal(18000 * 10**9, 9, zone))
+    legacy = ExactTemporal(1, 12, None, False)
+    assert localize_value(legacy, native, zone) is legacy
+    assert not legacy.wall_time

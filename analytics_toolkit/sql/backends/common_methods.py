@@ -41,6 +41,11 @@ class DataframePreparationPolicy:
         """Backends without an alternate dataframe stage have no extra restriction."""
         del self, schema, use_parquet
 
+    def requires_value_certification(self, native_types: Sequence[str]) -> bool:
+        """Ordinary source transports cover their declared supported native domains."""
+        del self, native_types
+        return False
+
 
 def column_list_sql(self: Any, columns: Sequence[str]) -> str:
     return ", ".join(self.quote_identifier(column_name) for column_name in columns)

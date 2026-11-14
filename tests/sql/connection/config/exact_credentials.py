@@ -10,6 +10,7 @@ from analytics_toolkit.sql.backends.ch.recovery_endpoints import RecoveryEndpoin
 
 from tests.sql._support.connection_config import (
     FakeAirflowConnection,
+    _expected_trino_read_options,
     _install_fake_trino,
     config_module,
     connection_module,
@@ -73,6 +74,8 @@ def test_explicit_empty_trino_password_uses_basic_auth(monkeypatch, write_sql_co
     _install_fake_trino(monkeypatch, calls)
     sql.get_sql_connection("target")
     assert calls[0]["auth"].password == ""
+    for name, value in _expected_trino_read_options().items():
+        assert calls[0][name] == value
 
 
 @pytest.mark.parametrize("value", ["cert.pem", "truthy", "", 1, "yes", "0"])

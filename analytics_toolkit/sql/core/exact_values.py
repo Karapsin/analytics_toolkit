@@ -22,10 +22,14 @@ if TYPE_CHECKING:
 
 ENCODING_VERSION = 1
 MAX_TEMPORAL_SCALE = 9
+MAX_EXACT_SCALE = 12
 _PYTHON_TEMPORAL_SCALE = 6
 _INTEGER_CHUNK_DIGITS = 1000
 _INTEGER_CHUNK_BASE = 10**_INTEGER_CHUNK_DIGITS
 _LEGACY_TICKS_FIELDS = 3
+_WALL_TICKS_FIELDS = 4
+_DAY_SECONDS = 86400
+_DAY_MINUTES = 1440
 
 
 def integer_text(value: int) -> str:
@@ -91,15 +95,20 @@ class ExactTemporal:
     scale: int
     timezone: str | None = None
     offset_naive: bool = False
+    wall_time: bool = False
+
+    def ticks_floor(self, scale: int) -> int:
+        """Return integer range coordinates; original ticks retain precision proof."""
+        return _rescale_ticks(self.ticks, self.scale, scale)
 
     def timestamp(self) -> Any:
-        if not 0 <= self.scale <= MAX_TEMPORAL_SCALE:
-            msg = "Timestamp scale must be between zero and nine."
-            raise ValueError(msg)
+        _validate_exact_scale(self.scale)
         ticks, scale = self.ticks, self.scale
         while scale and ticks % 10 == 0:
             ticks //= 10
             scale -= 1
+        if scale > MAX_TEMPORAL_SCALE:
+            return self
         unit_scale = ((scale + 2) // 3) * 3
         unit = {0: "s", 3: "ms", 6: "us", 9: "ns"}[unit_scale]
         try:
@@ -113,6 +122,7 @@ class ExactTemporal:
 
     def calendar_datetime(self, *, utc: bool = False) -> dt.datetime:
         """Calendar fields for formatting/profiling; fractional sub-microticks stay raw."""
+        _validate_exact_scale(self.scale)
         seconds, fraction = divmod(self.ticks, 10**self.scale)
         micros = (
             fraction * 10 ** (6 - self.scale)
@@ -142,8 +152,83 @@ class ExactTemporal:
         base = value.date().isoformat() + value.strftime("T%H:%M:%S")
         suffix = value.strftime("%z")
         if suffix:
-            suffix = suffix[:3] + ":" + suffix[3:]
+            suffix = suffix[:3] + ":" + suffix[3:5] + (":" + suffix[5:] if suffix[5:] else "")
         return base + (f".{fraction:0{self.scale}d}" if self.scale else "") + suffix
+
+
+def _validate_exact_scale(scale: int) -> None:
+    if not 0 <= scale <= MAX_EXACT_SCALE:
+        msg = "Exact temporal scale must be between zero and twelve."
+        raise ValueError(msg)
+
+
+def _rescale_ticks(ticks: int, source_scale: int, target_scale: int) -> int:
+    _validate_exact_scale(source_scale)
+    _validate_exact_scale(target_scale)
+    factor: int = 10 ** abs(source_scale - target_scale)
+    if source_scale > target_scale:
+        return ticks // factor
+    return ticks * factor
+
+
+@dataclass(frozen=True)
+class ExactClock:
+    """Date-free native clock coordinates, including sub-microsecond fractions."""
+
+    ticks: int
+    scale: int
+    offset_minutes: int | None = None
+    timezone_name: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_exact_scale(self.scale)
+        if not 0 <= self.ticks < _DAY_SECONDS * 10**self.scale:
+            msg = "Exact clock ticks must identify a time within one day."
+            raise ValueError(msg)
+        if (
+            self.offset_minutes is not None
+            and not -_DAY_MINUTES < self.offset_minutes < _DAY_MINUTES
+        ):
+            msg = "Exact clock UTC offset must be within one day."
+            raise ValueError(msg)
+        if self.offset_minutes is None and self.timezone_name is not None:
+            msg = "An exact clock timezone name requires a fixed UTC offset."
+            raise ValueError(msg)
+
+    def ticks_floor(self, scale: int) -> int:
+        return _rescale_ticks(self.ticks, self.scale, scale)
+
+    def time(self) -> dt.time | ExactClock:
+        if self.scale > _PYTHON_TEMPORAL_SCALE and self.ticks % 10 ** (
+            self.scale - _PYTHON_TEMPORAL_SCALE
+        ):
+            return self
+        micros = self.ticks_floor(_PYTHON_TEMPORAL_SCALE)
+        seconds, fraction = divmod(micros, 10**_PYTHON_TEMPORAL_SCALE)
+        hour, remainder = divmod(seconds, 3600)
+        minute, second = divmod(remainder, 60)
+        zone = None
+        if self.offset_minutes is not None:
+            offset = dt.timedelta(minutes=self.offset_minutes)
+            zone = (
+                dt.timezone(offset, self.timezone_name)
+                if self.timezone_name is not None
+                else dt.timezone(offset)
+            )
+        return dt.time(hour, minute, second, fraction, tzinfo=zone)
+
+    def isoformat(self) -> str:
+        seconds, fraction = divmod(self.ticks, 10**self.scale)
+        hour, remainder = divmod(seconds, 3600)
+        minute, second = divmod(remainder, 60)
+        result = f"{hour:02d}:{minute:02d}:{second:02d}"
+        if self.scale:
+            result += f".{fraction:0{self.scale}d}"
+        if self.offset_minutes is not None:
+            hours, minutes = divmod(abs(self.offset_minutes), 60)
+            sign = "-" if self.offset_minutes < 0 else "+"
+            result += f"{sign}{hours:02d}:{minutes:02d}"
+        return result
 
 
 def unwrap_enum(value: Any) -> Any:
@@ -220,7 +305,7 @@ def truncate_temporal(value: Any, scale: int) -> Any:
         if scale >= value.scale:
             return value
         ticks = value.ticks // 10 ** (value.scale - scale)
-        return ExactTemporal(ticks, scale, value.timezone, value.offset_naive)
+        return ExactTemporal(ticks, scale, value.timezone, value.offset_naive, value.wall_time)
     if isinstance(value, pd.Timestamp) and scale <= _PYTHON_TEMPORAL_SCALE:
         value = value.to_pydatetime(warn=False)
     if isinstance(value, dt.datetime) and scale < _PYTHON_TEMPORAL_SCALE:
@@ -285,6 +370,8 @@ def _decode_calendar_value(tag: str, payload: Any) -> Any:
         return dt.date.fromisoformat(payload[0])
     if tag == "time":
         return _decode_time(payload)
+    if tag == "clock_ticks":
+        return ExactClock(_parse_integer_text(payload[0]), int(payload[1]), payload[2], payload[3])
     if tag == "pandas_timedelta":
         return pd.Timedelta(np.timedelta64(_parse_integer_text(payload[0]), payload[1]))
     return dt.timedelta(days=payload[0], seconds=payload[1], microseconds=payload[2])
@@ -306,7 +393,22 @@ def encode_value(value: Any) -> Any:  # noqa: C901, PLR0911, PLR0912 - tagged sc
     if isinstance(value, Integral):
         return ["int", integer_text(int(value))]
     if isinstance(value, ExactTemporal):
-        return ["ticks", integer_text(value.ticks), value.scale, value.timezone, value.offset_naive]
+        payload = [
+            "ticks",
+            integer_text(value.ticks),
+            value.scale,
+            value.timezone,
+            value.offset_naive,
+        ]
+        return [*payload, True] if value.wall_time else payload
+    if isinstance(value, ExactClock):
+        return [
+            "clock_ticks",
+            integer_text(value.ticks),
+            value.scale,
+            value.offset_minutes,
+            value.timezone_name,
+        ]
     if isinstance(value, (dt.datetime, pd.Timestamp)):
         timestamp = pd.Timestamp(value)
         return ["datetime", timestamp.isoformat(), str(timestamp.tz) if timestamp.tz else None]
@@ -367,11 +469,12 @@ def decode_value(encoded: Any) -> Any:  # noqa: C901, PLR0911 - tagged scalar co
             int(payload[1]),
             payload[2],
             bool(payload[3]) if len(payload) > _LEGACY_TICKS_FIELDS else False,
+            bool(payload[4]) if len(payload) > _WALL_TICKS_FIELDS else False,
         )
     if tag == "datetime":
         value = pd.Timestamp(payload[0])
         return value.tz_convert(payload[1]) if payload[1] else value
-    if tag in {"date", "time", "pandas_timedelta", "timedelta"}:
+    if tag in {"date", "time", "clock_ticks", "pandas_timedelta", "timedelta"}:
         return _decode_calendar_value(tag, payload)
     if tag == "uuid":
         return UUID(payload[0])

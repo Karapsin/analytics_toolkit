@@ -87,6 +87,8 @@ and non-integers are rejected.
 - The returned dataframe uses the same value-inferred pandas nullable extension
   dtypes as `sql.read`, preserving nullable integers without `float64`
   conversion or precision loss.
+- Trino temporal cells follow the [exact read conversions](read.md#notes),
+  preserving timestamp and date-free clock fractions before driver rounding.
 - Timing logs label setup execution as `[setup]` and the final dataframe query as `[read]`.
 
 ## Independent Query Batches

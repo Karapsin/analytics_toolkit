@@ -47,7 +47,7 @@ def clock(hour, minute=0, second=0, microsecond=0, *, offset=None):
             "TIME(12) WITH TIME ZONE",
             clock(12, microsecond=123456, offset=0),
             clock(13, microsecond=123456, offset=1),
-            (43_200_123_456,) * 2,
+            (43_200_123_456_000_000,) * 2,
         ),
         ("TIME(3)", clock(23, 59, 59, 999500), clock(0, microsecond=400), (0, 0)),
         ("TIME", clock(23, 59, 59, 999500), clock(0, microsecond=400), (0, 0)),

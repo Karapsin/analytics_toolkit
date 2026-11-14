@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
 
-from .native_values import canonical_native_type
+from .native_values import canonical_native_type, validate_transport_value
 from .type_resolution import validate_profile
 from .value_profiles import ColumnProfile
 
@@ -38,7 +38,9 @@ def validate_converted_rows(
             message = "Converted input row does not match the resolved schema."
             raise ValueError(message)
         for profile, resolution, value in zip(profiles, resolutions, row):
-            profile.add(resolution.convert(value))
+            converted = resolution.convert(value)
+            validate_transport_value(converted, resolution.target_type, backend)
+            profile.add(converted)
     for profile, resolution in zip(profiles, resolutions):
         validate_profile(
             profile,

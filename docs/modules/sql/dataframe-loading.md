@@ -163,6 +163,13 @@ compare by UTC time modulo 24 hours; naive zoned keys fail before mutation
 because their identity requires an unresolved offset. These rules also apply
 inside composite `ROW` keys. Scalar clock values retain native server cast policy.
 
+Trino timestamp map keys use the destination precision and native parameter
+conversion to establish identity. Equivalent instants encoded at different
+source tick scales reject before mutation; distinct supported fractional ticks
+and DST-fold instants retain separate entries. Zoned keys require an aware
+instant or a resolved destination timezone policy. These checks also recurse
+through composite keys.
+
 Existing or explicit Trino `TIME` schemas accept native time values. Bare `TIME`
 defaults to precision 3; the engine range is 0–12, subject to connector support.
 Existing precision must fit exactly; explicit conversion uses native rounding
@@ -178,9 +185,13 @@ the complete encoded strings, including structured-text metadata. Oversized
 values fail before target creation or mutation.
 
 Existing or explicit `TIMESTAMP(p)` destinations above precision six preserve
-every available fractional digit when
-the connector supports that precision. Inference retains its supported connector
-precision. Trino upsert builds a final increment for affected partitions and requires
+every available fractional digit when the connector supports that precision,
+including exact temporal cells returned by [reads](functions/read.md#notes).
+Trino destinations may support precision 9 or 12; default inference remains
+precision 6 and never upgrades the table format. Greenplum microsecond and
+ClickHouse precision-9 limits remain unchanged. Existing schemas require exact
+fit; an explicit lower precision remains a deliberate conversion.
+Trino upsert builds a final increment for affected partitions and requires
 `upsert_partition_drop_sql_template` in `.connections` so connector-specific
 partition drop SQL is explicit. Actual string partition values are quoted as
 data, including marker-like values such as `<part>`. Only unknown partition

@@ -148,3 +148,28 @@ def test_raw_clickhouse_key_literals_use_ticks_instead_of_naive_display(value, e
         concurrency=1,
     )
     assert slices[0].source_sql == "SELECT * FROM t WHERE (k) = " + expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (ExactTemporal(123456789000, 12), "toDateTime64('1970-01-01 00:00:00.123456789', 9)"),
+        (
+            ExactTemporal(-1000000, 12, "UTC"),
+            "toDateTime64('1969-12-31 23:59:59.999999', 6, 'UTC')",
+        ),
+        (ExactTemporal(0, 12), "toDateTime64('1970-01-01 00:00:00', 0)"),
+    ],
+)
+def test_clickhouse_key_literals_reduce_only_zero_fractional_digits_from_wide_exact_input(
+    value, expected
+):
+    assert get_backend_adapter("ch").render_transfer_literal(value) == expected
+    assert value.scale == 12
+
+
+def test_clickhouse_key_literals_reject_unaligned_picoseconds_without_emitting_invalid_type():
+    with pytest.raises(ValueError, match="cannot preserve timestamp precision above nine"):
+        get_backend_adapter("ch").render_transfer_literal(ExactTemporal(1, 12))
+    with pytest.raises(ValueError, match="Exact temporal scale"):
+        get_backend_adapter("ch").render_transfer_literal(ExactTemporal(0, 13))

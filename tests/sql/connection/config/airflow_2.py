@@ -7,12 +7,12 @@ from tests.sql._support.connection_config import (
     Path,
     SqlConfigError,
     UnsupportedConnectionTypeError,
+    _expected_trino_read_options,
+    _install_fake_trino,
     config_module,
     connection_module,
     install_fake_airflow,
     pytest,
-    sys,
-    types,
 )
 
 
@@ -103,21 +103,7 @@ def test_airflow_file_extra_fallback_uses_fallback_when_extra_missing(
     )
     connect_calls: list[dict[str, object]] = []
 
-    class FakeBasicAuthentication:
-        def __init__(self, user: str, password: str | None) -> None:
-            self.user = user
-            self.password = password
-
-    fake_auth = types.ModuleType("trino.auth")
-    fake_auth.BasicAuthentication = FakeBasicAuthentication
-    fake_auth.OAuth2Authentication = lambda: object()
-    fake_trino = types.ModuleType("trino")
-    fake_trino.auth = fake_auth
-    fake_trino.dbapi = types.SimpleNamespace(
-        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
-    )
-    monkeypatch.setitem(sys.modules, "trino", fake_trino)
-    monkeypatch.setitem(sys.modules, "trino.auth", fake_auth)
+    _install_fake_trino(monkeypatch, connect_calls)
 
     connection_module.get_sql_connection("trino")
 
@@ -125,6 +111,8 @@ def test_airflow_file_extra_fallback_uses_fallback_when_extra_missing(
     assert connect_calls[0]["verify"] is False
     assert connect_calls[0]["request_timeout"] == 300
     assert connect_calls[0]["source"] == "airflow-trino"
+    for name, value in _expected_trino_read_options().items():
+        assert connect_calls[0][name] == value
 
 
 def test_airflow_file_parser_rejects_invalid_entries(tmp_path: Path) -> None:

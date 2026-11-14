@@ -213,8 +213,8 @@ def test_nested_inference_inherits_exact_profile_destination_context():
 
 def test_raw_wrapper_rejects_unsupported_tick_scale_before_context_profile():
     profile = ColumnProfile(destination_timezone="UTC")
-    with pytest.raises(ValueError, match="Raw timestamp scale"):
-        profile.add(ExactTemporal(1, 10))
+    with pytest.raises(ValueError, match="Exact temporal scale"):
+        profile.add(ExactTemporal(1, 13))
 
 
 def test_outside_python_utc_calendar_cannot_certify_native_clickhouse_type():
@@ -271,3 +271,44 @@ def test_pandas_timestamp_localization_keeps_unknown_and_aware_identity():
     assert localized.nanosecond == 1
     assert localized.utcoffset() == dt.timedelta(hours=3)
     assert localized.tz_convert("UTC").hour == 9
+
+
+@pytest.mark.parametrize(
+    ("scale", "wall"),
+    [
+        (0, "00:00:01"),
+        (3, "00:00:00.001"),
+        (6, "00:00:00.000001"),
+        (12, "00:00:00.000000000001"),
+    ],
+)
+def test_whole_second_destination_offset_preserves_every_raw_tick_and_source_scale(scale, wall):
+    from analytics_toolkit.sql.backends.temporal_context import (  # noqa: PLC0415 - exact context contract
+        localize_value,
+    )
+
+    zone = "-03:15:30"
+    native = "TIMESTAMP(12)"
+    value = ExactTemporal(1, scale, wall_time=True)
+
+    localized = localize_value(value, native, zone)
+
+    assert timezone_info(zone).utcoffset(None) == -dt.timedelta(seconds=11730)
+    assert localized == ExactTemporal(1 + 11730 * 10**scale, scale, zone)
+    assert localize_value(localized, native, zone) is localized
+    assert value == ExactTemporal(1, scale, wall_time=True)
+    text = localized.isoformat()
+    assert text == f"1970-01-01T{wall}-03:15:30"
+    calendar_text = text
+    if scale > 6:
+        # Python 3.8's datetime parser accepts only millisecond/microsecond fractions.
+        base, offset = text.rsplit("-", 1)
+        seconds, fraction = base.split(".")
+        calendar_text = f"{seconds}.{fraction[:6]}-{offset}"
+    calendar = dt.datetime.fromisoformat(calendar_text)
+    assert calendar.utcoffset() == -dt.timedelta(seconds=11730)
+    assert calendar.astimezone(dt.timezone.utc) == localized.calendar_datetime(utc=True)
+    profile = ColumnProfile(destination_timezone=zone, temporal_type=native)
+    profile.add(value)
+    assert profile.minimum_context_timestamp_ns == localized.ticks_floor(9)
+    assert isinstance(profile.minimum_context_timestamp_ns, int)

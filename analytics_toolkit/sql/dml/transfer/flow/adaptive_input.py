@@ -83,6 +83,7 @@ class AdaptiveTransferContext:
     target_connection_runner: Any = None
     target_host_connection_runner: Any = None
     force_freeze: bool = False
+    source_values_in_python: bool = True
 
 
 @dataclass(frozen=True)
@@ -589,7 +590,10 @@ def resolve_adaptive_input(
     contextual_profile = options.from_db_backend != "ch" and get_backend_adapter(
         options.to_db_backend
     ).requires_destination_timezone(target_types)
-    needs_profile = (context.force_freeze or contextual_profile) or any(
+    source_validation = context.source_values_in_python and get_backend_adapter(
+        options.from_db_backend
+    ).requires_value_certification([column.native_type for column in source_schema])
+    needs_profile = (context.force_freeze or contextual_profile or source_validation) or any(
         not declared_domain_fits(
             column.native_type,
             target_types[column.name],

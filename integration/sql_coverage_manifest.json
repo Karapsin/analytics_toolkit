@@ -10856,6 +10856,36 @@
         "tests/sql/dml/load/trino_time_map_keys.py::test_trino_time_map_rounding_keeps_distinct_native_wall_clocks"
       ]
     },
+    "audit.load.trino_timestamp_map_keys": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_timestamp_map_keys.py::test_trino_timestamp_map_identity_rejects_equivalent_exact_keys_before_clear",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_timestamp_map_keys.py::test_trino_timestamp_map_equal_instants_cannot_clear_existing_rows",
+        "tests/sql/dml/load/trino_timestamp_map_keys.py::test_trino_timestamp_map_nanosecond_distinctions_reach_native_p12"
+      ]
+    },
+    "audit.read.trino_exact_temporal": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_exact_reads.py::test_trino_engine_reads_preserve_exact_temporals_and_nanosecond_map_keys",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_public_scalar_keeps_raw_nanosecond_timestamp",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_public_map_preserves_nanosecond_distinct_keys",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_nested_array_row_and_map_keep_original_temporal_values",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_zoned_timestamp_keeps_precise_instant",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_all_supported_timestamp_precisions_keep_raw_negative_ticks",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_public_date_free_clock_preserves_all_native_ticks",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_public_aligned_high_precision_clock_remains_native_time",
+        "tests/sql/backends/trino/exact_temporal_reads.py::test_date_free_clock_retains_all_native_fractional_ticks",
+        "tests/sql/backends/trino/exact_temporal_reads.py::test_picosecond_clock_bounds_keep_wall_ticks_without_an_invented_date",
+        "tests/sql/backends/trino/exact_temporal_reads.py::test_microsecond_aligned_high_precision_clock_keeps_native_time"
+      ]
+    },
     "audit.clickhouse.local_creation": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",

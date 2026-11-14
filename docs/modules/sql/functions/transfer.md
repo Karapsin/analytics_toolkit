@@ -302,6 +302,13 @@ rows = sql.transfer(
   integer, decimal and temporal representations before text. Every keyed slice
   contributes to this one resolved schema; the adaptive path has an all-key
   barrier and uses one target stage.
+- Trino source timestamps retain raw precision 0–12 before driver rounding,
+  including nested map keys. Default inferred timestamps remain precision 6;
+  explicit or existing capable destinations can retain precision 9 or 12
+  without a table-format upgrade. `DATE`/`TIMESTAMP` sources and map-key paths
+  needing certification complete the frozen input before any destination write;
+  a late wire/calendar failure cannot publish a partial input. Proven-safe
+  ordinary scalar and date-free clock paths retain lazy streaming.
 - Existing-target `append`, `truncate_insert` and `upsert` validate `NOT NULL`
   and required columns against the complete owned stage payload after all keys
   and writers finish, before any live publication. Validation uses the actual

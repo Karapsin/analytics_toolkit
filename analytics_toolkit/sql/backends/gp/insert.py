@@ -195,19 +195,28 @@ def normalize_json_columns(
 
 def _normalize_uuid_scalar(value: Any) -> Any:
     from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - backend import cycle
-        MAX_TEMPORAL_SCALE,
+        MAX_EXACT_SCALE,
+        ExactClock,
         ExactTemporal,
     )
 
+    if isinstance(value, ExactClock):
+        if value.ticks % 10 ** max(0, value.scale - 6):
+            msg = (
+                "Raw clock exceeds Greenplum microsecond precision; "
+                "resolve the schema conversion first."
+            )
+            raise ValueError(msg)
+        return value.time()
     if isinstance(value, ExactTemporal):
-        if not 0 <= value.scale <= MAX_TEMPORAL_SCALE or value.ticks % 10 ** max(
-            0, value.scale - 6
-        ):
+        if not 0 <= value.scale <= MAX_EXACT_SCALE or value.ticks % 10 ** max(0, value.scale - 6):
             msg = (
                 "Raw timestamp exceeds Greenplum microsecond precision; "
                 "resolve the schema conversion first."
             )
             raise ValueError(msg)
+        if value.wall_time:
+            return value.calendar_datetime()
         return ExactTemporal(value.ticks, value.scale, "UTC").calendar_datetime(utc=True)
     return str(value) if isinstance(value, UUID) else value
 

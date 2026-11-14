@@ -117,6 +117,11 @@ rows
   keys. `TIME` keys use wall-clock payloads without offsets; aware
   `TIME WITH TIME ZONE` keys retain offsets and compare modulo a UTC day.
   Naive zoned map keys reject before mutation. Scalar cast policy is unchanged.
+- Trino timestamp map keys use destination precision and native parameter
+  conversion for identity, including composite keys. Equivalent instants with
+  different source tick scales reject before mutation; supported sub-microsecond
+  differences remain distinct. Zoned keys require awareness or a resolved
+  destination timezone policy.
 - Greenplum `JSON`/`JSONB` and their `pg_catalog`-qualified forms preserve native
   dictionaries/lists, encoded document strings and supported `Json` wrappers.
   The validated serialized documents are retained through retries; custom
@@ -137,6 +142,10 @@ rows
   remain authoritative and are validated against the complete dataframe.
   When Python serializes values to text, their complete encoded strings must
   fit the authoritative widths before target creation or mutation.
+- Exact temporal cells returned by [Trino reads](read.md#notes) retain their ticks
+  when an existing or explicit destination supports that precision. Default
+  Trino inference remains precision 6; no table-format upgrade is performed.
+  Greenplum microsecond and ClickHouse precision-9 limits remain unchanged.
 - Existing ClickHouse upserts bind target preservation reads, partition mutation,
   final inserts and prepared-payload replay to the same verified physical storage
   scope; caller creation policy still controls new stages. Offline

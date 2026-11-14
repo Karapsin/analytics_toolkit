@@ -59,13 +59,21 @@ def dataframe_from_columns(
 
 
 def _modern_array(values: Sequence[Any]) -> Any:
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 -- avoid registry cycle.
+        ExactClock,
+        ExactTemporal,
+    )
+
     non_missing = [
         value
         for value in values
         if value is not None and value is not pd.NA and value is not pd.NaT
     ]
     if not values or any(
-        isinstance(value, (Decimal, list, tuple, dict, bytes, bytearray, memoryview))
+        isinstance(
+            value,
+            (Decimal, ExactTemporal, ExactClock, list, tuple, dict, bytes, bytearray, memoryview),
+        )
         for value in non_missing
     ):
         return _object_array(values)
