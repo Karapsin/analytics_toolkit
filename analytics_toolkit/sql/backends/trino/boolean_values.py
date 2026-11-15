@@ -1,7 +1,8 @@
-"""Deliberate Trino BOOLEAN casts follow the native signed-BIGINT operator."""
+"""Deliberate Trino BOOLEAN casts follow native numeric and ASCII operators."""
 
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import lru_cache
 from numbers import Integral
 from typing import Any
@@ -12,8 +13,10 @@ from .date_values import normalize_authoritative_date
 
 _BIGINT_MIN = -(2**63)
 _BIGINT_MAX = 2**63 - 1
+_MAX_DECIMAL_PRECISION = 38
 _INVALID_VALUE = (
-    "Trino BOOLEAN requires a native Boolean or signed BIGINT integer. "
+    "Trino BOOLEAN requires a native Boolean, signed BIGINT, DOUBLE, DECIMAL with precision "
+    "at most 38, or exact ASCII Boolean text. "
     "For other backend conversions, CAST the source expression AS BOOLEAN in from_sql."
 )
 _INVALID_TYPE = "Trino BOOLEAN requires the unparameterized BOOLEAN type without wrapper syntax."
@@ -40,13 +43,29 @@ def is_boolean_type(native_type: str | None) -> bool:
 
 
 def boolean_value(value: Any) -> bool:
-    """Match BigintOperators.castToBoolean without float or string truthiness."""
+    """Match native scalar casts without decimal rounding or text trimming."""
     if isinstance(value, (bool, np.bool_)):
         return bool(value)
     if isinstance(value, Integral):
         integer = int(value)
         if _BIGINT_MIN <= integer <= _BIGINT_MAX:
             return integer != 0
+    if isinstance(value, (float, np.float32, np.float64)):
+        return bool(value != 0)
+    if isinstance(value, Decimal) and value.is_finite():
+        from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 -- registry initialization.
+            decimal_digits,
+        )
+
+        integral, scale = decimal_digits(value)
+        if max(1, integral + scale) <= _MAX_DECIMAL_PRECISION:
+            return not value.is_zero()
+    if isinstance(value, str) and value.isascii():
+        token = value.lower()
+        if token in {"true", "t", "1"}:
+            return True
+        if token in {"false", "f", "0"}:
+            return False
     raise TrinoBooleanValueError(_INVALID_VALUE)
 
 

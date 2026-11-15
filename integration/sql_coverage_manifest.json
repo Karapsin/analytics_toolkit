@@ -11265,7 +11265,10 @@
       ],
       "regression_tests": [
         "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_public_load_keeps_supported_native_casts_and_nulls",
-        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_invalid_late_input_preserves_the_existing_target"
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_invalid_late_input_preserves_the_existing_target",
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_public_ascii_string_casts_preserve_native_false_and_true",
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_padded_string_cast_rejects_before_target_mutation",
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_finite_numeric_casts_preserve_zero_and_exact_nonzero_values"
       ]
     },
     "audit.load.gp_date_values": {

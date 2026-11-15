@@ -1,6 +1,8 @@
-"""Real Trino parameter formatting with native BIGINT-to-BOOLEAN cast semantics."""
+"""Real Trino parameter formatting with native integer and string BOOLEAN casts."""
 
 from __future__ import annotations
+
+from decimal import Decimal
 
 from sqlglot import exp, parse_one
 
@@ -17,18 +19,34 @@ class _BooleanDatabase(NativeTimeDatabase):
     def decode_cast(self, wire):
         """Apply BOOLEAN to the actual SDK literal, without Python string truthiness."""
         value = parse_one(wire, read="trino")
+        decimal = isinstance(value, exp.Cast) and value.args["to"].is_type("DECIMAL")
         while isinstance(value, exp.Cast):
             value = value.this
         if isinstance(value, exp.Null):
             return None
         if isinstance(value, exp.Boolean):
             return value.this
+        if decimal:
+            assert isinstance(value, exp.Literal)
+            assert value.is_string
+            return Decimal(value.this) != 0
+        sign = 1
+        if isinstance(value, exp.Neg):
+            sign = -1
+            value = value.this
         assert isinstance(value, exp.Literal)
+        if value.is_string:
+            aliases = {"true": True, "false": False, "t": True, "f": False, "1": True, "0": False}
+            text = value.this
+            if text.isascii() and text.casefold() in aliases:
+                return aliases[text.casefold()]
+            message = "Trino rejects unsupported BOOLEAN string casts."
+            raise ValueError(message)
         assert not value.is_string
-        integer = value.to_py()
-        assert type(integer) is int
-        # Primary source: trinodb/trino BigintOperators.castToBoolean returns value != 0.
-        return integer != 0
+        number = value.to_py()
+        assert type(number) in {int, float}
+        # Trino's BIGINT/DOUBLE/DECIMAL operators use nonzero numeric equality.
+        return sign * number != 0
 
 
 class _BooleanConnection(NativeTimeConnection):

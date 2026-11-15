@@ -616,8 +616,17 @@ locally.
 
 `dml/load/trino_booleans.py` and `core/trino_boolean_values.py` preserve
 supported signed-BIGINT casts into explicit or existing Trino BOOLEAN columns.
-They retain integer inference for 0/1, validate every value before mutation and
-exercise the installed parameter formatter. The disposable
+`dml/load/trino_booleans.py::test_trino_booleans_public_ascii_string_casts_preserve_native_false_and_true`,
+`dml/load/trino_booleans.py::test_trino_booleans_padded_string_cast_rejects_before_target_mutation`
+and `dml/load/trino_booleans.py::test_trino_booleans_finite_numeric_casts_preserve_zero_and_exact_nonzero_values`
+extend this coverage to exact ASCII `true`/`false`, `t`/`f` and `1`/`0`, with
+case-insensitive letters and no trimming, plus native DOUBLE and finite DECIMAL
+casts within precision/scale 38. Numeric zero/nonzero conversion preserves exact
+decimals, floating NaN NULL handling and infinite DOUBLE values. These restore
+casts rejected before mutation; they are not target-loss reproductions. Invalid text
+fails before mutation with sanitized diagnostics. These checks preserve
+Greenplum behavior and integer/text inference, and exercise the installed
+parameter formatter with fake database I/O. The disposable
 `audit.load.trino_boolean_values` scenario was not run locally.
 
 [SQL module index](index.md)

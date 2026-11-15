@@ -221,9 +221,16 @@ rows
 - Greenplum `DATE` columns also validate canonical date text before mutation.
   Native datetime parameters retain their clocks and offsets so the server
   performs the DATE assignment using its session settings.
-- Trino `BOOLEAN` columns preserve explicit native casts from signed BIGINT
-  values. This applies to explicit or existing Boolean schemas; ordinary
-  inference still treats integer 0/1 columns as integers.
+- Explicit or existing Trino `BOOLEAN` columns accept native Boolean values,
+  signed BIGINT, DOUBLE and finite DECIMAL casts, and the exact ASCII strings
+  `true`, `false`, `t`, `f`, `1` and `0`, with ASCII case-insensitive letters.
+  Numeric zero becomes false and nonzero becomes true, including infinite
+  DOUBLE values; floating NaN retains its existing NULL handling. Decimals must
+  fit precision and scale at most 38 and never pass through floating point.
+  Strings are not trimmed.
+  Invalid values fail before destination mutation with sanitized diagnostics;
+  NULL stays NULL. Greenplum behavior and automatic inference are unchanged:
+  inferred integer 0/1 columns remain integers, and inferred strings remain text.
 - ClickHouse timestamp keys compare native ticks at the declared precision and
   resolved write timezone. A raw tick value and a calendar value for the same
   instant are duplicate effective keys within one partition. Distinct native

@@ -1,7 +1,8 @@
-"""Authoritative Trino BOOLEAN columns keep native BIGINT cast semantics."""
+"""Authoritative Trino BOOLEAN keeps native numeric and exact ASCII casts."""
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -87,9 +88,40 @@ def test_trino_boolean_integer_loads_preserve_native_casts_and_reject_invalid_va
 ) -> None:
     table = _owned_table(resource_registry)
     original_schema = sql.extract_ddl(_ALIAS, table)
-    incoming = pd.DataFrame({"payload": pd.Series([0, 1, -2, None], dtype=object)})
+    cases = [
+        (0, False),
+        (1, True),
+        (-2, True),
+        (False, False),
+        (True, True),
+        (0.0, False),
+        (-0.0, False),
+        (1.25, True),
+        (-1.25, True),
+        (Decimal("0.00"), False),
+        (Decimal("-0.00"), False),
+        (Decimal("2.500"), True),
+        (Decimal("-2.500"), True),
+        (Decimal("1E-38"), True),
+        ("true", True),
+        ("false", False),
+        ("t", True),
+        ("f", False),
+        ("1", True),
+        ("0", False),
+        ("TRUE", True),
+        ("FALSE", False),
+        ("T", True),
+        ("F", False),
+        ("tRuE", True),
+        ("fAlSe", False),
+        (None, None),
+    ]
+    incoming = pd.DataFrame(
+        {"payload": pd.Series([value for value, _expected in cases], dtype=object)}
+    )
     original = incoming.copy(deep=True)
-    expected = [False, True, True, None]
+    expected = [*sorted(value for _raw, value in cases if value is not None), None]
     adapter = get_backend_adapter("trino")
     execute = adapter.execute_command
     statements: list[str] = []
@@ -116,26 +148,27 @@ def test_trino_boolean_integer_loads_preserve_native_casts_and_reject_invalid_va
         assert _rows(table) == expected
         assert sql.extract_ddl(_ALIAS, table) == original_schema
 
-        invalid = incoming.copy(deep=True)
-        invalid.loc[len(invalid) - 1, "payload"] = "private-invalid-boolean"
-        original_invalid = invalid.copy(deep=True)
-        statements.clear()
-        with monkeypatch.context() as operations:
-            operations.setattr(adapter, "execute_command", record)
-            with pytest.raises(ValueError, match=r"(?i)bool") as error:
-                sql.load_df(
-                    _ALIAS,
-                    table,
-                    invalid,
-                    write_mode="truncate_insert",
-                    trino_insert_chunk_size=2,
-                    retry_cnt=1,
-                    timeout_increment=0,
-                    query_label=label("boolean-native-invalid"),
-                    **options,
-                )
-        assert "private-invalid-boolean" not in str(error.value)
-        pd.testing.assert_frame_equal(invalid, original_invalid)
-        assert _target_mutations(statements, table) == []
-        assert _rows(table) == expected
-        assert sql.extract_ddl(_ALIAS, table) == original_schema
+        for bad in ("private-invalid-boolean", " true", "false "):
+            invalid = incoming.copy(deep=True)
+            invalid.loc[len(invalid) - 1, "payload"] = bad
+            original_invalid = invalid.copy(deep=True)
+            statements.clear()
+            with monkeypatch.context() as operations:
+                operations.setattr(adapter, "execute_command", record)
+                with pytest.raises(ValueError, match=r"(?i)bool") as error:
+                    sql.load_df(
+                        _ALIAS,
+                        table,
+                        invalid,
+                        write_mode="truncate_insert",
+                        trino_insert_chunk_size=2,
+                        retry_cnt=1,
+                        timeout_increment=0,
+                        query_label=label("boolean-native-invalid"),
+                        **options,
+                    )
+            assert "private-invalid-boolean" not in str(error.value)
+            pd.testing.assert_frame_equal(invalid, original_invalid)
+            assert _target_mutations(statements, table) == []
+            assert _rows(table) == expected
+            assert sql.extract_ddl(_ALIAS, table) == original_schema

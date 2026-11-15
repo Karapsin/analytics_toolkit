@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from decimal import Decimal
 
 import pandas as pd
 import pytest
@@ -110,3 +111,124 @@ def test_trino_boolean_zero_and_one_inference_retains_bigint(dtype):
     assert get_backend_adapter("trino").infer_dataframe_column_type(values) == "BIGINT"
 
     pd.testing.assert_series_equal(values, original)
+
+
+@pytest.mark.parametrize("explicit", [False, True], ids=["existing", "explicit"])
+@pytest.mark.parametrize(
+    "spellings",
+    [
+        ["true", "false", "t", "f", "1", "0"],
+        ["TrUe", "FaLsE", "T", "F", "1", "0"],
+    ],
+    ids=["native-ascii-aliases", "mixed-ascii-case"],
+)
+def test_trino_booleans_public_ascii_string_casts_preserve_native_false_and_true(
+    monkeypatch, explicit, spellings
+):
+    database = native_boolean_target(monkeypatch)
+    incoming = [None, *spellings, None]
+    expected = [None, True, False, True, False, True, False, None]
+    frame = pd.DataFrame({"payload": pd.Series(incoming, dtype=object)})
+    original = frame.copy(deep=True)
+
+    result = _load(frame, explicit=explicit)
+
+    assert type(result) is int
+    assert result == 8
+    assert database.rows == expected
+    assert database.native_type == "BOOLEAN"
+    assert database.table_types == {database.target: "BOOLEAN"}
+    assert database.mutations == ["clear", "insert", "insert", "insert", "insert"]
+    inserts = _insertions(database)
+    assert len(inserts) == 4
+    assert all("CAST(? AS BOOLEAN)" in statement for statement, _params, _wire in inserts)
+    params = [value for _statement, values, _wire in inserts for value in values]
+    wire = [value for _statement, _params, values in inserts for value in values]
+    assert params[0] is None
+    assert params[-1] is None
+    assert wire[0] == wire[-1] == "NULL"
+    for parameter, rendered, source, native in zip(
+        params[1:-1], wire[1:-1], spellings, expected[1:-1]
+    ):
+        if type(parameter) is bool:
+            assert parameter is native
+            assert rendered == ("true" if native else "false")
+        else:
+            assert type(parameter) is str
+            assert parameter == source
+            assert rendered == repr(source)
+    assert any(
+        "information_schema.columns" in statement
+        for statement, _params, _wire in database.statements
+    )
+    _assert_closed(database)
+    pd.testing.assert_frame_equal(frame, original)
+
+
+@pytest.mark.parametrize("explicit", [False, True], ids=["existing", "explicit"])
+@pytest.mark.parametrize("bad", [" true", "false "], ids=["leading-space", "trailing-space"])
+def test_trino_booleans_padded_string_cast_rejects_before_target_mutation(
+    monkeypatch, explicit, bad
+):
+    database = native_boolean_target(monkeypatch)
+    before = deepcopy(database.table_rows)
+    frame = pd.DataFrame({"payload": pd.Series(["false", "true", None, bad], dtype=object)})
+    original = frame.copy(deep=True)
+
+    with pytest.raises(ValueError, match=r"(?i)bool"):
+        _load(frame, explicit=explicit)
+
+    assert database.table_rows == before
+    assert database.table_types == {database.target: "BOOLEAN"}
+    assert database.mutations == []
+    assert _insertions(database) == []
+    _assert_closed(database)
+    pd.testing.assert_frame_equal(frame, original)
+
+
+@pytest.mark.parametrize("explicit", [False, True], ids=["existing", "explicit"])
+@pytest.mark.parametrize("kind", ["double", "decimal"])
+def test_trino_booleans_finite_numeric_casts_preserve_zero_and_exact_nonzero_values(
+    monkeypatch, explicit, kind
+):
+    if kind == "double":
+        values = [0.0, -0.0, 1.25, -1.25]
+        native = [False, False, True, True]
+    else:
+        values = [Decimal(0), Decimal("-0"), Decimal("2.5"), Decimal("-2.5"), Decimal("1E-38")]
+        native = [False, False, True, True, True]
+    database = native_boolean_target(monkeypatch)
+    incoming = [None, *values, None]
+    expected = [None, *native, None]
+    frame = pd.DataFrame({"payload": pd.Series(incoming, dtype=object)})
+    original = frame.copy(deep=True)
+
+    result = _load(frame, explicit=explicit)
+
+    assert type(result) is int
+    assert result == len(incoming)
+    assert database.rows == expected
+    assert database.table_types == {database.target: "BOOLEAN"}
+    inserts = _insertions(database)
+    assert len(inserts) == (len(incoming) + 1) // 2
+    assert database.mutations == ["clear"] + ["insert"] * len(inserts)
+    assert all("CAST(? AS BOOLEAN)" in statement for statement, _params, _wire in inserts)
+    params = [value for _statement, values, _wire in inserts for value in values]
+    wire = [value for _statement, _params, values in inserts for value in values]
+    assert params[0] is None
+    assert params[-1] is None
+    assert wire[0] == wire[-1] == "NULL"
+    for parameter, rendered, source, boolean in zip(params[1:-1], wire[1:-1], values, native):
+        if type(parameter) is bool:
+            assert parameter is boolean
+            assert rendered == ("true" if boolean else "false")
+        elif kind == "double":
+            assert type(parameter) is float
+            assert parameter == source
+            assert rendered == repr(source)
+        else:
+            assert isinstance(parameter, Decimal)
+            assert parameter == source
+            assert rendered == f"DECIMAL '{parameter}'"
+    _assert_closed(database)
+    pd.testing.assert_frame_equal(frame, original)

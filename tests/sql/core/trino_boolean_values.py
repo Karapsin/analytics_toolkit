@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from copy import deepcopy
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import numpy as np
 import pandas as pd
@@ -49,13 +49,99 @@ def test_trino_boolean_native_signed_bigint_cast_matches_nonzero_operator(value,
     assert normalize_authoritative_boolean(value, "BOOLEAN") is expected
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("false", False),
+        ("FALSE", False),
+        ("FaLsE", False),
+        ("f", False),
+        ("F", False),
+        ("0", False),
+        ("true", True),
+        ("TRUE", True),
+        ("TrUe", True),
+        ("t", True),
+        ("T", True),
+        ("1", True),
+    ],
+)
+def test_trino_boolean_native_varchar_cast_uses_exact_ascii_tokens(value, expected):
+    # VarcharOperators.castToBoolean accepts these exact ASCII case-insensitive forms.
+    result = boolean_value(value)
+
+    assert type(result) is bool
+    assert result is expected
+    assert normalize_authoritative_boolean(value, "BOOLEAN") is expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0.0, False),
+        (-0.0, False),
+        (1.0, True),
+        (-1.25, True),
+        (float.fromhex("0x0.0000000000001p-1022"), True),
+        (float("inf"), True),
+        (float("-inf"), True),
+        (np.float32(0), False),
+        (np.float64(-1.25), True),
+        (Decimal(0), False),
+        (Decimal("-0.00"), False),
+        (Decimal(1), True),
+        (Decimal("-0.0001"), True),
+        (Decimal("9" * 38), True),
+        (Decimal("1E-38"), True),
+        (Decimal("0E-38"), False),
+        (Decimal("1E+37"), True),
+    ],
+)
+def test_trino_boolean_native_double_and_supported_decimal_casts_use_exact_nonzero(value, expected):
+    result = boolean_value(value)
+
+    assert type(result) is bool
+    assert result is expected
+    assert normalize_authoritative_boolean(value, "BOOLEAN") is expected
+
+
+@pytest.mark.parametrize("value", [float("nan"), np.float64("nan"), Decimal("NaN")])
+def test_trino_boolean_existing_quiet_nan_null_policy_precedes_native_cast(value):
+    assert normalize_authoritative_boolean(value, "BOOLEAN") is None
+
+
+def test_trino_boolean_decimal_cast_never_uses_binary_float_or_context_rounding():
+    class ExactDecimal(Decimal):
+        def __float__(self):
+            pytest.fail("DECIMAL Boolean conversion used binary float")
+
+    value = ExactDecimal("1E-38")
+    before = value.as_tuple()
+    with localcontext() as context:
+        context.prec = 2
+        assert boolean_value(value) is True
+
+    assert value.as_tuple() == before
+
+
 @pytest.mark.parametrize("value", [None, pd.NA])
 def test_trino_boolean_null_assignment_view_remains_null(value):
     assert normalize_authoritative_boolean(value, "BOOLEAN") is None
 
 
 @pytest.mark.parametrize(
-    "value", [-(2**63) - 1, 2**63, np.uint64(2**64 - 1), 1.0, "false", b"0", Decimal(1)]
+    "value",
+    [
+        -(2**63) - 1,
+        2**63,
+        np.uint64(2**64 - 1),
+        "not-a-boolean",
+        b"0",
+        Decimal("1E+38"),
+        Decimal("1E-39"),
+        Decimal("Infinity"),
+        Decimal("-Infinity"),
+    ],
 )
 def test_trino_boolean_rejects_out_of_domain_or_unproven_local_casts_privately(value):
     with pytest.raises(TrinoBooleanValueError, match="signed BIGINT") as error:
@@ -64,6 +150,16 @@ def test_trino_boolean_rejects_out_of_domain_or_unproven_local_casts_privately(v
     assert error.value.analytics_toolkit_sql_retry_safe is False
     assert str(value) not in str(error.value)
     assert "CAST the source expression AS BOOLEAN in from_sql" in str(error.value)
+
+
+@pytest.mark.parametrize("value", [" true", "false ", "", "yes", "fal\u017fe"])
+def test_trino_boolean_varchar_cast_does_not_trim_or_apply_unicode_casefold(value):
+    with pytest.raises(TrinoBooleanValueError, match="BOOLEAN") as error:
+        boolean_value(value)
+
+    assert error.value.analytics_toolkit_sql_retry_safe is False
+    assert repr(value) not in str(error.value)
+    assert error.value.__cause__ is None
 
 
 @pytest.mark.parametrize("native", ["BOOLEAN", "boolean", "  BoOlEaN  "])
@@ -77,6 +173,11 @@ def test_trino_boolean_type_validation_does_not_admit_integer_profiles(native):
         validate_profile(profile, native, "trino")
 
     assert declared_domain_fits("BIGINT", native, "trino", source_backend="trino") is False
+
+
+@pytest.mark.parametrize("native", ["DOUBLE", "DECIMAL(38,0)", "VARCHAR"])
+def test_trino_boolean_supported_value_casts_do_not_create_declared_domain_proofs(native):
+    assert declared_domain_fits(native, "BOOLEAN", "trino", source_backend="trino") is False
 
 
 @pytest.mark.parametrize("native", ["BOOLEAN(1)", "BOOLEAN()", "Nullable(BOOLEAN)"])

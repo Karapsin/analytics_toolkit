@@ -352,6 +352,17 @@ Authoritative DATE conversions are profiled during the original adaptive scan
 without changing the captured raw rows. Trino uses each datetime's supplied
 calendar date; Greenplum retains native datetime parameters for server-side
 assignment. The same conversion is checked again during replay.
+
+Explicit or existing Trino `BOOLEAN` columns accept native Boolean values,
+signed BIGINT, DOUBLE and finite DECIMAL casts, and the exact ASCII strings
+`true`, `false`, `t`, `f`, `1` and `0`, with ASCII case-insensitive letters.
+Numeric zero becomes false and nonzero becomes true, including infinite DOUBLE
+values; floating NaN retains its existing NULL handling. Decimals must fit
+precision and scale at most 38 and never pass through floating point. Strings
+are not trimmed. Invalid values fail before destination mutation with sanitized
+diagnostics; NULL stays NULL. Greenplum behavior and automatic inference are
+unchanged, including inferred integer 0/1 and text columns.
+
 For Greenplum types requiring server assignment, the complete captured payload
 is certified in owned persistent native tables before live publication. This
 includes the final SQL projection and casts when the requested stage schema
