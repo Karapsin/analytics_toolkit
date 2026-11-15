@@ -11257,6 +11257,41 @@
         "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_distinct_dst_folds_survive_upfront_python_key_validation"
       ]
     },
+    "audit.load.trino_boolean_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_boolean_values.py::test_trino_boolean_integer_loads_preserve_native_casts_and_reject_invalid_values",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_public_load_keeps_supported_native_casts_and_nulls",
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_invalid_late_input_preserves_the_existing_target"
+      ]
+    },
+    "audit.load.gp_date_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_date_domain_preflight.py::test_gp_date_dataframe_loads_preserve_native_server_assignment_and_reject_invalid_values",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_dates.py::test_gp_date_load_keeps_native_assignment_and_real_psycopg_formatter",
+        "tests/sql/dml/load/gp_dates.py::test_gp_invalid_late_date_rejects_before_target_clear",
+        "tests/sql/backends/gp/date_values.py::test_gp_date_aware_parameters_retain_the_native_offset_and_actual_psycopg_wire"
+      ]
+    },
+    "audit.load.trino_date_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_date_domain_preflight.py::test_trino_date_dataframe_loads_preserve_local_calendar_and_reject_invalid_values",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_dates.py::test_trino_dates_public_load_preserves_native_calendar_and_null_values",
+        "tests/sql/dml/load/trino_dates.py::test_trino_dates_invalid_last_value_preserves_existing_rows_before_mutation",
+        "tests/sql/dml/load/trino_dates.py::test_trino_dates_equal_native_keys_reject_before_append_stage_or_target_mutation"
+      ]
+    },
     "audit.transfer.trino_date_domain_preflight": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_date_domain_preflight.py::test_invalid_text_stage_cannot_clear_existing_date_rows",

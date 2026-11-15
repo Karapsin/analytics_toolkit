@@ -213,6 +213,17 @@ rows
   scale and the signed tick representation; fitting the wire format alone is
   insufficient. The calendar limits match the existing timestamp-object checks
   and [ClickHouse's supported DateTime64 contract](https://github.com/ClickHouse/ClickHouse/blob/v26.3.15.4-lts/docs/en/sql-reference/data-types/datetime64.md).
+- Trino `DATE` columns accept native dates, canonical `YYYY-MM-DD` text and
+  supported datetime values under explicit or existing schemas. Datetimes use
+  their supplied local calendar date, matching native parameter conversion.
+  Every selected value is validated before destination mutation; NULL stays
+  NULL, and inferred text columns retain their text types.
+- Greenplum `DATE` columns also validate canonical date text before mutation.
+  Native datetime parameters retain their clocks and offsets so the server
+  performs the DATE assignment using its session settings.
+- Trino `BOOLEAN` columns preserve explicit native casts from signed BIGINT
+  values. This applies to explicit or existing Boolean schemas; ordinary
+  inference still treats integer 0/1 columns as integers.
 - ClickHouse timestamp keys compare native ticks at the declared precision and
   resolved write timezone. A raw tick value and a calendar value for the same
   instant are duplicate effective keys within one partition. Distinct native

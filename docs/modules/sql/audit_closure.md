@@ -605,4 +605,19 @@ canonical ISO-date casts and typed DATE inputs remain supported. The disposable
 stored DATE rows and an unchanged schema. It was not run locally. Fake GP
 mutation effects do not establish live transactional data loss.
 
+`dml/load/trino_dates.py`, `dml/load/gp_dates.py`, and
+`dml/transfer/schema/direct_date_stage.py` additionally preserve supported
+authoritative DATE assignments through public dataframe loads and transfers.
+They check complete validation before mutation, native parameter formatting,
+unchanged raw replay input, and Trino DATE key equality. Backend helper tests
+cover recursive conversions and preserve GP datetime offsets without guessing
+the server's resulting calendar day. Disposable DATE scenarios remain unrun
+locally.
+
+`dml/load/trino_booleans.py` and `core/trino_boolean_values.py` preserve
+supported signed-BIGINT casts into explicit or existing Trino BOOLEAN columns.
+They retain integer inference for 0/1, validate every value before mutation and
+exercise the installed parameter formatter. The disposable
+`audit.load.trino_boolean_values` scenario was not run locally.
+
 [SQL module index](index.md)

@@ -14,6 +14,8 @@ from uuid import UUID
 import numpy as np
 import pandas as pd
 
+from .date_values import date_value
+
 _MICROSECOND_PRECISION = 6
 _NANOSECOND_PRECISION = 9
 _TIME_FAMILIES = {"time", "time with time zone", "time without time zone"}
@@ -193,11 +195,7 @@ def _temporal_parameter(value: Any, target_type: str | None, family: str) -> Any
     if isinstance(value, np.datetime64):
         value = pd.Timestamp(value)
     if family == "date":
-        return (
-            value.calendar_datetime()
-            if isinstance(value, exact.ExactTemporal)
-            else pd.Timestamp(value)
-        ).date()
+        return date_value(value)
     precision = types.timestamp_scale(target_type) if target_type else _MICROSECOND_PRECISION
     if not target_type and _submicrosecond(value):
         message = (
@@ -282,12 +280,7 @@ def literal(value: Any, target_type: str | None) -> str:  # noqa: C901, PLR0911,
         return _clock_literal(value, target_type)
     if isinstance(value, (dt.datetime, pd.Timestamp, np.datetime64, exact.ExactTemporal)):
         if family == "date":
-            calendar = (
-                value.calendar_datetime()
-                if isinstance(value, exact.ExactTemporal)
-                else pd.Timestamp(value)
-            )
-            return "DATE '" + str(calendar.date().isoformat()) + "'"
+            return "DATE '" + date_value(value).isoformat() + "'"
         precision = (
             types.timestamp_scale(target_type)
             if target_type

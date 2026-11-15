@@ -17,7 +17,10 @@ from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.conversion_profiles import validate_converted_rows
 from analytics_toolkit.sql.backends.models import SourceColumn
-from analytics_toolkit.sql.backends.native_values import requires_native_assignment
+from analytics_toolkit.sql.backends.native_values import (
+    normalize_authoritative_value,
+    requires_native_assignment,
+)
 from analytics_toolkit.sql.backends.stage_ownership import single_resource_policy
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.get_sql_connection import (
@@ -143,6 +146,7 @@ class _InputScan:
     profiles: list[ColumnProfile]
     configuration_digest: str
     observed_scope: dict[Any, str] = field(default_factory=dict)
+    authoritative_types: Mapping[str, str] | None = None
 
 
 class AdaptiveInputValidationError(ValueError):
@@ -381,7 +385,12 @@ def _profile_batch(
         options, source_connection, source_batch, state.source_column_types or {}
     )
     for row in batch.rows:
-        for profile, value in zip(scan.profiles, row):
+        for profile, raw_value, name in zip(scan.profiles, row, scan.spool.columns):
+            value = raw_value
+            if scan.authoritative_types is not None:
+                value = normalize_authoritative_value(
+                    value, scan.authoritative_types[name], options.to_db_backend
+                )
             profile.add(value)
     scan.spool.write_rows(batch.rows)
     _require_source_snapshot(options)
@@ -546,6 +555,7 @@ def _freeze(
             ],
             digest,
             observed_scope,
+            authoritative_types=schema.target_types if schema.authoritative else None,
         )
         _scan_input(options, refs, state, scan, context)
         resolutions = _resolve_scan(options, schema, scan)

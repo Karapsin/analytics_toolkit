@@ -19,6 +19,10 @@ from .ch.storage_types import logical_storage_type
 from .ch.timestamp_keys import source_key_validation_frame as ch_source_key_validation_frame
 from .ch.value_validation import validate_constrained_value
 from .decimal_values import convert_decimal_value, decimal_target_type
+from .gp.date_values import date_value as gp_date_value
+from .gp.date_values import is_date_type as is_gp_date_type
+from .gp.date_values import normalize_authoritative_date as normalize_gp_authoritative_date
+from .gp.date_values import validate_date_profile as validate_gp_date_profile
 from .gp.json_values import convert_json_value, is_json_type
 from .gp.network_values import convert_network_value, is_network_type, validate_network_profile
 from .gp.network_values import key_validation_frames as gp_key_validation_frames
@@ -28,6 +32,17 @@ from .gp.temporal_values import (
     validate_clock_interval_profile,
 )
 from .nested_types import convert_nested, nested_descriptor
+from .trino.boolean_values import (
+    boolean_value,
+    is_boolean_type,
+    normalize_authoritative_boolean,
+    validate_boolean_type_profile,
+)
+from .trino.date_values import (
+    date_value,
+    is_date_type,
+    validate_date_type_profile,
+)
 from .trino.ip_values import validate_ip_profile, validate_ip_transport_value
 from .trino.json_values import validate_json_profile as validate_trino_json_profile
 from .trino.json_values import validate_json_transport_value
@@ -98,6 +113,13 @@ def requires_native_assignment(native_type: str, backend: str) -> bool:
     return native_assignment.requires_native_assignment(native_type)
 
 
+def normalize_authoritative_value(value: Any, native_type: str | None, backend: str) -> Any:
+    """Keep deliberate assignment views separate from inferred source families."""
+    if backend == "trino":
+        return normalize_authoritative_boolean(value, native_type)
+    return normalize_gp_authoritative_date(value, native_type) if backend == "gp" else value
+
+
 def validate_transport_value(value: Any, native_type: str, backend: str) -> None:
     """Certify the real parameter normalizer while retaining native profile values."""
     if backend == "ch" and is_legacy_json_type(canonical_native_type(native_type, backend)):
@@ -123,7 +145,9 @@ def validate_backend_profile(
         )
     if backend == "trino":
         return (
-            validate_trino_json_profile(profile, native_type)
+            validate_date_type_profile(native_type)
+            or validate_boolean_type_profile(native_type)
+            or validate_trino_json_profile(profile, native_type)
             or validate_ip_profile(profile, native_type)
             or validate_time_profile(
                 profile,
@@ -140,7 +164,8 @@ def validate_backend_profile(
     from .gp.json_values import validate_json_profile  # noqa: PLC0415 -- native policy.
 
     return (
-        validate_network_profile(profile, native_type)
+        validate_gp_date_profile(profile, native_type)
+        or validate_network_profile(profile, native_type)
         or validate_json_profile(profile, native_type)
         or validate_clock_interval_profile(
             profile,
@@ -182,14 +207,26 @@ def _convert_backend_value(
         return True, convert_ch_network_value(value, target_type)
     if resolution.target_backend == "ch" and is_legacy_json_type(target_type):
         return True, normalize_legacy_json_value(value, target_type)
-    if resolution.target_backend == "trino" and is_time_type(target_type):
-        return True, convert_time_value(value, target_type)
+    if resolution.target_backend == "trino":
+        return _convert_trino_value(value, target_type)
     if resolution.target_backend == "gp":
         return _convert_gp_value(value, target_type, resolution)
     return False, value
 
 
+def _convert_trino_value(value: Any, target_type: str) -> tuple[bool, Any]:
+    if is_date_type(target_type):
+        return True, date_value(value)
+    if is_boolean_type(target_type):
+        return True, boolean_value(value)
+    if is_time_type(target_type):
+        return True, convert_time_value(value, target_type)
+    return False, value
+
+
 def _convert_gp_value(value: Any, target_type: str, resolution: ResolvedColumn) -> tuple[bool, Any]:
+    if is_gp_date_type(target_type):
+        return True, gp_date_value(value)
     if is_network_type(target_type):
         return True, convert_network_value(value, target_type)
     if is_gp_clock_interval_type(target_type):

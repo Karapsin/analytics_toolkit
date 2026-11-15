@@ -348,6 +348,10 @@ every frozen value must be NULL or a valid canonical `YYYY-MM-DD` date before
 publication. The original staged strings and destination schema are preserved.
 For other backend date syntax, cast the source expression `AS DATE` in
 `from_sql` so the captured input contains native dates.
+Authoritative DATE conversions are profiled during the original adaptive scan
+without changing the captured raw rows. Trino uses each datetime's supplied
+calendar date; Greenplum retains native datetime parameters for server-side
+assignment. The same conversion is checked again during replay.
 For Greenplum types requiring server assignment, the complete captured payload
 is certified in owned persistent native tables before live publication. This
 includes the final SQL projection and casts when the requested stage schema

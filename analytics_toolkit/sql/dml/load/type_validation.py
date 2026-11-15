@@ -11,6 +11,7 @@ import pandas as pd
 
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.conversion_profiles import validate_converted_rows
+from analytics_toolkit.sql.backends.native_values import normalize_authoritative_value
 from analytics_toolkit.sql.core.exact_values import unwrap_enum
 from analytics_toolkit.sql.core.type_resolution import (
     ColumnProfile,
@@ -59,6 +60,7 @@ def _schema_value(value: Any, target_type: str, backend: str | None = None) -> A
     adapter = get_backend_adapter(backend) if backend is not None else None
     if adapter is not None:
         target_type = adapter.canonical_native_type(target_type)
+        value = normalize_authoritative_value(value, target_type, backend or "")
     # Caller-requested numeric schemas have historically accepted float inputs.
     # Validate the deliberate conversion rather than changing inferred types.
     if isinstance(value, Real) and not isinstance(value, Integral):
