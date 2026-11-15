@@ -8,6 +8,7 @@ import sqlparse
 from sqlglot import exp, parse_one
 
 from tests.sql._support.assertions import strip_query_label
+from tests.sql._support.ch_replace_metadata import ReplacementMetadata
 
 LOCAL = "shard5"
 TARGET = "sandbox.events"
@@ -21,14 +22,22 @@ class Table:
     rows: int
     columns: tuple[str, ...]
     replicated: bool = True
-    replica_rows: tuple[int, int] | None = None
+    replica_rows: tuple[int, ...] | None = None
 
 
 class ReplacementClient:
     """Independent row/schema state on an initiator and remote storage cluster."""
 
-    def __init__(self, *, storage: str = "core", stage_scope: str = LOCAL) -> None:
+    def __init__(
+        self,
+        *,
+        storage: str = "core",
+        stage_scope: str | None = None,
+        coordinator_scope: str = LOCAL,
+    ) -> None:
         self.storage = storage
+        self.coordinator_scope = coordinator_scope
+        stage_scope = stage_scope or coordinator_scope
         self.scope_aliases = {"{cluster}": storage}
         self.tables = {
             (storage, PHYSICAL): Table(17, ("old_column",)),
@@ -36,9 +45,15 @@ class ReplacementClient:
             (stage_scope, STAGE): Table(STAGED_ROWS, ("id", "value")),
         }
         self.engines = {LOCAL: "Ordinary", "core": "Atomic", "facades": "Atomic"}
+        if coordinator_scope != storage:
+            self.engines[coordinator_scope] = "Atomic"
         self.facade_sources = {(storage, TARGET): (storage, PHYSICAL)}
+        self.column_types: dict[tuple[str, str], tuple[str, ...]] = {}
+        if coordinator_scope != storage:
+            self.tables[coordinator_scope, TARGET] = Table(0, ("old_column",))
+            self.facade_sources[coordinator_scope, TARGET] = (storage, PHYSICAL)
         self.internal_replication = False
-        self.replica_count = 2
+        self.replica_count = 1 if coordinator_scope == storage else 2
         self.current_database = "sandbox"
         self.database_engines: dict[tuple[str, str], str] = {}
         self.fingerprint_calls = 0
@@ -54,12 +69,13 @@ class ReplacementClient:
         self.fail_rollback = False
         self.rollback_pending = False
         self.lag_replica = False
-        self.validation_replica = 1
-        self.syncs: list[tuple[str, str, tuple[int, int] | None]] = []
+        self.validation_replica = self.replica_count - 1
+        self.syncs: list[tuple[str, str, tuple[int, ...] | None]] = []
         self.fail_sync = False
         self.fail_cutover_at: int | None = None
         self.fail_cutover_after_apply = False
         self.cutover_attempts = 0
+        self.metadata = ReplacementMetadata(self)
 
     def command(self, sql: str, settings: dict[str, Any] | None = None) -> None:
         self.commands.append((sql, settings or {}))
@@ -83,14 +99,20 @@ class ReplacementClient:
             )
             source = self.reference(query.args["from_"].this)
             self.loads.append((target, source))
-            if target[0] == LOCAL:
+            if self._scope(target[0]) == self._scope(self.coordinator_scope):
                 self.local_loads.append(target[1])
             rows = self.tables[source].rows - int(self.incomplete_load)
             state = self.tables[target]
             replica_rows = (rows, 0) if self.lag_replica and state.replicated else None
             if not state.replicated:
                 striped = tokens[index].value.lower().startswith("clusterallreplicas(")
-                replica_rows = ((rows + 1) // 2, rows // 2) if striped else (rows, rows)
+                if striped:
+                    quotient, remainder = divmod(rows, self.replica_count)
+                    replica_rows = tuple(
+                        quotient + int(index < remainder) for index in range(self.replica_count)
+                    )
+                else:
+                    replica_rows = (rows,) * self.replica_count
             self.tables[target] = replace(state, rows=rows, replica_rows=replica_rows)
         elif operation == "SYSTEM":
             parts = [
@@ -118,9 +140,13 @@ class ReplacementClient:
             tree = parse_one(clean, read="clickhouse")
             scope = tree.find(exp.OnCluster)
             table = tree.this or tree.args["tables"][0]
-            key = (self._scope(scope.this.name) if scope else LOCAL, self.table_name(table))
+            key = (
+                self._scope(scope.this.name) if scope else self.coordinator_scope,
+                self.table_name(table),
+            )
             self.tables.pop(key, None)
             self.facade_sources.pop(key, None)
+            self.column_types.pop(key, None)
         else:
             message = f"Unexpected command: {sql}"
             raise AssertionError(message)
@@ -137,7 +163,7 @@ class ReplacementClient:
         scope = (
             self._scope(tokens[-1].value.strip("'\"`"))
             if tokens[-3].value.upper() == "ON"
-            else LOCAL
+            else self.coordinator_scope
         )
         left, right = (
             self.table_name(
@@ -151,6 +177,8 @@ class ReplacementClient:
         operations.append((scope, left, right))
         left_source = self.facade_sources.get((scope, left))
         right_source = self.facade_sources.get((scope, right))
+        left_types = self.column_types.get((scope, left))
+        right_types = self.column_types.get((scope, right))
         if operation == "EXCHANGE":
             database = left.rsplit(".", 1)[0]
             engine = self.database_engines.get((scope, database), self.engines[scope])
@@ -159,16 +187,23 @@ class ReplacementClient:
                 self.tables[scope, right],
                 self.tables[scope, left],
             )
+            self.column_types.pop((scope, left), None)
+            self.column_types.pop((scope, right), None)
             if right_source is not None:
                 self.facade_sources[scope, left] = right_source
+            if right_types is not None:
+                self.column_types[scope, left] = right_types
         else:
             if (scope, right) in self.tables:
                 message = "rename destination already exists"
                 raise OSError(message)
             self.tables[scope, right] = self.tables.pop((scope, left))
             self.facade_sources.pop((scope, left), None)
+            self.column_types.pop((scope, left), None)
         if left_source is not None:
             self.facade_sources[scope, right] = left_source
+        if left_types is not None:
+            self.column_types[scope, right] = left_types
         if failing:
             message = "cutover acknowledgement lost after execution"
             raise OSError(message)
@@ -184,24 +219,28 @@ class ReplacementClient:
         if state.replica_rows is not None:
             acknowledged_rows = max(state.replica_rows)
             self.tables[scope, table] = replace(
-                state, replica_rows=(acknowledged_rows, acknowledged_rows)
+                state, replica_rows=(acknowledged_rows,) * len(state.replica_rows)
             )
 
     def _create_table(self, tree: exp.Create) -> None:
         scope = tree.find(exp.OnCluster)
-        execution_scope = self._scope(scope.this.name) if scope else LOCAL
+        execution_scope = self._scope(scope.this.name) if scope else self.coordinator_scope
         target = tree.this
         if isinstance(target, exp.Schema):
             columns = tuple(column.name for column in target.expressions)
+            types = tuple(column.kind.sql(dialect="clickhouse") for column in target.expressions)
             target = target.this
         else:
             source_scope, source_table = self.reference(tree.expression)
-            if source_scope == LOCAL:
+            if source_scope == self.coordinator_scope:
                 source_scope = execution_scope
             source = self.tables[source_scope, source_table]
             columns = source.columns
+            types = self.column_types.get((source_scope, source_table), ("Int64",) * len(columns))
         key = (execution_scope, self.table_name(target))
         engine = tree.find(exp.EngineProperty).this.name.lower()
+        if key not in self.tables:
+            self.column_types[key] = types
         self.tables.setdefault(
             key, Table(0, columns, replicated=engine.startswith(("replicated", "shared")))
         )
@@ -212,38 +251,28 @@ class ReplacementClient:
                 f"{arguments[1].this}.{arguments[2].this}",
             )
 
-    def query(self, sql: str, **_kwargs: Any) -> Any:
-        self.queries.append(sql)
-        clean = strip_query_label(sql)
+    def _command_rows(self, clean: str) -> list[tuple[Any, ...]] | None:
         if clean.startswith("SHOW CREATE TABLE "):
             name = clean.removeprefix("SHOW CREATE TABLE ").replace("`", "")
-            key = (
-                (LOCAL, name)
-                if (LOCAL, name) in self.tables
-                else next(key for key in self.tables if key[1] == name)
-            )
-            state = self.tables[key]
-            columns = ", ".join(f"`{column}` Int64" for column in state.columns)
-            facade = self.facade_sources.get(key)
-            if facade is not None:
-                cluster, physical = facade
-                database, relation = physical.rsplit(".", 1)
-                engine = f"Distributed('{cluster}', '{database}', '{relation}', rand())"
-                order = ""
-            else:
-                engine = "ReplicatedMergeTree" if state.replicated else "MergeTree"
-                order = " ORDER BY tuple()"
-            return SimpleNamespace(
-                result_rows=[(f"CREATE TABLE {name} ({columns}) ENGINE = {engine}{order}",)]
-            )
+            return [(self.metadata.ddl((self.coordinator_scope, name)),)]
         if clean == "SELECT currentDatabase()":
-            return SimpleNamespace(result_rows=[(self.current_database,)])
+            return [(self.current_database,)]
         if clean.startswith("EXISTS TABLE "):
             table = parse_one(f"SELECT * FROM {clean[len('EXISTS TABLE ') :]}", read="clickhouse")
             key = self.reference(table.args["from_"].this)
-            return SimpleNamespace(result_rows=[(int(key in self.tables),)])
+            return [(int(key in self.tables),)]
         if "getMacro(" in clean:
-            return SimpleNamespace(result_rows=[(self.storage,)])
+            return [(self.storage,)]
+        if clean == "SELECT serverUUID(), tcpPort()":
+            return [self.metadata.local_identity()]
+        return None
+
+    def query(self, sql: str, **_kwargs: Any) -> Any:
+        self.queries.append(sql)
+        clean = strip_query_label(sql)
+        command_rows = self._command_rows(clean)
+        if command_rows is not None:
+            return SimpleNamespace(result_rows=command_rows)
         tree = parse_one(clean, read="clickhouse")
         source = tree.args["from_"].this
         scope, table = self.reference(source)
@@ -264,13 +293,23 @@ class ReplacementClient:
             and source.this.name.lower() == "clusterallreplicas"
             and not table.startswith("stage.")
         ):
-            rows = sum(state.replica_rows) if state.replica_rows is not None else rows * 2
+            rows = (
+                sum(state.replica_rows)
+                if state.replica_rows is not None
+                else rows * self.replica_count
+            )
         if table == PHYSICAL and self.swaps and self.bad_final_count:
             self.rollback_pending = True
             rows -= 1
         return SimpleNamespace(result_rows=[(rows,)])
 
     def _metadata_rows(self, tree: exp.Expression, scope: str, table: str) -> list[tuple[Any, ...]]:
+        proof = self.metadata.rows(tree, scope, table)
+        return self._legacy_metadata_rows(tree, scope, table) if proof is None else proof
+
+    def _legacy_metadata_rows(
+        self, tree: exp.Expression, scope: str, table: str
+    ) -> list[tuple[Any, ...]]:
         catalog_rows = self._catalog_rows(tree, scope, table)
         if catalog_rows is not None:
             return catalog_rows
@@ -360,4 +399,4 @@ class ReplacementClient:
             args = table.this.expressions
             return self._scope(str(args[0].this)), f"{args[1].this}.{args[2].this}"
         assert isinstance(table, exp.Table)
-        return LOCAL, self.table_name(table)
+        return self.coordinator_scope, self.table_name(table)

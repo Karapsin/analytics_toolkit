@@ -108,10 +108,28 @@ schema. Pass `write_mode="append"` explicitly for incremental loads. A zero-row
 source follows `empty_source_policy`: replace/truncate modes produce an empty
 target by default, while append/upsert keep the target.
 
-For an existing ClickHouse target, replacement data is loaded and counted on
-the configured storage cluster, even when the connection host is
-outside that cluster. A local stage remains local; cluster-routed private
-stages retain their all-replica reads. Unqualified targets are resolved once
+Staged replacement verifies actual storage and facade endpoint ownership before
+replacement DDL. When an existing managed ClickHouse pair remains a pair,
+desired physical and routing scopes must match the verified existing native
+instances; different cluster aliases are accepted only with that proof.
+When the original facade execution scope is known, the desired facade scope must
+also be verified as equivalent in its complete endpoint membership and shard
+and replica grouping. Replacement cannot narrow that known scope to the
+coordinator or a subset of its hosts.
+Unsupported placement changes stop before replacement DDL. Perform a supported
+storage or facade placement migration first with
+[sql.ch_reconfigure_table](ch_reconfigure_table.md).
+
+Supported conversions between a managed pair and a plain table still use guarded
+automatic reconfiguration before offside replacement. The toolkit then certifies
+the acknowledged destination layout and binds replacement writes and row counts
+to that scope, whether it is remote storage or the coordinator. Append and
+upsert continue to use the verified existing layout.
+
+For an existing ClickHouse target, replacement data is loaded and counted in
+the acknowledged, verified storage scope. For remote storage, this also applies
+when the connection host is outside that cluster. A local stage remains local;
+cluster-routed private stages retain their all-replica reads. Unqualified targets are resolved once
 against the connection's current database for metadata, DDL, and data operations.
 The staged and replacement row counts
 must match before cutover, and the final storage row count is checked afterward.

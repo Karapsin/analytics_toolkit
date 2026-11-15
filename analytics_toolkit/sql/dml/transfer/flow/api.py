@@ -239,6 +239,7 @@ def transfer_table(
         attempt_options = replace(
             stream_retry_state.options_for_attempt(),
             attempt_number=attempt,
+            final_target_rows=None,
         )
         if attempt > 1:
             time_print(attempt_log_state.retry_message(attempt, options.full_retry_cnt))
@@ -384,7 +385,7 @@ def _build_transfer_metadata_result(
     )
     metadata.final_target_rows = (
         completed_attempt_options.final_target_rows
-        if lazy_keyed_source_staging
+        if lazy_keyed_source_staging or completed_attempt_options.final_target_rows is not None
         else best_effort_transfer_target_count(
             options,
             open_connection=get_sql_connection,

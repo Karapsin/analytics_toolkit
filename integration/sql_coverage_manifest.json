@@ -11063,6 +11063,63 @@
         "tests/sql/backends/ch/reconfigure/pair_scope.py::test_pair_scope_defaults_allow_all_actual_managed_facades_with_real_outage_guard"
       ]
     },
+    "audit.transfer.clickhouse.replacement_physical_scope": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_rejects_a_different_physical_scope_before_replacement_ddl",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_replacement_rejects_unowned_physical_scope_before_cutover"
+      ]
+    },
+    "audit.transfer.clickhouse.pair_to_remote_local": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_finishes_pair_to_remote_local_replacement",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_replacement_finishes_pair_to_remote_local_conversion",
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_memory_stage_uses_only_supported_storage_clauses"
+      ]
+    },
+    "audit.transfer.clickhouse.pair_to_coordinator_local": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_finishes_pair_to_coordinator_local_replacement",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_replacement_finishes_pair_to_remote_local_conversion",
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_memory_stage_uses_only_supported_storage_clauses"
+      ]
+    },
+    "audit.transfer.clickhouse.routed_facade_scope_preservation": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_rejects_a_local_facade_over_existing_full_routed_scope",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/facade_scope.py::test_public_transfer_rejects_replacement_that_leaves_an_original_peer_facade"
+      ]
+    },
+    "audit.transfer.clickhouse.routed_insert_function_columns": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_replaces_every_facade_and_preserves_routed_insert_columns",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/facade_scope.py::test_public_transfer_accepts_an_equivalent_complete_facade_scope_alias"
+      ]
+    },
     "audit.clickhouse.routing_metadata": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_routing_bindings_and_current_database_metadata",

@@ -362,6 +362,13 @@ Older ClickHouse entries that relied on helper defaults must add explicit
 template) or pass all required helper overrides. Missing required effective
 settings fail before dry-run SQL generation or database access.
 
+ClickHouse storage clauses follow the selected engine in both `regular` and
+`staging` policies. MergeTree-family engines retain the default `ORDER BY tuple()`
+when no sorting key is supplied. `Memory` and other non-MergeTree engines receive
+no synthetic sorting clause. For `Memory`, explicit `partition_by` or `order_by`,
+and primary or sampling keys embedded in the engine expression, fail before DDL.
+Explicit clauses for other engines are preserved for native engine validation.
+
 Passwords preserve their exact string contents after direct, secret, environment,
 or Airflow resolution, including empty strings and leading/trailing whitespace.
 Ordinary connection names and namespace fields retain their normal trimming.

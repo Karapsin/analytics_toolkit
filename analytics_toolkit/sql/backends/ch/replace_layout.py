@@ -15,6 +15,8 @@ from .layout import inspect_existing_layout
 from .reconfigure import execute_ch_table_reconfiguration, plan_ch_table_reconfiguration
 from .reconfigure_ddl import engine_sql, parse_create_table
 from .reconfigure_models import ChReconfigureOptions
+from .reconfigure_physical import PhysicalRebuildExecutionScope
+from .replacement_scope import certify_replacement_scope, inspect_completed_physical_layout
 
 
 def prepare_replacement_layout(adapter: Any, request: Any) -> None:
@@ -35,6 +37,7 @@ def prepare_replacement_layout(adapter: Any, request: Any) -> None:
         raise AmbiguousSqlReplaceError(message)
     desired_pair = policy.create_distributed_pair and not request.ch_only_shard
     if layout.create_distributed_pair == desired_pair:
+        certify_replacement_scope(request.connection, layout, policy, staged_exchange=True)
         return
     # First preserve all existing data in the requested topology. The guarded
     # replacement subsequently applies the new schema and contents. Using the
@@ -69,6 +72,21 @@ def prepare_replacement_layout(adapter: Any, request: Any) -> None:
             f"continuing replacement: {change.result_data()}"
         )
         raise AmbiguousSqlReplaceError(message)
+    if change.target_pair:
+        converted = inspect_existing_layout(
+            request.connection,
+            request.target_table,
+            distributed_on_cluster=policy.distributed_on_cluster,
+        )
+    else:
+        execution = change.physical_execution
+        if not isinstance(execution, PhysicalRebuildExecutionScope):
+            message = (
+                "The completed conversion has no verified physical destination for replacement."
+            )
+            raise AmbiguousSqlReplaceError(message)
+        converted = inspect_completed_physical_layout(request.connection, execution)
+    certify_replacement_scope(request.connection, converted, policy, staged_exchange=True)
 
 
 __all__ = ["prepare_replacement_layout"]

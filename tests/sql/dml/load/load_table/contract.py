@@ -18,6 +18,7 @@ from tests.sql._support.load_table import (
     table_ops_module,
     trino_insert_module,
 )
+from tests.sql._support.load_table_replacement import LoadTableReplacementClient
 
 
 def test_batch_insert_sql_builders_preserve_backend_shapes() -> None:
@@ -129,7 +130,9 @@ def test_finalize_stage_table_clickhouse_only_shard_upsert_deletes_target() -> N
 
 
 def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> None:
-    client = FakeClickHouseClient()
+    client = LoadTableReplacementClient(
+        {"month_date": "Date", "min_month_use": "Date", "users": "Int64"}
+    )
     qualified_target = f"default.{TEST_CH_TABLE}"
     qualified_shard = f"default.{TEST_CH_SHARD_TABLE}"
     batch = pd.DataFrame(
@@ -183,10 +186,14 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         for command, settings in zip(client.commands, client.command_settings)
         if command.startswith("RENAME TABLE")
     )
+    client.assert_replaced(
+        ("month_date", "min_month_use", "users"),
+        ("Date", "Date", "Int64"),
+    )
 
 
 def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() -> None:
-    client = FakeClickHouseClient()
+    client = LoadTableReplacementClient({"month_date": "String", "users": "String"})
     batch = pd.DataFrame(
         {
             "month_date": ["2024-02-01"],
@@ -228,6 +235,7 @@ def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() 
     assert client.command_settings[client.commands.index(insert_sql)] == {
         "distributed_foreground_insert": 1
     }
+    client.assert_replaced(tuple(column_types), tuple(column_types.values()))
 
 
 def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:

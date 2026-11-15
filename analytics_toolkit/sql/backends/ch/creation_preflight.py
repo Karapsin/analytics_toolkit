@@ -7,11 +7,15 @@ from typing import Any
 
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError, SqlConfigError
 
+from . import reconfigure_topology as _topology
 from .ddl import build_ch_shard_table_name
 from .layout import inspect_existing_layout
 from .reconfigure_support import resolve_optional_cluster, table_exists_on_cluster
-from .reconfigure_topology import endpoints
 from .replace_layout import prepare_replacement_layout
+from .replacement_scope import certify_replacement_scope, same_storage_scope
+
+# Compatibility attribute retained for existing internal imports.
+endpoints = _topology.endpoints
 
 
 def preflight_create_table_replacement(adapter: Any, connection: Any, options: Any) -> None:
@@ -52,14 +56,13 @@ def preflight_create_table_replacement(adapter: Any, connection: Any, options: A
         same_facade_scope = _same_storage_scope(
             connection, layout.distributed_on_cluster, policy.distributed_on_cluster
         )
-        if not same_facade_scope:
+        if not same_facade_scope and layout.distributed_on_cluster is not None:
             _reject_facade_collision(connection, options)
-            if layout.distributed_on_cluster is not None:
-                message = (
-                    "Facade placement differs from its verified existing scope. "
-                    "Reconfigure that layout before replacing its schema."
-                )
-                raise InvalidSqlInputError(message)
+            message = (
+                "Facade placement differs from its verified existing scope. "
+                "Reconfigure that layout before replacing its schema."
+            )
+            raise InvalidSqlInputError(message)
     if layout is not None and layout.create_distributed_pair != desired_pair:
         prepare_replacement_layout(
             adapter,
@@ -72,6 +75,8 @@ def preflight_create_table_replacement(adapter: Any, connection: Any, options: A
                 ch_creation_policy=policy,
             ),
         )
+    elif layout is not None:
+        certify_replacement_scope(connection, layout, policy, staged_exchange=False)
 
 
 def _reject_companion_collision(adapter: Any, connection: Any, options: Any) -> None:
@@ -90,13 +95,7 @@ def _reject_companion_collision(adapter: Any, connection: Any, options: Any) -> 
 
 
 def _same_storage_scope(connection: Any, original: str | None, desired: str | None) -> bool:
-    original = resolve_optional_cluster(connection, original)
-    desired = resolve_optional_cluster(connection, desired)
-    if original == desired:
-        return True
-    if original is None or desired is None:
-        return False
-    return endpoints(connection, original) == endpoints(connection, desired)
+    return same_storage_scope(connection, original, desired)
 
 
 def _reject_facade_collision(connection: Any, options: Any) -> None:

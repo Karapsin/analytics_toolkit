@@ -34,7 +34,7 @@ def request_for(client):
             shard_on_cluster="core",
             distributed_engine_template="Distributed({cluster},{database},{shard_table},{sharding_key})",
             distributed_cluster="core",
-            distributed_on_cluster="core",
+            distributed_on_cluster=None,
             sharding_key="id",
             ddl_ready_timeout_seconds=1,
             ddl_wait_policy="wait_all",
@@ -75,10 +75,15 @@ def test_guarded_cleanup_drops_only_acknowledged_resources_after_readiness_failu
 
     monkeypatch.setattr(module, "_wait_for_ch_table_on_cluster", wait)
     original = dict(client.tables)
+    original_facades = dict(client.facade_sources)
     with pytest.raises(TimeoutError) as caught:
         get_backend_adapter("ch").finalize_stage_table(request_for(client))
     assert caught.value is error
     assert client.tables == original
+    assert all(client.tables[key] is table for key, table in original.items())
+    assert client.facade_sources == original_facades
+    assert client.loads == []
+    assert client.swaps == []
     drops = [sql for sql, _ in client.commands if sql.startswith("DROP")]
     assert len(drops) == 1
     assert "__replace_guarded_" in drops[0]

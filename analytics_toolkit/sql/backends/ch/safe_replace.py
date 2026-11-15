@@ -8,6 +8,7 @@ from uuid import uuid4
 from sqlglot import parse_one
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.finalization_outcome import record_final_target_rows
 from analytics_toolkit.sql.backends.models import StageFinalizationRequest, StageTargetTableRequest
 from analytics_toolkit.sql.connection.ddl_defaults import legacy_clickhouse_scope
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError, SqlConfigError
@@ -323,6 +324,7 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
         )
         raise
 
+    record_final_target_rows(final_rows)
     _drop_completed_replacements(adapter, request.connection, cleanup_tables)
 
 

@@ -30,6 +30,39 @@ def _legacy_object_type(native: exp.DataType) -> exp.DataType:
     )
 
 
+def _parse_insert(self: Any, *args: Any, **kwargs: Any) -> Any:
+    previous = getattr(self, "_atk_insert_target", False)
+    self._atk_insert_target = True
+    try:
+        return super(ClickHouseDialect.parser_class, self)._parse_insert(*args, **kwargs)
+    finally:
+        self._atk_insert_target = previous
+
+
+def _parse_table(
+    self: Any,
+    schema: bool = False,  # noqa: FBT001, FBT002 - Match SQLGlot's positional parser interface.
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    if schema:
+        self._atk_insert_target = False
+    return super(ClickHouseDialect.parser_class, self)._parse_table(schema, *args, **kwargs)
+
+
+def _parse_insert_function(self: Any, *args: Any, **kwargs: Any) -> Any:
+    function_target = (
+        getattr(self, "_atk_insert_target", False) and self._prev.token_type == _TOKEN_TYPE.FUNCTION
+    )
+    if function_target:
+        # Consume the context before parsing arguments, which may themselves
+        # contain functions. Only this direct INSERT FUNCTION target owns the
+        # optional target-column list following its closing parenthesis.
+        self._atk_insert_target = False
+    function = super(ClickHouseDialect.parser_class, self)._parse_function(*args, **kwargs)
+    return self._parse_schema(this=function) if function_target else function
+
+
 class ClickHouseDialect(ClickHouse):
     """Preserve integer rand(), which is distinct from randCanonical()."""
 
@@ -37,6 +70,9 @@ class ClickHouseDialect(ClickHouse):
         "Parser",
         (ClickHouse.parser_class,),
         {
+            "_parse_insert": _parse_insert,
+            "_parse_table": _parse_table,
+            "_parse_function": _parse_insert_function,
             "FUNC_TOKENS": ClickHouse.parser_class.FUNC_TOKENS | {_TOKEN_TYPE.DATABASE},
             "STRUCT_TYPE_TOKENS": ClickHouse.parser_class.STRUCT_TYPE_TOKENS - {_TOKEN_TYPE.OBJECT},
             "NESTED_TYPE_TOKENS": ClickHouse.parser_class.NESTED_TYPE_TOKENS - {_TOKEN_TYPE.OBJECT},

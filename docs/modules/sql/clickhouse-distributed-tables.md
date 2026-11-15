@@ -398,6 +398,23 @@ turns authentication, schema, or query errors into an empty successful result.
 
 ## Replace and Drop
 
+Before staged replacement of an existing managed pair, the toolkit verifies
+actual storage and facade endpoint ownership. For same-topology pair-to-pair
+replacement, desired physical and routing scopes must identify the verified
+existing native instances; cluster aliases require the same proof. When the
+original facade execution scope is known, the desired facade scope must also
+have verified equivalent complete endpoint membership and shard and replica
+grouping. Narrowing that scope to the coordinator or a subset is a placement
+migration, not a staged replacement. Unsupported placement changes stop before
+replacement DDL. Perform a supported storage or facade placement migration first
+with [sql.ch_reconfigure_table](functions/ch_reconfigure_table.md).
+
+Supported conversions between a managed pair and a plain table still use guarded
+automatic reconfiguration before offside replacement. The acknowledged
+destination layout is then verified, and replacement writes and row counts use
+that actual scope, whether remote or coordinator-local. Appends and upserts
+continue to use the verified existing layout.
+
 Replace flows build and populate offside physical and Distributed tables,
 validate row counts and a destination fingerprint, then exchange names in an
 Atomic/Shared database or use a reversible rename sequence. The old target is

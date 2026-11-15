@@ -85,6 +85,57 @@ def test_guarded_replacement_retains_incomplete_conversion_recovery(monkeypatch)
     assert client.commands == []
 
 
+def test_completed_conversion_without_physical_certificate_stops_replacement(monkeypatch):
+    class QuotedClient(ReconfigureClient):
+        def query(self, text, settings=None):
+            return super().query(text.replace("`", ""), settings=settings)
+
+    client = QuotedClient()
+    request = SimpleNamespace(
+        connection=client,
+        target_table="analytics.events",
+        connection_key="ch",
+        query_label=None,
+        ch_only_shard=True,
+        ch_creation_policy=target_policy(pair=False),
+    )
+    original_inspect = module.inspect_existing_layout
+    inspections = []
+    completed_changes = []
+
+    def inspect_initial_layout(*args, **kwargs):
+        assert inspections == [], "A completed conversion used an unverified fresh lookup."
+        inspections.append(args[1])
+        return original_inspect(*args, **kwargs)
+
+    def acknowledge_without_destination_certificate(_adapter, _connection, change, **_kwargs):
+        assert change.physical_execution is not None
+        change.cleanup_complete = True
+        change.physical_execution = None
+        completed_changes.append(change)
+
+    def forbidden_followup(*_args, **_kwargs):
+        pytest.fail("Replacement continued without its verified physical destination.")
+
+    monkeypatch.setattr(module, "inspect_existing_layout", inspect_initial_layout)
+    monkeypatch.setattr(
+        module, "execute_ch_table_reconfiguration", acknowledge_without_destination_certificate
+    )
+    monkeypatch.setattr(module, "inspect_completed_physical_layout", forbidden_followup)
+    monkeypatch.setattr(module, "certify_replacement_scope", forbidden_followup)
+
+    with pytest.raises(AmbiguousSqlReplaceError, match="no verified physical destination"):
+        prepare_replacement_layout(get_backend_adapter("ch"), request)
+
+    assert inspections == [request.target_table]
+    assert len(completed_changes) == 1
+    assert completed_changes[0].table == request.target_table
+    assert completed_changes[0].cleanup_complete is True
+    assert completed_changes[0].target_pair is False
+    assert completed_changes[0].physical_execution is None
+    assert client.commands == []
+
+
 def test_missing_policy_does_not_infer_a_desired_companion():
     prepare_replacement_layout(get_backend_adapter("ch"), SimpleNamespace(ch_creation_policy=None))
 

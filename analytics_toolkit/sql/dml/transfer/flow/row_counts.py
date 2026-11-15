@@ -45,6 +45,10 @@ def best_effort_transfer_target_count(
     count_rows: Any = count_table_rows,
     target_connection_runner: Any | None = None,
 ) -> int | None:
+    known_rows: int | None = getattr(options, "final_target_rows", None)
+    if known_rows is not None:
+        return known_rows
+
     def count(connection: Any) -> int:
         return int(
             count_rows(

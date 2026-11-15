@@ -20,6 +20,7 @@ from analytics_toolkit.sql.backends.ch.reconfigure_support import (
     count_rows_on_cluster,
     resolve_optional_cluster,
 )
+from analytics_toolkit.sql.backends.finalization_outcome import capture_finalization_outcome
 from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.dml.empty_source import (
     EmptySourceError,
@@ -223,6 +224,8 @@ def _finalize_target_once(  # noqa: PLR0913
     fresh_clickhouse_target: bool,
     target_connection_runner: Any | None,
 ) -> None:
+    # A previous completed finalizer cannot certify the next target mutation.
+    object.__setattr__(options, "final_target_rows", None)
     if partition_upsert_enabled(options, stage_state):
         _run_target_operation(
             options,
@@ -239,46 +242,53 @@ def _finalize_target_once(  # noqa: PLR0913
         )
     if fresh_clickhouse_target and stage_state.target_existed_at_start is False:
         stage_state.target_created_by_operation = True
+
+    def finalize_target(target_ref: dict[str, Any]) -> None:
+        with capture_finalization_outcome() as outcome:
+            finalize_stage_table(
+                options.to_db_backend,
+                target_ref["connection"],
+                stage_table=stage_table,
+                target_table=options.target_table,
+                replace_target_table=(
+                    options.replace_target_table
+                    and not target_precleared
+                    and not _should_drop_created_target(stage_state)
+                ),
+                target_exists=stage_state.target_exists and not target_precleared,
+                sample_batch=stage_state.first_non_empty_batch,
+                target_column_types=target_column_types,
+                insert_column_types=stage_state.insert_column_types,
+                write_mode=options.write_mode,
+                key_columns=options.key_columns,
+                gp_distributed_by_key=options.gp_distributed_by_key,
+                gp_partitions=options.gp_partitions,
+                partition_by=options.partition_by,
+                order_by=options.order_by,
+                ch_engine=options.ch_engine,
+                ch_cluster=options.ch_cluster,
+                ch_sharding_key=options.ch_sharding_key,
+                ch_only_shard=options.ch_only_shard,
+                query_label=options.query_label,
+                connection_key=options.to_db_key,
+                ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+                upsert_partition_column=options.upsert_partition_column,
+                final_upsert_stage_table=stage_state.final_upsert_stage_table,
+                incoming_stage_tables=(
+                    stage_state.stage_tables if options.write_mode == "upsert" else None
+                ),
+                trino_upsert_partition_drop_sql_template=(
+                    options.trino_upsert_partition_drop_sql_template
+                ),
+                ch_creation_policy=creation_policy,
+            )
+        if outcome.final_target_rows is not None:
+            object.__setattr__(options, "final_target_rows", outcome.final_target_rows)
+
     _run_target_operation(
         options,
         "finalize_target",
-        lambda target_ref: finalize_stage_table(
-            options.to_db_backend,
-            target_ref["connection"],
-            stage_table=stage_table,
-            target_table=options.target_table,
-            replace_target_table=(
-                options.replace_target_table
-                and not target_precleared
-                and not _should_drop_created_target(stage_state)
-            ),
-            target_exists=stage_state.target_exists and not target_precleared,
-            sample_batch=stage_state.first_non_empty_batch,
-            target_column_types=target_column_types,
-            insert_column_types=stage_state.insert_column_types,
-            write_mode=options.write_mode,
-            key_columns=options.key_columns,
-            gp_distributed_by_key=options.gp_distributed_by_key,
-            gp_partitions=options.gp_partitions,
-            partition_by=options.partition_by,
-            order_by=options.order_by,
-            ch_engine=options.ch_engine,
-            ch_cluster=options.ch_cluster,
-            ch_sharding_key=options.ch_sharding_key,
-            ch_only_shard=options.ch_only_shard,
-            query_label=options.query_label,
-            connection_key=options.to_db_key,
-            ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-            upsert_partition_column=options.upsert_partition_column,
-            final_upsert_stage_table=stage_state.final_upsert_stage_table,
-            incoming_stage_tables=(
-                stage_state.stage_tables if options.write_mode == "upsert" else None
-            ),
-            trino_upsert_partition_drop_sql_template=(
-                options.trino_upsert_partition_drop_sql_template
-            ),
-            ch_creation_policy=creation_policy,
-        ),
+        finalize_target,
         target_connection_runner=target_connection_runner,
     )
 

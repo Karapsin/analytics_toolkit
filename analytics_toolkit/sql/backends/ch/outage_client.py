@@ -331,7 +331,7 @@ class OutageClient:
                 cluster, db, name, function_key = function_target
                 INSERT_KEY.set(function_key)
                 target = (db, name)
-                if self._config.cluster_routing is not None:
+                if self._config.cluster_routing is not None and not _LOCAL_SQL_EXECUTION.get():
                     replacement = exp.Table(this=exp.to_identifier(name), db=exp.to_identifier(db))
                     if isinstance(statement.this, exp.Schema):
                         statement.this.set("this", replacement)

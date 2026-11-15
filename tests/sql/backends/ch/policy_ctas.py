@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 from analytics_toolkit import sql
 from analytics_toolkit.sql.backends import get_backend_adapter
@@ -10,6 +8,7 @@ from analytics_toolkit.sql.backends.ch.policy_ctas import create_table_as_with_p
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
 from tests.sql._support.create_from_sql import FakeDbapiConnection, ch_fast_path_module, importlib
+from tests.sql._support.policy_ctas import Client
 
 legacy = importlib.import_module("analytics_toolkit.sql.backends.ch.create_table_as")
 
@@ -45,37 +44,6 @@ def options(**overrides):
         table_schema={"id": "Int64"},
         **overrides,
     )
-
-
-class Client:
-    def __init__(self, *, exists: bool = False, close_error: bool = False):
-        self.exists = exists
-        self.close_error = close_error
-        self.commands = []
-        self.close_calls = 0
-        self.ddl = "CREATE TABLE analytics.events (id Int64) ENGINE = MergeTree ORDER BY id"
-
-    def query(self, sql):
-        if sql.startswith("DESCRIBE TABLE"):
-            return SimpleNamespace(result_rows=[("id", "Int64")])
-        if sql.startswith("EXISTS TABLE"):
-            return SimpleNamespace(result_rows=[(int(self.exists),)])
-        if sql.startswith("SHOW CREATE TABLE"):
-            return SimpleNamespace(result_rows=[(self.ddl,)])
-        return SimpleNamespace(result_rows=[], column_names=["id"], column_types=["Int64"])
-
-    def command(self, sql, **_kwargs):
-        self.commands.append(sql)
-        if sql.startswith("DROP TABLE"):
-            self.exists = False
-        elif sql.startswith("CREATE"):
-            self.exists = True
-
-    def close(self):
-        self.close_calls += 1
-        if self.close_error:
-            message = "close failed"
-            raise ConnectionError(message)
 
 
 @pytest.mark.parametrize("pair", [False, True])
@@ -298,10 +266,13 @@ def test_public_schema_replace_rejects_unowned_companion_before_any_ddl(monkeypa
     class CompanionClient(Client):
         companion_rows = tuple(range(100))
 
-        def query(self, statement):
-            if statement.startswith("SELECT count() FROM clusterAllReplicas("):
-                return SimpleNamespace(result_rows=[(int(bool(self.companion_rows)),)])
-            return super().query(statement)
+        def metadata_definitions(self):
+            return {
+                **super().metadata_definitions(),
+                ("analytics", "events_shard"): (
+                    "CREATE TABLE analytics.events_shard (id Int64) ENGINE=MergeTree ORDER BY id"
+                ),
+            }
 
     client = CompanionClient(exists=True)
     ddl = importlib.import_module("analytics_toolkit.sql.ddl.api")
@@ -329,7 +300,7 @@ def test_query_skip_retries_metadata_with_fresh_connections_and_never_populates(
     error = ConnectionError("metadata acknowledgement lost")
 
     class FailedProbe(Client):
-        def query(self, statement):
+        def query(self, statement, settings=None):
             raise error
 
     first = FailedProbe(close_error=True)

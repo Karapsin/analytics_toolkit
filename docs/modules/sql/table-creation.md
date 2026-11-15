@@ -76,4 +76,11 @@ partitioning and sorting options when provided.
 ClickHouse distributed targets create a local shard table plus a distributed
 table. Local-only targets should opt into shard-only behavior explicitly.
 
+Storage-clause defaults follow the selected ClickHouse engine: MergeTree-family
+tables retain `ORDER BY tuple()` when no sorting key is supplied, while `Memory`
+and other engines receive no synthetic sorting clause. Unsupported Memory keys
+are rejected before DDL; explicit clauses for other engines remain for native
+engine validation. These
+rules also apply to [configured staging policies](configuration.md#per-connection-ddl-defaults).
+
 [SQL module index](index.md)

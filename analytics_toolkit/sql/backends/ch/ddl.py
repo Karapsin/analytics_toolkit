@@ -14,6 +14,7 @@ from ...ddl.identifiers import (
 )
 from ..registry import get_backend_adapter
 from .dialect import sql_string_literal
+from .storage_clauses import physical_storage_clauses
 
 
 def _build_ch_create_table_sqls(
@@ -77,8 +78,12 @@ def build_ch_distributed_create_table_sqls(
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     engine = _normalize_non_empty_string(ch_engine, "ch_engine")
     ch_sharding_key = _normalize_non_empty_string(ch_sharding_key, "ch_sharding_key")
-    partition_sql = _build_partition_by_sql(partition_by)
-    order_by_sql = _build_order_by_sql(order_by)
+    storage_sql = physical_storage_clauses(
+        engine,
+        partition_sql=_build_partition_by_sql(partition_by),
+        order_sql=_build_order_by_sql(order_by),
+        explicit_order=order_by is not None,
+    )
     database_name, shard_relation_name = split_ch_table_name_for_distributed_engine(shard_table)
 
     cluster_create_statement = (
@@ -94,8 +99,7 @@ def build_ch_distributed_create_table_sqls(
         f"ON CLUSTER {_format_ch_cluster_name(cluster_name)}\n"
         f"({joined_columns})\n"
         f"ENGINE = {engine}\n"
-        f"{partition_sql}"
-        f"{order_by_sql}"
+        f"{storage_sql}"
     )
     local_shard_sql = build_ch_local_create_table_sql(
         table_name=shard_table,
@@ -138,8 +142,12 @@ def build_ch_local_create_table_sql(
     if_not_exists: bool = True,
 ) -> str:
     engine = _normalize_non_empty_string(ch_engine, "ch_engine")
-    partition_sql = _build_partition_by_sql(partition_by)
-    order_by_sql = _build_order_by_sql(order_by)
+    storage_sql = physical_storage_clauses(
+        engine,
+        partition_sql=_build_partition_by_sql(partition_by),
+        order_sql=_build_order_by_sql(order_by),
+        explicit_order=order_by is not None,
+    )
     create_statement = (
         "CREATE OR REPLACE TABLE"
         if ch_replace_table
@@ -147,13 +155,7 @@ def build_ch_local_create_table_sql(
         if if_not_exists
         else "CREATE TABLE"
     )
-    sql = (
-        f"{create_statement} {table_name}\n"
-        f"({joined_columns})\n"
-        f"ENGINE = {engine}\n"
-        f"{partition_sql}"
-        f"{order_by_sql}"
-    )
+    sql = f"{create_statement} {table_name}\n({joined_columns})\nENGINE = {engine}\n{storage_sql}"
     return add_explicit_ch_uuid_to_local_replicated_create(sql)
 
 

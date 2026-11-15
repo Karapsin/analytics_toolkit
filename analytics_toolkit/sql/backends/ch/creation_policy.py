@@ -29,6 +29,7 @@ from analytics_toolkit.sql.connection.errors import SqlConfigError
 from analytics_toolkit.sql.execution.validation import validate_positive_number
 
 from .wait_policy import ChDdlWaitPolicy, resolve_ch_ddl_wait_policy, waits_for_shard
+from .storage_clauses import physical_storage_clauses
 
 DEFAULT_DDL_READY_TIMEOUT_SECONDS = 300.0
 
@@ -390,7 +391,13 @@ def _physical_sql(
     cluster: str | None,
 ) -> str:
     cluster_sql = "" if cluster is None else f"\nON CLUSTER {_format_ch_cluster_name(cluster)}"
-    sql = f"{statement} {table}{cluster_sql}\n({columns})\nENGINE = {engine}\n{_build_partition_by_sql(partition_by)}{_build_order_by_sql(order_by)}"
+    storage_sql = physical_storage_clauses(
+        engine,
+        partition_sql=_build_partition_by_sql(partition_by),
+        order_sql=_build_order_by_sql(order_by),
+        explicit_order=order_by is not None,
+    )
+    sql = f"{statement} {table}{cluster_sql}\n({columns})\nENGINE = {engine}\n{storage_sql}"
     return add_explicit_ch_uuid_to_local_replicated_create(sql)
 
 
@@ -406,10 +413,16 @@ def _physical_as_sql(
     empty: str,
 ) -> str:
     cluster_sql = "" if cluster is None else f"\nON CLUSTER {_format_ch_cluster_name(cluster)}"
+    storage_sql = physical_storage_clauses(
+        engine,
+        partition_sql=_build_partition_by_sql(partition_by),
+        order_sql=_build_order_by_sql(order_by),
+        explicit_order=order_by is not None,
+    )
     sql = (
         f"{statement} {table}{cluster_sql}\n"
         f"ENGINE = {engine}\n"
-        f"{_build_partition_by_sql(partition_by)}{_build_order_by_sql(order_by)}\n"
+        f"{storage_sql}\n"
         f"{empty}AS {source_sql}"
     )
     return add_explicit_ch_uuid_to_local_replicated_create(sql)
