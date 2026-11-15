@@ -827,7 +827,7 @@ def declared_domain_fits(  # noqa: C901, PLR0911, PLR0912 - exact declared domai
     target_date = _date_domain(target_type, target_backend)
     if source_date is not None or target_date is not None:
         if source_backend in {"gp", "trino"} and target_backend in {"gp", "trino"}:
-            return source_backend == target_backend
+            return bool(source_date and target_date and source_backend == target_backend)
         return bool(
             source_date
             and target_date

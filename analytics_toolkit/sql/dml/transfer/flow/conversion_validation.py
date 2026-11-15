@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from analytics_toolkit.sql.backends.explicit_date_cast import explicit_text_date_validation
 from analytics_toolkit.sql.backends.models import SourceColumn
 from analytics_toolkit.sql.core.type_resolution import resolve_column_type
 from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
@@ -29,7 +30,8 @@ def resolve_final_conversions(  # noqa: PLR0913 - staged and final schema author
     if existing_types is None:
         return None
     return [
-        resolve_column_type(
+        explicit_text_date_validation(resolution, existing_types[column.name], backend)
+        or resolve_column_type(
             SourceColumn(column.name, resolution.target_type),
             backend,
             profile,

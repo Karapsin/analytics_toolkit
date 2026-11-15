@@ -333,13 +333,21 @@ local checkpoint. Other scalar, date-free clock and proven-safe map paths
 remain lazy. Explicit `table_schema` and existing destination types remain
 authoritative: inference never widens an existing table or changes its numeric
 columns into text. Explicitly requested timestamp precision reduction is a
-deliberate caller conversion. Date values supplied to timestamp columns become
+deliberate caller conversion. A metadata proof for `DATE` requires date domains
+on both sides; sharing a backend does not certify text or another type family
+as date-compatible. Date values supplied to timestamp columns become
 exact midnight datetimes, using an explicitly named ClickHouse timezone when
 present, otherwise the resolved actual write timezone. Their midnight ticks
 must fit the destination calendar and precision range before destination mutation. ClickHouse `FixedString(N)` is validated in UTF-8
 bytes, and `Enum8`/`Enum16` values must belong to the declared labels or codes.
 Unrecognized authoritative native types require proven identical source metadata
 or typed-stage validation before the operation can certify them.
+For an explicit `VARCHAR` stage (or Greenplum `TEXT`) feeding an existing
+GP or Trino `DATE` column,
+every frozen value must be NULL or a valid canonical `YYYY-MM-DD` date before
+publication. The original staged strings and destination schema are preserved.
+For other backend date syntax, cast the source expression `AS DATE` in
+`from_sql` so the captured input contains native dates.
 For Greenplum types requiring server assignment, the complete captured payload
 is certified in owned persistent native tables before live publication. This
 includes the final SQL projection and casts when the requested stage schema

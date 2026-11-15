@@ -11257,6 +11257,18 @@
         "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_distinct_dst_folds_survive_upfront_python_key_validation"
       ]
     },
+    "audit.transfer.trino_date_domain_preflight": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_date_domain_preflight.py::test_invalid_text_stage_cannot_clear_existing_date_rows",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/schema/date_authority.py::test_varchar_stage_cannot_clear_existing_date_target_before_date_validation",
+        "tests/sql/dml/transfer/schema/date_authority.py::test_existing_date_target_keeps_typed_rows_and_single_source_scan",
+        "tests/sql/dml/transfer/schema/date_authority.py::test_valid_iso_date_text_stage_keeps_existing_date_cast_semantics"
+      ]
+    },
     "audit.load.clickhouse_authoritative_tuple_arrays": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_ch_integer_timestamps.py::test_authoritative_array_columns_keep_tuple_sequence_values",

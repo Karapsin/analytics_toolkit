@@ -595,4 +595,14 @@ cover changed ownership identities, delayed acknowledgements, cancellation,
 capacity-one recovery and unverifiable current databases. These are fake-client
 regressions, not live-server evidence.
 
+`core/domain_proofs.py::test_proof_requires_destination_to_cover_entire_source_domain`
+and `dml/transfer/schema/date_authority.py` additionally cover the DATE-family
+metadata proof and public transfer preflight. An explicit textual stage cannot
+clear an existing nullable DATE target before all selected values are validated;
+canonical ISO-date casts and typed DATE inputs remain supported. The disposable
+`audit.transfer.trino_date_domain_preflight` scenario in
+`integration/core/audit_date_domain_preflight.py` checks the same behavior with
+stored DATE rows and an unchanged schema. It was not run locally. Fake GP
+mutation effects do not establish live transactional data loss.
+
 [SQL module index](index.md)
