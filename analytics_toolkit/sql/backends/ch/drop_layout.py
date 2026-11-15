@@ -173,6 +173,60 @@ def require_drop_resource(connection: Any, resource: VerifiedDropResource) -> No
         raise InvalidSqlInputError(message)
 
 
+def drop_position_identity(resource: VerifiedDropResource, position: int) -> tuple[object, ...]:
+    """Bind one submitted native table UUID independently of its cluster alias."""
+    scope = resource.scope
+    if scope is None:
+        endpoint: tuple[object, ...] = ("coordinator", resource.local_identity)
+    elif position == scope.coordinator:
+        endpoint = ("coordinator", scope.identities[position])
+    else:
+        endpoint = (scope.endpoints[position - 1].native, scope.identities[position])
+    return (
+        *unquoted_table_name(resource.table),
+        endpoint,
+        dict(resource.table_identities)[position],
+        _physical_signature(resource.ddl, resource.table),
+    )
+
+
+def unacknowledged_drop_positions(
+    connection: Any, resource: VerifiedDropResource, acknowledged: set[tuple[object, ...]]
+) -> tuple[int, ...]:
+    """Recheck the full certificate, subtracting only this operation's acknowledged UUIDs."""
+    require_drop_scope(connection, resource)
+    current = _resource(
+        connection,
+        resource.table,
+        resource.scope.cluster if resource.scope else None,
+        resource.role,
+        allow_absence=True,
+    )
+    expected = dict(resource.table_identities)
+    present = dict(current.table_identities) if current is not None else {}
+    changed = (
+        current is not None
+        and (
+            current.scope != resource.scope
+            or current.local_identity != resource.local_identity
+            or _physical_signature(current.ddl, resource.table)
+            != _physical_signature(resource.ddl, resource.table)
+        )
+    ) or any(expected.get(position) != identity for position, identity in present.items())
+    unexplained_absence = any(
+        position not in present and drop_position_identity(resource, position) not in acknowledged
+        for position in expected
+    )
+    if changed or unexplained_absence:
+        message = "The selected ClickHouse table changed after drop ownership was verified."
+        raise InvalidSqlInputError(message)
+    return tuple(
+        position
+        for position in expected
+        if drop_position_identity(resource, position) not in acknowledged
+    )
+
+
 def remaining_drop_positions(connection: Any, resource: VerifiedDropResource) -> tuple[int, ...]:
     """Permit acknowledged removals while rejecting new or replaced table identities."""
     require_drop_scope(connection, resource)
@@ -450,9 +504,11 @@ __all__ = [
     "certify_existing_drop",
     "certify_explicit_drop",
     "coordinator_identity",
+    "drop_position_identity",
     "remaining_drop_positions",
     "require_drop_configuration",
     "require_drop_resource",
     "require_drop_scope",
+    "unacknowledged_drop_positions",
     "verified_drop_resource_identity",
 ]

@@ -181,11 +181,28 @@ def test_script_plans_are_ordered_and_open_no_connections(
     )
     phases = [statement.phase for statement in plan.statements]
     assert phases[0] == "setup"
-    assert phases.index("inspect_source_schema") < phases.index("drop_target")
+    if backend == "ch":
+        assert plan.options["pending_existing_layout_verification"] is True
+        assert plan.options["pending_resource_scope_resolution"] is True
+        assert plan.metadata.statement_count is None
+        assert "drop_target" not in phases
+        assert all(
+            "DROP TABLE" not in statement.sql
+            for statement in plan.statements
+            if statement.phase != "cleanup_source_stage"
+        )
+    else:
+        assert phases.index("inspect_source_schema") < phases.index("drop_target")
+    assert phases.index("inspect_source_schema") < phases.index("create_target")
+    assert phases.count("setup") == 1
+    assert phases.count("inspect_source_schema") == 1
+    assert phases.count("create_target") == 1
     if insert_data:
         assert phases[1] == "materialize_source"
         assert phases[-1] == "cleanup_source_stage"
         assert "insert_data" in phases
+        assert phases.count("insert_data") == 1
+        assert phases.index("create_target") < phases.index("insert_data")
         assert (
             sum("AS SELECT id FROM prepared" in statement.sql for statement in plan.statements) == 1
         )

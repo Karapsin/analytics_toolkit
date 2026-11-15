@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from .timestamp_keys import dataframe_key_identity, is_timestamp_key_type
+
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
 
@@ -176,24 +178,18 @@ def key_validation_frames(
     *,
     destination_timezone: str | None = None,
 ) -> Iterator[pd.DataFrame]:
-    """Use native key equality in network-bearing views without changing payloads."""
+    """Use native key equality in network/timestamp views without changing payloads."""
     if not key_columns:
         return
     import pandas as pd  # noqa: PLC0415 -- object series for native key identities.
-
-    from analytics_toolkit.sql.backends.map_values import (  # noqa: PLC0415 -- shared native key equality.
-        _key_identity,
-    )
-    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 -- native conversion cycle.
-        ResolvedColumn,
-    )
 
     seen: set[tuple[tuple[str, str], ...]] = set()
     for schema in schemas:
         types = schema or {}
         signature = tuple((name, types.get(name, "")) for name in key_columns)
         if signature in seen or not any(
-            is_network_type(types.get(name, "")) for name in key_columns
+            is_network_type(types.get(name, "")) or is_timestamp_key_type(types.get(name, ""))
+            for name in key_columns
         ):
             continue
         seen.add(signature)
@@ -201,11 +197,8 @@ def key_validation_frames(
         for name in key_columns:
             if name not in types:
                 continue
-            resolution = ResolvedColumn(
-                types[name], target_backend="ch", destination_timezone=destination_timezone
-            )
             identities = [
-                _key_identity(resolution.convert(value), types[name], "ch", destination_timezone)
+                dataframe_key_identity(value, types[name], destination_timezone)
                 for value in df[name]
             ]
             validation[name] = pd.Series(identities, index=df.index, dtype=object)

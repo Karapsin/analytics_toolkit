@@ -15,7 +15,9 @@ _GEO_TYPES = {
 }
 _CONTAINER_ARITY = {"Array": 1, "Map": 2, "Nullable": 1, "LowCardinality": 1}
 _AGGREGATE_ARGUMENTS = 2
+_MAX_TIMESTAMP_SCALE = 9
 _MESSAGE = "Invalid ClickHouse structural storage type declaration."
+_TIMESTAMP_MESSAGE = "Invalid ClickHouse timestamp storage type declaration."
 
 
 def _tokens(type_name: str) -> list[Token]:
@@ -96,6 +98,39 @@ def _logical_field_storage(native_type: str, name: str, arguments: tuple[str, ..
     return f"Tuple({', '.join(children)})"
 
 
+def _timestamp_literal(value: str) -> exp.Literal | None:
+    try:
+        expression = parse_one(value, read="clickhouse")
+    except SqlglotError:
+        raise ValueError(_TIMESTAMP_MESSAGE) from None
+    return expression if isinstance(expression, exp.Literal) else None
+
+
+def _logical_timestamp_storage(name: str, arguments: tuple[str, ...]) -> str | None:
+    alias = name.casefold()
+    if alias not in {"datetime32", "timestamp"}:
+        return None
+    zone = () if arguments == ("",) else arguments
+    scale = 0
+    if alias == "timestamp" and zone:
+        first = _timestamp_literal(zone[0])
+        if isinstance(first, exp.Literal) and not first.is_string:
+            if not first.is_int or not 0 <= int(first.this) <= _MAX_TIMESTAMP_SCALE:
+                raise ValueError(_TIMESTAMP_MESSAGE)
+            scale = int(first.this)
+            zone = zone[1:]
+    if len(zone) > 1 or (
+        zone
+        and not (
+            isinstance(literal := _timestamp_literal(zone[0]), exp.Literal) and literal.is_string
+        )
+    ):
+        raise ValueError(_TIMESTAMP_MESSAGE)
+    family = "DateTime64" if scale else "DateTime"
+    children = (str(scale), *zone) if scale else zone
+    return f"{family}({', '.join(children)})" if children else family
+
+
 @lru_cache(maxsize=1024)
 def logical_storage_type(native_type: str) -> str:
     """Expand value aliases only; callers retain raw DDL, metadata and codec types."""
@@ -107,6 +142,9 @@ def logical_storage_type(native_type: str) -> str:
     native = parse_native_type(native_type)
     name = native.original.partition("(")[0].strip()
     arguments = native.arguments
+    timestamp = _logical_timestamp_storage(name, arguments)
+    if timestamp is not None:
+        return timestamp
     if name in _GEO_TYPES:
         if arguments:
             raise ValueError(_MESSAGE)

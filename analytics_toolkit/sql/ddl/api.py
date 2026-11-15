@@ -34,6 +34,8 @@ from .builders import (
     _validate_only_shard,
 )
 from .ch_policy import regular_ddl_properties, resolve_create_ch_policy
+from .creation_plan import build_create_table_plan
+from .drop_planning import require_resolved_creation_drop_sql
 from .existing_target import (
     CONTINUE_CREATE as _CREATE_CONTINUE,
 )
@@ -194,6 +196,10 @@ def create_table(
         option_owner="db_key",
     )
     create_sqls = _build_create_sql_table_sqls(options, option_owner="db_key")
+    require_resolved_creation_drop_sql(
+        get_backend_adapter(config.backend),
+        requested=only_generate_sql and (drop_if_exists or ch_replace_table),
+    )
     drop_sqls = build_drop_target_sqls(options)
     metadata, plan = _build_create_table_plan(options, drop_sqls, create_sqls)
 
@@ -685,46 +691,9 @@ def _build_create_table_plan(
     drop_sqls: list[str],
     create_sqls: list[str],
 ) -> tuple[SqlOperationMetadata, SqlPlan]:
-    metadata = SqlOperationMetadata(
-        statement_count=len(drop_sqls) + len(create_sqls),
-        query_label=options.query_label,
+    return build_create_table_plan(
+        options, drop_sqls, create_sqls, gp_partition_option=_gp_partition_plan_option
     )
-    plan = SqlPlan(
-        operation="create_table",
-        target_alias=options.connection_key,
-        target_backend=options.backend,
-        target_table=options.table_name,
-        options={
-            "drop_if_exists": options.drop_target_if_exists,
-            "drop_target_if_exists": options.drop_target_if_exists,
-            "if_not_exists": options.if_not_exists,
-            "pending_existing_layout_verification": (
-                options.drop_target_if_exists or options.ch_replace_table
-            ),
-            "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
-            "ch_ddl_wait_policy": (
-                options.ch_creation_policy.ddl_wait_policy
-                if options.ch_creation_policy is not None
-                else None
-            ),
-        },
-        metadata=metadata,
-    )
-    plan.extend(
-        drop_sqls,
-        alias=options.connection_key,
-        backend=options.backend,
-        phase="drop_target",
-        target_table=options.table_name,
-    )
-    plan.extend(
-        create_sqls,
-        alias=options.connection_key,
-        backend=options.backend,
-        phase="create_table",
-        target_table=options.table_name,
-    )
-    return metadata, plan
 
 
 def _execute_create_sql_table(

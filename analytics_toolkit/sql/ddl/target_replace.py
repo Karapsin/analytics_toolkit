@@ -5,13 +5,17 @@ from typing import TYPE_CHECKING, Any, cast
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.execution.operation_runner import tracked_sql_operation
 
+from .drop_planning import pending_creation_drop_options
+
 if TYPE_CHECKING:
     from analytics_toolkit.sql.ddl.models import CreateSqlTableOptions
     from analytics_toolkit.sql.execution.plans import SqlOperationMetadata
 
 
 def build_drop_target_sqls(options: CreateSqlTableOptions) -> list[str]:
-    if not options.drop_target_if_exists:
+    if not options.drop_target_if_exists or pending_creation_drop_options(
+        get_backend_adapter(options.backend), requested=options.drop_target_if_exists
+    ):
         return []
     return cast(
         "list[str]",

@@ -58,6 +58,11 @@ from analytics_toolkit.sql.dml.transfer.flow.resolved_transfer import (
 from analytics_toolkit.sql.dml.transfer.flow.row_counts import (
     disable_query_limit_for_transfer_reads,
 )
+from analytics_toolkit.sql.dml.transfer.flow.source_generation import (
+    observe_generation_scope,
+    observing_source_generation,
+    source_availability_scope,
+)
 from analytics_toolkit.sql.dml.transfer.io.source import iter_source_batches, normalize_source_batch
 from analytics_toolkit.sql.dml.transfer.runtime.models import (
     RowBatch,
@@ -308,29 +313,12 @@ def remove_configuration_guard(options: TransferOptions) -> None:
 
 
 def _availability_scope(options: TransferOptions) -> tuple[str, ...]:
-    operation = current_backend_operation()
-    if operation is None:
-        return ()
-    return tuple(
-        sorted(
-            json.dumps(status, sort_keys=True, default=str)
-            for status in operation.statuses.values()
-            if status.get("alias", "").lower() == options.from_db_key.lower()
-        )
-    )
+    return source_availability_scope(options.from_db_key)
 
 
 def _check_generation_scope(options: TransferOptions, observed: dict[Any, str]) -> None:
-    operation = current_backend_operation()
-    if operation is None:
-        return
-    for key, status in operation.statuses.items():
-        if status.get("alias", "").lower() != options.from_db_key.lower():
-            continue
-        signature = json.dumps(status, sort_keys=True, default=str)
-        if key in observed and observed[key] != signature:
-            _reject("Selected source availability scope changed during input profiling.")
-        observed[key] = signature
+    if not observe_generation_scope(options.from_db_key, observed):
+        _reject("Selected source availability scope changed during input profiling.")
 
 
 def _selected_input(
@@ -519,6 +507,8 @@ def _freeze(
     names = [column.name for column in schema.columns]
     install_configuration_guard(options)
     digest = _configuration_digest(options)
+    observed_scope: dict[Any, str] = {}
+    _check_generation_scope(options, observed_scope)
     identity = FrozenInputIdentity(
         source_key=options.from_db_key,
         configuration_digest=digest,
@@ -538,7 +528,8 @@ def _freeze(
     selected = _SelectedInput([])
     try:
         _require_source_snapshot(options)
-        selected = _selected_input(options, refs, state, names, digest)
+        with observing_source_generation(lambda: _check_generation_scope(options, observed_scope)):
+            selected = _selected_input(options, refs, state, names, digest)
         scan = _InputScan(
             selected,
             spool,
@@ -554,6 +545,7 @@ def _freeze(
                 for column in schema.columns
             ],
             digest,
+            observed_scope,
         )
         _scan_input(options, refs, state, scan, context)
         resolutions = _resolve_scan(options, schema, scan)

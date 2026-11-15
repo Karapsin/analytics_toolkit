@@ -11174,6 +11174,99 @@
         "tests/sql/backends/ch/source_bindings.py::test_same_scope_explicit_aliases_remain_authoritative",
         "tests/sql/explorer/metadata_identity.py::test_persisted_unqualified_clickhouse_completion_uses_current_database"
       ]
+    },
+    "audit.load.clickhouse_integer_timestamps": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_integer_timestamps.py::test_integer_timestamps_keep_native_units_for_explicit_and_existing_schemas",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_integer_timestamp_values_reach_public_native_writes",
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_integer_timestamp_out_of_range_rejects_before_clear",
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_integer_datetime64_calendar_overflow_rejects_before_clear",
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_integer_datetime64_calendar_boundary_ticks_keep_native_units"
+      ]
+    },
+    "audit.create.clickhouse.execute_query_drop_scope": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_execute_create_replaces_only_verified_existing_pair_resources",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_pair_replace_preserves_foreign_local_physical_table",
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_pair_replace_same_placement_creates_and_populates_once"
+      ]
+    },
+    "audit.drop.clickhouse.overlapping_facade_first": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_executes_overlapping_requested_scopes_once[audit.drop.clickhouse.overlapping_facade_first]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_overlap.py::test_public_drop_executes_the_verified_union_of_overlapping_requested_scopes"
+      ]
+    },
+    "audit.drop.clickhouse.overlapping_physical_first": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_executes_overlapping_requested_scopes_once[audit.drop.clickhouse.overlapping_physical_first]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_overlap.py::test_public_drop_executes_the_verified_union_of_overlapping_requested_scopes"
+      ]
+    },
+    "audit.transfer.clickhouse_adaptive_snapshot_scope": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_adaptive_snapshot_scope.py::test_changed_keyed_native_source_scope_cannot_publish_a_certified_checkpoint",
+      "backends": [
+        "ch",
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/adaptive_snapshot_scope.py::test_public_adaptive_keyed_snapshot_rejects_scope_drift_before_target_mutation",
+        "tests/sql/dml/transfer/adaptive_snapshot_scope.py::test_public_adaptive_keyed_snapshot_accepts_stable_partial_source_scope"
+      ]
+    },
+    "audit.create.clickhouse.remote_plain_skip": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_execute_create_skips_existing_remote_plain_target_before_setup",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_if_not_exists_resolves_plain_target_scope_before_setup",
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_if_not_exists_retains_existing_coordinator_target_before_setup",
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_default_rejects_existing_coordinator_target_before_remote_ddl"
+      ]
+    },
+    "audit.load.clickhouse_timestamp_native_keys": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_integer_timestamps.py::test_timestamp_effective_keys_use_native_ticks_before_upsert_mutation",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_reject_equivalent_native_partition_keys_before_create",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_keep_distinct_native_partitions_and_bare_count",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_existing_metadata_append_stages_authoritative_timestamp_columns",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_nested_tuple_ticks_reject_before_target_creation",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_distinct_dst_folds_survive_upfront_python_key_validation"
+      ]
+    },
+    "audit.load.clickhouse_authoritative_tuple_arrays": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_integer_timestamps.py::test_authoritative_array_columns_keep_tuple_sequence_values",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_authoritative_timestamp_array_accepts_tuple_sequences",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_hashable_array_payloads_reject_equal_native_keys_before_create"
+      ]
     }
   },
   "unsupported_authentication": {

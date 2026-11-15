@@ -19,6 +19,7 @@ from ...connection.errors import (
 )
 from ...connection.get_sql_connection import get_sql_connection
 from ...ddl.api import _build_create_table_sqls, _gp_partition_plan_option
+from ...ddl.drop_planning import pending_creation_drop_options
 from ...execution.labels import apply_query_label
 from ...execution.operation_runner import (
     timed_public_sql_function,
@@ -73,6 +74,7 @@ class _ExecuteCreateOptions:
     query_label: str | None
     return_metadata: bool
     progress: bool
+    pending_drop_options: Mapping[str, Any] | None = None
 
 
 @timed_public_sql_function
@@ -238,13 +240,14 @@ def _build_execute_create_options(**values: Any) -> _ExecuteCreateOptions:
         ch_only_shard=ch_only_shard,
         if_not_exists=if_not_exists,
     )
+    pending_drop = pending_creation_drop_options(adapter, requested=drop_if_exists)
     drop_sqls = (
         adapter.build_drop_target_sqls(
             table_name,
             ch_cluster=ch_cluster_name,
             ch_only_shard=ch_only_shard,
         )
-        if drop_if_exists
+        if drop_if_exists and not pending_drop
         else []
     )
 
@@ -262,6 +265,7 @@ def _build_execute_create_options(**values: Any) -> _ExecuteCreateOptions:
         source_sql=source_sql,
         create_sqls=[prepare(sql) for sql in create_sqls],
         drop_sqls=[prepare(sql) for sql in drop_sqls],
+        pending_drop_options=pending_drop,
         insert_after_create=insert_after_create,
         gp_distributed_by_key=distribution,
         gp_partitions=normalized_gp_partitions,
@@ -323,7 +327,7 @@ def _build_execute_create_plan(options: _ExecuteCreateOptions) -> SqlPlan:
         + int(insert_sql is not None)
     )
     metadata = SqlOperationMetadata(
-        statement_count=statement_count,
+        statement_count=None if options.pending_drop_options else statement_count,
         query_label=options.query_label,
     )
     plan = SqlPlan(
@@ -332,6 +336,7 @@ def _build_execute_create_plan(options: _ExecuteCreateOptions) -> SqlPlan:
         target_backend=options.backend,
         target_table=options.table_name,
         options={
+            **(options.pending_drop_options or {}),
             "drop_if_exists": options.drop_if_exists,
             "if_not_exists": options.if_not_exists,
             "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
@@ -364,11 +369,7 @@ def _execute_create_options(
         connection: Any | None = None
         try:
             connection = get_sql_connection(options.connection_key)
-            if options.if_not_exists and adapter.table_exists(
-                connection,
-                options.table_name,
-                connection_key=options.connection_key,
-            ):
+            if _skip_existing_execute_create_target(adapter, connection, options):
                 metadata.statement_count = 0
                 metadata.affected_rows = 0
                 metadata.inserted_rows = 0
@@ -413,6 +414,25 @@ def _execute_create_options(
     return result
 
 
+def _skip_existing_execute_create_target(
+    adapter: Any, connection: Any, options: _ExecuteCreateOptions
+) -> bool:
+    if options.drop_if_exists:
+        return False
+    inspect_target = getattr(adapter, "execute_create_target_exists", None)
+    if callable(inspect_target):
+        exists = inspect_target(connection, options)
+    elif options.if_not_exists:
+        exists = adapter.table_exists(
+            connection, options.table_name, connection_key=options.connection_key
+        )
+    else:
+        return False
+    if exists and not options.if_not_exists:
+        raise InvalidSqlInputError(f"Target table {options.table_name} already exists.")
+    return bool(exists)
+
+
 def _execute_create_attempt(
     options: _ExecuteCreateOptions,
     adapter: Any,
@@ -427,7 +447,11 @@ def _execute_create_attempt(
             gp_commit_each_statement=options.gp_commit_each_statement,
             progress=options.progress,
         )
-    adapter.execute_commands(connection, options.drop_sqls)
+    prepare_target = getattr(adapter, "prepare_execute_create_target", None)
+    if callable(prepare_target):
+        prepare_target(connection, options)
+    else:
+        adapter.execute_commands(connection, options.drop_sqls)
     create_sqls = options.create_sqls
     if getattr(adapter, "requires_execute_create_schema_inference", False) and (
         options.gp_partitions is not None

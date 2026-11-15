@@ -202,6 +202,28 @@ rows
   Authoritative schemas reject ambiguous or nonexistent naive local times
   before mutation; inference preserves unresolved local times and mixed
   awareness as exact text. Aware and raw values retain their instant.
+  Explicit and existing ClickHouse timestamp columns also accept native integer
+  values: Unix seconds for `DateTime`, `DateTime32` and unscaled `TIMESTAMP`,
+  and ticks of `10**(-scale)` seconds for `DateTime64(scale)`.
+  A `TIMESTAMP(scale[, timezone])` with nonzero scale follows `DateTime64(scale)`.
+  These values retain their units and are checked against
+  the declared type before target mutation. Ordinary integer inference is
+  unchanged.
+  `DateTime64` integers must fit both the supported calendar interval at that
+  scale and the signed tick representation; fitting the wire format alone is
+  insufficient. The calendar limits match the existing timestamp-object checks
+  and [ClickHouse's supported DateTime64 contract](https://github.com/ClickHouse/ClickHouse/blob/v26.3.15.4-lts/docs/en/sql-reference/data-types/datetime64.md).
+- ClickHouse timestamp keys compare native ticks at the declared precision and
+  resolved write timezone. A raw tick value and a calendar value for the same
+  instant are duplicate effective keys within one partition. Distinct native
+  partitions retain partition-scoped key semantics.
+- Staged append and upsert use the verified destination types for incoming
+  columns when no explicit `table_schema` is supplied. Stage creation and client
+  insertion use the same schema; reordered and subset append columns retain
+  their matching types. Explicit stage schemas retain precedence, and
+  intentional replacement keeps its schema-inference behavior.
+- Explicit or existing ClickHouse `Array` schemas accept tuple sequences without
+  changing the caller's values. Default inference still treats tuples as tuples.
 - When `upsert_partition_column` is supplied, the effective key is that column
   followed by `key_columns`, with duplicates removed. ID 7 in January and ID 7
   in February are separate records. Without a partition column, `key_columns`

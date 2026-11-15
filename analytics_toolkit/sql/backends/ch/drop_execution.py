@@ -15,17 +15,22 @@ from analytics_toolkit.sql.execution.backend_options import (
     current_backend_operation,
     require_complete_operation,
 )
-from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
+from analytics_toolkit.sql.execution.cancellation import (
+    raise_if_cancelled,
+    wait_or_raise_if_cancelled,
+)
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
 from .drop_layout import (
     VerifiedDropLayout,
     VerifiedDropResource,
     coordinator_identity,
+    drop_position_identity,
     remaining_drop_positions,
     require_drop_configuration,
     require_drop_resource,
     require_drop_scope,
+    unacknowledged_drop_positions,
 )
 from .outage_context import internal_io
 from .reconfigure_ddl import engine_name, parse_create_table
@@ -50,6 +55,8 @@ class DropExecutionOptions:
     per_host_connection_factory: Callable[[str], Any] | None = None
     host_connection_runner: Callable[[str, Callable[[Any], Any]], Any] | None = None
     per_host_drop_workers: int = 5
+    allow_already_absent: bool = True
+    defer_ack_timeout: bool = False
 
 
 @dataclass(frozen=True)
@@ -57,6 +64,10 @@ class DropRecoveryTarget:
     host: RecoveryEndpoint
     resource: VerifiedDropResource
     coordinator: bool
+
+
+class AcknowledgedDropWaitTimeoutError(TimeoutError):
+    """The submitted drop was acknowledged, but its absence wait expired."""
 
 
 def resource_drop_sql(
@@ -158,7 +169,9 @@ def _wait_absent(
                 "hosts may be attempted with ch_retry_per_host_drops=True."
             )
             raise TimeoutError(message)
-        time.sleep(options.poll_interval_seconds)
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            wait_or_raise_if_cancelled(min(options.poll_interval_seconds, remaining))
 
 
 def _execute_one(
@@ -186,7 +199,7 @@ def _recover_on_worker(
     if coordinator_identity(worker) != resource.local_identity:
         message = "Cannot verify the selected ClickHouse drop recovery endpoint identity."
         raise InvalidSqlInputError(message)
-    if _absent(worker, resource):
+    if options.allow_already_absent and _absent(worker, resource):
         return
     require_drop_resource(worker, resource)
     _execute_one(adapter, worker, resource, options)
@@ -200,6 +213,15 @@ def prepare_drop_recovery(
     if scope is None:
         return ()
     remaining = remaining_drop_positions(connection, resource)
+    return _drop_position_targets(resource, remaining)
+
+
+def _drop_position_targets(
+    resource: VerifiedDropResource, positions: tuple[int, ...]
+) -> tuple[DropRecoveryTarget, ...]:
+    scope = resource.scope
+    if scope is None:
+        return ()
     identities = dict(resource.table_identities)
     return tuple(
         DropRecoveryTarget(
@@ -215,7 +237,7 @@ def prepare_drop_recovery(
             ),
             position == scope.coordinator,
         )
-        for position in remaining
+        for position in positions
     )
 
 
@@ -269,34 +291,80 @@ def execute_drop_recovery(
         raise failures[0]
 
 
-def preflight_verified_drop(connection: Any, plan: VerifiedDropLayout) -> None:
+def preflight_verified_drop(
+    connection: Any,
+    plan: VerifiedDropLayout,
+    *,
+    acknowledged: set[tuple[object, ...]] | None = None,
+) -> None:
     require_complete_operation("Dropping existing ClickHouse resources requires complete coverage.")
     require_drop_configuration(plan)
     _require_http_endpoints(plan)
     for resource in plan.resources:
-        require_drop_resource(connection, resource)
+        if acknowledged is None:
+            require_drop_resource(connection, resource)
+        else:
+            unacknowledged_drop_positions(connection, resource, acknowledged)
+
+
+def _record_acknowledged(
+    acknowledged: set[tuple[object, ...]],
+    resource: VerifiedDropResource,
+    positions: tuple[int, ...],
+) -> None:
+    acknowledged.update(drop_position_identity(resource, position) for position in positions)
+
+
+def _wait_for_submitted_resource(
+    adapter: Any,
+    connection: Any,
+    plan: VerifiedDropLayout,
+    resource: VerifiedDropResource,
+    options: DropExecutionOptions,
+) -> None:
+    try:
+        _wait_absent(connection, plan, resource, options)
+    except TimeoutError as error:
+        if not options.retry_per_host_drops or resource.scope is None:
+            if options.defer_ack_timeout:
+                raise AcknowledgedDropWaitTimeoutError(*error.args) from error
+            raise
+        targets = prepare_drop_recovery(connection, resource)
+        execute_drop_recovery(adapter, connection, plan, targets, options)
+        _wait_absent(connection, plan, resource, options)
 
 
 def execute_verified_drop(
-    adapter: Any, connection: Any, plan: VerifiedDropLayout, options: DropExecutionOptions
+    adapter: Any,
+    connection: Any,
+    plan: VerifiedDropLayout,
+    options: DropExecutionOptions,
+    *,
+    acknowledged: set[tuple[object, ...]] | None = None,
 ) -> None:
     """Preflight every selected resource before the first destructive submission."""
+    completed: set[tuple[object, ...]] = set() if acknowledged is None else acknowledged
     with _configuration_guard(plan):
-        preflight_verified_drop(connection, plan)
+        preflight_verified_drop(connection, plan, acknowledged=completed)
         for resource in plan.resources:
             raise_if_cancelled()
             require_drop_configuration(plan)
-            require_drop_resource(connection, resource)
-            _execute_one(adapter, connection, resource, options)
+            positions = unacknowledged_drop_positions(connection, resource, completed)
+            if positions:
+                if len(positions) == len(resource.table_identities):
+                    _execute_one(adapter, connection, resource, options)
+                else:
+                    targets = _drop_position_targets(resource, positions)
+                    execute_drop_recovery(
+                        adapter,
+                        connection,
+                        plan,
+                        targets,
+                        replace(options, allow_already_absent=False),
+                    )
+                _record_acknowledged(completed, resource, positions)
             if options.wait_for_absence:
-                try:
-                    _wait_absent(connection, plan, resource, options)
-                except TimeoutError:
-                    if not options.retry_per_host_drops or resource.scope is None:
-                        raise
-                    targets = prepare_drop_recovery(connection, resource)
-                    execute_drop_recovery(adapter, connection, plan, targets, options)
-                    _wait_absent(connection, plan, resource, options)
+                _wait_for_submitted_resource(adapter, connection, plan, resource, options)
 
 
 __all__ = [

@@ -569,10 +569,14 @@ def test_ch_create_table_as_dry_schema_placeholders_and_validation() -> None:
         ch_only_shard=True,
         dry_run=True,
     )
-    assert local_plan.sqls[1].startswith(f"CREATE TABLE {TARGET_TABLE}")
-    assert "<query schema>" in local_plan.sqls[1]
+    assert local_plan.sqls[0].startswith(f"CREATE TABLE {TARGET_TABLE}")
+    assert "<query schema>" in local_plan.sqls[0]
     assert local_plan.options["pending_schema_inspection"] is True
     assert local_plan.options["pending_existing_layout_verification"] is True
+    assert local_plan.options["pending_resource_scope_resolution"] is True
+    assert local_plan.metadata.statement_count is None
+    assert all(step.phase != "drop_target" for step in local_plan.statements)
+    assert all(not statement.lstrip().startswith("DROP ") for statement in local_plan.sqls)
     distributed_plan = ch_ctas_module.ch_create_table_as(
         "ch",
         TARGET_TABLE,
@@ -580,6 +584,11 @@ def test_ch_create_table_as_dry_schema_placeholders_and_validation() -> None:
         dry_run=True,
     )
     assert sum("<query schema>" in sql for sql in distributed_plan.sqls) == 4
+    assert distributed_plan.options["pending_existing_layout_verification"] is True
+    assert distributed_plan.options["pending_resource_scope_resolution"] is True
+    assert distributed_plan.metadata.statement_count is None
+    assert all(step.phase != "drop_target" for step in distributed_plan.statements)
+    assert all(not statement.lstrip().startswith("DROP ") for statement in distributed_plan.sqls)
     with pytest.raises(ValueError, match="ch_only_shard must be a boolean"):
         ch_ctas_impl.build_ch_create_table_as_sqls(
             TARGET_TABLE,

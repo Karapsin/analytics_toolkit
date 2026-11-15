@@ -365,19 +365,43 @@ def test_public_query_replace_flag_controls_sql_plan_without_implying_drop(
 def test_query_sql_generation_preserves_replace_mode(monkeypatch, replace_table):
     source = FakeDbapiConnection(description=[("id", 23, None, None, None, None)])
     ddl = importlib.import_module("analytics_toolkit.sql.ddl.api")
-    monkeypatch.setattr(ddl, "get_sql_connection", lambda alias: source)
-    generated = sql.create_table(
-        "ch",
-        "analytics.events",
-        sql="SELECT 1 AS id",
-        source_db="gp",
-        only_generate_sql=True,
-        ch_replace_table=replace_table,
-        ch_distributed_table=False,
-        ch_engine="MergeTree",
-        ch_shard_on_cluster="storage",
-    )
-    expected = "CREATE OR REPLACE TABLE" if replace_table else "CREATE TABLE"
-    assert generated.startswith(expected)
-    assert "DROP TABLE" not in generated
-    assert source.close_calls == 1
+    query = importlib.import_module("analytics_toolkit.sql.dml.table.create_table_from_sql")
+    opened = []
+
+    def open_connection(alias):
+        opened.append(alias)
+        if replace_table:
+            pytest.fail("Unresolved destructive SQL generation or planning opened a connection.")
+        return source
+
+    for module in (ddl, query, legacy):
+        monkeypatch.setattr(module, "get_sql_connection", open_connection)
+    arguments = {
+        "sql": "SELECT 1 AS id",
+        "source_db": "gp",
+        "ch_replace_table": replace_table,
+        "ch_distributed_table": False,
+        "ch_engine": "MergeTree",
+        "ch_shard_on_cluster": "storage",
+    }
+    if replace_table:
+        with pytest.raises(InvalidSqlInputError, match=r"SQL-only.*ownership.*scope") as caught:
+            sql.create_table("ch", "analytics.events", only_generate_sql=True, **arguments)
+        assert "runtime resource verification" in str(caught.value)
+        for mode in ("dry_run", "return_sql"):
+            plan = sql.create_table("ch", "analytics.events", **arguments, **{mode: True})
+            assert plan.options["pending_existing_layout_verification"] is True
+            assert plan.options["pending_resource_scope_resolution"] is True
+            assert plan.metadata.statement_count is None
+            assert all(statement.phase != "drop_target" for statement in plan.statements)
+            assert not any(statement.startswith("DROP") for statement in plan.sqls)
+        assert opened == []
+        assert source.executed == []
+        assert source.close_calls == 0
+    else:
+        generated = sql.create_table("ch", "analytics.events", only_generate_sql=True, **arguments)
+        assert isinstance(generated, str)
+        assert generated.startswith("CREATE TABLE")
+        assert "DROP TABLE" not in generated
+        assert opened == ["gp"]
+        assert source.close_calls == 1

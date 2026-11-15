@@ -8,6 +8,7 @@ from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.client_validation import supports_client_validation
 from analytics_toolkit.sql.core.type_resolution import native_candidates
 from analytics_toolkit.sql.ddl.api import _build_create_table_sqls, _gp_partition_plan_option
+from analytics_toolkit.sql.ddl.drop_planning import apply_pending_creation_drop
 from analytics_toolkit.sql.dml.query_native_assignment import requires_query_assignment
 from analytics_toolkit.sql.execution.plan_steps import (
     add_create_table_placeholder_step,
@@ -153,4 +154,9 @@ def _build_create_table_from_sql_plan(  # noqa: PLR0913
             phase="insert_data",
             query_label=query_label,
         )
+    apply_pending_creation_drop(
+        plan,
+        get_backend_adapter(target_backend),
+        requested=drop_target_if_exists or ch_replace_table,
+    )
     return plan

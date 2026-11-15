@@ -67,6 +67,9 @@ the existing pair or guess its DROP scopes.
   before DDL; a verified singleton coordinator alias can execute locally.
 - Equivalent identifier spellings and cluster aliases drop the same resource
   once when its complete verified endpoint and table identities match.
+  Overlapping requested scopes also remove each selected endpoint resource
+  once, while retaining checks for changes outside the operation's acknowledged
+  removals.
 - `if_exists=True` permits verified absent resources, including a partially
   occupied cluster scope, but still requires every selected endpoint to be
   available. Existing identities and observed absences are rechecked before
@@ -86,5 +89,7 @@ the existing pair or guess its DROP scopes.
 - `ch_wait_timeout_seconds` must be a built-in positive integer, and
   `ch_wait_poll_interval_seconds` must be a finite positive real number. These
   values are validated even when returning a dry-run plan.
+  Polling respects the remaining timeout and responds to cancellation even when
+  the configured poll interval is longer.
 
 [SQL functions index](index.md)

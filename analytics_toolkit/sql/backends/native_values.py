@@ -16,6 +16,7 @@ from .ch.network_values import is_network_type as is_ch_network_type
 from .ch.network_values import key_validation_frames as ch_key_validation_frames
 from .ch.network_values import validate_network_profile as validate_ch_network_profile
 from .ch.storage_types import logical_storage_type
+from .ch.timestamp_keys import source_key_validation_frame as ch_source_key_validation_frame
 from .ch.value_validation import validate_constrained_value
 from .decimal_values import convert_decimal_value, decimal_target_type
 from .gp.json_values import convert_json_value, is_json_type
@@ -40,6 +41,13 @@ if TYPE_CHECKING:
 
     from .type_resolution import ResolvedColumn
     from .value_profiles import ColumnProfile
+
+
+def source_key_validation_frame(
+    df: pd.DataFrame, key_columns: Sequence[str] | None, backend: str
+) -> pd.DataFrame:
+    """Validate known source instants without changing backend-specific payloads."""
+    return ch_source_key_validation_frame(df, key_columns) if backend == "ch" else df
 
 
 def dataframe_key_validation_frames(

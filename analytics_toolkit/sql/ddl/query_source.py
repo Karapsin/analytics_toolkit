@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from analytics_toolkit.sql.backends.ch.creation_policy import build_policy_create_as_sqls
 from analytics_toolkit.sql.connection.errors import SqlOperationContext, sql_preview
 from analytics_toolkit.sql.core.type_resolution import requires_adaptive_resolution
 from analytics_toolkit.sql.execution.labels import apply_query_label
@@ -13,6 +14,7 @@ from analytics_toolkit.sql.execution.operation_runner import (
 )
 
 from .ch_policy import regular_ddl_properties
+from .drop_planning import require_resolved_creation_drop_sql
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -100,6 +102,19 @@ def generate_create_table_from_query_sql(  # noqa: PLR0913 - Mirrors the public 
         ch_cluster=ch_cluster_name,
         ch_sharding_key=ch_sharding_key_name,
         ch_only_shard=only_shard,
+    )
+    if ch_creation_policy is not None:
+        build_policy_create_as_sqls(
+            table_name=table_name,
+            source_sql=source_sql,
+            partition_by=partition,
+            order_by=order,
+            policy=ch_creation_policy,
+            ch_only_shard=only_shard,
+            if_not_exists=False,
+        )
+    require_resolved_creation_drop_sql(
+        target_adapter, requested=drop_target_if_exists or ch_replace_table
     )
 
     def inspect_schema(attempt: int) -> list[Any]:

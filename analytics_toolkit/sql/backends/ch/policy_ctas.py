@@ -11,6 +11,7 @@ from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 from analytics_toolkit.sql.core.type_resolution import native_candidates
+from analytics_toolkit.sql.ddl.drop_planning import apply_pending_creation_drop
 from analytics_toolkit.sql.ddl.ownership import (
     acknowledge_created_resource,
     execute_owned_create_sqls,
@@ -132,6 +133,11 @@ def _create_table_as_with_policy(*, policy: Any, **options: Any) -> Any:
                 )
         _add_population_plan(plan, options, query, prepared)
         metadata.statement_count = len(plan.statements)
+        apply_pending_creation_drop(
+            plan,
+            adapter,
+            requested=dry and bool(options["drop_target_if_exists"] or replace_target),
+        )
         if dry:
             return plan
         if prepared is not None and prepared.frozen:
@@ -334,7 +340,7 @@ def _drop_statements(
     table = options["target_table"]
     if connection is None:
         plan.options["pending_existing_layout_verification"] = True
-        return build_drop_ch_creation_policy_table_sqls(table, policy)
+        return []
     if not exists:
         return []
     layout = inspect_existing_layout(

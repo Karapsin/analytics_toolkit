@@ -26,6 +26,7 @@ from analytics_toolkit.sql.core.exact_values import (
     unwrap_enum,
 )
 
+from .ch.integer_timestamps import validate_integer_timestamp_range
 from .ch.value_validation import _permits_null
 from .decimal_values import required_fractional_scale, resolve_decimal_type, validate_decimal_type
 from .inferred_types import resolve_column_type
@@ -618,7 +619,11 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         msg = "Selected input is incompatible with authoritative binary schema."
         raise ValueError(msg)
     elif is_timestamp_type(target_type):
-        if not profile.families <= {"timestamp", "date"} or (profile.aware and profile.naive):
+        native_integer_ticks = backend == "ch" and base.name in {"datetime", "datetime64"}
+        families = {"timestamp", "date"}
+        if native_integer_ticks:
+            families.update({"integer", "boolean"})
+        if not profile.families <= families or (profile.aware and profile.naive):
             msg = "Selected input has ambiguous or incompatible authoritative timestamp values."
             raise ValueError(msg)
         if not allow_timestamp_precision_loss and profile.temporal_scale > timestamp_scale(
@@ -628,6 +633,8 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
             raise ValueError(msg)
         if backend == "ch":
             validate_timestamp_range(profile, target_type, destination_timezone)
+            if native_integer_ticks:
+                validate_integer_timestamp_range(profile, base.name, timestamp_scale(target_type))
     elif base.name in {"bool", "boolean"} and not profile.families <= {"boolean"}:
         msg = "Selected input is incompatible with authoritative boolean schema."
         raise ValueError(msg)

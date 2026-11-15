@@ -130,6 +130,9 @@ class ColumnProfile:
         if self.source_backend == "ch" and family == "array" and kind == "tuple":
             value = tuple(value)
             family = "tuple"
+        elif self.source_backend == "ch" and family == "tuple" and kind == "array":
+            value = list(value)
+            family = "array"
         if family == "map" and kind in {"tuple", "row"}:
             names = [name for name, _ in child_types]
             self.structurally_compatible &= isinstance(value, dict) and set(value) == set(names)

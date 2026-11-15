@@ -450,6 +450,11 @@ and its [numeric storage representation](https://raw.githubusercontent.com/green
 Query dry runs never profile or spool full data. Their `SqlPlan.options` identify
 pending adaptive resolution and native candidates. SQL-only generation that
 cannot express this pending step requires an explicit `table_schema`.
+An adaptive input generation also binds its source configuration and selected
+availability scope while native snapshots are materialized, across keyed
+slices and count checks. A scope change invalidates the incomplete generation
+before destination publication; counting that same partial snapshot cannot
+certify it as the complete selected input.
 Native UUID source metadata maps to `UUID` on Greenplum and Trino and to
 `Nullable(UUID)` for an initially nullable ClickHouse stage. ClickHouse stage
 nullability is refined from rows, and an explicit `table_schema` still takes

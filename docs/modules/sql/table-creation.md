@@ -16,6 +16,11 @@ must be explicit. Use `only_generate_sql=True` to render DDL without executing
 it. Use `table_schema` without a dataframe when the column types are already
 known.
 
+Replacing an existing ClickHouse target requires runtime ownership and scope
+verification. `dry_run` and `return_sql` leave that verification pending;
+`only_generate_sql=True` with `drop_if_exists=True` rejects the unresolved
+destructive step instead of returning guessed DROP SQL.
+
 ## Query-Based Creation
 
 Query-based creation reads the source query's native column metadata and maps it

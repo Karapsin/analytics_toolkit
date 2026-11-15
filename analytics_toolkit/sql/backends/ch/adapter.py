@@ -246,6 +246,8 @@ class ClickHouseAdapter(BackendAdapter):
     qualify_transfer_stage_table_name = _operations.qualify_transfer_stage_table_name
     build_drop_tables_sqls = _operations.build_drop_tables_sqls
     pending_drop_plan_options = _operations.pending_drop_plan_options
+    execute_create_target_exists = _operations.execute_create_target_exists
+    prepare_execute_create_target = _operations.prepare_execute_create_target
     drop_table_with_options = _operations.drop_table_with_options
     drop_tables_with_options = _operations.drop_tables_with_options
     build_clear_target_sqls = _operations.build_clear_target_sqls

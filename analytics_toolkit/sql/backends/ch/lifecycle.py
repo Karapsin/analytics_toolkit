@@ -324,7 +324,8 @@ def _drop_pair_on_bounded_hosts(
             host = future_to_host[future]
             error = future.exception()
             if error is not None:
-                error_by_host[host] = f"{host}: {error!r}"
+                identity = endpoint_identity(host)
+                error_by_host[identity] = f"{identity}: {error!r}"
     if error_by_host:
         errors = [
             error_by_host[endpoint_identity(host)]

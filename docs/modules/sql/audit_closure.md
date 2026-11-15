@@ -512,4 +512,87 @@ Additional fake-client fault coverage is in `backends/ch/drop_certification.py`,
 failures, changed native identities, mandatory cluster resolution, and retained
 compatibility helpers through actual adapter paths.
 
+ClickHouse integer timestamp compatibility is additionally covered by
+`dml/load/ch_integer_timestamps.py::test_ch_integer_timestamp_values_reach_public_native_writes`
+and `dml/load/ch_integer_timestamps.py::test_ch_integer_timestamp_out_of_range_rejects_before_clear`.
+These public loads exercise real binary writers for explicit and existing
+schemas; integer values retain native seconds or declared-scale ticks.
+The disposable `audit.load.clickhouse_integer_timestamps` scenario in
+`integration/core/audit_ch_integer_timestamps.py::test_integer_timestamps_keep_native_units_for_explicit_and_existing_schemas`
+checks stored values and rejected writes against both transports and was not
+run locally.
+
+Additional scope and wait regressions are
+`dml/table/drop_overlap.py::test_public_drop_executes_the_verified_union_of_overlapping_requested_scopes`,
+`backends/ch/drop_wait_boundaries.py::test_drop_wait_boundaries_poll_interval_cannot_exceed_timeout_or_hold_lease`,
+`backends/ch/drop_wait_boundaries.py::test_drop_wait_boundaries_cancellation_interrupts_poll_and_releases_lease`,
+and `backends/ch/lifecycle_compat.py::test_bounded_compat_runner_reports_native_endpoint_and_original_open_error`.
+They use stateful fake endpoints and virtual time, rather than live-server or
+wall-clock timeout evidence. The disposable
+`audit.drop.clickhouse.overlapping_facade_first` and
+`audit.drop.clickhouse.overlapping_physical_first` scenarios in
+`integration/core/audit_ch_drop_scope.py::test_drop_tables_executes_overlapping_requested_scopes_once`
+check the requested resource union and retained sentinel UUIDs, definitions and
+rows; neither ran locally.
+
+`dml/io/execute_create_scope.py::test_execute_create_pair_replace_preserves_foreign_local_physical_table`
+and `dml/io/execute_create_scope.py::test_execute_create_pair_replace_same_placement_creates_and_populates_once`
+exercise public query replacement through actual adapter logic over fake state.
+The disposable `audit.create.clickhouse.execute_query_drop_scope` scenario in
+`integration/core/audit_ch_drop_scope.py::test_execute_create_replaces_only_verified_existing_pair_resources`
+checks successful replacement with unrelated local storage retained; it was not
+run locally.
+
+`dml/transfer/adaptive_snapshot_scope.py::test_public_adaptive_keyed_snapshot_rejects_scope_drift_before_target_mutation`
+and `dml/transfer/adaptive_snapshot_scope.py::test_public_adaptive_keyed_snapshot_accepts_stable_partial_source_scope`
+exercise native keyed snapshot materialization through real adapters over fake
+source and target state. A changed scope cannot certify a checkpoint or mutate
+the destination, while a stable selected partial scope remains supported.
+The disposable `audit.transfer.clickhouse_adaptive_snapshot_scope` scenario in
+`integration/core/audit_adaptive_snapshot_scope.py::test_changed_keyed_native_source_scope_cannot_publish_a_certified_checkpoint`
+injects a real run-owned source-table removal between keyed appends and checks
+retained target rows and source-stage cleanup. It was not run locally.
+
+Native timestamp effective-key regressions include
+`dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_reject_equivalent_native_partition_keys_before_create`,
+`dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_nested_tuple_ticks_reject_before_target_creation`,
+and `dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_distinct_dst_folds_survive_upfront_python_key_validation`.
+Actual binary writers prove native equality or distinct instants; validation
+rejects collisions before resource creation and preserves distinct DST folds.
+`dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_existing_metadata_append_stages_authoritative_timestamp_columns`
+checks that stage DDL and the real client encoder use the same verified types.
+The disposable `audit.load.clickhouse_timestamp_native_keys` scenario in
+`integration/core/audit_ch_integer_timestamps.py::test_timestamp_effective_keys_use_native_ticks_before_upsert_mutation`
+checks stored native ticks and partition-scoped upserts; it was not run locally.
+
+`dml/io/execute_create_scope.py::test_execute_create_if_not_exists_resolves_plain_target_scope_before_setup`,
+`dml/io/execute_create_scope.py::test_execute_create_if_not_exists_retains_existing_coordinator_target_before_setup`,
+and `dml/io/execute_create_scope.py::test_execute_create_default_rejects_existing_coordinator_target_before_remote_ddl`
+cover exact existing coordinator and selected remote roles before setup or
+creation. The disposable `audit.create.clickhouse.remote_plain_skip` scenario in
+`integration/core/audit_ch_drop_scope.py::test_execute_create_skips_existing_remote_plain_target_before_setup`
+checks retained UUIDs, definitions, rows and the zero-statement skip result;
+it was not run locally.
+
+`dml/load/ch_integer_timestamps.py::test_ch_authoritative_timestamp_array_accepts_tuple_sequences`
+and `dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_hashable_array_payloads_reject_equal_native_keys_before_create`
+preserve the legacy tuple-as-Array input contract when an authoritative
+ClickHouse Array schema is present, while retaining default tuple inference.
+The disposable `audit.load.clickhouse_authoritative_tuple_arrays` scenario in
+`integration/core/audit_ch_integer_timestamps.py::test_authoritative_array_columns_keep_tuple_sequence_values`
+checks stored negative ticks, SQL NULLs and caller preservation; it was not run
+locally. `backends/ch/execute_create_healthy.py` separately covers ordinary
+existence probes and new-table creation in stop and healthy modes without
+weakening destructive ownership checks.
+
+`dml/load/ch_integer_timestamps.py::test_ch_explicit_timestamp_aliases_accept_native_integer_seconds`
+and `dml/load/ch_integer_timestamps.py::test_ch_explicit_timestamp_aliases_reject_out_of_range_before_clear`
+cover supported `DateTime32` and `TIMESTAMP` SQL aliases using canonical server
+metadata and real client binary writers. Additional public fault cases in
+`backends/ch/drop_resource_recheck.py`, `backends/ch/drop_execution_faults_extra.py`,
+`backends/ch/drop_bounded_faults.py`, and `dml/io/execute_create_presence.py`
+cover changed ownership identities, delayed acknowledgements, cancellation,
+capacity-one recovery and unverifiable current databases. These are fake-client
+regressions, not live-server evidence.
+
 [SQL module index](index.md)

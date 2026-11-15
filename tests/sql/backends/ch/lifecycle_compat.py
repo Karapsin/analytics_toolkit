@@ -108,6 +108,40 @@ def test_bounded_compat_runner_resolves_live_endpoint_and_drops_only_owned_pair(
     _assert_owned_pair_removed(state, before)
 
 
+@pytest.mark.parametrize("endpoint_kind", ["discovered", "bare-string"])
+def test_bounded_compat_runner_reports_native_endpoint_and_original_open_error(
+    lifecycle_context, endpoint_kind
+):
+    state, connection = lifecycle_context
+    before = state.snapshot()
+
+    def connection_runner(_phase, operation):
+        return operation(connection)
+
+    discovered = lifecycle._resolve_bounded_drop_hosts(connection_runner, _PAIR, "storage")
+    assert [(str(host), host.tcp_port) for host in discovered] == [(state.remote, 9441)]
+    hosts = discovered if endpoint_kind == "discovered" else [str(host) for host in discovered]
+    attempted = []
+    original_error = ConnectionError("native recovery connection open failed")
+
+    def failing_host_runner(endpoint, _operation):
+        attempted.append(endpoint)
+        raise original_error
+
+    with pytest.raises(TimeoutError) as caught:
+        lifecycle._drop_pair_on_bounded_hosts(hosts, _PAIR, None, failing_host_runner, 2)
+
+    expected_endpoint = discovered[0].identity if endpoint_kind == "discovered" else state.remote
+    diagnostic = str(caught.value)
+    assert expected_endpoint in diagnostic
+    assert repr(original_error) in diagnostic
+    assert attempted == hosts
+    assert state.snapshot() == before
+    assert state.commands == []
+    assert all(commands == [] for commands in state.host_commands.values())
+    assert len(state.opened) == 1
+
+
 def test_legacy_cluster_host_cleanup_preserves_native_endpoint_and_success_return(
     lifecycle_context,
 ):

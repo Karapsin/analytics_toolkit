@@ -26,7 +26,7 @@ from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 from analytics_toolkit.sql.dml.ddl_options import resolve_operation_ddl
 
 from ...backends import get_backend_adapter
-from ...backends.native_values import dataframe_key_validation_frames
+from ...backends.native_values import dataframe_key_validation_frames, source_key_validation_frame
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     SqlOperationContext,
@@ -702,7 +702,8 @@ def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
         "order_by",
         data_name="staged data",
     )
-    _validate_dataframe_key_uniqueness(df, options.key_columns)
+    key_frame = source_key_validation_frame(df, options.key_columns, options.connection_backend)
+    _validate_dataframe_key_uniqueness(key_frame, options.key_columns)
 
 
 def _prepare_load_target(
@@ -1492,6 +1493,8 @@ def _load_dataframe(
         stage_create_kwargs: dict[str, Any] = {}
         if options.table_schema is not None:
             stage_create_kwargs["table_schema"] = options.table_schema
+        elif not safe_staged_replace and state.target_column_types is not None:
+            stage_create_kwargs["table_schema"] = _incoming_column_types(options, state, df)
         state.overlap_stage_table = _run_load_target_action(
             options,
             "create_stage",

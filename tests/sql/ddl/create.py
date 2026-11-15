@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.sql._support.create_from_sql import create_module
 from tests.sql._support.cross_area import (
     FakeDbapiConnection,
     ch_ctas_module,
@@ -106,7 +107,11 @@ def test_create_sql_table_dry_run_and_return_sql_do_not_open_connection(
     assert dry_run_plan.sqls[0].startswith("CREATE TABLE sandbox.schema_only")
 
 
-def test_create_sql_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -> None:
+def test_create_sql_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps(monkeypatch) -> None:
+    for module in (ddl_create_table_module, create_module):
+        monkeypatch.setattr(
+            module, "get_sql_connection", lambda *_args: pytest.fail("plan opened a connection")
+        )
     plan = ddl_create_table_module.create_table(
         "ch",
         "analytics.events",
@@ -122,17 +127,23 @@ def test_create_sql_table_from_sql_clickhouse_dry_run_uses_shared_plan_steps() -
 
     assert [statement.phase for statement in plan.statements] == [
         "inspect_source_schema",
-        "drop_target",
-        "drop_target",
-        "drop_target",
-        "drop_target",
         "create_target",
         "insert_data",
     ]
-    assert plan.sqls[3] == "DROP TABLE IF EXISTS analytics.events ON CLUSTER analytics"
+    assert plan.sqls[1] == "CREATE TABLE analytics.events (<source query schema>)"
+    assert plan.options["pending_existing_layout_verification"] is True
+    assert plan.options["pending_resource_scope_resolution"] is True
+    assert plan.metadata.statement_count is None
+    assert not any(statement.startswith("DROP") for statement in plan.sqls)
 
 
-def test_create_sql_table_from_sql_clickhouse_only_shard_dry_run_uses_local_target() -> None:
+def test_create_sql_table_from_sql_clickhouse_only_shard_dry_run_uses_local_target(
+    monkeypatch,
+) -> None:
+    for module in (ddl_create_table_module, create_module):
+        monkeypatch.setattr(
+            module, "get_sql_connection", lambda *_args: pytest.fail("plan opened a connection")
+        )
     plan = ddl_create_table_module.create_table(
         "ch",
         "analytics.events",
@@ -152,12 +163,14 @@ def test_create_sql_table_from_sql_clickhouse_only_shard_dry_run_uses_local_targ
     assert plan.options["ch_only_shard"] is True
     assert [statement.phase for statement in plan.statements] == [
         "inspect_source_schema",
-        "drop_target",
         "create_target",
         "insert_data",
     ]
-    assert plan.sqls[1] == "DROP TABLE IF EXISTS analytics.events"
-    assert plan.sqls[2] == "CREATE TABLE analytics.events (<source query schema>)"
+    assert plan.sqls[1] == "CREATE TABLE analytics.events (<source query schema>)"
+    assert plan.options["pending_existing_layout_verification"] is True
+    assert plan.options["pending_resource_scope_resolution"] is True
+    assert plan.metadata.statement_count is None
+    assert not any(statement.startswith("DROP") for statement in plan.sqls)
     assert "_shard" not in "\n".join(plan.sqls)
     assert "ON CLUSTER" not in "\n".join(plan.sqls)
     assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)
@@ -172,21 +185,18 @@ def test_ch_create_table_as_dry_run_uses_lifecycle_drop_order() -> None:
         ch_cluster="analytics",
     )
 
-    # Declared policy resources supersede duplicate coordinator-local mirrors.
-    assert plan.sqls[:2] == [
-        "DROP TABLE IF EXISTS analytics.events ON CLUSTER analytics",
-        "DROP TABLE IF EXISTS analytics.events_shard ON CLUSTER analytics",
-    ]
     assert [statement.phase for statement in plan.statements] == [
-        "drop_target",
-        "drop_target",
         "create_target",
         "create_target",
         "create_target",
         "create_target",
         "insert_target",
     ]
-    assert plan.sqls[2].startswith("CREATE TABLE analytics.events_shard")
+    assert plan.options["pending_existing_layout_verification"] is True
+    assert plan.options["pending_resource_scope_resolution"] is True
+    assert plan.metadata.statement_count is None
+    assert all(not statement.lstrip().startswith("DROP ") for statement in plan.sqls)
+    assert plan.sqls[0].startswith("CREATE TABLE analytics.events_shard")
     assert plan.sqls[-2].startswith("CREATE TABLE IF NOT EXISTS analytics.events")
     assert "ENGINE = Distributed(" in plan.sqls[-2]
     assert plan.sqls[-1] == "INSERT INTO analytics.events\nselect 1 as id"
@@ -205,13 +215,15 @@ def test_ch_create_table_as_only_shard_dry_run_uses_local_target() -> None:
 
     assert plan.options["ch_only_shard"] is True
     assert [statement.phase for statement in plan.statements] == [
-        "drop_target",
         "create_target",
         "insert_target",
     ]
-    assert plan.sqls[0] == "DROP TABLE IF EXISTS analytics.events"
-    assert plan.sqls[1].startswith("CREATE TABLE analytics.events")
-    assert "ENGINE = ReplicatedMergeTree" in plan.sqls[1]
+    assert plan.options["pending_existing_layout_verification"] is True
+    assert plan.options["pending_resource_scope_resolution"] is True
+    assert plan.metadata.statement_count is None
+    assert all(not statement.lstrip().startswith("DROP ") for statement in plan.sqls)
+    assert plan.sqls[0].startswith("CREATE TABLE analytics.events")
+    assert "ENGINE = ReplicatedMergeTree" in plan.sqls[0]
     assert "_shard" not in "\n".join(plan.sqls)
     assert "ON CLUSTER" not in "\n".join(plan.sqls)
     assert "ENGINE = Distributed(" not in "\n".join(plan.sqls)

@@ -184,8 +184,11 @@ rows = sql.create_table(
   cleanup cannot be confirmed, the operation stops instead of retrying against
   a partial target; pre-existing targets are never removed unless
   `drop_if_exists=True`.
-- Dry-run plans and generated SQL place backend-appropriate target drops before
-  the create statements when `drop_if_exists=True`.
+- With `drop_if_exists=True`, ClickHouse dry-run plans leave existing-resource
+  ownership and drop scopes pending. SQL-only generation cannot express that
+  unresolved verification and raises an actionable validation error; execute
+  the operation or use a plan. Other backends retain their generated target
+  drops before creation.
 - Deterministic Trino `TYPE_MISMATCH` failures are not retried.
 - Source queries that return duplicate column names fail immediately without
   retrying.

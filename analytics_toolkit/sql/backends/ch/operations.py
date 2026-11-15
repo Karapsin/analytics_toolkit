@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from types import SimpleNamespace
 from typing import Any
 
 from sqlglot import exp, parse_one
@@ -9,6 +10,8 @@ import analytics_toolkit.sql.backends.common_methods as _common_methods
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.models import ReadColumnResult
 
+# The adapter binds this operation through the operations facade.
+from .execute_create_target import execute_create_target_exists  # noqa: F401
 from .routing import (
     connection_cluster_routing,
     local_sql,
@@ -367,6 +370,39 @@ def pending_drop_plan_options(adapter: Any) -> dict[str, Any]:
         "pending_resource_scope_resolution": True,
         "execution_requires": "Complete existing table-role ownership and endpoint certification.",
     }
+
+
+def prepare_execute_create_target(adapter: Any, connection: Any, options: Any) -> None:
+    """Authorize the resolved policy, then remove only verified existing resources."""
+    if not options.drop_if_exists:
+        return
+    from .creation_preflight import (  # noqa: PLC0415 - adapter operations initialization cycle.
+        preflight_create_table_replacement,
+    )
+
+    policy = options.ch_creation_policy
+    preflight_create_table_replacement(
+        adapter,
+        connection,
+        SimpleNamespace(
+            ch_replace_table=True,
+            ch_creation_policy=policy,
+            table_name=options.table_name,
+            connection_key=options.connection_key,
+            query_label=options.query_label,
+            ch_only_shard=options.ch_only_shard,
+        ),
+    )
+    drop_tables_with_options(
+        adapter,
+        connection,
+        [options.table_name],
+        connection_key=options.connection_key,
+        ch_cluster=policy.distributed_cluster or policy.shard_on_cluster,
+        if_exists=True,
+        ch_wait_for_absence=True,
+        query_label=options.query_label,
+    )
 
 
 def build_clear_target_sqls(

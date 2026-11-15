@@ -49,6 +49,11 @@ from .finalize import cleanup_stage, finalize_loaded_stage
 from .progress import make_transfer_progress_bar
 from .range_scheduler import AdaptiveRangeScheduler, OrdinalRange
 from .row_counts import validate_loaded_stage_row_count
+from .source_generation import (
+    SourceSnapshotOperations,
+    materialize_source_snapshot,
+    observed_source_operation,
+)
 from .source_snapshot import (
     build_append_snapshot_slice_sql,
     build_snapshot_range_sql,
@@ -434,94 +439,22 @@ def _materialize_snapshot(
     source_ref: dict[str, Any],
     stage_state: TransferStageState,
 ) -> tuple[str, dict[int, int]]:
-    staging_schema = options.source_transfer_staging_schema
-    internal = stage_state.internal_columns
-    if staging_schema is None or internal is None:
-        raise RuntimeError("Source snapshot configuration is incomplete.")
-    snapshot_table = _allocate_snapshot_name(options, source_ref)
-    slices = options.transfer_slices or []
-    source_sqls = (
-        [(item.index, item.source_sql) for item in slices] if slices else [(0, options.source_sql)]
+    return materialize_source_snapshot(
+        options,
+        source_ref,
+        stage_state,
+        SourceSnapshotOperations(
+            adapter=get_backend_adapter,
+            allocate=_allocate_snapshot_name,
+            select_sql=build_snapshot_select_sql,
+            create=execute_source_snapshot_materialization,
+            append_sql=build_append_snapshot_slice_sql,
+            materialize=execute_transfer_materialization,
+            counts=_snapshot_slice_counts,
+            cleanup=cleanup_stage_table,
+            log=time_print,
+        ),
     )
-    adapter = get_backend_adapter(options.from_db_backend)
-    created = False
-    snapshot_owned: list[str] = []
-    cluster_routed = False
-    post_create_sqls: tuple[str, ...] = ()
-
-    try:
-        for slice_id, source_sql in source_sqls:
-            select_sql = build_snapshot_select_sql(
-                backend=options.from_db_backend,
-                source_sql=source_sql,
-                source_columns=stage_state.source_columns,
-                transfer_id=options.transfer_id or "",
-                canonical_destination=options.canonical_destination_identity or "",
-                slice_id=slice_id,
-                internal_columns=internal,
-            )
-            if not created:
-                snapshot_sql = execute_source_snapshot_materialization(
-                    backend=options.from_db_backend,
-                    connection=source_ref["connection"],
-                    snapshot_table=snapshot_table,
-                    snapshot_select_sql=select_sql,
-                    internal_columns=internal,
-                    source_staging_ch_policy=getattr(
-                        options,
-                        "source_staging_ch_policy",
-                        None,
-                    ),
-                    run_post_create_sqls=False,
-                    on_resource_created=snapshot_owned.append,
-                )
-                snapshot_owned.append(snapshot_table)
-                cluster_routed = snapshot_sql.populate_sql is not None
-                post_create_sqls = snapshot_sql.post_create_sqls
-                created = True
-            else:
-                execute_transfer_materialization(
-                    adapter,
-                    options.from_db_backend,
-                    source_ref["connection"],
-                    build_append_snapshot_slice_sql(
-                        backend=options.from_db_backend,
-                        snapshot_table=snapshot_table,
-                        source_columns=stage_state.source_columns,
-                        internal_columns=internal,
-                        snapshot_select_sql=select_sql,
-                        cluster_routed=cluster_routed,
-                    ),
-                )
-        for sql in post_create_sqls:
-            adapter.execute_command(source_ref["connection"], sql)
-        return snapshot_table, _snapshot_slice_counts(
-            options,
-            source_ref["connection"],
-            snapshot_table,
-            internal.slice_id,
-        )
-    except BaseException as exc:
-        if not snapshot_owned:
-            exc.__dict__["analytics_toolkit_sql_source_stage_candidate"] = snapshot_table
-        if snapshot_owned:
-            try:
-                cleanup_stage_table(
-                    options.from_db_backend,
-                    source_ref["connection"],
-                    snapshot_table,
-                    query_label=options.query_label,
-                    ch_creation_policy=single_resource_policy(
-                        getattr(options, "source_staging_ch_policy", None)
-                    ),
-                )
-            except BaseException:
-                time_print(
-                    "[slice=1/1] Failed to drop an incomplete source snapshot; "
-                    "startup cleanup will retry it",
-                    level="warning",
-                )
-        raise
 
 
 def _allocate_snapshot_name(
@@ -547,12 +480,14 @@ def _allocate_snapshot_name(
             random_suffix=suffix,
             destination_hash=options.destination_hash,
         )
-        if not table_exists(
-            options.from_db_backend,
-            source_ref["connection"],
-            candidate,
-            connection_key=options.from_db_key,
-        ):
+        with observed_source_operation():
+            exists = table_exists(
+                options.from_db_backend,
+                source_ref["connection"],
+                candidate,
+                connection_key=options.from_db_key,
+            )
+        if not exists:
             return candidate
     raise RuntimeError("Could not allocate a unique source snapshot table name.")
 

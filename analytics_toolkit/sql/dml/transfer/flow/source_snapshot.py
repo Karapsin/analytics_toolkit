@@ -15,6 +15,7 @@ from ....backends.transfer_stage import (
     is_cluster_routed_source_snapshot,
 )
 from .range_scheduler import OrdinalRange
+from .source_generation import observed_source_operation
 from .stage_identity import TransferInternalColumns
 
 _MISSING_ROUTED_POLICY = "Cluster-routed ClickHouse source staging policy is missing."
@@ -107,32 +108,36 @@ def execute_source_snapshot_materialization(
         internal_columns=internal_columns,
         cluster_routed=cluster_routed,
     )
-    execute_transfer_materialization(
-        adapter,
-        backend,
-        connection,
-        snapshot_sql.create_sql,
-    )
-    if on_resource_created is not None:
-        on_resource_created(snapshot_table)
-    if snapshot_sql.populate_sql is not None:
-        if source_staging_ch_policy is None:
-            raise RuntimeError(_MISSING_ROUTED_POLICY)
-        adapter.after_create_table(
-            connection,
-            snapshot_table,
-            ch_only_shard=True,
-            ch_creation_policy=source_staging_ch_policy,
-        )
+    with observed_source_operation():
         execute_transfer_materialization(
             adapter,
             backend,
             connection,
-            snapshot_sql.populate_sql,
+            snapshot_sql.create_sql,
         )
+        if on_resource_created is not None:
+            on_resource_created(snapshot_table)
+    if snapshot_sql.populate_sql is not None:
+        if source_staging_ch_policy is None:
+            raise RuntimeError(_MISSING_ROUTED_POLICY)
+        with observed_source_operation():
+            adapter.after_create_table(
+                connection,
+                snapshot_table,
+                ch_only_shard=True,
+                ch_creation_policy=source_staging_ch_policy,
+            )
+        with observed_source_operation():
+            execute_transfer_materialization(
+                adapter,
+                backend,
+                connection,
+                snapshot_sql.populate_sql,
+            )
     if run_post_create_sqls:
         for sql in snapshot_sql.post_create_sqls:
-            adapter.execute_command(connection, sql)
+            with observed_source_operation():
+                adapter.execute_command(connection, sql)
     return snapshot_sql
 
 
