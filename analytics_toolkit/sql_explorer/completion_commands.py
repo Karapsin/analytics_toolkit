@@ -90,6 +90,8 @@ class SqlExplorerCompletionCommandsMixin:
             if not app._exit_requested and editor.cursor_count == 1 and editor.selection.is_empty
             else None
         )
+        if self._suppress_quoted_keyword(context, workspace):
+            return True
         if context is None or (columns_only and context.request.kind != "column"):
             app._cancel_completion_request(workspace)
             workspace.completion_allow_empty_columns = False
@@ -137,6 +139,19 @@ class SqlExplorerCompletionCommandsMixin:
             ),
             owner_id=tab_id,
         )
+        return True
+
+    @staticmethod
+    def _suppress_quoted_keyword(
+        context: CompletionContext | None, workspace: SqlExplorerWorkspace
+    ) -> bool:
+        if (
+            context is None
+            or context.request.kind != "keyword"
+            or not context.request.prefix.startswith(('"', "`"))
+        ):
+            return False
+        workspace.completion_menu.action_close()
         return True
 
     def _open_namespace_completion(
@@ -456,6 +471,8 @@ class SqlExplorerCompletionCommandsMixin:
     ) -> None:
         app = cast("Any", self)
         workspace = workspace or app.active_workspace
+        if self._suppress_quoted_keyword(context, workspace):
+            return
         editor = workspace.editor
         start = app._offset_to_location(editor.text, context.replacement_start)
         end_offset = context.replacement_end

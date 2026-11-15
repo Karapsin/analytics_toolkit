@@ -44,12 +44,13 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
     replacement_start = cursor_offset - len(final_prefix)
     normalized_backend = backend.casefold()
 
-    column_start, column_end = column_fragment(text, cursor_offset, normalized_backend) or (
+    fragment = column_fragment(text, cursor_offset, normalized_backend)
+    column_start, column_end = fragment or (
         replacement_start,
         replacement_end,
     )
     raw_column_prefix = text[column_start:cursor_offset]
-    quoted_column = raw_column_prefix.startswith(('"', "`"))
+    quoted_column = fragment is not None and raw_column_prefix.startswith(('"', "`"))
     column_prefix = completion_identifier_parts(raw_column_prefix, normalized_backend)[-1]
     projection = (
         projection_context(text, column_start, column_end, normalized_backend)
@@ -88,14 +89,14 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
             connection_key,
             normalized_backend,
             "keyword",
-            normalize_identifier_prefix(final_prefix),
+            raw_column_prefix if quoted_column else normalize_identifier_prefix(final_prefix),
             context=f"keyword:{line_start}",
         )
         return CompletionContext(
             request,
-            replacement_start,
-            replacement_end,
-            final_prefix,
+            column_start if quoted_column else replacement_start,
+            column_end if quoted_column else replacement_end,
+            raw_column_prefix if quoted_column else final_prefix,
             request.prefix,
         )
 

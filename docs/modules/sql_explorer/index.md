@@ -309,6 +309,8 @@ derived tables, and CTE output names, including explicit column lists and stars.
 Quoted column names retain their exact identity, including whitespace inside
 the quotes; `" id"` remains distinct from `id` when completion is accepted.
 Quoted reserved column names also remain identifiers when Tab accepts completion.
+At boundaries that do not allow column completion, such as before a comma or
+closing quote, Tab leaves the quoted identifier intact.
 Escaped quote characters and dots inside a quoted name remain part of its identity.
 Database table names retain that identity when offered alongside CTEs.
 Press Tab or Ctrl+Space immediately after `alias.` to list all columns from that
