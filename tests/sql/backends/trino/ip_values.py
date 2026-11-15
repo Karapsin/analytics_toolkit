@@ -36,6 +36,11 @@ from tests.sql._support.trino_parameters import render_parameter
 MAPPED = b"\x00" * 10 + b"\xff\xff"
 V4 = b"\xc0\x00\x02\x01"
 V6 = bytes.fromhex("20010db8000000000000000000000001")
+_MAP_KEY_ERROR = (
+    r"^Selected input cannot preserve its keys "
+    r"in the authoritative map schema\.$"
+)
+_NESTED_SCHEMA_ERROR = r"^Selected input is incompatible with authoritative nested schema\.$"
 
 
 def certify(value, native="IPADDRESS"):
@@ -217,23 +222,28 @@ def test_ipaddress_casts_nested_native_parameters_keep_compatible_sql_types(
 
 
 @pytest.mark.parametrize(
-    ("value", "native"),
+    ("value", "native", "expected_error"),
     [
-        (["192.0.2.1", V4], "ARRAY(IPADDRESS)"),
-        ([["192.0.2.1"], [V4]], "ARRAY(ARRAY(IPADDRESS))"),
-        ({"one": "192.0.2.1", "two": V4}, "MAP(VARCHAR,IPADDRESS)"),
-        ({"192.0.2.1": "one", "::ffff:192.0.2.1": "two"}, "MAP(IPADDRESS,VARCHAR)"),
-        ({V4: "one", MAPPED + V4: "two"}, "MAP(IPADDRESS,VARCHAR)"),
+        (["192.0.2.1", V4], "ARRAY(IPADDRESS)", "IPADDRESS"),
+        ([["192.0.2.1"], [V4]], "ARRAY(ARRAY(IPADDRESS))", "IPADDRESS"),
+        ({"one": "192.0.2.1", "two": V4}, "MAP(VARCHAR,IPADDRESS)", "IPADDRESS"),
+        (
+            {"192.0.2.1": "one", "::ffff:192.0.2.1": "two"},
+            "MAP(IPADDRESS,VARCHAR)",
+            _MAP_KEY_ERROR,
+        ),
+        ({V4: "one", MAPPED + V4: "two"}, "MAP(IPADDRESS,VARCHAR)", _MAP_KEY_ERROR),
         (
             {("192.0.2.1", 1): "one", ("::ffff:192.0.2.1", 1): "two"},
             "MAP(ROW(address IPADDRESS, number BIGINT),VARCHAR)",
+            _MAP_KEY_ERROR,
         ),
     ],
 )
 def test_ipaddress_casts_reject_incompatible_container_wire_and_post_cast_key_collisions(
-    value, native
+    value, native, expected_error
 ):
-    with pytest.raises(ValueError, match="IPADDRESS"):
+    with pytest.raises(ValueError, match=expected_error):
         certify(value, native)
 
 
@@ -276,15 +286,21 @@ def test_ipaddress_casts_native_ordered_row_map_keys_keep_field_binding_and_wire
 
 
 @pytest.mark.parametrize(
-    ("value", "native"),
+    ("value", "native", "expected_error"),
     [
-        ({None: "one"}, "MAP(IPADDRESS,VARCHAR)"),
-        ({("192.0.2.1",): "one"}, "MAP(ARRAY(IPADDRESS),VARCHAR)"),
-        ([("192.0.2.1",), ("192.0.2.2", "label")], "ARRAY(ROW(address IPADDRESS,label VARCHAR))"),
+        ({None: "one"}, "MAP(IPADDRESS,VARCHAR)", r"IPADDRESS|array|ARRAY|authoritative map"),
+        ({("192.0.2.1",): "one"}, "MAP(ARRAY(IPADDRESS),VARCHAR)", _NESTED_SCHEMA_ERROR),
+        (
+            [("192.0.2.1",), ("192.0.2.2", "label")],
+            "ARRAY(ROW(address IPADDRESS,label VARCHAR))",
+            r"IPADDRESS|array|ARRAY|authoritative map",
+        ),
     ],
 )
-def test_ipaddress_casts_transport_rejects_invalid_native_key_and_row_constructors(value, native):
-    with pytest.raises(ValueError, match=r"IPADDRESS|array|ARRAY|authoritative map"):
+def test_ipaddress_casts_transport_rejects_invalid_native_key_and_row_constructors(
+    value, native, expected_error
+):
+    with pytest.raises(ValueError, match=expected_error):
         validate_transport_value(value, native, "trino")
 
 
@@ -350,8 +366,11 @@ def test_ipaddress_casts_dataframe_effective_keys_follow_declared_native_partiti
 
     frames = list(dataframe_key_validation_frames(frame, keys, schemas, "trino"))
 
-    assert len(frames) == 1
-    validation = frames[0]
+    assert len(frames) == (2 if schema_source == "explicit" else 1)
+    if schema_source == "explicit":
+        pd.testing.assert_frame_equal(frames[0], frame.loc[:, keys])
+        _validate_dataframe_key_uniqueness(frames[0], keys)
+    validation = frames[-1]
     assert list(validation.columns) == keys
     assert validation["payload"].dtype == object
     assert validation["payload"].tolist() == [MAPPED + V4, MAPPED + V4]
@@ -372,7 +391,14 @@ def test_ipaddress_casts_key_dispatch_never_guesses_types_or_changes_keyless_app
     frame = pd.DataFrame({"payload": ["192.0.2.1", "::ffff:192.0.2.1"]})
     schemas = ({"payload": "IPADDRESS"},) if backend != "trino" else (None, {"payload": "VARCHAR"})
 
-    assert list(dataframe_key_validation_frames(frame, key_columns, schemas, backend)) == []
+    frames = list(dataframe_key_validation_frames(frame, key_columns, schemas, backend))
+    if backend == "trino" and key_columns:
+        assert len(frames) == 1
+        pd.testing.assert_frame_equal(frames[0], frame)
+        assert frames[0]["payload"].tolist() == ["192.0.2.1", "::ffff:192.0.2.1"]
+        _validate_dataframe_key_uniqueness(frames[0], key_columns)
+    else:
+        assert frames == []
 
 
 @pytest.mark.parametrize("sdk", ["current", "minimum-0.320"])

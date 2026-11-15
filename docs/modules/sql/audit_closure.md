@@ -465,4 +465,18 @@ and `backends/ch/string_transport.py::test_http_string_transport_nested_values_k
 cover mixed text/binary HTTP String batches with real codecs, including nested
 bytes and SQL NULL.
 
+Trino composite native-key regressions are additionally covered by
+`dml/load/trino_composite_map_keys.py::test_trino_composite_native_map_keys_reject_before_truncate`,
+`dml/load/trino_composite_map_keys.py::test_trino_composite_native_map_keys_keep_distinct_rows_and_bare_return`,
+and `dml/load/trino_composite_effective_keys.py::test_trino_composite_effective_key_aliases_reject_before_stage`.
+These compose IPADDRESS alias identity with CHAR padding across every component,
+reject duplicate native map and effective keys before mutation, and retain
+distinct composite entries. Public fake-client loads use the real adapter and
+SDK formatter; they do not claim live-server row-preservation evidence.
+The disposable `audit.engine.trino_composite_ip_char_map_keys` case in
+`integration/core/audit_trino_ipaddress_parameters.py::test_trino_engine_composes_ipaddress_and_char_identity_inside_row_map_keys`
+uses engine-only SELECTs because the configured Iceberg and Hive catalogs cannot
+persist IPADDRESS. It checks native equality and duplicate rejection, creates no
+storage table, and was not run locally.
+
 [SQL module index](index.md)

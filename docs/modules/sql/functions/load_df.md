@@ -156,6 +156,14 @@ rows
   different source tick scales reject before mutation; supported sub-microsecond
   differences remain distinct. Zoned keys require awareness or a resolved
   destination timezone policy.
+- Trino native key equality composes across every declared `ROW` field and
+  `ARRAY` element, including IPv4-mapped `IPADDRESS` aliases, `CHAR` padding,
+  `REAL` rounding and temporal rules. For `ROW(address IPADDRESS, label CHAR(2))`,
+  `('192.0.2.1', 'a')` and `('::ffff:192.0.2.1', 'a ')` are the same key;
+  an authoritative map containing both rejects before target mutation.
+  Key-validated append and upsert compare the complete effective key using the
+  corresponding destination types, including any partition column. The existing
+  rejection of SQL NULL in effective keys is unchanged.
 - Trino `JSON` inserts use native `CAST` rules: strings become JSON strings,
   including document-looking text and `'null'`; `None` remains SQL NULL.
   To interpret document text, use `json_parse` explicitly in SQL.

@@ -27,10 +27,10 @@ from .gp.temporal_values import (
     validate_clock_interval_profile,
 )
 from .nested_types import convert_nested, nested_descriptor
-from .trino.ip_values import key_validation_frames as trino_key_validation_frames
 from .trino.ip_values import validate_ip_profile, validate_ip_transport_value
 from .trino.json_values import validate_json_profile as validate_trino_json_profile
 from .trino.json_values import validate_json_transport_value
+from .trino.key_validation import key_validation_frames as trino_key_validation_frames
 from .trino.time_values import convert_time_value, is_time_type, validate_time_profile
 
 if TYPE_CHECKING:
@@ -56,7 +56,9 @@ def dataframe_key_validation_frames(
             df, key_columns, schemas, destination_timezone=destination_timezone
         )
     if backend == "trino":
-        return trino_key_validation_frames(df, key_columns, schemas)
+        return trino_key_validation_frames(
+            df, key_columns, schemas, destination_timezone=destination_timezone
+        )
     return gp_key_validation_frames(df, key_columns, schemas) if backend == "gp" else ()
 
 

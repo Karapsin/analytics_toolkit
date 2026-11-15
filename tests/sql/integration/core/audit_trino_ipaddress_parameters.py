@@ -1,4 +1,9 @@
-"""Native Trino IPADDRESS casts and 128-bit identities, without IP storage."""
+"""Native Trino IPADDRESS casts and composite identity, without IP storage.
+
+The configured Iceberg and Hive catalogs cannot persist IPADDRESS. Composite
+map-key equality is therefore an engine-only SELECT probe; public fake-client
+load regressions separately verify preservation of existing destination rows.
+"""
 
 from __future__ import annotations
 
@@ -19,11 +24,11 @@ if TYPE_CHECKING:
 pytestmark = [pytest.mark.integration, pytest.mark.integration_core]
 
 
-def _label() -> str:
+def _label(purpose: str = "trino-ipaddress-parameter-cast") -> str:
     return query_label(
         os.environ.get("SQL_INTEGRATION_RUN_ID", uuid.uuid4().hex[:8]),
         os.environ.get("SQL_INTEGRATION_TEST_ID", "manual"),
-        "trino-ipaddress-parameter-cast",
+        purpose,
     )
 
 
@@ -60,7 +65,7 @@ def test_trino_ipaddress_parameters_keep_native_canonical_and_binary_identity() 
                 f"CAST(actual_{index} AS VARBINARY)",
             ]
         )
-    # Trino 475's IpAddressOperators stores IPv4 as IPv4-mapped 16-byte data.
+    # The configured integration engine stores IPv4 as IPv4-mapped 16-byte data.
     # Controls are independently written native literals, never normalized text.
     query = (
         f"/* {_label()} */ WITH casts AS (SELECT "
@@ -88,3 +93,54 @@ def test_trino_ipaddress_parameters_keep_native_canonical_and_binary_identity() 
             assert isinstance(actual, str)
             assert isinstance(binary, bytes)
             assert len(binary) == 16
+
+
+@pytest.mark.sql_scenario("audit.engine.trino_composite_ip_char_map_keys")
+def test_trino_engine_composes_ipaddress_and_char_identity_inside_row_map_keys() -> None:
+    statement = """
+WITH keys AS (
+ SELECT
+  CAST(ROW(CAST(? AS IPADDRESS), CAST(? AS CHAR(2)))
+       AS ROW(address IPADDRESS, label CHAR(2))) AS first_key,
+  CAST(ROW(CAST(? AS IPADDRESS), CAST(? AS CHAR(2)))
+       AS ROW(address IPADDRESS, label CHAR(2))) AS duplicate_key,
+  CAST(ROW(CAST(? AS IPADDRESS), CAST(? AS CHAR(2)))
+       AS ROW(address IPADDRESS, label CHAR(2))) AS address_control,
+  CAST(ROW(CAST(? AS IPADDRESS), CAST(? AS CHAR(2)))
+       AS ROW(address IPADDRESS, label CHAR(2))) AS label_control
+)
+SELECT
+ first_key.address = duplicate_key.address AS addresses_equal,
+ first_key.label = duplicate_key.label AS labels_equal,
+ first_key = duplicate_key AS composite_equal,
+ TRY(MAP(ARRAY[first_key, duplicate_key], ARRAY['first', 'second'])) IS NULL
+     AS duplicate_map_rejected,
+ CARDINALITY(MAP(ARRAY[first_key, address_control], ARRAY['first', 'second']))
+     AS distinct_address_entries,
+ CARDINALITY(MAP(ARRAY[first_key, label_control], ARRAY['first', 'second']))
+     AS distinct_label_entries,
+ TYPEOF(first_key) AS key_type
+FROM keys
+"""
+    query = f"/* {_label('trino-composite-ip-char-map-identity')} */ " + statement
+    # Bind the original distinct text directly. The engine, rather than the
+    # implementation's identity normalizer, establishes both field equalities.
+    parameters = [
+        "192.0.2.1",
+        "a",
+        "::ffff:192.0.2.1",
+        "a ",
+        "192.0.2.2",
+        "a",
+        "192.0.2.1",
+        "b",
+    ]
+    with closing(get_sql_connection("trino_source_values")) as connection, closing(
+        connection.cursor()
+    ) as cursor:
+        cursor.execute(query, parameters)
+        rows = cursor.fetchall()
+
+    assert [tuple(row) for row in rows] == [
+        (True, True, True, True, 2, 2, "row(address ipaddress, label char(2))")
+    ]

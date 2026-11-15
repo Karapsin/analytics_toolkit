@@ -68,16 +68,10 @@ def _key_payload_pairs(
 def profile_map_key_identity(
     key: Any, key_type: str, backend: str, destination_timezone: str | None = None
 ) -> Any:
-    """Use native temporal equality without replacing raw precision-profile values."""
+    """Compare every converted Trino key leaf without replacing profile values."""
     if backend != "trino":
         return key
-    from .trino.time_values import contains_time_type  # noqa: PLC0415 -- clock key grammar.
-    from .trino.timestamp_map_keys import (  # noqa: PLC0415 -- timestamp key grammar.
-        contains_timestamp_type,
-    )
-
-    temporal = contains_time_type(key_type) or contains_timestamp_type(key_type)
-    return _key_identity(key, key_type, backend, destination_timezone) if temporal else key
+    return _key_identity(key, key_type, backend, destination_timezone)
 
 
 def _trino_key_payload(
@@ -117,7 +111,12 @@ def _trino_scalar_key_payload(key: Any, key_type: str | None, zone: str | None) 
 
 
 def _key_identity(
-    key: Any, key_type: str | None, backend: str, destination_timezone: str | None = None
+    key: Any,
+    key_type: str | None,
+    backend: str,
+    destination_timezone: str | None = None,
+    *,
+    allow_null_components: bool = False,
 ) -> Any:
     from .nested_types import nested_descriptor  # noqa: PLC0415 - final native key structure
     from .nested_values import row_items  # noqa: PLC0415 - exact row arity and field identity
@@ -130,6 +129,8 @@ def _key_identity(
 
         key_type = logical_storage_type(key_type or "")
     if key is None:
+        if backend == "trino" and allow_null_components:
+            return None
         if backend == "ch" and key_type is not None and _permits_null(key_type):
             return None
         msg = "Converted map keys cannot contain NULL components."
@@ -137,7 +138,13 @@ def _key_identity(
     kind, fields = nested_descriptor(key_type or "")
     if kind in {"row", "tuple"}:
         return tuple(
-            _key_identity(item, native, backend, destination_timezone)
+            _key_identity(
+                item,
+                native,
+                backend,
+                destination_timezone,
+                allow_null_components=allow_null_components,
+            )
             for item, (_name, native) in zip(row_items(key, fields), fields)
         )
     if kind in {"array", "gp_array"}:
@@ -145,7 +152,14 @@ def _key_identity(
             msg = "Converted array map keys require a positional sequence."
             raise ValueError(msg)
         return tuple(
-            _key_identity(item, fields[0][1], backend, destination_timezone) for item in key
+            _key_identity(
+                item,
+                fields[0][1],
+                backend,
+                destination_timezone,
+                allow_null_components=allow_null_components,
+            )
+            for item in key
         )
     if kind == "map" and backend == "trino":
         msg = "Converted map keys contain an unsupported native key structure."
@@ -178,18 +192,13 @@ def _scalar_key_identity(
 
             return enum_value_code(key, key_type or "")
     if backend == "trino":
-        from .trino.time_values import (  # noqa: PLC0415 -- destination clock identity.
-            time_key_identity,
-        )
-        from .trino.timestamp_map_keys import (  # noqa: PLC0415 -- timestamp native identity.
-            timestamp_key_identity,
+        from .trino.key_identity import (  # noqa: PLC0415 -- backend scalar key equality.
+            scalar_key_identity,
         )
 
-        handled, identity = time_key_identity(key, key_type)
-        if not handled:
-            handled, identity = timestamp_key_identity(
-                key, key_type, destination_timezone=destination_timezone
-            )
+        handled, identity = scalar_key_identity(
+            key, key_type, destination_timezone=destination_timezone
+        )
         if handled:
             return identity
     if _float_width(key_type, backend) == _FLOAT32_BITS:
@@ -198,6 +207,4 @@ def _scalar_key_identity(
         except (OverflowError, TypeError, ValueError) as exc:
             msg = "Converted map key exceeds its native floating-point representation."
             raise ValueError(msg) from exc
-    if backend == "trino" and native.name in {"char", "character"} and isinstance(key, str):
-        return key.rstrip(" ")
     return key

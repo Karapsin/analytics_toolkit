@@ -415,14 +415,17 @@ a fixed-rank destination. Greenplum maps do not cause automatic JSONB creation.
 Trino maps require non-NULL, unique keys; duplicate keys or coercions that merge
 different keys use typed text during inference and fail validation for an
 authoritative map schema. ClickHouse maps preserve duplicate ordered pairs.
-For Trino, uniqueness uses destination-native key identity, including UUID normalization,
-`REAL` rounding and `CHAR` padding. Distinct source keys that become the same
+For Trino, uniqueness uses destination-native key identity, including UUID
+normalization, IPv4-mapped `IPADDRESS` aliases, `REAL` rounding, `CHAR` padding
+and temporal rules. Distinct source keys that become the same
 destination key fail validation before target mutation; an entry is never
 silently overwritten. For example, uppercase and lowercase spellings of one
 UUID cannot both become keys in an authoritative `MAP(UUID, VARCHAR)`.
-Identity checks also descend into composite keys using each declared field
-type. For `ROW(k CHAR(2))`, the keys `('a',)` and `('a ',)` collide despite
-being distinct Python tuples. These collisions fail before target mutation;
+These rules compose across every declared `ROW` field and `ARRAY` element of
+composite keys. For `ROW(address IPADDRESS, label CHAR(2))`, the keys
+`('192.0.2.1', 'a')` and `('::ffff:192.0.2.1', 'a ')` collide: both the
+address alias and label padding have the same native identity. These collisions
+fail before target mutation;
 valid composite keys and legal ClickHouse duplicate pairs retain every entry.
 Map metadata can authorize streaming only when each key conversion is proven
 to preserve distinct destination-native keys. Scalar value-domain fit alone
@@ -465,6 +468,10 @@ When `upsert_partition_column` is supplied, the effective key is the ordered,
 deduplicated combination of that column and `key_columns` on every backend.
 The same ID in different partitions is a different record. Without a partition
 column, the key retains `key_columns` semantics.
+Trino key-validated append and upsert compare every component of the complete
+effective key using its destination-native equality, including composite
+`ROW`/`ARRAY` values. The existing rejection of SQL NULL in effective keys is
+unchanged.
 
 Upsert finalization is backend-specific. Greenplum uses transactional staged
 delete-and-insert on the effective key. Trino and ClickHouse require

@@ -10922,6 +10922,18 @@
         "tests/sql/dml/load/trino_ipaddress_casts.py::test_trino_ipaddress_casts_native_key_aliases_fail_before_stage"
       ]
     },
+    "audit.engine.trino_composite_ip_char_map_keys": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_ipaddress_parameters.py::test_trino_engine_composes_ipaddress_and_char_identity_inside_row_map_keys",
+      "backends": [
+        "trino"
+      ],
+      "description": "Engine-only SELECT verifies composed ROW(IPADDRESS, CHAR(2)) equality, duplicate MAP-key rejection, and distinct controls. The configured Iceberg and Hive catalogs cannot persist IPADDRESS; existing-destination row preservation is covered by the paired public fake-client load regressions, not by this scenario.",
+      "regression_tests": [
+        "tests/sql/dml/load/trino_composite_map_keys.py::test_trino_composite_native_map_keys_reject_before_truncate",
+        "tests/sql/dml/load/trino_composite_map_keys.py::test_trino_composite_native_map_keys_keep_distinct_rows_and_bare_return"
+      ]
+    },
     "audit.load.gp_inet_parameters": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_gp_inet_parameters.py::test_greenplum_inet_parameters_preserve_native_hosts_and_masks",

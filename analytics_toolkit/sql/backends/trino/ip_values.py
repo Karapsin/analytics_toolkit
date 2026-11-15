@@ -76,38 +76,17 @@ def key_validation_frames(
     df: pd.DataFrame,
     key_columns: Sequence[str] | None,
     schemas: Sequence[Mapping[str, str] | None],
+    *,
+    destination_timezone: str | None = None,
 ) -> Iterator[pd.DataFrame]:
-    """Use native IP and clock equality in IP-bearing views, leaving payloads intact."""
-    if not key_columns:
-        return
-    import pandas as pd  # noqa: PLC0415 -- object series only for typed key validation.
-
-    from analytics_toolkit.sql.backends.trino.time_values import (  # noqa: PLC0415 -- existing clock equality.
-        is_time_type,
-        time_key_value_and_identity,
+    """Keep the legacy import while using complete typed native key views."""
+    from .key_validation import (  # noqa: PLC0415 -- compatibility wrapper.
+        key_validation_frames as typed_key_validation_frames,
     )
 
-    seen: set[tuple[tuple[str, str], ...]] = set()
-    for schema in schemas:
-        types = schema or {}
-        columns = tuple(name for name in key_columns if name in types and is_ip_type(types[name]))
-        signature = tuple((name, types.get(name, "")) for name in key_columns)
-        if not columns or signature in seen:
-            continue
-        seen.add(signature)
-        validation = df.loc[:, list(key_columns)].copy()
-        for name in key_columns:
-            identities: list[Any]
-            if name in columns:
-                identities = [ip_value_identity(value) for value in df[name]]
-            elif is_time_type(types.get(name, "")):
-                identities = [
-                    time_key_value_and_identity(value, types[name])[2] for value in df[name]
-                ]
-            else:
-                continue
-            validation[name] = pd.Series(identities, index=df.index, dtype=object)
-        yield validation
+    yield from typed_key_validation_frames(
+        df, key_columns, schemas, destination_timezone=destination_timezone
+    )
 
 
 @lru_cache(maxsize=1024)
@@ -179,23 +158,15 @@ def ip_value_identity(value: Any) -> bytes:
 def _key_identity(value: Any, native_type: str) -> Any:
     if is_null(value):
         raise ValueError(_MESSAGE)
-    if is_ip_type(native_type):
-        return ip_value_identity(value)
-    if not _contains_ip(native_type):
-        from analytics_toolkit.sql.backends.map_values import (  # noqa: PLC0415 -- existing native key semantics.
-            profile_map_key_identity,
-        )
-
-        return profile_map_key_identity(value, native_type, "trino")
-    from analytics_toolkit.sql.backends.nested_types import (  # noqa: PLC0415 -- native key structure.
-        nested_descriptor,
+    from analytics_toolkit.sql.backends.map_values import (  # noqa: PLC0415 -- shared destination equality.
+        _key_identity as destination_key_identity,
+    )
+    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 -- match written key values.
+        ResolvedColumn,
     )
 
-    kind, fields = nested_descriptor(native_type)
-    if kind in {"array", "gp_array"}:
-        return tuple(_key_identity(item, fields[0][1]) for item in value)
-    items = [value[name] for name, _ in fields] if isinstance(value, dict) else value
-    return tuple(_key_identity(item, native) for item, (_name, native) in zip(items, fields))
+    converted = ResolvedColumn(native_type, target_backend="trino").convert(value)
+    return destination_key_identity(converted, native_type, "trino")
 
 
 def _common_parameters(values: Any, native_type: str) -> _ParameterShape:
