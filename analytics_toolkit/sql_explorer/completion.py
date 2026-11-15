@@ -425,7 +425,7 @@ class CompletionCoordinator:
         if entry is None or monotonic() - entry.created_at >= METADATA_CACHE_SECONDS:
             return None
         if request.kind == "column":
-            prefix = normalize_identifier_prefix(request.prefix).casefold()
+            prefix = request.prefix.casefold()
             return tuple(
                 value
                 for value in entry.values  # noqa: PD011 -- dataclass tuple, not a dataframe.

@@ -69,7 +69,7 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
             connection_key,
             normalized_backend,
             "column",
-            normalize_identifier_prefix(final_prefix),
+            final_prefix,
             context=projection,
         )
         return CompletionContext(request, column_start, column_end, final_prefix, request.prefix)

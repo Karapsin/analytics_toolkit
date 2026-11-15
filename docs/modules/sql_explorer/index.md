@@ -306,6 +306,8 @@ inside words do not request columns with Tab. Shift+Tab explicitly allows a blan
 left-hand prefix, while keeping the right-hand whitespace and single-cursor rules.
 It resolves aliases, joined tables, nested SELECTs,
 derived tables, and CTE output names, including explicit column lists and stars.
+Quoted column names retain their exact identity, including whitespace inside
+the quotes; `" id"` remains distinct from `id` when completion is accepted.
 Press Tab or Ctrl+Space immediately after `alias.` to list all columns from that
 source; typing the dot alone does not open the menu. A prefix after the dot filters
 the suggestions. Aliases with or without AS work for physical tables and CTEs.
