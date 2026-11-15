@@ -437,6 +437,22 @@ without turning other tables into cluster-function reads. In `stop`, native
 commands and syntax outside SQLGlot's dialect pass through after known declared
 cluster scopes are checked; unmodeled query scopes are not inferred.
 
-[sql.drop_tables](functions/drop_tables.md) removes managed table pairs.
+[sql.drop_tables](functions/drop_tables.md) verifies the existing relationship and
+the complete selected endpoint scopes before its first DROP. Existing endpoint
+resources require verifiable non-nil table UUIDs and complete definitions;
+unverifiable identities stop before DDL. The facade and physical storage keep
+their separate verified placements: a facade on `A` that
+references storage on `B` does not authorize dropping an unrelated `A` companion
+or a same-named logical table on `B`. Role flags select the facade, physical
+storage or both; they do not infer ownership from names or desired DDL defaults.
+Absence waits and per-host recovery use those same resources and discovered
+native endpoint identities; recovery rechecks their verified table and server
+identities. Unavailable selected endpoints stop the drop, even with
+`if_exists=True`; that flag permits verified table absence, not incomplete
+endpoint coverage. `ch_cluster=None`
+restricts the operation to verified coordinator-local resources and rejects a
+selected remote or multi-host role.
+Offline plans defer resource and layout resolution without opening connections;
+their provisional execution requirements are not certified DROP statements.
 
 [SQL module index](index.md)

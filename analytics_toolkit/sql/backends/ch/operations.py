@@ -304,82 +304,69 @@ def drop_table_with_options(
     if_exists: bool = False,
     query_label: str | None = None,
 ) -> None:
-    from .layout import inspect_existing_layout
-    from .lifecycle import drop_ch_table
+    drop_tables_with_options(
+        adapter,
+        connection,
+        [table_name],
+        connection_key=connection_key,
+        ch_cluster=ch_cluster,
+        ch_drop_shard=ch_drop_shard,
+        ch_drop_distributed=ch_drop_distributed,
+        if_exists=if_exists,
+        query_label=query_label,
+        ch_wait_for_absence=ch_wait_for_absence,
+        ch_wait_timeout_seconds=ch_wait_timeout_seconds,
+        ch_wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
+        ch_retry_per_host_drops=ch_retry_per_host_drops,
+    )
 
-    if not ch_drop_shard and not ch_drop_distributed:
-        raise ValueError("At least one of ch_drop_shard or ch_drop_distributed must be True.")
-    layout_hook = getattr(connection, "outage_inspect_existing_layout", None)
-    if callable(layout_hook):
-        layout = layout_hook(table_name)
-    elif adapter.table_exists(connection, table_name, connection_key=connection_key or "ch"):
-        layout = inspect_existing_layout(connection, table_name, distributed_on_cluster=ch_cluster)
-    else:
-        layout = None
-    if layout is None:
-        drop_ch_table(
-            connection,
-            table_name,
-            ch_cluster=ch_cluster,
-            if_exists=if_exists,
-            query_label=query_label,
-        )
-        return
-    if layout.create_distributed_pair and not layout.owns_physical:
-        if not ch_drop_distributed:
-            message = "External physical storage must be named explicitly to authorize its removal."
-            raise ValueError(message)
-        drop_ch_table(
-            connection,
-            table_name,
-            ch_cluster=ch_cluster,
-            query_label=query_label,
-            if_exists=if_exists,
-            wait_for_absence=ch_wait_for_absence,
-            wait_timeout_seconds=ch_wait_timeout_seconds,
-            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
-        )
-        return
-    resources: list[tuple[str, str | None]] = [(table_name, None)]
-    if layout.create_distributed_pair and ch_drop_distributed and ch_drop_shard:
-        from ...connection.get_sql_connection import get_ch_connection_for_host
-        from .lifecycle import drop_ch_distributed_table_pair
 
-        drop_ch_distributed_table_pair(
-            connection,
-            table_name,
-            ch_cluster=ch_cluster,
-            shard_table=layout.physical_table,
-            query_label=query_label,
-            if_exists=if_exists,
-            wait_for_absence=ch_wait_for_absence,
-            wait_timeout_seconds=ch_wait_timeout_seconds,
-            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
-            ch_retry_per_host_drops=ch_retry_per_host_drops,
-            per_host_connection_factory=(
-                (lambda host: get_ch_connection_for_host(connection_key, host))
-                if connection_key is not None
-                else None
-            ),
-        )
-        return
-    if layout.create_distributed_pair:
-        resources = (
-            [(layout.logical_table, ch_cluster)]
-            if ch_drop_distributed
-            else [(layout.physical_table, ch_cluster)]
-        )
-    for resource, scope in resources:
-        drop_ch_table(
-            connection,
-            resource,
-            ch_cluster=scope,
-            query_label=query_label,
-            if_exists=if_exists,
-            wait_for_absence=ch_wait_for_absence,
-            wait_timeout_seconds=ch_wait_timeout_seconds,
-            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
-        )
+def drop_tables_with_options(
+    adapter: Any, connection: Any, tables: Sequence[str], **options: Any
+) -> None:
+    from .drop_execution import DropExecutionOptions, execute_verified_drop
+    from .drop_layout import (
+        DropIntent,
+        VerifiedDropLayout,
+        VerifiedDropResource,
+        certify_existing_drop,
+        verified_drop_resource_identity,
+    )
+
+    intent = DropIntent(
+        options.get("connection_key") or "ch",
+        options.get("ch_cluster", "{cluster}"),
+        options.get("ch_drop_shard", True),
+        options.get("ch_drop_distributed", True),
+        options.get("if_exists", False),
+    )
+    plans = [certify_existing_drop(connection, table, intent) for table in tables]
+    resources: dict[tuple[object, ...], VerifiedDropResource] = {}
+    for plan in plans:
+        for resource in plan.resources:
+            resources.setdefault(verified_drop_resource_identity(resource), resource)
+    execute_verified_drop(
+        adapter,
+        connection,
+        VerifiedDropLayout(tuple(resources.values()), plans[0].config),
+        DropExecutionOptions(
+            if_exists=intent.if_exists,
+            wait_for_absence=options.get("ch_wait_for_absence", False),
+            timeout_seconds=options.get("ch_wait_timeout_seconds", 300),
+            poll_interval_seconds=options.get("ch_wait_poll_interval_seconds", 1),
+            retry_per_host_drops=options.get("ch_retry_per_host_drops", True),
+            query_label=options.get("query_label"),
+        ),
+    )
+
+
+def pending_drop_plan_options(adapter: Any) -> dict[str, Any]:
+    del adapter
+    return {
+        "pending_existing_layout_verification": True,
+        "pending_resource_scope_resolution": True,
+        "execution_requires": "Complete existing table-role ownership and endpoint certification.",
+    }
 
 
 def build_clear_target_sqls(

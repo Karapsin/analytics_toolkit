@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from sqlglot import exp, parse_one
 
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
-from analytics_toolkit.sql.connection.get_sql_connection import get_ch_connection_for_host
 from analytics_toolkit.sql.execution.backend_options import current_backend_query_label
 
 from .dialect import ClickHouseDialect
-from .lifecycle import ChDistributedTablePair, _drop_ch_distributed_table_pair_on_cluster_hosts
-from .wait import _wait_for_ch_table_absence, _wait_for_ch_table_absence_on_cluster
+from .drop_execution import DropExecutionOptions, execute_verified_drop
+from .drop_layout import VerifiedDropLayout, certify_explicit_drop
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-_HOST_DROP_WORKERS = 5
 
 
 @dataclass(frozen=True)
@@ -37,46 +34,50 @@ def execute_policy_target_drop(
 ) -> None:
     if not drop_sqls:
         return
-    resources = list(dict.fromkeys(_drop_resource(sql) for sql in drop_sqls))
-    adapter.execute_commands(connection, list(drop_sqls))
-    for resource in resources:
-        _wait_with_recovery(
-            connection, resource, target_key=target_key, retry_per_host_drops=retry_per_host_drops
-        )
-
-
-def _wait_with_recovery(
-    connection: Any,
-    resource: DropResource,
-    *,
-    target_key: str,
-    retry_per_host_drops: bool,
-) -> None:
-    try:
-        _wait_absent(connection, resource)
-    except TimeoutError:
-        if resource.cluster is None or not retry_per_host_drops:
-            raise
-        # Explicit identical names reuse endpoint-aware recovery without deriving
-        # a companion. The per-host executor deduplicates identical commands.
-        _drop_ch_distributed_table_pair_on_cluster_hosts(
-            connection,
-            ChDistributedTablePair(resource.table, resource.table),
-            ch_cluster=resource.cluster,
+    plan = certify_drop_statements(connection, drop_sqls, target_key=target_key)
+    execute_verified_drop(
+        adapter,
+        connection,
+        plan,
+        DropExecutionOptions(
+            wait_for_absence=True,
+            retry_per_host_drops=retry_per_host_drops,
             query_label=current_backend_query_label(),
-            per_host_drop_workers=_HOST_DROP_WORKERS,
-            per_host_connection_factory=lambda host: get_ch_connection_for_host(target_key, host),
-        )
-        _wait_absent(connection, resource)
+        ),
+    )
 
 
-def _wait_absent(connection: Any, resource: DropResource) -> None:
-    if resource.cluster is None:
-        _wait_for_ch_table_absence(connection, resource.table)
-    else:
-        _wait_for_ch_table_absence_on_cluster(
-            connection, resource.table, ch_cluster=resource.cluster
+def certify_drop_statements(
+    connection: Any, drop_sqls: Sequence[str], *, target_key: str
+) -> VerifiedDropLayout:
+    """Bind every explicit statement to actual complete resource identities before mutation."""
+    resources = list(dict.fromkeys(_drop_resource(sql) for sql in drop_sqls))
+    exists_by_resource = {
+        resource: all(
+            bool(parse_one(sql, read=ClickHouseDialect).args.get("exists"))
+            for sql in drop_sqls
+            if _drop_resource(sql) == resource
         )
+        for resource in resources
+    }
+    certified = [
+        certify_explicit_drop(
+            connection,
+            resource.table,
+            resource.cluster,
+            connection_key=target_key,
+            if_exists=exists_by_resource[resource],
+        )
+        for resource in resources
+    ]
+    return VerifiedDropLayout(
+        tuple(
+            replace(selected, if_exists=exists_by_resource[requested])
+            for requested, certificate in zip(resources, certified)
+            for selected in certificate.resources
+        ),
+        certified[0].config,
+    )
 
 
 def _drop_resource(sql: str) -> DropResource:

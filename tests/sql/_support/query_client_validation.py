@@ -6,6 +6,7 @@ import importlib
 import json
 from copy import deepcopy
 from types import SimpleNamespace
+from uuid import UUID
 
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch import client_validation
@@ -39,6 +40,10 @@ class QueryCodecClient:
         self.rows = [{"payload": deepcopy(value)} for value in values] if exists else []
         self.seed = deepcopy(self.rows)
         self.exists = exists
+        self.table_generation = int(exists)
+        self.table_uuid = UUID(int=self.table_generation) if exists else None
+        self.server_uuid = UUID(int=1000)
+        self.metadata_queries = []
         self.commands = []
         self.events = []
         self.bound_rows = []
@@ -55,8 +60,40 @@ class QueryCodecClient:
             self.context = native_context()
             self.context.settings.update(self.settings)
 
+    def _ddl(self):
+        return (
+            f"CREATE TABLE analytics.events (`payload` {self.physical_type}) "
+            "ENGINE=MergeTree ORDER BY tuple()"
+        )
+
+    def _table_metadata(self, statement):
+        if "system.tables" not in statement:
+            return None
+        tree = parse_one(statement, read=ClickHouseDialect)
+        filters = {
+            condition.this.name: condition.expression.this
+            for condition in tree.find_all(exp.EQ)
+            if isinstance(condition.this, exp.Column)
+            and isinstance(condition.expression, exp.Literal)
+        }
+        if not self.exists or filters != {"database": "analytics", "name": "events"}:
+            return []
+        values = {
+            "uuid": self.table_uuid,
+            "create_table_query": self._ddl(),
+            "engine": "MergeTree",
+            "engine_full": "MergeTree",
+        }
+        return [tuple(values[column.name] for column in tree.expressions)]
+
     def query(self, statement, **_kwargs):
-        if statement.startswith("SELECT toTypeName(defaultValueOfTypeName("):
+        self.metadata_queries.append((statement, deepcopy(_kwargs)))
+        metadata_rows = self._table_metadata(statement)
+        if metadata_rows is not None:
+            rows = metadata_rows
+        elif statement == "SELECT serverUUID(), tcpPort()":
+            rows = [(self.server_uuid, 9000)]
+        elif statement.startswith("SELECT toTypeName(defaultValueOfTypeName("):
             tree = parse_one(statement, read=ClickHouseDialect)
             assert isinstance(tree, exp.Select)
             assert tree.find(exp.Table) is None
@@ -69,12 +106,7 @@ class QueryCodecClient:
         elif statement == "SELECT currentDatabase()":
             rows = [("analytics",)]
         elif statement.startswith("SHOW CREATE TABLE"):
-            rows = [
-                (
-                    f"CREATE TABLE analytics.events (`payload` {self.native_type}) "
-                    "ENGINE=MergeTree ORDER BY tuple()",
-                )
-            ]
+            rows = [(self._ddl(),)] if self.exists else []
         elif statement.startswith("SELECT getSetting('flatten_nested')"):
             rows = [(self.settings.get("flatten_nested", 1),)]
         elif statement.startswith("DESCRIBE TABLE"):
@@ -88,6 +120,7 @@ class QueryCodecClient:
         if statement.startswith("DROP TABLE"):
             self.events.append("drop")
             self.exists = False
+            self.table_uuid = None
             self.rows.clear()
         elif statement.startswith("CREATE TABLE"):
             tree = parse_one(statement, read=ClickHouseDialect)
@@ -97,6 +130,8 @@ class QueryCodecClient:
             self.physical_type = columns[0].kind.sql(dialect=ClickHouseDialect)
             self.events.append("create")
             self.exists = True
+            self.table_generation += 1
+            self.table_uuid = UUID(int=self.table_generation)
         elif statement.startswith("INSERT INTO"):
             self.events.append("server_copy")
             self.rows.extend({"payload": deepcopy(value)} for value in self.values)
@@ -145,6 +180,7 @@ def install_query_client(  # noqa: PLR0913 -- select transport, raw type, input 
             "ch": {
                 **DEFAULT_SQL_CONNECTIONS["ch"],
                 "driver": transport,
+                "port": 9000 if transport == "native" else 8123,
                 "database": "analytics",
                 "transfer_staging_schema": None,
                 "ddl_defaults": {

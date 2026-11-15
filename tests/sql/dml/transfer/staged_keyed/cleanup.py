@@ -85,11 +85,11 @@ def test_clickhouse_stage_cleanup_drops_every_policy_created_companion() -> None
     )
 
     shard_table = build_ch_shard_table_name(stage_table)
-    assert len(commands) == 4
-    assert any(f"DROP TABLE IF EXISTS {stage_table}" == sql for sql in commands)
-    assert any(stage_table in sql and "STAGE_DISTRIBUTED" in sql for sql in commands)
-    assert any(f"DROP TABLE IF EXISTS {shard_table}" == sql for sql in commands)
-    assert any(shard_table in sql and "STAGE_SHARDS" in sql for sql in commands)
+    # Acknowledged policy resources own their declared placement, without local mirrors.
+    assert commands == [
+        f"DROP TABLE IF EXISTS {stage_table} ON CLUSTER STAGE_DISTRIBUTED",
+        f"DROP TABLE IF EXISTS {shard_table} ON CLUSTER STAGE_SHARDS",
+    ]
 
 
 def test_drop_drain_drops_only_the_exact_acknowledged_source_stage(monkeypatch: Any) -> None:

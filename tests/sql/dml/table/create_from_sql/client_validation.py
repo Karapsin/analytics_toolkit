@@ -79,6 +79,7 @@ def test_frozen_query_preserves_alias_values_and_uses_selected_real_encoder(
     )
     observe_client_factories(monkeypatch, client)
     original = deepcopy(client.seed)
+    original_uuid = client.table_uuid
 
     if transport == "http" and not http_factory_available(native_type):
         with pytest.raises(ValueError, match=r"ClickHouse|encoder|[Uu]nsupported"):
@@ -114,6 +115,12 @@ def test_frozen_query_preserves_alias_values_and_uses_selected_real_encoder(
     assert client.wire_columns == [(native_type, expected_wire)]
     assert client.events.index("input_complete") < client.events.index("drop")
     assert client.events.index("client_factory") < client.events.index("drop")
+    assert client.table_uuid != original_uuid
+    assert any(
+        "SELECT uuid FROM system.tables" in statement
+        and settings.get("settings") == {"skip_unavailable_shards": 0}
+        for statement, settings in client.metadata_queries
+    )
     assert any(f"`payload` {native_type}" in statement for statement in client.commands)
     assert client.values == values
 

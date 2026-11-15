@@ -170,6 +170,22 @@ def query_scalar(connection: Any, sql: str) -> Any:
     return rows[0][0]
 
 
+def resolve_required_cluster(
+    connection: Any,
+    cluster: str,
+    option_name: str = "ch_cluster",
+) -> str:
+    if not isinstance(cluster, str):
+        raise InvalidSqlInputError(f"{option_name} must be a non-empty string.")
+    resolved = _resolve_ch_cluster_name_for_wait(
+        connection,
+        non_empty_string(cluster, option_name),
+    )
+    if not resolved:
+        raise InvalidSqlInputError(f"{option_name} must not resolve to an empty cluster name.")
+    return resolved
+
+
 def resolve_optional_cluster(
     connection: Any,
     cluster: str | None,
@@ -177,10 +193,7 @@ def resolve_optional_cluster(
 ) -> str | None:
     if cluster is None:
         return None
-    return _resolve_ch_cluster_name_for_wait(
-        connection,
-        non_empty_string(cluster, option_name),
-    )
+    return resolve_required_cluster(connection, cluster, option_name)
 
 
 def is_cross_cluster(connection: Any, source: str | None, target: str | None) -> bool:
@@ -336,6 +349,7 @@ __all__ = [
     "qualify_like",
     "qualify_with_database",
     "resolve_optional_cluster",
+    "resolve_required_cluster",
     "show_create_table",
     "show_create_table_on_cluster",
     "suffixed_table",

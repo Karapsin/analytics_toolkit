@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from analytics_toolkit import sql as toolkit_sql
+from analytics_toolkit.sql.backends.ch import operations as ch_operations
 from analytics_toolkit.sql.backends.ch.layout import ExistingClickHouseLayout
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import parse_create_table
 
 from tests.sql._support.adapters import (
     Any,
     Decimal,
-    FakeClickHouseResult,
     RecordingClickHouseClient,
     SimpleNamespace,
     StageFinalizationRequest,
@@ -22,6 +24,8 @@ from tests.sql._support.adapters import (
     pd,
     pytest,
 )
+from tests.sql._support.assertions import strip_query_label
+from tests.sql._support.ch_drop_scope import install_drop_scope
 
 
 def test_clickhouse_adapter_execute_and_read_failures_report_last_sql(
@@ -291,22 +295,27 @@ def test_clickhouse_adapter_write_mode_matrix(
     )
     connection = SimpleNamespace(outage_inspect_existing_layout=lambda _table: layout)
     monkeypatch.setattr(adapter, "clear_table", lambda *args, **kwargs: events.append("clear"))
-    monkeypatch.setattr(adapter, "drop_table", lambda *args, **kwargs: events.append("drop"))
     monkeypatch.setattr(
         ch_lifecycle_backend_module,
         "truncate_ch_distributed_table_pair",
         lambda *args, **kwargs: events.append("truncate_pair"),
     )
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "drop_ch_distributed_table_pair",
-        lambda *args, **kwargs: events.append("drop_pair"),
-    )
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "drop_ch_table",
-        lambda *args, **kwargs: events.append("drop"),
-    )
+
+    def drop_verified(received_adapter, received_connection, table, **options):
+        assert received_adapter is adapter
+        assert received_connection is connection
+        assert table == "analytics.events"
+        assert options == {
+            "connection_key": "ch",
+            "ch_cluster": "{cluster}",
+            "ch_wait_for_absence": True,
+            "ch_retry_per_host_drops": True,
+            "if_exists": True,
+            "query_label": None,
+        }
+        events.append("drop_pair" if layout.create_distributed_pair else "drop")
+
+    monkeypatch.setattr(ch_operations, "drop_table_with_options", drop_verified)
     result = adapter.apply_target_write_mode(
         TargetWriteModeRequest(
             connection=connection,
@@ -523,67 +532,91 @@ def test_clickhouse_lifecycle_concurrent_host_errors(
         )
 
 
-def test_clickhouse_lifecycle_drop_leftovers_mentions_per_host_retry() -> None:
-    class LeftoverClient(RecordingClickHouseClient):
-        def query(self, sql: str) -> FakeClickHouseResult:
-            self.queries.append(sql)
-            if sql.startswith("SELECT getMacro("):
-                return FakeClickHouseResult([("core",)])
-            if "clusterAllReplicas" in sql and "system, one" in sql:
-                return FakeClickHouseResult([(1,)])
-            if "FROM system.clusters" in sql:
-                return FakeClickHouseResult([(1,)])
-            if "clusterAllReplicas" in sql and "system, tables" in sql:
-                return FakeClickHouseResult(
-                    [("host-a", "db", "target_shard", "ReplicatedMergeTree")]
-                )
-            return FakeClickHouseResult([])
-
-    with pytest.raises(TimeoutError) as exc_info:
-        ch_lifecycle_module.drop_ch_distributed_table_pair(
-            LeftoverClient(),
-            "db.target",
-            ch_cluster="{cluster}",
-            wait_for_absence=True,
-            wait_timeout_seconds=0,
-            wait_poll_interval_seconds=0,
-        )
+def test_clickhouse_lifecycle_drop_leftovers_mentions_per_host_retry(
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections
+) -> None:
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    state.delay_cluster_drops.add(("storage", "analytics.events_shard"))
+    connection = toolkit_sql.get_sql_connection("ch")
+    before = state.snapshot()
+    try:
+        with pytest.raises(TimeoutError) as exc_info:
+            ch_lifecycle_module.drop_ch_distributed_table_pair(
+                connection,
+                "analytics.events",
+                ch_cluster="storage",
+                wait_for_absence=True,
+                wait_timeout_seconds=0,
+                wait_poll_interval_seconds=0,
+                ch_retry_per_host_drops=False,
+            )
+    finally:
+        connection.close()
 
     message = str(exc_info.value)
-    assert "host-a: db.target_shard (ReplicatedMergeTree)" in message
+    assert state.host_endpoints[state.remote][1] in message
+    assert "analytics.events_shard (MergeTree)" in message
     assert "ch_retry_per_host_drops=True" in message
+    assert (
+        state.snapshot()[state.coordinator]["analytics.events_shard"]
+        == (before[state.coordinator]["analytics.events_shard"])
+    )
+    assert state.rows(state.remote, "analytics.events_shard") == [(11,), (12,), (13,)]
+    assert all(client.close_calls == 1 for client in state.opened)
 
 
 def test_clickhouse_lifecycle_drop_modes_and_wait_routing(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections
 ) -> None:
     assert len(ch_lifecycle_backend_module.build_drop_ch_table_sqls("db.t", None)) == 1
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    for host, table in [
+        (state.coordinator, "analytics.local_events"),
+        (state.remote, "analytics.clustered_events"),
+    ]:
+        state._create(
+            host,
+            parse_create_table(
+                f"CREATE TABLE {table} (id UInt64) ENGINE=MergeTree ORDER BY id", table
+            ),
+            [(7,), (8,)],
+        )
+    connection = toolkit_sql.get_sql_connection("ch")
+    try:
+        ch_lifecycle_backend_module.drop_ch_table(
+            connection, "analytics.local_events", ch_cluster=None, wait_for_absence=True
+        )
+        ch_lifecycle_backend_module.drop_ch_table(
+            connection,
+            "analytics.clustered_events",
+            ch_cluster="storage",
+            wait_for_absence=True,
+        )
+    finally:
+        connection.close()
+    assert state.commands == [
+        "DROP TABLE IF EXISTS analytics.local_events",
+        "DROP TABLE IF EXISTS analytics.clustered_events ON CLUSTER storage",
+    ]
+    assert "analytics.local_events" not in state.host_tables[state.coordinator]
+    assert "analytics.clustered_events" not in state.host_tables[state.remote]
+    assert any(
+        completed == 1 and strip_query_label(statement) == "EXISTS TABLE analytics.local_events"
+        for _host, completed, statement in state.query_events
+    )
+    assert any(
+        completed == 2
+        and "clusterAllReplicas('storage', system, tables)" in statement
+        and "name = 'clustered_events'" in statement
+        for _host, completed, statement in state.query_events
+    )
+    assert all(client.close_calls == 1 for client in state.opened)
     executed: list[str] = []
     monkeypatch.setattr(
         ch_lifecycle_backend_module,
         "_execute_ch_sqls",
         lambda _connection, sqls: executed.extend(sqls),
     )
-    local_waits: list[str] = []
-    cluster_waits: list[str] = []
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "_wait_for_ch_table_absence",
-        lambda _connection, table, **_kwargs: local_waits.append(table),
-    )
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "_wait_for_ch_table_absence_on_cluster",
-        lambda _connection, table, **_kwargs: cluster_waits.append(table),
-    )
-    ch_lifecycle_backend_module.drop_ch_table(
-        object(), "db.local", ch_cluster=None, wait_for_absence=True
-    )
-    ch_lifecycle_backend_module.drop_ch_table(
-        object(), "db.clustered", ch_cluster="core", wait_for_absence=True
-    )
-    assert local_waits == ["db.local"]
-    assert cluster_waits == ["db.clustered"]
     ch_lifecycle_backend_module.truncate_ch_distributed_table_pair(object(), "db.t")
     ch_lifecycle_backend_module.create_ch_distributed_table_pair(
         object(), table_name="db.t", joined_columns="id UInt64", wait_for_table=False
@@ -600,20 +633,33 @@ def test_clickhouse_lifecycle_drop_modes_and_wait_routing(
     assert waited == ["db.t"]
 
 
-def test_clickhouse_lifecycle_executes_on_cluster_settings() -> None:
-    client = RecordingClickHouseClient()
+def test_clickhouse_lifecycle_executes_on_cluster_settings(
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections
+) -> None:
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    owner = toolkit_sql.get_sql_connection("ch")
+    connection = state.opened[-1]
+    before = state.snapshot()
+    try:
+        ch_lifecycle_module.drop_ch_distributed_table_pair(
+            connection, "analytics.events", ch_cluster="storage"
+        )
+    finally:
+        owner.close()
 
-    ch_lifecycle_module.drop_ch_distributed_table_pair(
-        client,
-        "db.target",
-        ch_cluster="{cluster}",
+    assert list(zip(state.commands, state.command_settings)) == [
+        ("DROP TABLE IF EXISTS analytics.events", None),
+        (
+            'DROP TABLE IF EXISTS "analytics"."events_shard" ON CLUSTER storage',
+            {
+                "distributed_ddl_task_timeout": 0,
+                "distributed_ddl_output_mode": "none",
+            },
+        ),
+    ]
+    assert state.queries
+    assert (
+        state.snapshot()[state.coordinator]["analytics.events_shard"]
+        == (before[state.coordinator]["analytics.events_shard"])
     )
-
-    assert client.commands[2] == (
-        "DROP TABLE IF EXISTS db.target ON CLUSTER '{cluster}'",
-        {
-            "distributed_ddl_task_timeout": 0,
-            "distributed_ddl_output_mode": "none",
-        },
-    )
-    assert client.queries == []
+    assert all(client.close_calls == 1 for client in state.opened)

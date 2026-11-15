@@ -479,4 +479,37 @@ uses engine-only SELECTs because the configured Iceberg and Hive catalogs cannot
 persist IPADDRESS. It checks native equality and duplicate rejection, creates no
 storage table, and was not run locally.
 
+ClickHouse role-specific drop ownership is additionally covered by
+`dml/table/drop_scope.py::test_public_drop_keeps_foreign_resources_outside_each_verified_pair_role`,
+`dml/table/drop_scope.py::test_public_drop_of_plain_local_table_preserves_an_independent_remote_homonym`,
+and `backends/ch/drop_policy_scope.py::test_verified_layout_cleanup_preserves_foreign_coordinator_physical_table`.
+These public-adapter and stateful fake-client regressions cover role flags,
+actual facade/storage placement, selected-resource absence waits and retention
+of unrelated resources; they do not claim live-server preservation evidence.
+The disposable cases `audit.drop.clickhouse.managed_pair_scopes`,
+`audit.drop.clickhouse.physical_role_only` and
+`audit.drop.clickhouse.facade_role_only` share
+`integration/core/audit_ch_drop_scope.py::test_drop_tables_keeps_owned_roles_in_their_verified_execution_scopes`.
+They check retained UUIDs, full definitions and rows, and were not run locally.
+`backends/ch/drop_relationship.py::test_outage_layout_rejects_companion_ownership_when_column_identity_differs`
+and `backends/ch/drop_relationship.py::test_policy_cleanup_preserves_schema_mismatched_same_named_physical_storage`
+cover ordered column and default identity as well as deterministic companion
+names. They compare wrapped and raw inspection and check CTAS cleanup through
+the real adapter against stateful resources, including retained UUIDs,
+definitions and 100 physical rows; this is not a live-server reproduction.
+
+Batch alias identity and bounded cleanup capacity additionally have regressions
+in `dml/table/drop_scope.py::test_public_drop_batch_deduplicates_aliases_of_the_same_verified_resources`,
+`dml/table/drop_scope.py::test_public_drop_batch_deduplicates_a_complete_storage_alias_and_explicit_physical_target`
+and `dml/transfer/staged_keyed/contract.py::test_clickhouse_per_host_fallback_stays_inside_target_pool`.
+These use actual adapter paths over stateful fake clients, including the
+capacity-one recovery handoff; they do not establish live-server results.
+
+Additional fake-client fault coverage is in `backends/ch/drop_certification.py`,
+`backends/ch/drop_namespace_faults.py`, `backends/ch/drop_execution_faults.py`,
+`backends/ch/drop_bounded_faults.py`, `backends/ch/drop_batch_identity.py` and
+`backends/ch/lifecycle_compat.py`. These exercise metadata and configuration
+failures, changed native identities, mandatory cluster resolution, and retained
+compatibility helpers through actual adapter paths.
+
 [SQL module index](index.md)

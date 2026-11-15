@@ -11132,6 +11132,36 @@
         "tests/sql/dml/transfer/facade_scope.py::test_public_transfer_accepts_an_equivalent_complete_facade_scope_alias"
       ]
     },
+    "audit.drop.clickhouse.managed_pair_scopes": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_keeps_owned_roles_in_their_verified_execution_scopes[audit.drop.clickhouse.managed_pair_scopes]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_scope.py::test_public_drop_keeps_foreign_resources_outside_each_verified_pair_role"
+      ]
+    },
+    "audit.drop.clickhouse.physical_role_only": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_keeps_owned_roles_in_their_verified_execution_scopes[audit.drop.clickhouse.physical_role_only]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_scope.py::test_public_drop_keeps_foreign_resources_outside_each_verified_pair_role"
+      ]
+    },
+    "audit.drop.clickhouse.facade_role_only": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_keeps_owned_roles_in_their_verified_execution_scopes[audit.drop.clickhouse.facade_role_only]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_scope.py::test_public_drop_keeps_foreign_resources_outside_each_verified_pair_role"
+      ]
+    },
     "audit.clickhouse.routing_metadata": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_routing_bindings_and_current_database_metadata",

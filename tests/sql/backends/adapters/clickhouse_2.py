@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import parse_create_table
+from sqlglot import exp, parse_one
+
 from tests.sql._support.adapters import (
     Any,
-    FakeClickHouseResult,
-    RecordingClickHouseClient,
     SimpleNamespace,
     ch_backend_wait_module,
     ch_lifecycle_backend_module,
@@ -14,6 +18,9 @@ from tests.sql._support.adapters import (
     pytest,
     threading,
 )
+from tests.sql._support.assertions import strip_query_label
+from tests.sql._support.ch_drop_scope import _DropConnection, install_drop_scope
+from tests.sql._support.reconfigure_conversion_scope import _name, _scope_sql
 
 
 def test_clickhouse_lifecycle_host_selection_and_failures(
@@ -127,117 +134,126 @@ def test_clickhouse_lifecycle_per_host_error_and_close_paths(
     )
 
 
-def test_clickhouse_lifecycle_retries_all_hosts_when_leftover_host_unmapped() -> None:
-    class RootClient(RecordingClickHouseClient):
-        def __init__(self) -> None:
-            super().__init__()
-            self.table_queries = 0
+_LIFECYCLE_TARGET = "analytics.events"
+_LIFECYCLE_PHYSICAL = "analytics.events_shard"
 
-        def query(self, sql: str) -> FakeClickHouseResult:
-            self.queries.append(sql)
-            if sql.startswith("SELECT getMacro("):
-                return FakeClickHouseResult([("core",)])
-            if "clusterAllReplicas" in sql and "system, one" in sql:
-                return FakeClickHouseResult([(2,)])
-            if sql.startswith("SELECT count()") and "FROM system.clusters" in sql:
-                return FakeClickHouseResult([(2,)])
-            if sql.startswith("SELECT DISTINCT host_name"):
-                return FakeClickHouseResult([("host-a",), ("host-b",)])
-            if "clusterAllReplicas" in sql and "system, tables" in sql:
-                self.table_queries += 1
-                if self.table_queries <= 2:
-                    return FakeClickHouseResult(
-                        [
-                            (
-                                "clickhouse-01",
-                                "db",
-                                "target_shard",
-                                "ReplicatedMergeTree",
-                            )
-                        ]
-                    )
-                return FakeClickHouseResult([])
-            return FakeClickHouseResult([])
 
-    class HostClient(RecordingClickHouseClient):
-        def __init__(self, host: str) -> None:
-            super().__init__()
-            self.host = host
+class _LifecycleDropClient(_DropConnection):
+    def __init__(self, state: Any, host: str) -> None:
+        super().__init__(state, host, native=True)
+        self.commands: list[tuple[str, Any]] = []
 
-    root_client = RootClient()
-    host_clients: dict[str, HostClient] = {}
+    def command(self, statement: str, settings: Any = None) -> Any:
+        self.commands.append((statement, settings))
+        cluster, body = _scope_sql(strip_query_label(statement))
+        if cluster is None and self.state.before_local_drop is not None:
+            tree = parse_one(body, read=ClickHouseDialect)
+            if isinstance(tree, exp.Drop):
+                targets = tree.args.get("tables") or [tree.this]
+                assert len(targets) == 1
+                if _name(targets[0]) == _LIFECYCLE_PHYSICAL:
+                    self.state.before_local_drop()
+        return super().command(statement, settings=settings)
 
-    def host_factory(host: str) -> HostClient:
-        host_client = HostClient(host)
-        host_clients[host] = host_client
-        return host_client
+    def _delay_drop(self, statement: str, settings: Any) -> bool:
+        cluster, body = _scope_sql(strip_query_label(statement))
+        tree = parse_one(body, read=ClickHouseDialect)
+        if not isinstance(tree, exp.Drop):
+            return False
+        targets = tree.args.get("tables") or [tree.this]
+        assert len(targets) == 1
+        name = _name(targets[0])
+        if cluster is None and (self.host, name) in self.state.pending_local_drops:
+            self.state.commands.append(statement)
+            self.state.command_settings.append(deepcopy(settings))
+            self.state.host_commands[self.host].append(statement)
+            return True
+        if not super()._delay_drop(statement, settings):
+            return False
+        for host in self.state.clusters[cluster]:
+            if self.state.host_endpoints[host][0] not in self.state.pending_drop_hosts:
+                self.state.host_tables[host].pop(name, None)
+        return True
 
-    ch_lifecycle_module.drop_ch_distributed_table_pair(
-        root_client,
-        "db.target",
-        ch_cluster="{cluster}",
-        wait_for_absence=True,
-        wait_timeout_seconds=0,
-        wait_poll_interval_seconds=0,
-        ch_retry_per_host_drops=True,
-        per_host_connection_factory=host_factory,
-    )
 
-    assert set(host_clients) == {"host-a", "host-b"}
-    for host_client in host_clients.values():
-        assert host_client.commands == [
-            ("DROP TABLE IF EXISTS db.target", None),
-            ("DROP TABLE IF EXISTS db.target_shard", None),
+def _lifecycle_drop_fixture(
+    monkeypatch: Any, write_sql_connections: Any, *, pending: set[str]
+) -> tuple[Any, _LifecycleDropClient, dict[str, _LifecycleDropClient], Any]:
+    state = install_drop_scope(monkeypatch, write_sql_connections, driver="native")
+    remote = "host-b"
+    state.host_tables[remote] = {}
+    state.host_commands[remote] = []
+    state.host_endpoints[state.remote] = ("host-a", "10.0.0.2", 9000)
+    state.host_endpoints[remote] = (remote, "10.0.0.3", 9000)
+    state.server_identities[remote] = ("00000000-0000-0000-0000-000000000003", 9000)
+    physical = state.host_tables[state.remote][_LIFECYCLE_PHYSICAL]
+    state._create(remote, physical.create.copy(), deepcopy(physical.rows))
+    state.clusters["storage"] = (state.remote, remote)
+    state.pending_drop_hosts = pending
+    state.pending_local_drops = set()
+    state.before_local_drop = None
+    state.delay_cluster_drops = {("storage", _LIFECYCLE_PHYSICAL)}
+    root = _LifecycleDropClient(state, state.coordinator)
+    clients: dict[str, _LifecycleDropClient] = {}
+
+    def host_factory(endpoint: Any) -> _LifecycleDropClient:
+        matches = [
+            host
+            for host, (name, address, port) in state.host_endpoints.items()
+            if str(endpoint) in {host, name, address} and endpoint.tcp_port == port
         ]
-    assert root_client.table_queries == 3
+        assert len(matches) == 1
+        host = matches[0]
+        client = _LifecycleDropClient(state, host)
+        clients[state.host_endpoints[host][0]] = client
+        return client
+
+    return state, root, clients, host_factory
 
 
-def test_clickhouse_lifecycle_retries_drop_on_cluster_hosts() -> None:
-    class RootClient(RecordingClickHouseClient):
-        def __init__(self) -> None:
-            super().__init__()
-            self.table_queries = 0
+def _assert_lifecycle_recovered(state: Any, before: Any, clients: Any) -> None:
+    expected = deepcopy(before)
+    expected[state.coordinator].pop(_LIFECYCLE_TARGET)
+    for host in state.clusters["storage"]:
+        expected[host].pop(_LIFECYCLE_PHYSICAL)
+    assert state.snapshot() == expected
+    assert state.delayed_cluster_drops == [("storage", _LIFECYCLE_PHYSICAL)]
+    assert state.rows(state.coordinator, _LIFECYCLE_PHYSICAL) == state.foreign_rows
+    for client in clients.values():
+        assert len(client.commands) == 1
+        statement, settings = client.commands[0]
+        cluster, body = _scope_sql(strip_query_label(statement))
+        assert cluster is None
+        tree = parse_one(body, read=ClickHouseDialect)
+        assert isinstance(tree, exp.Drop)
+        targets = tree.args.get("tables") or [tree.this]
+        assert len(targets) == 1
+        assert _name(targets[0]) == _LIFECYCLE_PHYSICAL
+        assert settings is None
+        assert client.closed
+        assert client.close_calls == 1
+    assert state.query_settings
+    assert all(settings == {"skip_unavailable_shards": 0} for settings in state.query_settings)
 
-        def query(self, sql: str) -> FakeClickHouseResult:
-            self.queries.append(sql)
-            if sql.startswith("SELECT getMacro("):
-                return FakeClickHouseResult([("core",)])
-            if "clusterAllReplicas" in sql and "system, one" in sql:
-                return FakeClickHouseResult([(2,)])
-            if sql.startswith("SELECT count()") and "FROM system.clusters" in sql:
-                return FakeClickHouseResult([(2,)])
-            if sql.startswith("SELECT DISTINCT host_name"):
-                return FakeClickHouseResult([("host-a",), ("host-b",)])
-            if "clusterAllReplicas" in sql and "system, tables" in sql:
-                self.table_queries += 1
-                if self.table_queries <= 2:
-                    return FakeClickHouseResult(
-                        [("host-b", "db", "target_shard", "ReplicatedMergeTree")]
-                    )
-                return FakeClickHouseResult([])
-            return FakeClickHouseResult([])
 
-    class HostClient(RecordingClickHouseClient):
-        def __init__(self, host: str) -> None:
-            super().__init__()
-            self.host = host
-            self.close_calls = 0
-
-        def close(self) -> None:
-            self.close_calls += 1
-
-    root_client = RootClient()
-    host_clients: dict[str, HostClient] = {}
-
-    def host_factory(host: str) -> HostClient:
-        host_client = HostClient(host)
-        host_clients[host] = host_client
-        return host_client
+def test_clickhouse_lifecycle_retries_all_hosts_when_leftover_host_unmapped(
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections: Any
+) -> None:
+    state, root, clients, host_factory = _lifecycle_drop_fixture(
+        monkeypatch, write_sql_connections, pending={"host-a", "host-b"}
+    )
+    original_host_record = state._host_record
+    monkeypatch.setattr(
+        state,
+        "_host_record",
+        lambda host: {**original_host_record(host), "hostName": "clickhouse-01"},
+    )
+    before = state.snapshot()
 
     ch_lifecycle_module.drop_ch_distributed_table_pair(
-        root_client,
-        "db.target",
-        ch_cluster="{cluster}",
+        root,
+        _LIFECYCLE_TARGET,
+        ch_cluster="storage",
         wait_for_absence=True,
         wait_timeout_seconds=0,
         wait_poll_interval_seconds=0,
@@ -245,77 +261,62 @@ def test_clickhouse_lifecycle_retries_drop_on_cluster_hosts() -> None:
         per_host_connection_factory=host_factory,
     )
 
-    assert set(host_clients) == {"host-b"}
-    assert host_clients["host-b"].commands == [
-        ("DROP TABLE IF EXISTS db.target", None),
-        ("DROP TABLE IF EXISTS db.target_shard", None),
-    ]
-    assert host_clients["host-b"].close_calls == 1
-    assert root_client.table_queries == 3
+    assert set(clients) == {"host-a", "host-b"}
+    _assert_lifecycle_recovered(state, before, clients)
 
 
-def test_clickhouse_lifecycle_retries_per_host_drops_concurrently() -> None:
-    class RootClient(RecordingClickHouseClient):
-        def __init__(self) -> None:
-            super().__init__()
-            self.table_queries = 0
+def test_clickhouse_lifecycle_retries_drop_on_cluster_hosts(
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections: Any
+) -> None:
+    state, root, clients, host_factory = _lifecycle_drop_fixture(
+        monkeypatch, write_sql_connections, pending={"host-b"}
+    )
+    before = state.snapshot()
 
-        def query(self, sql: str) -> FakeClickHouseResult:
-            self.queries.append(sql)
-            if sql.startswith("SELECT getMacro("):
-                return FakeClickHouseResult([("core",)])
-            if "clusterAllReplicas" in sql and "system, one" in sql:
-                return FakeClickHouseResult([(2,)])
-            if sql.startswith("SELECT count()") and "FROM system.clusters" in sql:
-                return FakeClickHouseResult([(2,)])
-            if sql.startswith("SELECT DISTINCT host_name"):
-                return FakeClickHouseResult([("host-a",), ("host-b",)])
-            if "clusterAllReplicas" in sql and "system, tables" in sql:
-                self.table_queries += 1
-                if self.table_queries <= 2:
-                    return FakeClickHouseResult(
-                        [
-                            ("host-a", "db", "target_shard", "ReplicatedMergeTree"),
-                            ("host-b", "db", "target_shard", "ReplicatedMergeTree"),
-                        ]
-                    )
-                return FakeClickHouseResult([])
-            return FakeClickHouseResult([])
+    ch_lifecycle_module.drop_ch_distributed_table_pair(
+        root,
+        _LIFECYCLE_TARGET,
+        ch_cluster="storage",
+        wait_for_absence=True,
+        wait_timeout_seconds=0,
+        wait_poll_interval_seconds=0,
+        ch_retry_per_host_drops=True,
+        per_host_connection_factory=host_factory,
+    )
 
+    assert set(clients) == {"host-b"}
+    _assert_lifecycle_recovered(state, before, clients)
+
+
+def test_clickhouse_lifecycle_retries_per_host_drops_concurrently(
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections: Any
+) -> None:
+    state, root, clients, host_factory = _lifecycle_drop_fixture(
+        monkeypatch, write_sql_connections, pending={"host-a", "host-b"}
+    )
+    before = state.snapshot()
     active = 0
     max_active = 0
     active_lock = threading.Lock()
     barrier = threading.Barrier(2, timeout=5)
 
-    class HostClient(RecordingClickHouseClient):
-        def command(
-            self,
-            sql: str,
-            settings: dict[str, object] | None = None,
-        ) -> dict[str, int] | None:
-            nonlocal active, max_active
-            if sql == "DROP TABLE IF EXISTS db.target":
-                with active_lock:
-                    active += 1
-                    max_active = max(max_active, active)
-                try:
-                    barrier.wait()
-                finally:
-                    with active_lock:
-                        active -= 1
-            return super().command(sql, settings=settings)
+    def before_local_drop() -> None:
+        nonlocal active, max_active
+        with active_lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            barrier.wait()
+        finally:
+            with active_lock:
+                active -= 1
 
-    host_clients: dict[str, HostClient] = {}
-
-    def host_factory(host: str) -> HostClient:
-        host_client = HostClient()
-        host_clients[host] = host_client
-        return host_client
+    state.before_local_drop = before_local_drop
 
     ch_lifecycle_module.drop_ch_distributed_table_pair(
-        RootClient(),
-        "db.target",
-        ch_cluster="{cluster}",
+        root,
+        _LIFECYCLE_TARGET,
+        ch_cluster="storage",
         wait_for_absence=True,
         wait_timeout_seconds=0,
         wait_poll_interval_seconds=0,
@@ -323,31 +324,58 @@ def test_clickhouse_lifecycle_retries_per_host_drops_concurrently() -> None:
         per_host_connection_factory=host_factory,
     )
 
-    assert set(host_clients) == {"host-a", "host-b"}
+    assert set(clients) == {"host-a", "host-b"}
     assert max_active == 2
+    _assert_lifecycle_recovered(state, before, clients)
 
 
 def test_clickhouse_lifecycle_timeout_requirements(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections: Any
 ) -> None:
-    monkeypatch.setattr(ch_lifecycle_backend_module, "_execute_ch_sqls", lambda *_: None)
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "_wait_for_ch_distributed_table_pair_absence",
-        lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError("lagging")),
+    state, root, clients, host_factory = _lifecycle_drop_fixture(
+        monkeypatch, write_sql_connections, pending={"host-a", "host-b"}
     )
-    with pytest.raises(TimeoutError, match="lagging"):
+    before = state.snapshot()
+    with pytest.raises(TimeoutError, match="remains visible"):
         ch_lifecycle_backend_module.drop_ch_distributed_table_pair(
-            object(), "db.t", wait_for_absence=True, ch_retry_per_host_drops=False
+            root,
+            _LIFECYCLE_TARGET,
+            ch_cluster="storage",
+            wait_for_absence=True,
+            wait_timeout_seconds=0,
+            wait_poll_interval_seconds=0,
+            ch_retry_per_host_drops=False,
+            per_host_connection_factory=host_factory,
         )
-    with pytest.raises(TimeoutError, match="non-null ch_cluster"):
+    assert clients == {}
+    for host in state.clusters["storage"]:
+        assert state.snapshot()[host] == before[host]
+    assert (
+        state.snapshot()[state.coordinator][_LIFECYCLE_PHYSICAL]
+        == before[state.coordinator][_LIFECYCLE_PHYSICAL]
+    )
+
+    local = "analytics.local_target"
+    state._create(
+        state.coordinator,
+        parse_create_table(f"CREATE TABLE {local} (id UInt64) ENGINE=MergeTree ORDER BY id", local),
+        [(1,)],
+    )
+    state.pending_local_drops.add((state.coordinator, local))
+    before = state.snapshot()
+    with pytest.raises(TimeoutError, match="remains visible"):
         ch_lifecycle_backend_module.drop_ch_distributed_table_pair(
-            object(),
-            "db.t",
+            root,
+            local,
             ch_cluster=None,
             wait_for_absence=True,
+            wait_timeout_seconds=0,
+            wait_poll_interval_seconds=0,
             ch_retry_per_host_drops=True,
+            per_host_connection_factory=host_factory,
         )
+    assert state.snapshot() == before
+    assert clients == {}
 
 
 def test_clickhouse_target_explicit_type_validation() -> None:

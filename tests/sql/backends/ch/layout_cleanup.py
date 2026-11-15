@@ -2,37 +2,29 @@
 
 from __future__ import annotations
 
-import importlib
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from analytics_toolkit import sql
 from analytics_toolkit.sql.backends.ch import lifecycle, operations
+from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 from sqlglot import exp, parse_one
 
+from tests.sql._support.ch_drop_scope import install_drop_scope
 
-def test_missing_table_cleanup_retains_requested_cluster_scope(monkeypatch: Any) -> None:
-    module = importlib.import_module("analytics_toolkit.sql.dml.table.drop_tables")
-    commands = []
-    queries = []
 
-    def query(statement: str, **_kwargs: Any) -> Any:
-        queries.append(statement)
-        return SimpleNamespace(result_rows=[(0,)])
-
-    connection = SimpleNamespace(
-        query=query,
-        command=lambda statement, **_kwargs: commands.append(statement),
-        close=lambda: None,
-    )
-    monkeypatch.setattr(module, "get_sql_connection", lambda _key: connection)
-    sql.drop_tables("ch", "db.absent", if_exists=True, ch_cluster="core")
-    assert queries == ["EXISTS TABLE db.absent"]
-    assert len(commands) == 2
-    drop = parse_one(commands[-1], read="clickhouse")
-    assert drop.find(exp.Table).name == "absent"
-    assert drop.args["cluster"].this.this == "core"
+def test_missing_table_cleanup_retains_requested_cluster_scope(
+    monkeypatch: Any, write_sql_connections: Any
+) -> None:
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    before = state.snapshot()
+    sql.drop_tables("ch", "analytics.absent", if_exists=True, ch_cluster="storage")
+    # Verified absence authorizes no resources, including guessed local mirrors.
+    assert state.snapshot() == before
+    assert state.commands == []
+    assert state.query_events
+    assert all(client.closed and client.close_calls == 1 for client in state.opened)
 
 
 @pytest.mark.parametrize("remove_facade", [True, False])
@@ -52,7 +44,7 @@ def test_external_storage_is_never_owned_by_its_facade(outage: Any, remove_facad
         sql.drop_tables("ch", "db.remote_facade", ch_cluster="core", if_exists=True)
         assert not any(name == "db.remote_facade" for _host, name in cluster.tables)
     else:
-        with pytest.raises(ValueError, match="named explicitly"):
+        with pytest.raises(InvalidSqlInputError, match="named explicitly"):
             sql.drop_tables(
                 "ch",
                 "db.remote_facade",
@@ -76,8 +68,8 @@ def test_external_facade_cleanup_sql_never_includes_storage() -> None:
     )
     commands = lifecycle.build_drop_ch_creation_policy_table_sqls("db.remote_facade", policy)
     targets = [parse_one(command, read="clickhouse").find(exp.Table).name for command in commands]
-    assert targets == ["remote_facade", "remote_facade"]
-    assert "facades" in commands[1]
+    assert targets == ["remote_facade"]
+    assert "facades" in commands[0]
     assert all("external_storage" not in command for command in commands)
 
 

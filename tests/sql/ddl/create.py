@@ -172,12 +172,24 @@ def test_ch_create_table_as_dry_run_uses_lifecycle_drop_order() -> None:
         ch_cluster="analytics",
     )
 
-    assert plan.sqls[:4] == [
-        "DROP TABLE IF EXISTS analytics.events",
+    # Declared policy resources supersede duplicate coordinator-local mirrors.
+    assert plan.sqls[:2] == [
         "DROP TABLE IF EXISTS analytics.events ON CLUSTER analytics",
-        "DROP TABLE IF EXISTS analytics.events_shard",
         "DROP TABLE IF EXISTS analytics.events_shard ON CLUSTER analytics",
     ]
+    assert [statement.phase for statement in plan.statements] == [
+        "drop_target",
+        "drop_target",
+        "create_target",
+        "create_target",
+        "create_target",
+        "create_target",
+        "insert_target",
+    ]
+    assert plan.sqls[2].startswith("CREATE TABLE analytics.events_shard")
+    assert plan.sqls[-2].startswith("CREATE TABLE IF NOT EXISTS analytics.events")
+    assert "ENGINE = Distributed(" in plan.sqls[-2]
+    assert plan.sqls[-1] == "INSERT INTO analytics.events\nselect 1 as id"
 
 
 def test_ch_create_table_as_only_shard_dry_run_uses_local_target() -> None:

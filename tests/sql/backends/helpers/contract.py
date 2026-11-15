@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
+from analytics_toolkit import sql
+from analytics_toolkit.sql.backends import get_backend_adapter
+
 from tests.sql._support.backend_helpers import (
     Any,
     InvalidSqlInputError,
@@ -13,12 +18,11 @@ from tests.sql._support.backend_helpers import (
     gp_adapter_module,
     gp_ddl,
     gp_insert,
-    importlib,
     pd,
     pytest,
     sys,
 )
-from tests.sql._support.reconfigure import ReconfigureClient
+from tests.sql._support.ch_drop_scope import install_drop_scope
 
 
 def test_clickhouse_engine_argument_and_parser_edges() -> None:
@@ -119,48 +123,35 @@ def test_clickhouse_metadata_application_and_macro_fallbacks() -> None:
     )
 
 
+@pytest.mark.parametrize("options", [{"ch_only_shard": True}, {"connection_key": None}])
 def test_clickhouse_operations_prepare_existing_target(
     monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Any,
+    options: dict[str, Any],
 ) -> None:
-    lifecycle = importlib.import_module("analytics_toolkit.sql.backends.ch.lifecycle")
-    pair_calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(
-        lifecycle,
-        "drop_ch_distributed_table_pair",
-        lambda *_args, **kwargs: pair_calls.append(kwargs),
-    )
-    monkeypatch.setattr(
-        importlib.import_module("analytics_toolkit.general"),
-        "time_print",
-        lambda *_args, **_kwargs: None,
-    )
-
-    adapter = SimpleNamespace(
-        table_exists=lambda *_args, **_kwargs: True,
-        drop_table=lambda *_args, **_kwargs: None,
-    )
-    assert (
-        ch_operations.prepare_existing_target_for_create_from_sql(
-            adapter,
-            ReconfigureClient(),
-            "analytics.events",
-            drop_target_if_exists=True,
-            ch_only_shard=True,
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    expected = deepcopy(state.snapshot())
+    expected[state.coordinator].pop("analytics.events")
+    expected[state.remote].pop("analytics.events_shard")
+    connection = sql.get_sql_connection("ch")
+    try:
+        assert (
+            ch_operations.prepare_existing_target_for_create_from_sql(
+                get_backend_adapter("ch"),
+                connection,
+                "analytics.events",
+                drop_target_if_exists=True,
+                ch_cluster="storage",
+                **options,
+            )
+            is True
         )
-        is True
-    )
-    assert (
-        ch_operations.prepare_existing_target_for_create_from_sql(
-            adapter,
-            ReconfigureClient(),
-            "analytics.events",
-            drop_target_if_exists=True,
-            connection_key=None,
-        )
-        is True
-    )
-    assert pair_calls[0]["per_host_connection_factory"] is None
-    assert len(pair_calls) == 2
+        assert state.snapshot() == expected
+        assert len(state.commands) == 2
+        assert state.rows(state.coordinator, "analytics.events_shard") == state.foreign_rows
+    finally:
+        connection.close()
+    assert all(client.closed and client.close_calls == 1 for client in state.opened)
 
 
 def test_clickhouse_operations_small_helpers(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -11,8 +11,12 @@ from typing import Any
 import pandas as pd
 import pytest
 from analytics_toolkit.general import set_connections_path
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import parse_create_table
+from sqlglot import exp, parse_one
 
 from tests.sql._support.assertions import strip_query_label as _strip_query_label
+from tests.sql._support.ch_drop_scope import DropScopeState, _DropConnection
 
 ch_ctas_module = importlib.import_module("analytics_toolkit.sql.backends.ch.create_table_as")
 ch_ctas_impl = ch_ctas_module
@@ -69,6 +73,7 @@ class FakeClickHouseClient:
         self.schema_query_error: Exception | None = None
         self.table_ddls: dict[str, str] = {}
         self.data_inserts: list[tuple[str, list[str], list[tuple[Any, ...]]]] = []
+        self.ownership_connection: _DropConnection | None = None
 
     def command(
         self,
@@ -78,6 +83,11 @@ class FakeClickHouseClient:
         self.commands.append(sql)
         self.command_settings.append(settings)
         self._track_table_ddl(sql)
+        body = _strip_query_label(sql)
+        if self.ownership_connection is not None and body.startswith(
+            ("CREATE TABLE", "DROP TABLE")
+        ):
+            self.ownership_connection.command(sql, settings=settings)
         if self.insert_error is not None and sql.startswith("INSERT INTO"):
             raise self.insert_error
 
@@ -104,6 +114,16 @@ class FakeClickHouseClient:
             return FakeClickHouseResult(
                 [("dt", "Date"), ("id", "UInt64"), ("amount", "Decimal(18, 4)")]
             )
+        if self.ownership_connection is not None:
+            result = self.ownership_connection.query(sql, **_kwargs)
+            return FakeClickHouseResult(
+                result.result_rows,
+                column_names=result.column_names,
+                column_types=result.column_types,
+            )
+        return self._legacy_query(body)
+
+    def _legacy_query(self, body: str) -> FakeClickHouseResult:
         if body.startswith("SHOW CREATE TABLE "):
             name = body.removeprefix("SHOW CREATE TABLE ").replace("`", "")
             return FakeClickHouseResult([(self.table_ddls[name],)])
@@ -145,6 +165,8 @@ class FakeClickHouseClient:
 
     def close(self) -> None:
         self.close_calls += 1
+        if self.ownership_connection is not None:
+            self.ownership_connection.close()
 
     def _track_table_ddl(self, sql: str) -> None:
         body = _strip_query_label(sql)
@@ -245,6 +267,14 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
 def test_ch_create_table_as_recreates_only_verified_existing_pair(
     fake_client: FakeClickHouseClient,
 ) -> None:
+    path = Path(".connections")
+    config = json.loads(path.read_text())
+    config["ch"]["host"] = "coordinator"
+    path.write_text(json.dumps(config))
+    set_connections_path(path)
+    state = DropScopeState()
+    state.clusters.update(core=(state.coordinator,))
+    state.clusters["{cluster}"] = (state.coordinator,)
     columns = "(`dt` Date, `id` UInt64, `amount` Decimal(18, 4))"
     fake_client.created_tables.update((TARGET_TABLE, TARGET_SHARD_TABLE))
     fake_client.table_ddls.update(
@@ -259,18 +289,53 @@ def test_ch_create_table_as_recreates_only_verified_existing_pair(
             ),
         }
     )
+    for name, ddl in fake_client.table_ddls.items():
+        state._create(state.coordinator, parse_create_table(ddl, name))
+    foreign = parse_create_table(
+        f"CREATE TABLE {TARGET_TABLE} {columns} ENGINE=MergeTree ORDER BY id", TARGET_TABLE
+    )
+    state._create(state.remote, foreign, [(date(2026, 1, 1), 100, Decimal("9.0000"))])
+    foreign_physical = parse_create_table(
+        f"CREATE TABLE {TARGET_SHARD_TABLE} {columns} ENGINE=MergeTree ORDER BY id",
+        TARGET_SHARD_TABLE,
+    )
+    state._create(state.remote, foreign_physical, [(date(2026, 1, 1), 101, Decimal("8.0000"))])
+    before = state.snapshot()
+    fake_client.ownership_connection = _DropConnection(state, state.coordinator, native=False)
     ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, QUERY)
 
-    assert fake_client.commands[:4] == [
-        f"DROP TABLE IF EXISTS {TARGET_TABLE}",
-        f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'",
-        "DROP TABLE IF EXISTS `default`.`events_result_shard`",
-        "DROP TABLE IF EXISTS `default`.`events_result_shard` ON CLUSTER '{cluster}'",
+    drops = [
+        parse_one(_strip_query_label(statement), read=ClickHouseDialect)
+        for statement in fake_client.commands[:2]
     ]
-    assert fake_client.commands[4].startswith(f"CREATE TABLE {TARGET_SHARD_TABLE}")
+    assert all(isinstance(statement, exp.Drop) for statement in drops)
+    assert [
+        (table.db, table.name, statement.find(exp.OnCluster).this.name)
+        for statement in drops
+        for table in statement.args.get("tables") or [statement.this]
+    ] == [("default", "events_result", "core"), ("default", "events_result_shard", "core")]
+    assert len(fake_client.commands) == 7
+    assert fake_client.commands[2].startswith(f"CREATE TABLE {TARGET_SHARD_TABLE}")
     assert fake_client.commands[-1] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
     assert f"SHOW CREATE TABLE {TARGET_TABLE}" in fake_client.queries
     assert any(query.startswith("SELECT create_table_query") for query in fake_client.queries)
+    assert state.snapshot()[state.remote] == before[state.remote]
+    for table in (TARGET_TABLE, TARGET_SHARD_TABLE):
+        assert (
+            state.host_tables[state.coordinator][table].uuid
+            != before[state.coordinator][table]["uuid"]
+        )
+    assert {
+        column: exp.DataType.build(native, dialect=ClickHouseDialect)
+        for column, native in state.host_tables[state.coordinator][TARGET_TABLE].schema.items()
+    } == {
+        column: exp.DataType.build(native, dialect=ClickHouseDialect)
+        for column, native in {"dt": "Date", "id": "UInt64", "amount": "Decimal(18, 4)"}.items()
+    }
+    assert state.host_tables[state.coordinator][TARGET_SHARD_TABLE].schema == (
+        state.host_tables[state.coordinator][TARGET_TABLE].schema
+    )
+    assert any(settings == {"skip_unavailable_shards": 0} for settings in state.query_settings)
     assert fake_client.close_calls == 1
 
 

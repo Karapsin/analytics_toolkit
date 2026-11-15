@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+from contextvars import copy_context
+from copy import deepcopy
+
+from analytics_toolkit import sql
+from analytics_toolkit.sql.backends.ch import drop_execution
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import parse_create_table
+from analytics_toolkit.sql.connection.get_sql_connection import get_ch_connection_for_host
+
+from tests.sql._support.ch_drop_scope import install_drop_scope
 from tests.sql._support.staged_keyed import (
     Any,
     BoundedConnectionManager,
@@ -154,15 +163,54 @@ def test_capacity_one_prefetch_waits_before_read_without_source_lease(
     assert source_connections.high_water_mark == 1
 
 
-def test_clickhouse_per_host_fallback_stays_inside_target_pool(monkeypatch: Any) -> None:
+def _assert_bounded_drop_state(state, expected, address, opened_roles):
+    assert state.snapshot() == expected
+    assert state.delayed_cluster_drops == [("storage", "analytics.events_shard")]
+    assert state.rows(state.coordinator, "analytics.events_shard") == state.foreign_rows
+    assert state.rows(state.remote, "analytics.events") == state.foreign_rows
+    assert len(state.foreign_rows) == 100
+    assert set(opened_roles) == {"coordinator", address}
+    assert opened_roles.count(address) == 1
+    assert [
+        (config.host, config.port) for config in state.opened_configs if config.host == address
+    ] == [(address, 9441)]
+    assert all(connection.close_calls == 1 for connection in state.opened)
+
+
+def test_clickhouse_per_host_fallback_stays_inside_target_pool(
+    monkeypatch: Any, write_sql_connections: Any
+) -> None:
+    state = install_drop_scope(monkeypatch, write_sql_connections, driver="native")
+    name, address, _port = state.host_endpoints[state.remote]
+    state.host_endpoints[state.remote] = (name, address, 9441)
+    server_uuid, _port = state.server_identities[state.remote]
+    state.server_identities[state.remote] = (server_uuid, 9441)
+    target = "analytics.events"
+    physical = "analytics.events_shard"
+    state._create(
+        state.remote,
+        parse_create_table(
+            f"CREATE TABLE {target} (id UInt64) ENGINE=MergeTree ORDER BY id", target
+        ),
+        state.foreign_rows,
+    )
+    state.delay_cluster_drops.add(("storage", physical))
+    before = state.snapshot()
+    expected = deepcopy(before)
+    expected[state.coordinator].pop(target)
+    expected[state.remote].pop(physical)
     active = 0
     high_water = 0
     opened_roles: list[str] = []
     state_lock = threading.Lock()
+    cancellation = threading.Event()
+    fallback_started = threading.Event()
+    clock_ticks = 0.0
 
-    class Connection:
-        def __init__(self, role: str) -> None:
+    class TrackedConnection:
+        def __init__(self, connection: Any, role: str) -> None:
             nonlocal active, high_water
+            self.connection = connection
             self.role = role
             self.closed = False
             opened_roles.append(role)
@@ -170,67 +218,79 @@ def test_clickhouse_per_host_fallback_stays_inside_target_pool(monkeypatch: Any)
                 active += 1
                 high_water = max(high_water, active)
 
-        def command(self, _sql: str, **_kwargs: Any) -> None:
-            return None
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self.connection, name)
 
         def close(self) -> None:
             nonlocal active
             if self.closed:
                 return
+            self.connection.close()
             self.closed = True
             with state_lock:
                 active -= 1
 
-    waits = 0
-
-    def wait_for_absence(*_args: Any, **_kwargs: Any) -> None:
-        nonlocal waits
-        waits += 1
-        if waits == 1:
-            raise TimeoutError("cluster DDL remained visible")
+    def advance_clock() -> float:
+        nonlocal clock_ticks
+        clock_ticks += 301.0
+        return clock_ticks
 
     monkeypatch.setattr(
-        ch_lifecycle,
-        "_wait_for_ch_distributed_table_pair_absence",
-        wait_for_absence,
-    )
-    monkeypatch.setattr(
-        ch_lifecycle,
-        "_query_ch_configured_cluster_hosts",
-        lambda *_args, **_kwargs: ["host-a", "host-b", "host-c"],
-    )
-    monkeypatch.setattr(
-        ch_lifecycle,
-        "_select_ch_hosts_for_local_drop",
-        lambda _connection, _pair, **kwargs: kwargs["configured_hosts"],
+        drop_execution,
+        "time",
+        SimpleNamespace(monotonic=advance_clock, sleep=lambda _seconds: None),
     )
     manager = BoundedConnectionManager(
-        "target",
+        "ch",
         1,
         role="target ClickHouse pool",
-        open_connection=lambda _key: Connection("coordinator"),
+        open_connection=lambda key: TrackedConnection(sql.get_sql_connection(key), "coordinator"),
     )
 
-    ch_lifecycle.drop_ch_distributed_table_pair_bounded(
-        "sandbox.target",
-        "CORE",
-        query_label=None,
-        ch_retry_per_host_drops=True,
-        connection_runner=lambda role, operation: manager.run(
-            role,
-            lambda ref: operation(ref["connection"]),
-        ),
-        host_connection_runner=lambda host, operation: manager.run_with_connection(
+    def run_on_host(host: Any, operation: Any) -> Any:
+        fallback_started.set()
+        return manager.run_with_connection(
             "host cleanup",
-            lambda: Connection(host),
+            lambda: TrackedConnection(get_ch_connection_for_host("ch", host), str(host)),
             operation,
-        ),
-    )
-    manager.close()
+            cancellation=cancellation,
+        )
 
+    def drop() -> None:
+        ch_lifecycle.drop_ch_distributed_table_pair_bounded(
+            target,
+            "storage",
+            query_label=None,
+            ch_retry_per_host_drops=True,
+            connection_runner=lambda role, operation: manager.run(
+                role,
+                lambda ref: operation(ref["connection"]),
+                cancellation=cancellation,
+            ),
+            host_connection_runner=run_on_host,
+        )
+
+    context = copy_context()
+    worker, errors = _thread(lambda: context.run(drop))
+    completed = False
+    try:
+        assert fallback_started.wait(timeout=2), repr(errors)
+        worker.join(timeout=2)
+        completed = not worker.is_alive()
+    finally:
+        cancellation.set()
+        manager.interrupt_active()
+        worker.join(timeout=2)
+        manager.close()
+
+    assert not worker.is_alive(), "Bounded drop cancellation failed to release its worker."
+    assert completed, (
+        f"Bounded drop retained its coordinator lease during host recovery: {errors!r}"
+    )
+    assert errors == []
+    _assert_bounded_drop_state(state, expected, address, opened_roles)
     assert high_water == 1
     assert active == 0
-    assert {"host-a", "host-b", "host-c"}.issubset(opened_roles)
     assert manager.high_water_mark == 1
 
 
@@ -324,7 +384,8 @@ def test_keyed_sql_log_context_prefixes_messages_and_suppresses_raw_sql(
     secret_sql = "SELECT password FROM customer_secret"
 
     def fail(*_args: Any) -> None:
-        raise RuntimeError("driver included row contents")
+        message = "driver included row contents"
+        raise RuntimeError(message)
 
     adapter = SimpleNamespace(
         backend="gp",

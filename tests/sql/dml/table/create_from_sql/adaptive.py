@@ -9,13 +9,19 @@ from types import SimpleNamespace
 import pytest
 from analytics_toolkit.general import set_connections_path
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
 from analytics_toolkit.sql.backends.ch.layout import ExistingClickHouseLayout
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import parse_create_table
 from analytics_toolkit.sql.backends.models import SourceColumn
 from analytics_toolkit.sql.core.replay_spool import ReplaySpool
 from analytics_toolkit.sql.dml import query_input
 from analytics_toolkit.sql.dml.transfer.flow import adaptive_input
 from analytics_toolkit.sql.dml.transfer.runtime.models import RowBatch
 from analytics_toolkit.sql.execution.backend_options import backend_operation
+from sqlglot import exp, parse_one
+
+from tests.sql._support.assertions import strip_query_label
+from tests.sql._support.ch_drop_scope import DropScopeState, _DropConnection
 
 create = importlib.import_module("analytics_toolkit.sql.dml.table.create_table_from_sql")
 policy = importlib.import_module("analytics_toolkit.sql.backends.ch.policy_ctas")
@@ -23,14 +29,17 @@ legacy = importlib.import_module("analytics_toolkit.sql.backends.ch.create_table
 
 
 class Client:
-    def __init__(self, *, exists=False):
+    def __init__(self, *, exists=False, raw=None):
         self.exists = exists
+        self.raw = raw
         self.commands = []
         self.inserts = []
         self.events = []
         self.close_calls = 0
 
     def query(self, statement, **_kwargs):
+        if self.raw is not None:
+            return self.raw.query(statement, **_kwargs)
         if statement.startswith("EXISTS TABLE"):
             return SimpleNamespace(result_rows=[(int(self.exists),)])
         return SimpleNamespace(result_rows=[], column_names=["id"], column_types=["Int64"])
@@ -38,23 +47,29 @@ class Client:
     def command(self, statement, **_kwargs):
         self.commands.append(statement)
         self.events.append("mutation")
+        if self.raw is not None:
+            return self.raw.command(statement, **_kwargs)
         if statement.startswith("CREATE"):
             self.exists = True
         elif statement.startswith("DROP"):
             self.exists = False
+        return None
 
     def close(self):
         self.close_calls += 1
 
 
-def install(monkeypatch, *, native="Int64", rows=((1,),), exists=False):
+def install(monkeypatch, *, native="Int64", rows=((1,),), exists=False, client=None):
     # Use only the autouse fixture's disposable connection file.
     path = Path(".connections")
     config = json.loads(path.read_text())
     config["ch"]["transfer_staging_schema"] = None
+    if client is not None and client.raw is not None:
+        config["ch"].update(host="coordinator", database="analytics", cluster_routing=None)
+        config["ch"]["ddl_defaults"]["regular"]["shard"]["on_cluster"] = None
     path.write_text(json.dumps(config))
     set_connections_path(path)
-    client = Client(exists=exists)
+    client = client if client is not None else Client(exists=exists)
     monkeypatch.setattr(create, "get_sql_connection", lambda _key: client)
     monkeypatch.setattr(legacy, "get_sql_connection", lambda _key: client)
     monkeypatch.setattr(get_backend_adapter("ch"), "after_create_table", lambda *_a, **_k: None)
@@ -69,13 +84,35 @@ def install(monkeypatch, *, native="Int64", rows=((1,),), exists=False):
         client.events.append("certified")
 
     def insert(_backend, _ref, _table, _columns, values, **_kwargs):
-        client.inserts.append(list(values))
+        materialized = list(values)
+        client.inserts.append(materialized)
         client.events.append("insert")
-        return len(values)
+        if client.raw is not None:
+            client.raw.insert(_table, materialized, _columns)
+        return len(materialized)
 
     monkeypatch.setattr(adaptive_input, "iter_source_batches", read)
     monkeypatch.setattr(query_input, "insert_rows_batch", insert)
     return client
+
+
+def _existing_pair_client(rows):
+    state = DropScopeState()
+    state.clusters["storage"] = (state.coordinator,)
+    for table in ("analytics.events", "analytics.events_shard"):
+        state.host_tables[state.coordinator].pop(table)
+    shard = parse_create_table(
+        "CREATE TABLE analytics.events_shard (id Int64) ENGINE=MergeTree ORDER BY id",
+        "analytics.events_shard",
+    )
+    facade = parse_create_table(
+        "CREATE TABLE analytics.events (id Int64) "
+        "ENGINE=Distributed('storage', 'analytics', 'events_shard', rand())",
+        "analytics.events",
+    )
+    state._create(state.coordinator, shard, rows)
+    state._create(state.coordinator, facade)
+    return Client(exists=True, raw=_DropConnection(state, state.coordinator, native=False))
 
 
 def run(*, schema=None, **kwargs):
@@ -121,15 +158,14 @@ def test_same_alias_query_declared_domain_fit_keeps_server_copy(monkeypatch):
 
 @pytest.mark.parametrize("source", ["analytics.events", "analytics.events_shard"])
 def test_query_replacement_freezes_logical_and_verified_physical_self_sources(monkeypatch, source):
-    client = install(monkeypatch, rows=((1,), (2,)), exists=True)
-    layout = ExistingClickHouseLayout(
-        "analytics.events", "analytics.events_shard", True, None, None, None, "", ""
+    client = install(
+        monkeypatch,
+        rows=((1,), (2,)),
+        client=_existing_pair_client(((1,), (2,))),
     )
-    monkeypatch.setattr(policy, "inspect_existing_layout", lambda *_a, **_k: layout)
-    # The actual source-binding parser and exact-value profiler remain active.
-    monkeypatch.setattr(
-        policy, "_drop_statements", lambda *_a, **_k: ["DROP TABLE analytics.events"]
-    )
+    state = client.raw.state
+    remote_before = state.snapshot()[state.remote]
+    # Source bindings, exact profiling and native ownership certification stay active.
     result = create.create_table_from_sql(
         "ch",
         "analytics.events",
@@ -145,6 +181,24 @@ def test_query_replacement_freezes_logical_and_verified_physical_self_sources(mo
     assert client.inserts == [[(1,), (2,)]]
     assert all(not statement.startswith("INSERT") for statement in client.commands)
     assert result.metadata.input_count == 2
+    assert result.plan.options["input_frozen"] is True
+    assert state.rows(state.coordinator, "analytics.events") == [(1,), (2,)]
+    assert "analytics.events_shard" not in state.host_tables[state.coordinator]
+    assert state.snapshot()[state.remote] == remote_before
+    drops = [
+        parse_one(strip_query_label(statement), read=ClickHouseDialect)
+        for statement in client.commands
+        if strip_query_label(statement).startswith("DROP TABLE")
+    ]
+    assert all(isinstance(drop, exp.Drop) for drop in drops)
+    resources = [
+        (target.name, drop.find(exp.OnCluster).this.name if drop.find(exp.OnCluster) else None)
+        for drop in drops
+        for target in drop.args.get("tables") or [drop.this]
+    ]
+    assert len(resources) == 2
+    assert state.clusters["storage"] == (state.coordinator,)
+    assert set(resources) == {("events", "storage"), ("events_shard", "storage")}
 
 
 def test_same_alias_query_dry_plan_marks_validation_without_scanning(monkeypatch):

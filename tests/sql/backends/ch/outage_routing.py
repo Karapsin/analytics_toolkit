@@ -40,7 +40,12 @@ def test_outage_nonstandard_facade_is_local_only_in_strict_mode(outage: Any, pol
     cluster, _ = outage
     _facade(cluster, "Distributed('core', 'db', 'custom_shard', rand())")
     for host in cluster.hosts:
-        cluster.tables[(host, "db.custom_shard")] = cluster.tables[(host, "db.events_shard")]
+        cluster.create(
+            host, "CREATE TABLE db.custom_shard (id UInt64) ENGINE=MergeTree ORDER BY id"
+        )
+        cluster.tables[(host, "db.custom_shard")].rows = list(
+            cluster.tables[(host, "db.events_shard")].rows
+        )
     if policy == "stop":
         sql.read("ch", "SELECT id FROM db.events")
         assert cluster.queries[-1] == "SELECT id FROM db.events"
@@ -64,16 +69,19 @@ def test_outage_nonstandard_destination_is_checked_before_any_insert(
     cluster.hosts.append("h3")
     cluster.alive.add("h3")
     for host in ("h1", "h3"):
-        cluster.tables[(host, "otherdb.custom")] = replace(
-            cluster.tables[("h1", "db.events_shard")]
+        storage = (
+            "Distributed('core', 'db', 'events_shard', rand())"
+            if missing == "nested"
+            else "MergeTree ORDER BY id"
+        )
+        cluster.create(host, f"CREATE TABLE otherdb.custom (id UInt64) ENGINE={storage}")
+        cluster.tables[(host, "otherdb.custom")].rows = list(
+            cluster.tables[("h1", "db.events_shard")].rows
         )
     if missing == "host":
         cluster.alive.remove("h3")
     elif missing == "table":
         del cluster.tables[("h3", "otherdb.custom")]
-    elif missing == "nested":
-        for host in ("h1", "h3"):
-            cluster.tables[(host, "otherdb.custom")].engine = "Distributed"
     with pytest.raises((sql.ClickHouseClusterUnavailableError, sql.ClickHouseClusterTopologyError)):
         sql.execute("ch", "INSERT INTO db.events VALUES (9)", retry_cnt=1)
     assert cluster.commands == []

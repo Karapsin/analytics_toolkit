@@ -18,7 +18,13 @@ if TYPE_CHECKING:
 
 
 def inspect_outage_layout(session: Any, table_name: str) -> ExistingClickHouseLayout | None:
-    from .layout import ExistingClickHouseLayout  # noqa: PLC0415 - layout imports adapter plumbing
+    from .layout import (  # noqa: PLC0415 - layout imports adapter plumbing
+        ExistingClickHouseLayout,
+        _column_identity,
+    )
+    from .reconfigure_ddl import (  # noqa: PLC0415 - parser imports adapter plumbing
+        parse_create_table,
+    )
 
     table = parse_one(table_name, read=ClickHouseDialect, into=exp.Table)
     database = table.db or session.config.database
@@ -61,6 +67,10 @@ def inspect_outage_layout(session: Any, table_name: str) -> ExistingClickHouseLa
     physical = (
         f"{quote_identifier(reference.database, 'ch')}.{quote_identifier(reference.table, 'ch')}"
     )
+    owns_physical = (reference.database, reference.table) == (database, f"{table.name}_shard")
+    owns_physical = owns_physical and _column_identity(
+        parse_create_table(original.create_sql, logical_table)
+    ) == _column_identity(parse_create_table(storage[0].create_sql, physical))
     return ExistingClickHouseLayout(
         logical_table=logical_table,
         physical_table=physical,
@@ -70,5 +80,5 @@ def inspect_outage_layout(session: Any, table_name: str) -> ExistingClickHouseLa
         distributed_cluster=reference.cluster,
         ddl=original.create_sql,
         physical_ddl=storage[0].create_sql,
-        owns_physical=(reference.database, reference.table) == (database, f"{table.name}_shard"),
+        owns_physical=owns_physical,
     )

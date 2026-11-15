@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import importlib
+from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
 import pytest
+from analytics_toolkit import sql
 from analytics_toolkit.general import logging as general_logging
 from analytics_toolkit.sql.backends import adapter_defaults
 from analytics_toolkit.sql.backends.ch import create_table_as as ch_create_table_as
 from analytics_toolkit.sql.backends.ch import lifecycle as ch_lifecycle
 from analytics_toolkit.sql.backends.ch import operations as ch_operations
 from analytics_toolkit.sql.backends.ch import transfer_cleanup
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
+from analytics_toolkit.sql.backends.ch.layout import inspect_existing_layout
+from sqlglot import parse_one
+
+from tests.sql._support.ch_drop_scope import install_drop_scope
 
 
 def test_private_log_prefix_and_default_transfer_hooks_cover_empty_paths() -> None:
@@ -238,7 +245,10 @@ def test_clickhouse_operation_lazy_helpers_and_invalid_drop(
 
 def test_clickhouse_bounded_drop_timeout_and_host_error_paths(
     monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Any,
 ) -> None:
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    connection = sql.get_sql_connection("ch")
     monkeypatch.setattr(ch_lifecycle, "_execute_ch_sqls", lambda *_args: None)
     monkeypatch.setattr(
         ch_lifecycle,
@@ -247,16 +257,19 @@ def test_clickhouse_bounded_drop_timeout_and_host_error_paths(
     )
 
     def successful_runner(_role: str, operation: Any) -> Any:
-        return operation(object())
+        return operation(connection)
 
     ch_lifecycle.drop_ch_distributed_table_pair_bounded(
-        "db.table",
-        "cluster",
+        "analytics.events",
+        "storage",
         query_label=None,
         ch_retry_per_host_drops=True,
         connection_runner=successful_runner,
         host_connection_runner=lambda *_args: None,
     )
+    assert "analytics.events" not in state.host_tables[state.coordinator]
+    assert "analytics.events_shard" not in state.host_tables[state.remote]
+    assert state.rows(state.coordinator, "analytics.events_shard") == state.foreign_rows
 
     def timed_out_runner(_role: str, _operation: Any) -> None:
         message = "cluster wait timed out"
@@ -271,7 +284,8 @@ def test_clickhouse_bounded_drop_timeout_and_host_error_paths(
             connection_runner=timed_out_runner,
             host_connection_runner=lambda *_args: None,
         )
-    with pytest.raises(TimeoutError, match="requires a non-null ch_cluster"):
+    # Local-only intent must preserve the runner's primary acquisition failure.
+    with pytest.raises(TimeoutError, match="cluster wait timed out"):
         ch_lifecycle.drop_ch_distributed_table_pair_bounded(
             "db.table",
             None,
@@ -309,29 +323,29 @@ def test_clickhouse_bounded_drop_timeout_and_host_error_paths(
             host_runner,
             2,
         )
+    connection.close()
+    assert all(client.closed and client.close_calls == 1 for client in state.opened)
 
 
 def test_clickhouse_creation_policy_drop_executes_all_sql(
     monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Any,
 ) -> None:
-    sqls = ["DROP distributed", "DROP shard"]
-    observed: list[Any] = []
-    monkeypatch.setattr(
-        ch_lifecycle,
-        "build_drop_ch_creation_policy_table_sqls",
-        lambda *_args, **_kwargs: sqls,
-    )
-    monkeypatch.setattr(
-        ch_lifecycle,
-        "_execute_ch_sqls",
-        lambda connection, statements: observed.append((connection, statements)),
-    )
-    connection = object()
-
-    ch_lifecycle.drop_ch_creation_policy_tables(
-        connection,
-        "db.table",
-        object(),
-    )
-
-    assert observed == [(connection, sqls)]
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    connection = sql.get_sql_connection("ch")
+    before = state.snapshot()
+    expected = deepcopy(before)
+    expected[state.coordinator].pop("analytics.events")
+    expected[state.remote].pop("analytics.events_shard")
+    try:
+        layout = inspect_existing_layout(connection, "analytics.events")
+        sqls = ch_lifecycle.build_drop_ch_creation_policy_table_sqls("analytics.events", layout)
+        ch_lifecycle.drop_ch_creation_policy_tables(connection, "analytics.events", layout)
+        assert [parse_one(statement, read=ClickHouseDialect) for statement in state.commands] == [
+            parse_one(statement, read=ClickHouseDialect) for statement in sqls
+        ]
+        assert state.snapshot() == expected
+        assert state.rows(state.coordinator, "analytics.events_shard") == state.foreign_rows
+    finally:
+        connection.close()
+    assert all(client.closed and client.close_calls == 1 for client in state.opened)

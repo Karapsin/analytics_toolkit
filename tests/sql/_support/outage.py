@@ -14,6 +14,8 @@ from analytics_toolkit.sql.backends.ch.outage_context import INTERNAL_IO
 from analytics_toolkit.sql.backends.ch.routing import _RoutingClickHouse
 from sqlglot import exp, parse_one
 
+from tests.sql._support.outage_metadata import metadata_rows
+
 
 class ProgrammingError(Exception):
     """Fake transport error without importing the driver's native extensions."""
@@ -184,6 +186,10 @@ class Client:
                 ]
             )
         statement = parse_one(sql, read=_RoutingClickHouse)
+        if (
+            projected := metadata_rows(self, statement, settings=kwargs.get("settings"))
+        ) is not None:
+            return Result(projected)
         filters = {
             item.left.name: str(item.right.this)
             for item in statement.find_all(exp.EQ)
