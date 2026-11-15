@@ -299,15 +299,18 @@ query are excluded. Schema-qualified names continue to use database metadata.
 
 Column completion is available in SELECT projections and WHERE expressions,
 including operands after AND/OR, when the source tables are present after FROM/JOIN.
-A non-keyword identifier prefix must touch the cursor
+An unquoted non-keyword identifier prefix must touch the cursor
 on its left on the same line, and the character cell immediately on its right
-must be whitespace or the end of the line. Blank prefixes, keywords, and positions
-inside words do not request columns with Tab. Shift+Tab explicitly allows a blank
+must be whitespace or the end of the line. Blank prefixes, unquoted keywords, and
+positions inside words do not request columns with Tab. Shift+Tab explicitly allows a blank
 left-hand prefix, while keeping the right-hand whitespace and single-cursor rules.
 It resolves aliases, joined tables, nested SELECTs,
 derived tables, and CTE output names, including explicit column lists and stars.
 Quoted column names retain their exact identity, including whitespace inside
 the quotes; `" id"` remains distinct from `id` when completion is accepted.
+Quoted reserved column names also remain identifiers when Tab accepts completion.
+Escaped quote characters and dots inside a quoted name remain part of its identity.
+Database table names retain that identity when offered alongside CTEs.
 Press Tab or Ctrl+Space immediately after `alias.` to list all columns from that
 source; typing the dot alone does not open the menu. A prefix after the dot filters
 the suggestions. Aliases with or without AS work for physical tables and CTEs.

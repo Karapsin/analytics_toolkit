@@ -18,7 +18,7 @@ from .completion import (
     schema_completion_values,
 )
 from .editor_actions import completion_text
-from .identifier_completion import quote_completion_name
+from .identifier_completion import completion_identifier_parts, quote_completion_name
 from .metadata_listing import IncompleteMetadataError
 
 if TYPE_CHECKING:
@@ -191,23 +191,31 @@ class SqlExplorerCompletionCommandsMixin:
     def _local_relation_candidates(
         self, context: CompletionContext, workspace: SqlExplorerWorkspace
     ) -> tuple[str, ...]:
-        """Merge editor-local CTEs with cached names; dots identify namespaces."""
+        """Merge SQL-rendered identifiers while filtering each raw identity."""
         coordinator = workspace.completion
-        names = set(context.local_relations)
+        request = context.request
+        prefix = request.prefix.casefold()
+        names = {
+            name
+            for name in context.local_relations
+            if completion_identifier_parts(name, request.backend)[-1].casefold().startswith(prefix)
+        }
         if coordinator is not None:
-            request = context.request
             namespaces = (
                 coordinator.known_catalogs()
                 if request.backend == "trino" and request.catalog is None
                 else schema_completion_values(coordinator.cached_schemas(request.catalog))
             )
-            names.update(name + "." for name in namespaces or ())
-            names.update(coordinator.cached(request) or ())
-        return tuple(
-            name
-            for name in sorted(names, key=str.casefold)
-            if name.lstrip('"`').casefold().startswith(context.request.prefix.casefold())
-        )
+            names.update(
+                quote_completion_name(name, request.backend) + "."
+                for name in namespaces or ()
+                if name.casefold().startswith(prefix)
+            )
+            names.update(
+                quote_completion_name(name, request.backend)
+                for name in coordinator.cached(request) or ()
+            )
+        return tuple(sorted(names, key=str.casefold))
 
     def _open_local_relations(
         self,
@@ -222,7 +230,10 @@ class SqlExplorerCompletionCommandsMixin:
         suggestions = app._local_relation_candidates(context, workspace)
         if suggestions:
             app._open_completion(
-                context, suggestions, workspace=workspace, accept_single=accept_single
+                replace(context, rendered_relations=True),
+                suggestions,
+                workspace=workspace,
+                accept_single=accept_single,
             )
         return bool(suggestions)
 
@@ -429,7 +440,11 @@ class SqlExplorerCompletionCommandsMixin:
             return
         context = app._completion_at_cursor(workspace)
         if workspace.completion_context is not None:
-            context = replace(context, namespace=workspace.completion_context.namespace)
+            context = replace(
+                context,
+                namespace=workspace.completion_context.namespace,
+                rendered_relations=workspace.completion_context.rendered_relations,
+            )
         app._insert_completion(context, suggestion, workspace)
         menu.action_close()
 
@@ -449,7 +464,7 @@ class SqlExplorerCompletionCommandsMixin:
         )
         if context.request.kind not in {"keyword", "column"}:
             raw_name = suggestion[:-1] if namespace and suggestion.endswith(".") else suggestion
-            if suggestion not in context.local_relations:
+            if not context.rendered_relations and suggestion not in context.local_relations:
                 suggestion = quote_completion_name(raw_name, context.request.backend)
             else:
                 suggestion = raw_name
@@ -496,6 +511,7 @@ class SqlExplorerCompletionCommandsMixin:
         if context.request.kind == "keyword":
             suggestions = keyword_suggestions(context.request.prefix)
         elif context.local_relations:
+            context = replace(context, rendered_relations=True)
             suggestions = app._local_relation_candidates(context, workspace)
         elif workspace.completion_candidates:
             suggestions = filter_suggestions(

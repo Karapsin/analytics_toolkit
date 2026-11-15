@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Final
 
 from .column_completion import column_fragment, projection_context
 from .completion_scope import relation_position
+from .identifier_completion import completion_identifier_parts
 
 if TYPE_CHECKING:
     from .completion import CompletionContext
@@ -47,7 +48,9 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
         replacement_start,
         replacement_end,
     )
-    column_prefix = text[column_start:cursor_offset].strip('"`')
+    raw_column_prefix = text[column_start:cursor_offset]
+    quoted_column = raw_column_prefix.startswith(('"', "`"))
+    column_prefix = completion_identifier_parts(raw_column_prefix, normalized_backend)[-1]
     projection = (
         projection_context(text, column_start, column_end, normalized_backend)
         if (
@@ -55,16 +58,21 @@ def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and c
             or (not column_prefix and before.endswith("."))
             or (
                 column_prefix
-                and column_prefix.casefold() not in _COLUMN_KEYWORDS
                 and cursor_offset > 0
-                and not text[cursor_offset - 1].isspace()
+                and (
+                    quoted_column
+                    or (
+                        column_prefix.casefold() not in _COLUMN_KEYWORDS
+                        and not text[cursor_offset - 1].isspace()
+                    )
+                )
             )
         )
         and (cursor_offset == len(text) or text[cursor_offset].isspace())
         else None
     )
     if projection is not None:
-        final_prefix = text[column_start:cursor_offset].strip('"`')
+        final_prefix = column_prefix
         request = CompletionRequest(
             connection_key,
             normalized_backend,

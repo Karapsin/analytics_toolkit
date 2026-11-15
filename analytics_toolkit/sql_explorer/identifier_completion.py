@@ -44,3 +44,31 @@ def identifier_tokens(text: str, dialect: str) -> list[sqlglot.Token]:
                 tokens[-1].end = len(text) - 1
                 return tokens
         raise
+
+
+def completion_identifier_parts(value: str, backend: str) -> tuple[str, ...]:
+    """Decode identifier tokens without confusing literal dots with qualification."""
+    try:
+        tokens = identifier_tokens(value, _DIALECTS.get(backend, backend))
+    except SqlglotError:
+        return (value,)
+    parts: list[str] = []
+    expect_name = True
+    for token in tokens:
+        if expect_name:
+            if token.token_type not in {TokenType.IDENTIFIER, TokenType.VAR, TokenType.NAME}:
+                return (value,)
+            parts.append(token.text)
+        elif token.token_type != TokenType.DOT:
+            return (value,)
+        expect_name = not expect_name
+    return (value,) if expect_name else tuple(parts)
+
+
+def column_completion_matches(value: str, prefix: str, backend: str) -> bool:
+    """Match the semantic column name and retain full qualified-prefix completion."""
+    parts = completion_identifier_parts(value, backend)
+    normalized = prefix.casefold()
+    return any(
+        candidate.casefold().startswith(normalized) for candidate in (".".join(parts), parts[-1])
+    )

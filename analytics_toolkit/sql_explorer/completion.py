@@ -28,6 +28,7 @@ from analytics_toolkit.sql.metadata.column_names import table_column_names
 from .background_metadata import BackgroundMetadata, persistent_discovery
 from .column_completion import projection_suggestions
 from .completion_context import parse_completion_context
+from .identifier_completion import column_completion_matches
 from .journal_workers import JournalMetadataProvider, cancel_metadata
 from .metadata_context import journal_context
 from .metadata_listing import (
@@ -166,6 +167,7 @@ class CompletionContext:
     normalized_prefix: str
     namespace: bool = False
     local_relations: tuple[str, ...] = ()
+    rendered_relations: bool = False
 
     @property
     def table_context(self) -> bool:
@@ -425,12 +427,10 @@ class CompletionCoordinator:
         if entry is None or monotonic() - entry.created_at >= METADATA_CACHE_SECONDS:
             return None
         if request.kind == "column":
-            prefix = request.prefix.casefold()
             return tuple(
                 value
                 for value in entry.values  # noqa: PD011 -- dataclass tuple, not a dataframe.
-                if value.strip('"`').casefold().startswith(prefix)
-                or value.rsplit(".", 1)[-1].strip('"`').casefold().startswith(prefix)
+                if column_completion_matches(value, request.prefix, request.backend)
             )
         return filter_suggestions(entry.values, request.prefix)
 
