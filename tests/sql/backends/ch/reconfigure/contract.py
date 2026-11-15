@@ -109,11 +109,11 @@ def test_conversion_and_cluster_relocation_are_rejected() -> None:
 
 def test_cross_cluster_refuses_existing_destination_shard() -> None:
     class ExistingDestinationClient(ReconfigureClient):
-        def query(self, query: str) -> FakeClickHouseResult:
+        def query(self, query: str, settings=None) -> FakeClickHouseResult:
             if "clusterAllReplicas('archive', system, tables)" in query:
                 self.queries.append(query)
                 return FakeClickHouseResult([(1,)])
-            return super().query(query)
+            return super().query(query, settings=settings)
 
     with pytest.raises(InvalidSqlInputError, match="already contains"):
         plan_ch_table_reconfiguration(
@@ -159,7 +159,7 @@ def test_local_to_pair_conversion_uses_regular_defaults() -> None:
                 "Distributed('{cluster}', 'analytics', 'events_shard', rand())",
                 "Distributed()",
             ),
-            "unsupported Distributed engine",
+            "Cannot verify ClickHouse Distributed storage",
         ),
     ],
 )
@@ -168,18 +168,22 @@ def test_managed_pair_shape_is_validated(
     table_ddl: str,
     message: str,
 ) -> None:
-    monkeypatch.setattr(
-        reconfigure_backend,
-        "_show_create_table",
-        lambda _connection, _table: table_ddl,
-    )
+    class MalformedFacadeClient(ReconfigureClient):
+        def query(self, statement, settings=None):
+            if statement == "SHOW CREATE TABLE analytics.events":
+                self.queries.append(statement)
+                return FakeClickHouseResult([(table_ddl,)])
+            return super().query(statement, settings=settings)
+
+    client = MalformedFacadeClient()
 
     with pytest.raises(InvalidSqlInputError, match=message):
         plan_ch_table_reconfiguration(
             get_backend_adapter("ch"),
-            ReconfigureClient(),
+            client,
             _options(ch_settings={"index_granularity": 4096}),
         )
+    assert client.commands == []
 
 
 @pytest.mark.parametrize(
@@ -470,32 +474,36 @@ def test_reconfigure_ddl_replicated_path_and_property_edges(
 def test_remote_shard_metadata_reraises_when_cluster_cannot_be_resolved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class UnavailableShardClient(ReconfigureClient):
-        def query(self, query: str) -> FakeClickHouseResult:
-            if query == "SHOW CREATE TABLE analytics.events_shard":
-                message = "shard is not local"
-                raise RuntimeError(message)
-            return super().query(query)
+    failure = RuntimeError("source shard routing macro is unavailable")
 
-    monkeypatch.setattr(reconfigure_backend, "_resolve_optional_cluster", lambda *_args: None)
-    with pytest.raises(RuntimeError, match="shard is not local"):
+    class UnavailableShardClient(ReconfigureClient):
+        def query(self, query: str, settings=None) -> FakeClickHouseResult:
+            if "getMacro('cluster')" in query:
+                self.queries.append(query)
+                raise failure
+            return super().query(query, settings=settings)
+
+    client = UnavailableShardClient()
+    with pytest.raises(ValueError, match="Could not resolve ClickHouse cluster macro") as caught:
         plan_ch_table_reconfiguration(
             get_backend_adapter("ch"),
-            UnavailableShardClient(),
+            client,
             _options(ch_settings={"index_granularity": 4096}),
         )
+    assert caught.value.__cause__ is failure
+    assert client.commands == []
 
 
 def test_remote_shard_metadata_supports_separate_facade_and_shard_clusters() -> None:
     class RemoteShardClient(ReconfigureClient):
-        def query(self, query: str) -> FakeClickHouseResult:
+        def query(self, query: str, settings=None) -> FakeClickHouseResult:
             if query == "SHOW CREATE TABLE analytics.events_shard":
                 message = "shard is not local"
                 raise RuntimeError(message)
             if "SELECT create_table_query FROM clusterAllReplicas" in query:
                 self.queries.append(query)
                 return FakeClickHouseResult([(SHARD_DDL,), (SHARD_DDL,)])
-            return super().query(query)
+            return super().query(query, settings=settings)
 
     client = RemoteShardClient()
     reconfiguration = plan_ch_table_reconfiguration(

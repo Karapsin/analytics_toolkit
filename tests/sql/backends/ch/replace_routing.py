@@ -19,6 +19,7 @@ from analytics_toolkit.sql.connection.errors import (
     InvalidSqlInputError,
     SqlConfigError,
 )
+from sqlglot import exp
 
 from tests.sql._support.ch_replace import (
     LOCAL,
@@ -95,15 +96,72 @@ def test_local_policy_controls_guarded_replacement_without_shard_alias() -> None
 
 
 def test_legacy_finalization_preserves_unrelated_companion_before_conversion() -> None:
-    client = ReplacementClient()
-    client.facade_sources.pop(("core", TARGET))
-    client.tables["core", TARGET] = Table(17, ("old_column",))
-    client.tables["core", PHYSICAL] = Table(100, ("unrelated_column",))
+    class LocalConversionClient(ReplacementClient):
+        identity = "00000000-0000-0000-0000-000000000001"
+
+        def __init__(self):
+            super().__init__(storage=LOCAL)
+            self.replica_count = 1
+
+        def query(self, statement, **kwargs):
+            if statement == "SELECT serverUUID(), tcpPort()":
+                self.queries.append(statement)
+                return SimpleNamespace(result_rows=[(self.identity, 9000)])
+            return super().query(statement, **kwargs)
+
+        def _metadata_rows(self, tree, scope, table):
+            fields = tuple(item.name for item in tree.expressions)
+            if table == "system.clusters" and "is_local" in fields:
+                assert scope == LOCAL
+                assert fields == (
+                    "shard_num",
+                    "replica_num",
+                    "host_name",
+                    "host_address",
+                    "port",
+                    "is_local",
+                )
+                return [(1, 1, "coordinator", "127.0.0.1", 9000, 1)]
+            if table == "system.one" and "_shard_num" in fields:
+                assert scope == LOCAL
+                return [(1, self.identity, 9000)]
+            if table == "system.tables" and fields == ("_shard_num", "create_table_query"):
+                assert scope == LOCAL
+                filters = {item.this.name: item.expression.this for item in tree.find_all(exp.EQ)}
+                name = f"{filters['database']}.{filters['name']}"
+                state = self.tables.get((LOCAL, name))
+                if state is None:
+                    return []
+                columns = ", ".join(f"`{column}` Int64" for column in state.columns)
+                return [
+                    (
+                        1,
+                        f"CREATE TABLE {name} ({columns}) "
+                        "ENGINE = ReplicatedMergeTree ORDER BY tuple()",
+                    )
+                ]
+            return super()._metadata_rows(tree, scope, table)
+
+    client = LocalConversionClient()
+    client.facade_sources.pop((LOCAL, TARGET))
+    client.tables[LOCAL, TARGET] = Table(17, ("old_column",))
+    client.tables[LOCAL, PHYSICAL] = Table(100, ("unrelated_column",))
+    original = dict(client.tables)
+    original_ddl = {
+        name: client.query(f"SHOW CREATE TABLE {name}").result_rows[0][0]
+        for name in (TARGET, PHYSICAL)
+    }
     request = replace(_request(client), ch_creation_policy=None)
     with pytest.raises(InvalidSqlInputError, match="already contains"):
         get_backend_adapter("ch").finalize_stage_table(request)
-    assert client.tables["core", PHYSICAL].rows == 100
-    assert client.tables["core", TARGET].rows == 17
+    assert client.tables[LOCAL, PHYSICAL].rows == 100
+    assert client.tables[LOCAL, TARGET].rows == 17
+    assert client.tables == original
+    assert all(client.tables[identity] is table for identity, table in original.items())
+    assert {
+        name: client.query(f"SHOW CREATE TABLE {name}").result_rows[0][0]
+        for name in (TARGET, PHYSICAL)
+    } == original_ddl
     assert client.commands == []
 
 

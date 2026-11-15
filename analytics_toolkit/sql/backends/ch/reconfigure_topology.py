@@ -7,6 +7,7 @@ from typing import Any
 
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
+from .reconfigure_facade import FacadeMutation, validate_facade_destination
 from .reconfigure_support import cluster_hosts, resolve_optional_cluster, table_exists_on_cluster
 
 
@@ -32,6 +33,10 @@ class DestinationTopology:
     desired_shard_table: str
     cross_cluster: bool
     copy_required: bool = False
+    logical_table: str | None = None
+    facade_cluster: str | None = None
+    facade_mutation: bool = False
+    source_facade_ddl: str | None = None
 
 
 def validate_destination(connection: Any, topology: DestinationTopology) -> None:
@@ -42,6 +47,18 @@ def validate_destination(connection: Any, topology: DestinationTopology) -> None
     distributed_cluster = topology.distributed_cluster
     desired_shard_table = topology.desired_shard_table
     cross_cluster = topology.cross_cluster
+    if source_pair != target_pair or (source_pair and (topology.facade_mutation or cross_cluster)):
+        validate_facade_destination(
+            connection,
+            FacadeMutation(
+                table=topology.logical_table,
+                scope=topology.facade_cluster,
+                source_ddl=topology.source_facade_ddl if source_pair else None,
+                source_cluster=source_cluster,
+                physical_scope=target_cluster,
+                pair_to_local=source_pair and not target_pair,
+            ),
+        )
     if target_pair and not source_pair:
         if target_cluster is None or distributed_cluster is None:
             message = "Local-to-pair conversion requires verified physical and routing clusters."

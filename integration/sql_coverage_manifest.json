@@ -11011,6 +11011,58 @@
         "tests/sql/backends/ch/reconfigure/copy_routing.py::test_same_physical_rebuild_accepts_verified_endpoint_aliases_and_macros"
       ]
     },
+    "audit.clickhouse.local_to_pair_facade_collision": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_local_to_pair_rejects_a_facade_scope_that_contains_independent_originals",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/conversion_facade.py::test_local_to_pair_rejects_unowned_facade_destination_before_ddl",
+        "tests/sql/backends/ch/reconfigure/conversion_scope.py::test_conversion_scope_rejects_foreign_remote_facade_destination_before_any_ddl"
+      ]
+    },
+    "audit.clickhouse.local_to_pair_scope_preservation": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_local_to_pair_preserves_independent_remote_originals_during_cutover_and_cleanup",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/conversion_scope.py::test_conversion_scope_preserves_distinct_remote_original_through_successful_public_cutover",
+        "tests/sql/backends/ch/reconfigure/conversion_scope.py::test_conversion_scope_rolls_back_only_the_local_original_after_real_target_count_drift"
+      ]
+    },
+    "audit.clickhouse.pair_to_local_wrong_facade_scope": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_pair_to_local_defaults_reject_a_scope_that_excludes_the_source_facade",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/pair_scope.py::test_pair_scope_defaults_cannot_adopt_remote_logical_storage_under_real_outage_guard"
+      ]
+    },
+    "audit.clickhouse.pair_to_local_occupied_destination": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_pair_to_local_defaults_reject_foreign_physical_destination_before_source_rename",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/pair_scope.py::test_pair_scope_occupied_physical_destination_is_rejected_before_any_source_rename"
+      ]
+    },
+    "audit.clickhouse.pair_to_local_preserves_unrelated_storage": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_pair_to_local_defaults_preserve_the_unrelated_coordinator_suffix_table",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/pair_scope.py::test_pair_scope_defaults_allow_all_actual_managed_facades_with_real_outage_guard"
+      ]
+    },
     "audit.clickhouse.routing_metadata": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_routing_bindings_and_current_database_metadata",

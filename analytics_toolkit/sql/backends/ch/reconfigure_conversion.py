@@ -115,12 +115,12 @@ def plan_topology_conversion(
             distributed_on_cluster,
         )
         cutover = [
-            f"RENAME TABLE {table} TO {source_backup}{cluster_clause(target_cluster)}",
+            f"RENAME TABLE {table} TO {source_backup}",
             f"RENAME TABLE {facade_replacement} TO {table}{cluster_clause(distributed_on_cluster)}",
         ]
         rollback = [
             f"RENAME TABLE {table} TO {facade_replacement}{cluster_clause(distributed_on_cluster)}",
-            f"RENAME TABLE {source_backup} TO {table}{cluster_clause(target_cluster)}",
+            f"RENAME TABLE {source_backup} TO {table}",
         ]
         create_sqls.extend(
             [
@@ -130,9 +130,9 @@ def plan_topology_conversion(
             ]
         )
         cleanup_sqls.extend(
-            [drop_table_sql(copy_wrapper, None), drop_table_sql(source_backup, target_cluster)]
+            [drop_table_sql(copy_wrapper, None), drop_table_sql(source_backup, None)]
         )
-        cleanup_tables.extend([(copy_wrapper, None), (source_backup, target_cluster)])
+        cleanup_tables.extend([(copy_wrapper, None), (source_backup, None)])
         temporary_scopes.extend(
             [
                 (desired_shard_table, target_cluster),

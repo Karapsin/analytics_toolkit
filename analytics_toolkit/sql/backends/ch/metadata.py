@@ -5,14 +5,21 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Tuple, cast
 
 import pandas as pd
+import sqlglot.tokens as sqlglot_tokens
+from sqlglot import exp, parse
+from sqlglot.errors import SqlglotError
 
 from analytics_toolkit.sql.execution.backend_options import backend_operation
 
-from .dialect import sql_string_literal
+from .cluster_functions import static_name
+from .dialect import ClickHouseDialect, sql_string_literal
 from .outage_context import logical_statistics
 
 _ROW_COUNT_COLUMN = "row_count"
 _TABLE_SIZE_BYTES_COLUMN = "table_size_bytes"
+_DISTRIBUTED_IDENTITY_ARGS = 3
+_ZERO_ARGUMENT_CALL_TOKENS = 3
+_TOKEN_TYPE: Any = vars(sqlglot_tokens)["TokenType"]
 
 
 @dataclass(frozen=True)
@@ -260,16 +267,19 @@ def extract_clickhouse_distributed_shard_table(
     if not isinstance(engine_full, str):
         return None
 
-    args = extract_clickhouse_function_args(engine_full, "Distributed")
-    if args is None or len(args) < 3:
+    args = _distributed_arguments(engine_full)
+    if args is None or len(args) < _DISTRIBUTED_IDENTITY_ARGS:
         return None
 
-    cluster = normalize_clickhouse_engine_arg(args[0])
-    database = normalize_clickhouse_distributed_database_arg(
-        args[1],
-        default_database,
+    cluster = static_name(args[0])
+    database = (
+        normalize_clickhouse_distributed_database_arg(
+            args[1].sql(dialect=ClickHouseDialect), default_database
+        )
+        if _is_current_database(args[1])
+        else static_name(args[1])
     )
-    table = normalize_clickhouse_engine_arg(args[2])
+    table = static_name(args[2])
     if not cluster or not database or not table:
         return None
     return ClickHouseShardTable(cluster=cluster, database=database, table=table)
@@ -279,18 +289,10 @@ def normalize_clickhouse_distributed_database_arg(
     value: str,
     default_database: object,
 ) -> str | None:
-    database = normalize_clickhouse_engine_arg(value)
-    if database is None:
-        return None
-
-    compact = "".join(database.split()).lower()
-    if compact in {"currentdatabase()", "database()"}:
-        if not isinstance(default_database, str):
-            return None
-        database = default_database.strip()
-        if not database:
-            return None
-    return database
+    expression = _engine_expression(value)
+    if _is_zero_argument_database_call(value) or _is_current_database(expression):
+        return default_database if isinstance(default_database, str) and default_database else None
+    return normalize_clickhouse_engine_arg(value)
 
 
 def normalize_clickhouse_engine_arg(value: str) -> str | None:
@@ -298,6 +300,15 @@ def normalize_clickhouse_engine_arg(value: str) -> str | None:
     if not normalized:
         return None
 
+    expression = _engine_expression(normalized)
+    if isinstance(expression, exp.Literal) and expression.is_string:
+        return str(expression.this)
+    decoded = static_name(expression) if expression is not None else None
+    if decoded is not None:
+        return decoded
+
+    # Keep the exported helper's historical best-effort fallback. Ownership
+    # extraction above accepts only a fully parsed static Distributed identity.
     if len(normalized) >= 2 and normalized[0] == normalized[-1]:
         if normalized[0] == "'":
             return normalized[1:-1].replace("''", "'")
@@ -305,6 +316,87 @@ def normalize_clickhouse_engine_arg(value: str) -> str | None:
             return normalized[1:-1].replace(normalized[0] * 2, normalized[0])
 
     return normalized
+
+
+def _engine_expression(value: str) -> exp.Expression | None:
+    try:
+        statements = parse(f"SELECT {value}", read=ClickHouseDialect)
+    except SqlglotError:
+        return None
+    if len(statements) != 1:
+        return None
+    statement = statements[0]
+    if (
+        not isinstance(statement, exp.Select)
+        or len(statement.expressions) != 1
+        or any(value for key, value in statement.args.items() if key != "expressions")
+    ):
+        return None
+    return cast("exp.Expression", statement.expressions[0])
+
+
+def _is_current_database(value: exp.Expression | None) -> bool:
+    if value is not None and value.key in {"currentdatabase", "currentschema"}:
+        return not any(value.args.values())
+    return (
+        isinstance(value, exp.Anonymous)
+        and value.name.casefold() in {"currentdatabase", "database"}
+        and not any(argument for key, argument in value.args.items() if key != "this")
+    )
+
+
+def _is_zero_argument_database_call(value: str) -> bool:
+    try:
+        tokens = ClickHouseDialect().tokenize(value)
+    except SqlglotError:
+        return False
+    return (
+        len(tokens) == _ZERO_ARGUMENT_CALL_TOKENS
+        and tokens[0].token_type in {_TOKEN_TYPE.VAR, _TOKEN_TYPE.DATABASE}
+        and tokens[0].text.casefold() in {"currentdatabase", "database"}
+        and tokens[1].token_type is _TOKEN_TYPE.L_PAREN
+        and tokens[2].token_type is _TOKEN_TYPE.R_PAREN
+    )
+
+
+def _distributed_arguments(value: str) -> list[exp.Expression] | None:
+    try:
+        tokens = ClickHouseDialect().tokenize(value)
+    except SqlglotError:
+        return None
+    if (
+        len(tokens) < _ZERO_ARGUMENT_CALL_TOKENS
+        or tokens[0].token_type is not _TOKEN_TYPE.VAR
+        or tokens[0].text.casefold() != "distributed"
+        or tokens[1].token_type is not _TOKEN_TYPE.L_PAREN
+        or tokens[-1].token_type is not _TOKEN_TYPE.R_PAREN
+    ):
+        return None
+    depth = 0
+    start = tokens[1].end + 1
+    arguments = []
+    for token in tokens[1:]:
+        if token.token_type is _TOKEN_TYPE.L_PAREN:
+            depth += 1
+        elif token.token_type is _TOKEN_TYPE.R_PAREN:
+            depth -= 1
+            if depth == 0 and token is not tokens[-1]:
+                return None
+        elif token.token_type is _TOKEN_TYPE.COMMA and depth == 1:
+            arguments.append(value[start : token.start])
+            start = token.end + 1
+    if depth:
+        return None
+    arguments.append(value[start : tokens[-1].start])
+    expressions = [
+        exp.Anonymous(this="currentDatabase")
+        if _is_zero_argument_database_call(argument)
+        else _engine_expression(argument)
+        for argument in arguments
+    ]
+    if any(expression is None for expression in expressions):
+        return None
+    return cast("list[exp.Expression]", expressions)
 
 
 def extract_clickhouse_function_args(

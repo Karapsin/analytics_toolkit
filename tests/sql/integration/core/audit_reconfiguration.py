@@ -2,32 +2,32 @@
 
 from __future__ import annotations
 
-import os
-import uuid
 from typing import TYPE_CHECKING
 
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
-from analytics_toolkit.sql.core.identifiers import TableIdentifier
 from sqlglot import exp, parse_one
 
 from tests.sql.integration._support.backends import integration_table
-from tests.sql.integration._support.identity import query_label, resource_name
+from tests.sql.integration._support.reconfiguration import (
+    cleanup_after_acknowledgement as _cleanup_after_acknowledgement,
+)
+from tests.sql.integration._support.reconfiguration import create_facade as _create_facade
+from tests.sql.integration._support.reconfiguration import create_owned as _create_owned
+from tests.sql.integration._support.reconfiguration import create_storage as _create_storage
+from tests.sql.integration._support.reconfiguration import inventory as _inventory
+from tests.sql.integration._support.reconfiguration import label as _label
+from tests.sql.integration._support.reconfiguration import quoted as _quoted
+from tests.sql.integration._support.reconfiguration import resource_name as _resource_name
+from tests.sql.integration._support.reconfiguration import seed_storage as _seed_storage
+from tests.sql.integration._support.reconfiguration import stored_rows as _stored_rows
 
 if TYPE_CHECKING:
     from tests.sql.integration._support.resources import ResourceRegistry
 
 pytestmark = [pytest.mark.integration, pytest.mark.integration_core]
-
-
-def _label(purpose: str) -> str:
-    return query_label(
-        os.environ.get("SQL_INTEGRATION_RUN_ID", uuid.uuid4().hex[:8]),
-        os.environ.get("SQL_INTEGRATION_TEST_ID", "manual"),
-        purpose,
-    )
 
 
 def _columns(ddl: str) -> dict[str, exp.ColumnDef]:
@@ -134,109 +134,6 @@ def test_local_to_pair_keeps_column_ttl_only_on_physical_storage(
     assert inspected_plan.options["strategy"] == "pair_to_local"
 
 
-def _resource_name(purpose: str) -> str:
-    return resource_name(
-        os.environ.get("SQL_INTEGRATION_RUN_ID", uuid.uuid4().hex[:8]),
-        os.environ.get("SQL_INTEGRATION_TEST_ID", "manual"),
-        purpose,
-        limit=50,
-    )
-
-
-def _quoted(database: str, relation: str | None = None) -> str:
-    parts = (database,) if relation is None else (database, relation)
-    return TableIdentifier(parts, (True,) * len(parts)).render_quoted("ch")
-
-
-def _literal(value: str) -> str:
-    return exp.Literal.string(value).sql(dialect="clickhouse")
-
-
-def _create_owned(registry: ResourceRegistry, create_sql: str, drop_sql: str) -> None:
-    # Make the candidate visible before CREATE; only its acknowledgement grants
-    # cleanup ownership. Plain CREATE never adopts an existing collision.
-    acknowledged = False
-
-    def cleanup() -> None:
-        if acknowledged:
-            sql.execute(
-                "ch", drop_sql, retry_cnt=1, query_label=_label("reconfigure-owned-cleanup")
-            )
-
-    registry.finalizer(cleanup)
-    sql.execute("ch", create_sql, retry_cnt=1, query_label=_label("reconfigure-owned-create"))
-    acknowledged = True
-
-
-def _create_storage(registry: ResourceRegistry, database: str, relation: str, cluster: str) -> None:
-    table, scope = _quoted(database, relation), _quoted(cluster)
-    _create_owned(
-        registry,
-        f"CREATE TABLE {table} ON CLUSTER {scope} "
-        "(id UInt64, payload String) ENGINE=MergeTree ORDER BY tuple()",
-        f"DROP TABLE IF EXISTS {table} ON CLUSTER {scope} SYNC",
-    )
-
-
-def _create_facade(
-    registry: ResourceRegistry,
-    database: str,
-    relation: str,
-    storage_database: str,
-    cluster: str,
-) -> None:
-    table, scope = _quoted(database, relation), _quoted(cluster)
-    engine = (
-        f"Distributed({_literal(cluster)}, {_literal(storage_database)}, "
-        f"{_literal(relation + '_shard')}, rand())"
-    )
-    _create_owned(
-        registry,
-        f"CREATE TABLE {table} ON CLUSTER {scope} (id UInt64, payload String) ENGINE={engine}",
-        f"DROP TABLE IF EXISTS {table} ON CLUSTER {scope} SYNC",
-    )
-
-
-def _seed_storage(
-    cluster: str, database: str, relation: str, *, rows: int, offset: int = 0
-) -> list[tuple[int, str]]:
-    target = f"cluster({_literal(cluster)}, {_literal(database)}, {_literal(relation)}, rand())"
-    sql.execute(
-        "ch",
-        f"INSERT INTO FUNCTION {target} "
-        f"SELECT number + {offset}, concat('value-', toString(number + {offset})) "
-        f"FROM numbers({rows})",
-        retry_cnt=1,
-        query_label=_label("reconfigure-owned-seed"),
-    )
-    return [(value, f"value-{value}") for value in range(offset, offset + rows)]
-
-
-def _stored_rows(cluster: str, database: str, relation: str) -> list[tuple[int, str]]:
-    source = f"cluster({_literal(cluster)}, {_literal(database)}, {_literal(relation)})"
-    frame = sql.read(
-        "ch",
-        f"SELECT id, payload FROM {source} ORDER BY id",
-        retry_cnt=1,
-        query_label=_label("reconfigure-owned-values"),
-    )
-    return list(frame.itertuples(index=False, name=None))
-
-
-def _inventory(cluster: str, databases: list[str], relation: str) -> list[tuple[str, ...]]:
-    source = f"clusterAllReplicas({_literal(cluster)}, system, tables)"
-    database_values = ", ".join(_literal(database) for database in databases)
-    frame = sql.read(
-        "ch",
-        "SELECT database, name, toString(uuid) AS identity, create_table_query "
-        f"FROM {source} WHERE database IN ({database_values}) "
-        f"AND startsWith(name, {_literal(relation)}) ORDER BY database, name, identity",
-        retry_cnt=1,
-        query_label=_label("reconfigure-owned-inventory"),
-    )
-    return list(frame.itertuples(index=False, name=None))
-
-
 @pytest.mark.sql_scenario("audit.clickhouse.cross_database_reconfigure_ownership")
 def test_cross_database_facade_never_adopts_a_populated_local_suffix(
     resource_registry: ResourceRegistry,
@@ -310,3 +207,88 @@ def test_same_physical_rebuild_rejects_a_disjoint_facade_route(
     assert _stored_rows(core, database, relation) == physical_rows
     assert _stored_rows(core, database, shard) == physical_rows
     assert _stored_rows(archive, database, shard) == archive_rows
+
+
+@pytest.mark.sql_scenario("audit.clickhouse.local_to_pair_facade_collision")
+def test_local_to_pair_rejects_a_facade_scope_that_contains_independent_originals(
+    resource_registry: ResourceRegistry,
+) -> None:
+    local, peer, physical = (
+        "integration_cluster",
+        "integration_archive_cluster",
+        "integration_two_shards",
+    )
+    database, relation = "integration", _resource_name("local_pair_reject")
+    for cluster in (local, peer):
+        _create_storage(resource_registry, database, relation, cluster)
+    local_rows = _seed_storage(local, database, relation, rows=3)
+    peer_rows = _seed_storage(peer, database, relation, rows=100, offset=1000)
+    before = {cluster: _inventory(cluster, [database], relation) for cluster in (local, peer)}
+
+    with pytest.raises(InvalidSqlInputError, match="unowned logical table"):
+        sql.ch_reconfigure_table(
+            "ch",
+            _quoted(database, relation),
+            ch_distributed_table=True,
+            ch_engine="MergeTree",
+            ch_shard_on_cluster=physical,
+            ch_distributed_on_cluster=physical,
+            ch_distributed_cluster=physical,
+            ch_sharding_key="cityHash64(id)",
+            retry_cnt=1,
+            query_label=_label("local-pair-peer-collision-rejected"),
+        )
+
+    assert {
+        cluster: _inventory(cluster, [database], relation) for cluster in (local, peer)
+    } == before
+    assert _stored_rows(local, database, relation) == local_rows
+    assert _stored_rows(peer, database, relation) == peer_rows
+
+
+@pytest.mark.sql_scenario("audit.clickhouse.local_to_pair_scope_preservation")
+def test_local_to_pair_preserves_independent_remote_originals_during_cutover_and_cleanup(
+    resource_registry: ResourceRegistry,
+) -> None:
+    local, peer, physical = (
+        "integration_cluster",
+        "integration_archive_cluster",
+        "integration_two_shards",
+    )
+    database, relation = "integration", _resource_name("local_pair_keep")
+    for cluster in (local, peer):
+        _create_storage(resource_registry, database, relation, cluster)
+    local_rows = _seed_storage(local, database, relation, rows=3)
+    peer_rows = _seed_storage(peer, database, relation, rows=100, offset=1000)
+    before_peer = _inventory(peer, [database], relation)
+    shard = relation + "_shard"
+    acknowledge_shard = _cleanup_after_acknowledgement(
+        resource_registry,
+        f"DROP TABLE IF EXISTS {_quoted(database, shard)} ON CLUSTER {_quoted(physical)} SYNC",
+    )
+
+    result = sql.ch_reconfigure_table(
+        "ch",
+        _quoted(database, relation),
+        ch_distributed_table=True,
+        ch_engine="MergeTree",
+        ch_shard_on_cluster=physical,
+        ch_distributed_on_cluster=local,
+        ch_distributed_cluster=physical,
+        ch_sharding_key="cityHash64(id)",
+        retry_cnt=1,
+        return_metadata=True,
+        query_label=_label("local-pair-preserve-peer-original"),
+    )
+    assert isinstance(result, sql.SqlOperationResult)
+    assert result.data["strategy"] == "local_to_pair"
+    acknowledge_shard()
+    assert result.data["row_count_validated"] is True
+    assert result.data["cleanup_complete"] is True
+    assert _stored_rows(local, database, relation) == local_rows
+    assert _stored_rows(physical, database, shard) == local_rows
+    assert _stored_rows(peer, database, relation) == peer_rows
+    after_peer = _inventory(peer, [database], relation)
+    assert [row for row in after_peer if row[1] == relation] == before_peer
+    assert {row[1] for row in after_peer} == {relation, shard}
+    assert {row[1] for row in _inventory(local, [database], relation)} == {relation, shard}

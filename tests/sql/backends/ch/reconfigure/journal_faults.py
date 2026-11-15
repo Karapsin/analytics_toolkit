@@ -15,6 +15,8 @@ from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError, In
 from analytics_toolkit.sql.execution.backend_options import backend_operation
 from analytics_toolkit.sql.execution.plans import SqlPlan
 
+from tests.sql._support.reconfigure import TABLE_DDL, ReconfigureClient
+
 module = importlib.import_module("analytics_toolkit.sql.backends.ch.cutover")
 topology = importlib.import_module("analytics_toolkit.sql.backends.ch.reconfigure_topology")
 
@@ -104,13 +106,23 @@ def test_copy_rejects_incomplete_storage_and_routing_scope(source_pair, cross):
         topology.validate_destination(object(), request)
 
 
-def test_cluster_alias_cannot_route_replacement_back_to_original_storage(monkeypatch):
-    monkeypatch.setattr(topology, "endpoints", lambda *_a: {("same-host", 9000)})
+def test_cluster_alias_cannot_route_replacement_back_to_original_storage():
+    client = ReconfigureClient(target_hosts=(("source-alias", "10.0.0.1", 9000),))
     request = topology.DestinationTopology(
-        True, True, "source", "target", "alias", "db.shard", True
+        source_pair=True,
+        target_pair=True,
+        source_cluster="core",
+        target_cluster="archive",
+        distributed_cluster="{copy_route}",
+        desired_shard_table="analytics.events_shard",
+        cross_cluster=True,
+        logical_table="analytics.events",
+        facade_cluster="core",
+        source_facade_ddl=TABLE_DDL,
     )
     with pytest.raises(InvalidSqlInputError, match="original source storage"):
-        topology.validate_destination(object(), request)
+        topology.validate_destination(client, request)
+    assert client.commands == []
 
 
 def test_guarded_rollback_preserves_ambiguous_primary_error_after_acknowledged_inverse():

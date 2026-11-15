@@ -37,6 +37,7 @@ class ClickHouseDialect(ClickHouse):
         "Parser",
         (ClickHouse.parser_class,),
         {
+            "FUNC_TOKENS": ClickHouse.parser_class.FUNC_TOKENS | {_TOKEN_TYPE.DATABASE},
             "STRUCT_TYPE_TOKENS": ClickHouse.parser_class.STRUCT_TYPE_TOKENS - {_TOKEN_TYPE.OBJECT},
             "NESTED_TYPE_TOKENS": ClickHouse.parser_class.NESTED_TYPE_TOKENS - {_TOKEN_TYPE.OBJECT},
             "TYPE_CONVERTERS": {
@@ -45,6 +46,7 @@ class ClickHouseDialect(ClickHouse):
             },
             "FUNCTIONS": {
                 **ClickHouse.parser_class.FUNCTIONS,
+                "DATABASE": lambda args: exp.Anonymous(this="database", expressions=args),
                 "RAND": lambda args: exp.Anonymous(this="rand", expressions=args),
             },
         },

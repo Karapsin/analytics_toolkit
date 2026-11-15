@@ -38,8 +38,8 @@ def test_guarded_replacement_converts_verified_existing_topology_before_applying
     monkeypatch, pair
 ):
     class QuotedClient(ReconfigureClient):
-        def query(self, text):
-            return super().query(text.replace("`", ""))
+        def query(self, text, settings=None):
+            return super().query(text.replace("`", ""), settings=settings)
 
     client = LocalReconfigureClient() if pair else QuotedClient()
     target = "analytics.local_events" if pair else "analytics.events"

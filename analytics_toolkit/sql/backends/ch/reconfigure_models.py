@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from analytics_toolkit.sql.connection.ddl_defaults import ClickHouseScopeDefaults
     from analytics_toolkit.sql.execution.plans import SqlPlan
 
+    from .reconfigure_physical import PhysicalExecutionScope
+
 
 @dataclass(frozen=True)
 class ChReconfigureOptions:
@@ -66,6 +68,12 @@ class ChReconfiguration:
     cleanup_complete: bool = False
     cleanup_error: str | None = None
     cutover_journal: list[dict[str, Any]] = field(default_factory=list)
+    physical_execution: PhysicalExecutionScope | None = field(default=None, repr=False)
+
+    @property
+    def backup_table_scopes(self) -> list[tuple[str, str | None]]:
+        names = set(self.backup_tables)
+        return [(table, scope) for table, scope in self.cleanup_tables if table in names]
 
     def result_data(self) -> dict[str, Any]:
         return {
@@ -83,6 +91,7 @@ class ChReconfiguration:
             "after_ddl": dict(self.after_ddl),
             "temporary_tables": list(self.temporary_tables),
             "backup_tables": list(self.backup_tables),
+            "backup_table_scopes": self.backup_table_scopes,
             "source_count": self.source_count,
             "replacement_count": self.replacement_count,
             "final_count": self.final_count,
@@ -90,6 +99,7 @@ class ChReconfiguration:
             "cleanup_complete": self.cleanup_complete,
             "cleanup_error": self.cleanup_error,
             "cutover_journal": [dict(step) for step in self.cutover_journal],
+            "physical_row_counts": self.plan.options.get("physical_row_counts"),
         }
 
 

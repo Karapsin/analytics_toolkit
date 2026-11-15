@@ -20,6 +20,7 @@ from sqlglot import exp
 
 from tests.sql._support.reconfigure import (
     SHARD_DDL,
+    TABLE_DDL,
     CountingReconfigureClient,
     FakeClickHouseResult,
     InvalidSqlInputError,
@@ -68,11 +69,12 @@ def _non_ttl_columns(create):
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_local_to_pair_reconfiguration_removes_only_facade_column_ttl(monkeypatch, dry_run):
     class ColumnTTLClient(LocalReconfigureClient):
-        def query(self, statement):
+        def query(self, statement, settings=None):
             if statement == "SHOW CREATE TABLE analytics.local_events":
                 self.queries.append(statement)
+                self.metadata_overrides[("analytics", "local_events")] = _LOCAL_TTL_DDL
                 return FakeClickHouseResult([(_LOCAL_TTL_DDL,)])
-            return super().query(statement)
+            return super().query(statement, settings=settings)
 
         def command(self, statement, settings=None):
             if statement.startswith("CREATE TABLE"):
@@ -166,14 +168,14 @@ def test_managed_pair_identity_excludes_only_physical_column_ttl(difference):
         physical = physical.replace("id TTL stays text", "different comment")
 
     class TTLPairClient(ReconfigureClient):
-        def query(self, statement):
+        def query(self, statement, settings=None):
             if statement == "SHOW CREATE TABLE analytics.events":
                 self.queries.append(statement)
                 return FakeClickHouseResult([(facade,)])
             if statement.startswith("SELECT create_table_query FROM clusterAllReplicas("):
                 self.queries.append(statement)
                 return FakeClickHouseResult([(physical,)])
-            return super().query(statement)
+            return super().query(statement, settings=settings)
 
     layout = inspect_existing_layout(TTLPairClient(), "analytics.events")
     assert layout.create_distributed_pair
@@ -191,8 +193,8 @@ def test_local_layout_never_owns_a_suffix_companion() -> None:
 
 def test_managed_layout_verifies_referenced_storage() -> None:
     class QuotedClient(ReconfigureClient):
-        def query(self, sql: str) -> FakeClickHouseResult:
-            return super().query(sql.replace("`", ""))
+        def query(self, sql: str, settings=None) -> FakeClickHouseResult:
+            return super().query(sql.replace("`", ""), settings=settings)
 
     client = QuotedClient()
     layout = inspect_existing_layout(client, "analytics.events")
@@ -204,7 +206,7 @@ def test_managed_layout_verifies_referenced_storage() -> None:
 
 def test_custom_physical_reference_is_available_for_data_operations_without_owning_its_storage():
     class ExternalClient(ReconfigureClient):
-        def query(self, sql: str) -> FakeClickHouseResult:
+        def query(self, sql: str, settings=None) -> FakeClickHouseResult:
             if sql == "SHOW CREATE TABLE analytics.events":
                 return FakeClickHouseResult(
                     [
@@ -223,7 +225,7 @@ def test_custom_physical_reference_is_available_for_data_operations_without_owni
                         )
                     ]
                 )
-            return super().query(sql)
+            return super().query(sql, settings=settings)
 
     layout = inspect_existing_layout(ExternalClient(), "analytics.events")
     assert layout.physical_table == "`external`.`shared_storage`"
@@ -275,14 +277,13 @@ def test_lost_cutover_ack_never_runs_an_unacknowledged_inverse() -> None:
 
 
 def test_local_to_pair_rejects_a_preexisting_companion_before_ddl() -> None:
-    class CollisionClient(LocalReconfigureClient):
-        def query(self, sql: str) -> FakeClickHouseResult:
-            if "clusterAllReplicas('core', system, tables)" in sql:
-                self.queries.append(sql)
-                return FakeClickHouseResult([(1,)])
-            return super().query(sql)
-
-    client = CollisionClient()
+    client = LocalReconfigureClient()
+    client.metadata_overrides[("analytics", "local_events_shard")] = (
+        "CREATE TABLE analytics.local_events_shard (id UInt64, dt Date) "
+        "ENGINE=MergeTree ORDER BY id"
+    )
+    client.metadata._seed()
+    original = dict(client.metadata.tables)
     with pytest.raises(InvalidSqlInputError, match="already contains"):
         plan_ch_table_reconfiguration(
             get_backend_adapter("ch"),
@@ -294,6 +295,8 @@ def test_local_to_pair_rejects_a_preexisting_companion_before_ddl() -> None:
             ),
         )
     assert client.commands == []
+    assert client.metadata.tables == original
+    assert all(client.metadata.tables[identity] is create for identity, create in original.items())
 
 
 def test_relocation_rejects_copy_routing_to_original_storage() -> None:
@@ -309,6 +312,9 @@ def test_relocation_rejects_copy_routing_to_original_storage() -> None:
                 distributed_cluster="core",
                 desired_shard_table="analytics.events_shard",
                 cross_cluster=True,
+                logical_table="analytics.events",
+                facade_cluster="core",
+                source_facade_ddl=TABLE_DDL,
             ),
         )
     assert client.commands == []

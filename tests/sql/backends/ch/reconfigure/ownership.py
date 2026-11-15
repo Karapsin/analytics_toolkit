@@ -56,7 +56,10 @@ class OwnershipClient(ReconfigureClient):
             ]
         self.ddl_reads = []
 
-    def query(self, statement):
+    def metadata_definitions(self):
+        return dict(self.ddls)
+
+    def query(self, statement, settings=None):
         if statement.startswith("SHOW CREATE TABLE "):
             table = parse_one(
                 f"SELECT * FROM {statement.removeprefix('SHOW CREATE TABLE ')}",
@@ -67,7 +70,18 @@ class OwnershipClient(ReconfigureClient):
             self.queries.append(statement)
             self.ddl_reads.append(identity)
             return FakeClickHouseResult([(self.ddls[identity],)])
-        return super().query(statement)
+        if statement.startswith("SELECT create_table_query FROM clusterAllReplicas("):
+            tree = parse_one(statement, read=ClickHouseDialect)
+            filters = {
+                comparison.left.name: comparison.right.this
+                for comparison in tree.find_all(exp.EQ)
+                if isinstance(comparison.right, exp.Literal)
+            }
+            identity = filters["database"], filters["name"]
+            self.queries.append(statement)
+            self.ddl_reads.append(identity)
+            return FakeClickHouseResult([(self.ddls[identity],)])
+        return super().query(statement, settings=settings)
 
     def command(self, statement, settings=None):
         super().command(statement, settings)

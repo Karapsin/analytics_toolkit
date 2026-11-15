@@ -16,6 +16,8 @@ from tests.sql._support.reconfigure import (
     reconfigure_backend,
     sql,
 )
+from tests.sql._support.reconfigure_conversion_scope import _scope_sql
+from tests.sql._support.reconfigure_pair_scope import PairScopeClient
 
 
 def _public_client(monkeypatch, client):
@@ -66,11 +68,11 @@ def test_same_physical_rebuild_rejects_wrong_copy_route_before_any_ddl(
 @pytest.mark.parametrize("routing", ["core", "archive", "{cluster}", "{copy_route}"])
 def test_same_physical_rebuild_accepts_verified_endpoint_aliases_and_macros(monkeypatch, routing):
     class AliasClient(ReconfigureClient):
-        def query(self, statement):
+        def query(self, statement, settings=None):
             if "getMacro('copy_route')" in statement:
                 self.queries.append(statement)
                 return FakeClickHouseResult([("archive",)])
-            return super().query(statement)
+            return super().query(statement, settings=settings)
 
     client = AliasClient(target_hosts=(("source-alias", "10.0.0.1", 9000),))
     _public_client(monkeypatch, client)
@@ -91,16 +93,21 @@ def test_same_physical_rebuild_accepts_verified_endpoint_aliases_and_macros(monk
 
 
 @pytest.mark.parametrize("wrapper_only", [False, True], ids=["no-op", "facade-only"])
-def test_plans_without_physical_copy_do_not_query_endpoint_or_extra_database_metadata(
+def test_plans_without_physical_copy_only_inspect_required_source_ownership_scopes(
     monkeypatch, wrapper_only
 ):
-    class NoEndpointClient(ReconfigureClient):
-        def query(self, statement):
-            if "FROM system.clusters" in statement:
-                pytest.fail("A plan without physical copying must not inspect endpoint coverage")
-            return super().query(statement)
+    class NoCopyRouteClient(PairScopeClient):
+        def query(self, statement, settings=None):
+            if "system.clusters" in statement or "system, clusters" in statement:
+                if not wrapper_only:
+                    pytest.fail("A no-op must not inspect unused endpoint coverage")
+                if "archive" in statement:
+                    pytest.fail("A facade-only change must not inspect copy-route endpoints")
+            return super().query(statement, settings=settings)
 
-    client = NoEndpointClient()
+    client = NoCopyRouteClient(managed_remote_facade=True)
+    client.clusters["archive"] = (client.remote,)
+    physical_before = client.snapshot()[client.remote]["analytics.events_shard"]
     _public_client(monkeypatch, client)
     change = (
         {
@@ -109,7 +116,7 @@ def test_plans_without_physical_copy_do_not_query_endpoint_or_extra_database_met
             "ch_distributed_on_cluster": "core",
         }
         if wrapper_only
-        else {"ch_engine": "ReplicatedMergeTree('/clickhouse/{table}', '{replica}')"}
+        else {"ch_engine": "MergeTree"}
     )
     result = sql.ch_reconfigure_table(
         "ch",
@@ -125,6 +132,20 @@ def test_plans_without_physical_copy_do_not_query_endpoint_or_extra_database_met
         len([statement for statement in client.queries if "FROM system.databases" in statement])
         == 1
     )
+    assert client.snapshot()[client.remote]["analytics.events_shard"] == physical_before
+    assert client.rows(client.coordinator, "analytics.events") == [(1,), (2,), (3,)]
+    if wrapper_only:
+        cutover = [
+            statement
+            for statement in client.commands
+            if statement.startswith(("RENAME TABLE", "EXCHANGE TABLES"))
+        ]
+        assert cutover
+        assert all(_scope_sql(statement)[0] == "core" for statement in cutover)
+        assert result.metadata.source_rows == result.metadata.staged_rows == 3
+        assert result.metadata.final_target_rows == 3
+    else:
+        assert client.commands == []
     assert client.closed
 
 
@@ -195,7 +216,12 @@ def test_physical_cluster_aliases_reject_empty_endpoint_metadata_before_ddl(
         target_hosts=() if empty_scope == "target" else (("target", "10.0.0.2", 9000),),
     )
     _public_client(monkeypatch, client)
-    with pytest.raises(InvalidSqlInputError, match="has no hosts"):
+    message = (
+        r"events_shard.*does not exist on cluster 'core'"
+        if empty_scope == "source"
+        else "has no hosts"
+    )
+    with pytest.raises(InvalidSqlInputError, match=message):
         sql.ch_reconfigure_table(
             "ch",
             "analytics.events",

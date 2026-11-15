@@ -76,7 +76,7 @@ Statements:
 
 - pause writers for the entire rebuild or migration; the helper aborts when it observes source count drift but cannot create a transactional snapshot across tables
 - setting-only changes use direct `ALTER TABLE ... MODIFY/RESET SETTING`; engine, partition, and order changes use a staged rebuild
-- cluster macro and literal names are resolved before comparison; disjoint clusters can be migrated, while partially overlapping clusters are rejected
+- cluster macro and literal names are resolved before comparison; supported cross-cluster migrations require disjoint clusters, while partially overlapping clusters are rejected
 - shard metadata is read through the Distributed routing cluster when the `_shard` table is not local to the configured connection
 - changing or removing an existing Distributed facade requires `ch_distributed_on_cluster`, because ClickHouse does not retain the original `ON CLUSTER` scope
 - `to_defaults=True` treats the connection's regular ClickHouse DDL defaults as authoritative and fails before DDL when required defaults are missing
@@ -86,13 +86,18 @@ Statements:
 - Atomic and Shared databases use `EXCHANGE TABLES`; other database engines use a rename fallback. Each submitted cutover records its inverse and acknowledgement; rollback reverses only acknowledged steps
 - an uncertain cutover or rollback stops structural replay and retains replacements and backups for recovery, with the original error and resource scopes reported
 - local-to-pair conversion rejects an existing deterministic companion before DDL; a name ending in `_shard` alone never establishes resource ownership
+- converting a coordinator-local table to a managed pair keeps source reads, renames, rollback and backup cleanup local. Desired physical and facade placement do not extend source ownership; existing facade destinations outside that ownership are rejected before DDL
 - rebuilt Distributed facades retain permitted column defaults and comments and
   omit MergeTree storage clauses, including TTL clauses on the table and its
   columns; physical replacement storage retains those TTL declarations.
   Column TTL differences alone do not invalidate an otherwise verified pair;
   remaining column identity checks still apply
 - physical placement, facade placement and Distributed routing are independent. Every rebuild or conversion copy must reach exactly the verified replacement endpoints. Physical relocation must not route copies to the original endpoints; rebuilding on the same endpoints remains valid
-- successful validation removes the old table data; cleanup failures are reported through `SqlOperationResult.data`
-- dry runs query ClickHouse metadata because the plan depends on the current table DDL and topology
+- before a physical change, every configured source endpoint must contain the table with matching DDL. No-op and facade-only changes skip this additional endpoint-wide source scan
+- independent data on multiple replicas of non-replicated engines is copied per verified endpoint when source and replacement have the same endpoint/instance bijection and the replacement remains non-replicated. Engine-family, sorting, partition and settings changes remain supported within that boundary. Relocation or pair conversion without that bijection, and conversion of such data to replicated storage, reject before DDL with guidance to migrate each host explicitly
+- validation counts replicated/shared data once per shard and independent data once per host. For physical rebuilds, `validate_row_count=False` skips data counts but retains metadata, ownership and copy-safety checks
+- metadata identity preserves literal backslashes and quoted function names. Only recognized unquoted zero-argument aliases for the current database resolve to the namespace captured for the operation
+- successful validation removes old source data only within its verified ownership scope; cleanup failures are reported through `SqlOperationResult.data`
+- dry runs query only ClickHouse metadata. Endpoint-scoped copy SQL is marked in plan options and belongs to its recorded endpoint; it is not a bulk script to execute on the coordinator
 
 [SQL functions index](index.md)

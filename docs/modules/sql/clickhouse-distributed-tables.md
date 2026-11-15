@@ -141,6 +141,32 @@ shard is remote from the connected host, its DDL is inspected through the live
 Distributed routing cluster. Use `to_defaults=True` to converge the managed
 topology to the connection's regular `ddl_defaults` policy.
 
+Converting a coordinator-local table to a managed pair keeps source reads,
+renames, rollback and backup cleanup local. Desired physical and facade
+placement do not establish ownership of same-named remote tables. Existing
+facade destinations outside the verified source ownership are rejected before DDL.
+
+Before a physical change, reconfiguration verifies that every configured source
+endpoint contains the table with matching DDL. No-op and facade-only changes skip
+this additional endpoint-wide source scan. Metadata identity preserves literal
+backslashes and quoted function names; recognized unquoted zero-argument aliases
+for the current database resolve to the operation's captured namespace.
+
+Independent data on multiple replicas of non-replicated engines is copied per
+verified endpoint when source and replacement retain the same endpoint/instance
+bijection and the replacement remains non-replicated. Engine-family, sorting,
+partition and settings changes remain supported within that boundary. Relocation
+or pair conversion without that bijection, and conversion of such data to
+replicated storage, reject before DDL with guidance to migrate each host
+explicitly. This restriction does not exclude otherwise supported replicated or
+single-endpoint relocations and conversions.
+
+Validation counts replicated/shared data once per shard and independent data
+once per host. For physical rebuilds, `validate_row_count=False` skips data counts,
+while metadata, ownership and copy-safety checks remain mandatory. Dry plans
+inspect metadata only and mark endpoint-scoped copy SQL in their options; those statements belong
+to their recorded endpoints and are not a bulk script for the coordinator.
+
 Rebuilt Distributed facades retain permitted column defaults and comments.
 They exclude MergeTree storage clauses, including TTL clauses on the table and
 its columns. Physical replacement storage retains those TTL declarations.

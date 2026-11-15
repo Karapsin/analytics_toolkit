@@ -49,6 +49,7 @@ def _inspect_existing_layout_local(
     *,
     shard_on_cluster: str | None = None,
     distributed_on_cluster: str | None = None,
+    require_owned: bool = False,
 ) -> ExistingClickHouseLayout:
     """Own only the named local table or a verified, explicitly referenced pair.
 
@@ -89,6 +90,9 @@ def _inspect_existing_layout_local(
     )
     expected = build_ch_shard_table_name(qualified)
     owns_physical = unquoted_table_name(physical) == unquoted_table_name(expected)
+    if require_owned and not owns_physical:
+        message = f"ClickHouse table {table} is not a managed Distributed/_shard pair."
+        raise InvalidSqlInputError(message)
     cluster = resolve_optional_cluster(connection, reference.cluster)
     if cluster is None:
         message = "Cannot resolve the referenced ClickHouse storage cluster."
@@ -97,6 +101,9 @@ def _inspect_existing_layout_local(
     physical_create = parse_create_table(physical_ddl, physical)
     require_merge_tree(physical_create, physical)
     owns_physical = owns_physical and _column_identity(create) == _column_identity(physical_create)
+    if require_owned and not owns_physical:
+        message = f"ClickHouse table {table} is not a managed Distributed/_shard pair."
+        raise InvalidSqlInputError(message)
     return ExistingClickHouseLayout(
         logical_table=qualified,
         physical_table=physical,
@@ -119,16 +126,20 @@ def _column_identity(create: exp.Create) -> tuple[str, ...]:
     )
 
 
-def inspect_existing_layout(connection: Any, table: str, **scopes: Any) -> ExistingClickHouseLayout:
+def inspect_existing_layout(
+    connection: Any, table: str, *, require_owned: bool = False, **scopes: Any
+) -> ExistingClickHouseLayout:
     hook = getattr(connection, "outage_inspect_existing_layout", None)
-    if callable(hook):
+    if callable(hook) and not require_owned:
         layout = hook(table)
         if layout is None:
             message = f"ClickHouse table {table} does not exist."
             raise InvalidSqlInputError(message)
         return cast("ExistingClickHouseLayout", layout)
     with local_sql(connection):
-        return _inspect_existing_layout_local(connection, table, **scopes)
+        return _inspect_existing_layout_local(
+            connection, table, require_owned=require_owned, **scopes
+        )
 
 
 __all__ = ["ExistingClickHouseLayout", "inspect_existing_layout"]

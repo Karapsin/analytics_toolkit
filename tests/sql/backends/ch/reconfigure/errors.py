@@ -78,7 +78,7 @@ def test_failed_rollback_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_public_failure_builds_operation_context(monkeypatch: pytest.MonkeyPatch) -> None:
     class FailingClient(ReconfigureClient):
-        def query(self, query: str) -> FakeClickHouseResult:
+        def query(self, query: str, settings: object = None) -> FakeClickHouseResult:
             message = f"failed query: {query}"
             raise RuntimeError(message)
 

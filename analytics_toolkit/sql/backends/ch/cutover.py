@@ -31,6 +31,7 @@ def create_replacements(adapter: Any, connection: Any, reconfiguration: Any) -> 
 
 class StructuralCutoverError(RuntimeError):
     analytics_toolkit_sql_retry_safe = False
+    analytics_toolkit_sql_backup_table_scopes: tuple[tuple[str, str | None], ...] = ()
 
 
 def execute_cutover(adapter: Any, connection: Any, reconfiguration: Any) -> None:
@@ -49,12 +50,16 @@ def execute_cutover(adapter: Any, connection: Any, reconfiguration: Any) -> None
             )
         except Exception as exc:
             retain_recovery(reconfiguration)
+            backup_scopes = tuple(getattr(reconfiguration, "backup_table_scopes", ()))
             message = (
                 "ClickHouse cutover acknowledgement is uncertain; structural replay stopped. "
                 f"Retained recovery resources: {reconfiguration.temporary_table_scopes!r}; "
-                f"backups: {reconfiguration.backup_tables!r}. Original failure: {exc}"
+                f"backups: {reconfiguration.backup_tables!r}; "
+                f"backup scopes: {backup_scopes!r}. Original failure: {exc}"
             )
-            raise StructuralCutoverError(message) from exc
+            error = StructuralCutoverError(message)
+            error.analytics_toolkit_sql_backup_table_scopes = backup_scopes
+            raise error from exc
         step["acknowledged"] = True
 
 
@@ -71,12 +76,16 @@ def rollback_cutover(adapter: Any, connection: Any, reconfiguration: Any) -> Non
             )
         except Exception as exc:
             retain_recovery(reconfiguration)
+            backup_scopes = tuple(getattr(reconfiguration, "backup_table_scopes", ()))
             message = (
                 "ClickHouse automatic rollback also failed; retained recovery resources: "
                 f"{reconfiguration.temporary_table_scopes!r}; "
-                f"backups: {reconfiguration.backup_tables!r}. Rollback failure: {exc}"
+                f"backups: {reconfiguration.backup_tables!r}; "
+                f"backup scopes: {backup_scopes!r}. Rollback failure: {exc}"
             )
-            raise StructuralCutoverError(message) from exc
+            error = StructuralCutoverError(message)
+            error.analytics_toolkit_sql_backup_table_scopes = backup_scopes
+            raise error from exc
         step["rollback_acknowledged"] = True
 
 

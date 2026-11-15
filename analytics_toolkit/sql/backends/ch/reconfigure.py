@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-# ruff: noqa: BLE001, C901, EM101, EM102, F401, PERF203, PLR0912, PLR0913, PLR0915, S101, S112, S608, TRY003, TRY301
+# ruff: noqa: BLE001, C901, EM101, EM102, F401, PERF203, PLR0913, PLR0915, S101, S112, S608, TRY003, TRY301
 import uuid
 from typing import TYPE_CHECKING, Any
-
-from sqlglot import exp
 
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
 
 if TYPE_CHECKING:
+    from sqlglot import exp
+
     from analytics_toolkit.sql.execution.plans import SqlPlan
 
 from .cutover import StructuralCutoverError, create_replacements, execute_cutover, rollback_cutover
@@ -42,7 +42,15 @@ from .reconfigure_ddl import (
 )
 from .reconfigure_execution import execute_reconfiguration_sqls as _execute_sqls
 from .reconfigure_models import ChReconfiguration, ChReconfigureOptions
+from .reconfigure_physical import prepare_physical_execution
+from .reconfigure_physical_io import (
+    copy_physical_data,
+    count_reconfiguration_rows,
+    physical_execution_scope,
+    validate_staged_row_counts,
+)
 from .reconfigure_policy import resolve_desired_reconfigure_policy
+from .reconfigure_source import inspect_reconfigure_source as _inspect_reconfigure_source
 from .reconfigure_support import (
     add_sqls as _add_sqls,
 )
@@ -136,60 +144,30 @@ def plan_ch_table_reconfiguration(
     connection: Any,
     options: ChReconfigureOptions,
 ) -> ChReconfiguration:
-    del adapter
-    table = _normalize_table_name(options.table)
-    table_ddl = _show_create_table(connection, table)
-    table_create = _parse_create_table(table_ddl, table)
-    table_engine = _engine_name(table_create)
-    database_name = _table_database(connection, table_create)
-    database_engine = _database_engine(connection, database_name)
-    token = uuid.uuid4().hex[:10]
+    change = _plan_ch_table_reconfiguration(adapter, connection, options)
+    prepare_physical_execution(connection, options, change)
+    return change
 
-    source_pair = table_engine.lower() == "distributed"
-    source_cluster: str | None = None
-    if source_pair:
-        shard_ref = extract_clickhouse_distributed_shard_table(
-            _engine_sql(table_create),
-            database_name,
-        )
-        if shard_ref is None:
-            raise InvalidSqlInputError(
-                f"ClickHouse table {table} has an unsupported Distributed engine definition."
-            )
-        qualified_table = _qualify_with_database(table, database_name)
-        shard_table = exp.Table(
-            this=exp.to_identifier(shard_ref.table),
-            db=exp.to_identifier(shard_ref.database),
-        ).sql(dialect="clickhouse")
-        expected_shard = build_ch_shard_table_name(qualified_table)
-        if _unquoted_table_name(shard_table) != _unquoted_table_name(expected_shard):
-            raise InvalidSqlInputError(
-                f"ClickHouse table {table} is not a managed Distributed/_shard pair."
-            )
-        source_cluster = shard_ref.cluster
-        source_cluster_resolved = _resolve_optional_cluster(
-            connection,
-            source_cluster,
-            "ch_distributed_cluster",
-        )
-        try:
-            shard_ddl = _show_create_table(connection, shard_table)
-        except Exception:
-            if source_cluster_resolved is None:
-                raise
-            shard_ddl = _show_create_table_on_cluster(
-                connection,
-                shard_table,
-                source_cluster_resolved,
-            )
-        shard_create = _parse_create_table(shard_ddl, shard_table)
-        _require_merge_tree(shard_create, shard_table)
-    else:
-        _require_merge_tree(table_create, table)
-        shard_table = table
-        shard_ddl = table_ddl
-        shard_create = table_create
-        source_cluster_resolved = None
+
+def _plan_ch_table_reconfiguration(
+    adapter: Any,
+    connection: Any,
+    options: ChReconfigureOptions,
+) -> ChReconfiguration:
+    del adapter
+    source = _inspect_reconfigure_source(connection, _normalize_table_name(options.table))
+    table = source.table
+    table_ddl = source.layout.ddl
+    table_create = source.table_create
+    database_name = source.database
+    database_engine = source.database_engine
+    source_pair = source.layout.create_distributed_pair
+    source_cluster = source.cluster
+    source_cluster_resolved = source.resolved_cluster
+    shard_table = source.shard_table
+    shard_ddl = source.layout.physical_ddl
+    shard_create = source.shard_create
+    token = uuid.uuid4().hex[:10]
 
     policy = resolve_desired_reconfigure_policy(
         options,
@@ -326,6 +304,10 @@ def plan_ch_table_reconfiguration(
             desired_shard_table=desired_shard_table,
             cross_cluster=cross_cluster,
             copy_required=structural_effective or (wrapper_effective and settings_effective),
+            logical_table=source.layout.logical_table,
+            facade_cluster=policy.distributed_on_cluster,
+            facade_mutation=topology_change or cross_cluster or (source_pair and wrapper_effective),
+            source_facade_ddl=source.layout.ddl,
         ),
     )
 
@@ -436,6 +418,19 @@ def execute_ch_table_reconfiguration(
     *,
     validate_row_count: bool,
 ) -> None:
+    with physical_execution_scope(connection, reconfiguration):
+        _execute_ch_table_reconfiguration(
+            adapter, connection, reconfiguration, validate_row_count=validate_row_count
+        )
+
+
+def _execute_ch_table_reconfiguration(
+    adapter: Any,
+    connection: Any,
+    reconfiguration: ChReconfiguration,
+    *,
+    validate_row_count: bool,
+) -> None:
     metadata = reconfiguration.plan.metadata
     if reconfiguration.strategy == "no_op":
         reconfiguration.cleanup_complete = True
@@ -447,38 +442,39 @@ def execute_ch_table_reconfiguration(
         metadata.row_count_validated = None
         return
 
-    source_count = _count_rows(connection, reconfiguration.source_table)
+    source, stage = reconfiguration.source_table, reconfiguration.replacement_table
+    source_count = count_reconfiguration_rows(
+        connection, reconfiguration, "source", source, enabled=validate_row_count
+    )
     reconfiguration.source_count = source_count
     metadata.source_rows = source_count
     cutover_started = False
     try:
         create_replacements(adapter, connection, reconfiguration)
         _wait_for_created_replacement(connection, reconfiguration)
-        _execute_phase(adapter, connection, reconfiguration.plan, "copy_data")
+        if not copy_physical_data(adapter, connection, reconfiguration):
+            _execute_phase(adapter, connection, reconfiguration.plan, "copy_data")
 
-        if reconfiguration.replacement_table is not None:
-            replacement_count = _count_rows(
-                connection,
-                reconfiguration.replacement_table,
+        if stage is not None:
+            replacement_count = count_reconfiguration_rows(
+                connection, reconfiguration, "replacement", stage, enabled=validate_row_count
             )
             reconfiguration.replacement_count = replacement_count
             metadata.staged_rows = replacement_count
         else:  # pragma: no cover - executable rebuild plans always stage a replacement
             replacement_count = source_count
 
-        stable_source_count = _count_rows(connection, reconfiguration.source_table)
-        if validate_row_count and stable_source_count != source_count:
-            raise RuntimeError(
-                "ClickHouse source row count changed during reconfiguration; "
-                "pause writers and retry."
-            )
-        if validate_row_count and replacement_count != source_count:
-            raise RuntimeError("ClickHouse replacement row count does not match the source table.")
+        stable_source_count = count_reconfiguration_rows(
+            connection, reconfiguration, "stable_source", source, enabled=validate_row_count
+        )
+        validate_staged_row_counts(
+            source_count, stable_source_count, replacement_count, enabled=validate_row_count
+        )
 
         cutover_started = True
         execute_cutover(adapter, connection, reconfiguration)
-        final_count = _count_final_rows(
-            connection, reconfiguration.table, reconfiguration.final_count_cluster
+        final_count = count_reconfiguration_rows(
+            connection, reconfiguration, "final", reconfiguration.table, enabled=validate_row_count
         )
         reconfiguration.final_count = final_count
         metadata.final_target_rows = final_count
