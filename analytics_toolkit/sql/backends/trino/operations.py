@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
+from sqlglot import exp
+
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.ddl.properties import overlay_with_properties
 
@@ -123,7 +125,7 @@ def build_show_tables_query(
     from ..metadata import build_trino_show_tables_query
 
     return build_trino_show_tables_query(
-        catalog,
+        exp.to_identifier(catalog, quoted=True),
         schema,
         table_names,
         conditions,

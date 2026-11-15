@@ -61,7 +61,7 @@ def build_gp_show_tables_query(
 
 
 def build_trino_show_tables_query(
-    catalog: str,
+    catalog: str | exp.Identifier,
     schema: str | None,
     table_names: list[str] | None,
     conditions: str | None,
@@ -242,10 +242,11 @@ def _base_filters(
     return format_filter_lines(filters)
 
 
-def _trino_catalog_sql(catalog: str) -> str:
-    # Earlier internal completion callers pass an already quoted SQL identifier.
-    # Preserve that surface while treating ordinary configuration values as one
-    # catalog identity, even when they contain dots, spaces or reserved words.
+def _trino_catalog_sql(catalog: str | exp.Identifier) -> str:
+    if isinstance(catalog, exp.Identifier):
+        return exp.to_identifier(catalog.name, quoted=True).sql(dialect="trino")
+    # Legacy string callers may supply a rendered SQL identifier.
+    # Known raw names use the Identifier branch above.
     if catalog.startswith('"') and catalog.endswith('"'):
         from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- adapter cycle.
             TableIdentifier,
