@@ -11,6 +11,7 @@ from analytics_toolkit.sql.backends.gp.native_assignment import (
     assignment_parameter_types,
     certify_assignment_checkpoint,
     native_assignment_errors,
+    requires_keyed_append_assignment,
 )
 from analytics_toolkit.sql.backends.native_values import requires_native_assignment
 from analytics_toolkit.sql.connection.config import get_connection_config
@@ -230,8 +231,23 @@ def assignment_required(schema: Mapping[str, str] | None, backend: str) -> bool:
     return any(requires_native_assignment(native, backend) for native in (schema or {}).values())
 
 
+def _keyed_append_assignment_required(
+    options: LoadOptions, schema: Mapping[str, str] | None = None
+) -> bool:
+    """Consult backend policy for equality after the selected native assignments."""
+    return requires_keyed_append_assignment(
+        options.connection_backend,
+        options.write_mode,
+        options.key_columns,
+        options.table_schema,
+        schema,
+    )
+
+
 def assignment_validation_pending(options: LoadOptions) -> bool:
     """Offline plans cannot inspect native types of an existing destination."""
+    if _keyed_append_assignment_required(options):
+        return True
     if options.table_schema is not None:
         return assignment_required(options.table_schema, options.connection_backend)
     return options.write_mode in {
@@ -311,13 +327,15 @@ def prepare_assignment_checkpoint(
     if state.native_assignment_checkpoint is not None:
         _require_checkpoint_schema(state.native_assignment_checkpoint, final_schema)
         return
+    keyed_assignment = _keyed_append_assignment_required(options, final_schema)
     if not (
         assignment_required(final_schema, options.connection_backend)
         or assignment_required(requested, options.connection_backend)
+        or keyed_assignment
     ):
         return
-    explicit_first = (
-        assignment_required(requested, options.connection_backend) and requested != final_schema
+    explicit_first = requested != final_schema and (
+        assignment_required(requested, options.connection_backend) or keyed_assignment
     )
     if explicit_first:
         if source is None:
@@ -506,6 +524,7 @@ def prepare_load_profiles(
             {str(name): authority[str(name)] for name in df.columns}, options.connection_backend
         )
         or explicit_unknown
+        or _keyed_append_assignment_required(options, authority)
     ):
         payload, _ = convert_local_dataframe(
             df,

@@ -165,6 +165,26 @@ def validate_stage_target_key_overlap(
         )
 
 
+def validate_stage_append_keys(
+    connection_type: str,
+    connection: Any,
+    stage_table: str,
+    target_table: str,
+    key_columns: list[str] | None,
+) -> None:
+    """Certify stored incoming keys before appending to an existing target."""
+    validate_stage_uniqueness(connection_type, connection, stage_table, key_columns)
+    validate_stage_target_key_overlap(
+        connection_type,
+        connection,
+        stage_table,
+        target_table,
+        key_columns,
+        target_exists=True,
+        replace_target_table=False,
+    )
+
+
 def _stage_has_duplicate_keys(
     connection_type: str,
     connection: Any,

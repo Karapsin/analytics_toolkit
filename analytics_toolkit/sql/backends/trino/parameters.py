@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from .date_values import date_value
+from .integer_values import convert_integer_value
 
 _MICROSECOND_PRECISION = 6
 _NANOSECOND_PRECISION = 9
@@ -129,8 +130,7 @@ def _scalar(value: Any, target_type: str | None) -> Any:
         value, (dt.datetime, pd.Timestamp, np.datetime64, exact.ExactTemporal, exact.ExactClock)
     ):
         return _temporal_parameter(value, target_type, family)
-    if family == "bigint":
-        value = int(value)  # Retain the historical explicit BIGINT conversion.
+    _, value = convert_integer_value(value, target_type or "")
     if target_type:
         value = types.ResolvedColumn(target_type, target_backend="trino").convert(value)
     if isinstance(value, (dt.time, exact.ExactClock)) and family in _TIME_FAMILIES:

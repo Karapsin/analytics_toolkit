@@ -342,6 +342,21 @@ must fit the destination calendar and precision range before destination mutatio
 bytes, and `Enum8`/`Enum16` values must belong to the declared labels or codes.
 Unrecognized authoritative native types require proven identical source metadata
 or typed-stage validation before the operation can certify them.
+
+Authoritative numeric types convert supported text before destination
+validation. Greenplum integer text uses native ASCII syntax and signed
+16/32/64-bit bounds. Direct Trino `BIGINT` keeps Python `int(value)` semantics,
+including finite numeric truncation within BIGINT bounds; other Trino integer
+text follows native syntax. ClickHouse `Int`/`UInt` widths from 8 through 256
+bits keep Python integer conversion and declared signed/unsigned bounds.
+Supported finite floating-point and Decimal text retains native floating width
+and exact decimal precision/scale checks; Decimal values never pass through
+floating point. Greenplum parameter adaptation preserves signed zero.
+Nonfinite text tokens reject before publication rather than becoming SQL NULL.
+These conversions affect only declared numeric scalar leaves in containers;
+unrelated temporal identity and timezone handling remain unchanged. Inference
+does not turn strings into numeric columns.
+
 For an explicit `VARCHAR` stage (or Greenplum `TEXT`) feeding an existing
 GP or Trino `DATE` column,
 every frozen value must be NULL or a valid canonical `YYYY-MM-DD` date before
@@ -384,12 +399,24 @@ backend's Boolean rules before publication. The original stage schema and
 string payload are preserved. Greenplum's prefix/ASCII-whitespace rules and
 Trino's exact, untrimmed tokens remain distinct.
 
+Explicit GP `TEXT`/`VARCHAR`, Trino `VARCHAR` and ClickHouse `String` numeric
+stages retain their raw payloads and schemas. Final cast validation follows the
+destination's native SQL parser, including where Trino staged `BIGINT` parsing
+differs from direct Python conversion.
+
 For Greenplum types requiring server assignment, the complete captured payload
 is certified in owned persistent native tables before live publication. This
 includes the final SQL projection and casts when the requested stage schema
 differs from the destination. Retries reuse the certified native rows. Creating
 the checkpoints requires staging-schema `CREATE` and type `USAGE` permissions;
 dry plans leave this validation pending without materializing data.
+
+Key-validated Greenplum append also checks stored-stage key uniqueness. If an
+explicit incoming stage type differs from its corresponding actual target type,
+a final native owned checkpoint validates converted keys before publication.
+Same-type and equivalent integer-alias schemas retain the fast path. Offline
+plans mark this with `native_assignment_validation_pending=True` without
+database I/O.
 
 ClickHouse timestamp interpretation is bound to the operation's actual write
 timezone and policy version, separately from SQL schema identity. Explicit

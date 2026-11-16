@@ -9,6 +9,7 @@ import pandas as pd
 
 from analytics_toolkit.sql.backends.execution_outcome import close_cursor
 
+from .float_parameters import normalize_float_parameters
 from .json_values import JsonArray, JsonDocument
 
 DEFAULT_GP_INSERT_CHUNK_SIZE = 10_000
@@ -92,6 +93,7 @@ def insert_rows(
 ) -> None:
     row_tuples = normalize_insert_rows(adapter, rows)
     row_tuples = normalize_json_columns(columns, row_tuples, target_column_types)
+    row_tuples = normalize_float_parameters(columns, row_tuples, target_column_types)
     if not row_tuples:
         return
 

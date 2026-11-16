@@ -423,10 +423,21 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
         lambda **kwargs: stage_kwargs.append(kwargs) or "scratch.stage",
     )
     monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *_a, **_k: 1)
-    monkeypatch.setattr(load_df_module, "validate_stage_target_key_overlap", lambda **_k: None)
+    append_key_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        load_df_module,
+        "validate_stage_append_keys",
+        lambda **kwargs: append_key_calls.append(kwargs),
+    )
+    assert callable(load_df_module.validate_stage_target_key_overlap)
     monkeypatch.setattr(load_df_module, "insert_from_table", lambda *_a, **_k: None)
     assert load_df_module._load_dataframe(options, state, pd.DataFrame({"id": [1]})) == 1
     assert stage_kwargs[0]["table_schema"] == {"id": "BIGINT"}
+    assert len(append_key_calls) == 1
+    assert append_key_calls[0]["connection_type"] == "trino"
+    assert append_key_calls[0]["stage_table"] == "scratch.stage"
+    assert append_key_calls[0]["target_table"] == "iceberg.sandbox.target"
+    assert append_key_calls[0]["key_columns"] == ["id"]
 
     monkeypatch.setattr(
         load_df_module,
@@ -450,12 +461,6 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
             df=pd.DataFrame({"id": [1]}),
         )
 
-    overlap_calls: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        load_df_module,
-        "validate_stage_target_key_overlap",
-        lambda **kwargs: overlap_calls.append(kwargs),
-    )
     staged = load_df_module.LoadState(
         True,
         True,
@@ -467,7 +472,10 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
         connection=object(),
         df=pd.DataFrame({"id": [1]}),
     )
-    assert overlap_calls[0]["stage_table"] == "scratch.stage"
+    assert len(append_key_calls) == 2
+    assert append_key_calls[1]["stage_table"] == "scratch.stage"
+    assert append_key_calls[1]["target_table"] == "iceberg.sandbox.target"
+    assert append_key_calls[1]["key_columns"] == ["id"]
 
 
 def test_existing_replace_uses_safe_stage_finalization_for_direct_and_parquet_loads(

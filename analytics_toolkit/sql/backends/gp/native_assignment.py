@@ -70,6 +70,28 @@ def requires_native_assignment(native_type: str) -> bool:
     return canonical_builtin_type(native_type) is None
 
 
+def requires_keyed_append_assignment(
+    backend: str,
+    write_mode: str,
+    key_columns: Sequence[str] | None,
+    requested_schema: Mapping[str, str] | None,
+    final_schema: Mapping[str, str] | None = None,
+) -> bool:
+    """Bind explicit-to-final GP key equality to actual native assignment."""
+    if backend != "gp" or write_mode != "append" or not key_columns:
+        return False
+    if final_schema is None:
+        # Offline plans cannot inspect the existing destination's native types.
+        return True
+    if requested_schema is None:
+        return False
+    return any(
+        (canonical_builtin_type(native) or native)
+        != (canonical_builtin_type(final_schema[name]) or final_schema[name])
+        for name, native in requested_schema.items()
+    )
+
+
 def assignment_parameter_types(
     adapter: Any,
     connection: Any,

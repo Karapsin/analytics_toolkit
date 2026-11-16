@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from .ch.boolean_values import boolean_value as ch_boolean_value
 from .ch.boolean_values import is_boolean_type as is_ch_boolean_type
-from .ch.boolean_values import normalize_authoritative_boolean as normalize_ch_authoritative_boolean
 from .ch.boolean_values import validate_boolean_type_profile as validate_ch_boolean_type_profile
 from .ch.client_validation import (
     is_legacy_json_type,
@@ -14,24 +13,34 @@ from .ch.client_validation import (
     validate_legacy_json_profile,
     validate_legacy_json_value,
 )
+from .ch.integer_values import integer_value as ch_integer_value
+from .ch.integer_values import is_integer_type as is_ch_integer_type
+from .ch.integer_values import validate_integer_type_profile as validate_ch_integer_type_profile
 from .ch.network_values import convert_network_value as convert_ch_network_value
 from .ch.network_values import declared_network_fits
 from .ch.network_values import is_network_type as is_ch_network_type
 from .ch.network_values import key_validation_frames as ch_key_validation_frames
 from .ch.network_values import validate_network_profile as validate_ch_network_profile
+from .ch.numeric_text import convert_numeric_text as convert_ch_numeric_text
+from .ch.numeric_text import normalize_authoritative_value as normalize_ch_authoritative_value
+from .ch.numeric_text import validate_numeric_text_type_profile as validate_ch_numeric_text_profile
 from .ch.storage_types import logical_storage_type
 from .ch.timestamp_keys import source_key_validation_frame as ch_source_key_validation_frame
 from .ch.value_validation import validate_constrained_value
 from .decimal_values import convert_decimal_value, decimal_target_type
 from .gp.boolean_values import boolean_value as gp_boolean_value
 from .gp.boolean_values import is_boolean_type as is_gp_boolean_type
-from .gp.boolean_values import normalize_authoritative_boolean as normalize_gp_authoritative_boolean
 from .gp.date_values import date_value as gp_date_value
 from .gp.date_values import is_date_type as is_gp_date_type
 from .gp.date_values import validate_date_profile as validate_gp_date_profile
+from .gp.integer_values import integer_text_value as gp_integer_text_value
+from .gp.integer_values import is_integer_type as is_gp_integer_type
 from .gp.json_values import convert_json_value, is_json_type
 from .gp.network_values import convert_network_value, is_network_type, validate_network_profile
 from .gp.network_values import key_validation_frames as gp_key_validation_frames
+from .gp.numeric_text import convert_numeric_text as convert_gp_numeric_text
+from .gp.numeric_text import normalize_authoritative_value as normalize_gp_authoritative_value
+from .gp.numeric_text import validate_numeric_text_type_profile as validate_gp_numeric_text_profile
 from .gp.temporal_values import (
     convert_clock_interval_value,
     is_gp_clock_interval_type,
@@ -41,7 +50,6 @@ from .nested_types import convert_nested, nested_descriptor
 from .trino.boolean_values import (
     boolean_value,
     is_boolean_type,
-    normalize_authoritative_boolean,
     validate_boolean_type_profile,
 )
 from .trino.date_values import (
@@ -49,10 +57,19 @@ from .trino.date_values import (
     is_date_type,
     validate_date_type_profile,
 )
+from .trino.integer_values import convert_integer_value as convert_trino_integer_value
+from .trino.integer_values import (
+    validate_integer_type_profile as validate_trino_integer_type_profile,
+)
 from .trino.ip_values import validate_ip_profile, validate_ip_transport_value
 from .trino.json_values import validate_json_profile as validate_trino_json_profile
 from .trino.json_values import validate_json_transport_value
 from .trino.key_validation import key_validation_frames as trino_key_validation_frames
+from .trino.numeric_text import convert_numeric_text as convert_trino_numeric_text
+from .trino.numeric_text import normalize_authoritative_value as normalize_trino_authoritative_value
+from .trino.numeric_text import (
+    validate_numeric_text_type_profile as validate_trino_numeric_text_profile,
+)
 from .trino.time_values import convert_time_value, is_time_type, validate_time_profile
 
 if TYPE_CHECKING:
@@ -122,10 +139,10 @@ def requires_native_assignment(native_type: str, backend: str) -> bool:
 def normalize_authoritative_value(value: Any, native_type: str | None, backend: str) -> Any:
     """Keep deliberate assignment views separate from inferred source families."""
     if backend == "ch":
-        return normalize_ch_authoritative_boolean(value, native_type)
+        return normalize_ch_authoritative_value(value, native_type)
     if backend == "trino":
-        return normalize_authoritative_boolean(value, native_type)
-    return normalize_gp_authoritative_boolean(value, native_type) if backend == "gp" else value
+        return normalize_trino_authoritative_value(value, native_type)
+    return normalize_gp_authoritative_value(value, native_type) if backend == "gp" else value
 
 
 def validate_transport_value(value: Any, native_type: str, backend: str) -> None:
@@ -149,13 +166,17 @@ def validate_backend_profile(
 ) -> bool:
     if backend == "ch":
         return (
-            validate_ch_boolean_type_profile(native_type)
+            validate_ch_numeric_text_profile(native_type)
+            or validate_ch_integer_type_profile(native_type)
+            or validate_ch_boolean_type_profile(native_type)
             or validate_ch_network_profile(profile, native_type)
             or validate_legacy_json_profile(profile, native_type)
         )
     if backend == "trino":
         return (
-            validate_date_type_profile(native_type)
+            validate_trino_numeric_text_profile(native_type)
+            or validate_trino_integer_type_profile(native_type)
+            or validate_date_type_profile(native_type)
             or validate_boolean_type_profile(native_type)
             or validate_trino_json_profile(profile, native_type)
             or validate_ip_profile(profile, native_type)
@@ -174,7 +195,8 @@ def validate_backend_profile(
     from .gp.json_values import validate_json_profile  # noqa: PLC0415 -- native policy.
 
     return (
-        validate_gp_date_profile(profile, native_type)
+        validate_gp_numeric_text_profile(native_type)
+        or validate_gp_date_profile(profile, native_type)
         or validate_network_profile(profile, native_type)
         or validate_json_profile(profile, native_type)
         or validate_clock_interval_profile(
@@ -211,14 +233,8 @@ def convert_native_value(value: Any, resolution: ResolvedColumn) -> tuple[bool, 
 def _convert_backend_value(
     value: Any, target_type: str, resolution: ResolvedColumn
 ) -> tuple[bool, Any]:
-    if resolution.target_backend == "ch" and is_ch_boolean_type(target_type):
-        return True, ch_boolean_value(value)
-    if resolution.target_backend == "ch" and is_ch_network_type(target_type):
-        if resolution.source_backend == "ch" and is_ch_network_type(resolution.source_type):
-            value = convert_ch_network_value(value, resolution.source_type)
-        return True, convert_ch_network_value(value, target_type)
-    if resolution.target_backend == "ch" and is_legacy_json_type(target_type):
-        return True, normalize_legacy_json_value(value, target_type)
+    if resolution.target_backend == "ch":
+        return _convert_ch_value(value, target_type, resolution)
     if resolution.target_backend == "trino":
         return _convert_trino_value(value, target_type)
     if resolution.target_backend == "gp":
@@ -226,7 +242,30 @@ def _convert_backend_value(
     return False, value
 
 
+def _convert_ch_value(value: Any, target_type: str, resolution: ResolvedColumn) -> tuple[bool, Any]:
+    handled, converted = convert_ch_numeric_text(value, target_type)
+    if handled:
+        return True, converted
+    if is_ch_integer_type(target_type):
+        return True, ch_integer_value(value, target_type)
+    if is_ch_boolean_type(target_type):
+        return True, ch_boolean_value(value)
+    if is_ch_network_type(target_type):
+        if resolution.source_backend == "ch" and is_ch_network_type(resolution.source_type):
+            value = convert_ch_network_value(value, resolution.source_type)
+        return True, convert_ch_network_value(value, target_type)
+    if is_legacy_json_type(target_type):
+        return True, normalize_legacy_json_value(value, target_type)
+    return False, value
+
+
 def _convert_trino_value(value: Any, target_type: str) -> tuple[bool, Any]:
+    handled, converted = convert_trino_numeric_text(value, target_type)
+    if handled:
+        return True, converted
+    handled, converted = convert_trino_integer_value(value, target_type)
+    if handled:
+        return True, converted
     if is_date_type(target_type):
         return True, date_value(value)
     if is_boolean_type(target_type):
@@ -237,6 +276,24 @@ def _convert_trino_value(value: Any, target_type: str) -> tuple[bool, Any]:
 
 
 def _convert_gp_value(value: Any, target_type: str, resolution: ResolvedColumn) -> tuple[bool, Any]:
+    handled, converted = convert_gp_numeric_text(value, target_type)
+    if handled:
+        return True, converted
+    handled, converted = _convert_gp_scalar(value, target_type)
+    if handled:
+        return True, converted
+    if is_json_type(target_type):
+        return True, convert_json_value(
+            value,
+            target_type,
+            decoded=resolution.source_backend == "gp" and is_json_type(resolution.source_type),
+        )
+    return False, value
+
+
+def _convert_gp_scalar(value: Any, target_type: str) -> tuple[bool, Any]:
+    if isinstance(value, str) and is_gp_integer_type(target_type):
+        return True, gp_integer_text_value(value, target_type)
     if is_gp_boolean_type(target_type):
         return True, gp_boolean_value(value)
     if is_gp_date_type(target_type):
@@ -245,12 +302,6 @@ def _convert_gp_value(value: Any, target_type: str, resolution: ResolvedColumn) 
         return True, convert_network_value(value, target_type)
     if is_gp_clock_interval_type(target_type):
         return True, convert_clock_interval_value(value, target_type)
-    if is_json_type(target_type):
-        return True, convert_json_value(
-            value,
-            target_type,
-            decoded=resolution.source_backend == "gp" and is_json_type(resolution.source_type),
-        )
     return False, value
 
 

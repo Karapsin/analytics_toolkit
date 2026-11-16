@@ -664,4 +664,48 @@ payload remain unchanged while every selected value is checked against the
 destination backend's Boolean rules before publication. These fast tests do not
 establish live-server evidence.
 
+`dml/load/trino_bigints.py::test_trino_bigints_public_load_keeps_explicit_int_assignment_and_signed_bounds`,
+`dml/load/trino_integer_text.py::test_trino_integer_text_public_casts_preserve_native_grammar_and_width_bounds`,
+`dml/load/gp_integers.py::test_gp_integer_text_load_preserves_exact_native_values_and_width`
+and `dml/load/ch_integer_text.py::test_ch_integer_text_load_preserves_native_width_values_and_driver_bytes`
+cover authoritative integer conversions before mutation. Direct Trino BIGINT
+retains Python conversion; other native text grammars and destination widths
+remain distinct. Invalid-late and range controls preserve the target, and
+`dml/load/ch_integer_text.py::test_ch_numeric_strings_without_authority_keep_inferred_string`
+preserves ordinary String inference. These are compatibility and real-client
+parameter/byte checks with fake database I/O, not live-server evidence.
+
+`dml/load/gp_numeric_text.py::test_gp_numeric_text_native_assignment_keeps_exact_values_and_physical_schema`,
+`dml/load/gp_numeric_text.py::test_gp_numeric_text_native_signed_zero_preserves_exact_physical_ieee_bits`,
+`dml/load/trino_numeric_text.py::test_trino_numeric_text_public_native_parameters_preserve_finite_values_exactly`
+and `dml/load/ch_numeric_text.py::test_ch_numeric_text_public_write_retains_exact_native_values_and_bytes`
+cover finite floating-point and exact Decimal text. Native parameter and byte
+controls retain signed zero, with a typed Greenplum adapter at the last
+parameter boundary. Native ClickHouse Float text cases exercise the candidate's
+typed conversion path; they do not establish legacy native-client support.
+Nonfinite text cannot become SQL NULL. Inference and unrelated temporal context
+remain unchanged. Disposable numeric scenarios were not run locally.
+
+`dml/transfer/schema/numeric_text_stage.py::test_numeric_text_stage_preserves_raw_strings_and_exact_finite_final_values`
+and `dml/transfer/schema/numeric_text_stage.py::test_numeric_text_stage_rejects_unsafe_last_cast_before_any_mutation`
+check explicit textual stages without rewriting their schema, payload, profiles
+or replay spool. One complete scan validates finite native casts, including
+range, scale, nullability and private-invalid guards.
+`dml/transfer/schema/bigint_native_cast_boundary.py::test_varchar_stage_uses_native_bigint_cast_grammar_before_target_clear`
+and `dml/transfer/schema/bigint_native_cast_boundary.py::test_direct_bigint_authority_retains_python_integer_conversion`
+preserve the deliberate distinction between Trino's native staged SQL parser
+and direct Python BIGINT conversion. These are fast fake-I/O regressions;
+disposable scenarios remain unrun locally.
+
+`dml/load/gp_effective_keys.py::test_gp_effective_keys_reject_converted_aliases_before_target_append`
+and `dml/load/gp_effective_keys.py::test_gp_effective_keys_reject_final_native_character_assignment_collision`
+check stored-stage and final native key equality before keyed append. The latter
+uses a final owned assignment checkpoint when explicit incoming types differ
+from actual target types. Equivalent integer aliases retain the common path in
+`dml/load/gp_effective_keys.py::test_gp_effective_keys_keep_equivalent_integer_alias_on_common_stage_path`;
+`dml/load/gp_effective_keys.py::test_gp_effective_keys_offline_native_assignment_remains_pending_without_io`
+retains pending offline plans without database I/O. Ordinary unkeyed append
+semantics are unchanged. These are stateful fake/real-adapter regressions, not
+live database mutation evidence.
+
 [SQL module index](index.md)

@@ -6,9 +6,17 @@ from typing import Any
 
 from .boolean_values import boolean_value, is_boolean_type
 from .date_values import date_value, is_date_type
+from .integer_values import convert_integer_value
 from .ip_values import ip_value_identity, is_ip_type
 from .time_values import time_key_identity
 from .timestamp_map_keys import timestamp_key_identity
+
+
+def _integer_key_identity(key: Any, native_type: str | None) -> tuple[bool, Any]:
+    handled, integer = convert_integer_value(key, native_type or "")
+    if handled and integer is not key:
+        return True, integer
+    return False, None
 
 
 def scalar_key_identity(
@@ -21,7 +29,9 @@ def scalar_key_identity(
         return True, boolean_value(key)
     if is_ip_type(native_type or ""):
         return True, ip_value_identity(key)
-    handled, identity = time_key_identity(key, native_type)
+    handled, identity = _integer_key_identity(key, native_type)
+    if not handled:
+        handled, identity = time_key_identity(key, native_type)
     if not handled:
         handled, identity = timestamp_key_identity(
             key, native_type, destination_timezone=destination_timezone

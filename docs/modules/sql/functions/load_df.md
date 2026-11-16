@@ -97,6 +97,21 @@ rows
 - Python `Enum` members resolve through `.value`, recursively, before validation
   and native or text conversion. Underlying strings, exact numbers and nulls keep
   their normal conversion rules.
+- Explicit or existing numeric schemas accept supported numeric text through
+  backend-owned conversion before destination validation. Greenplum integer text
+  follows native ASCII syntax and the signed 16/32/64-bit destination bounds.
+  Direct Trino `BIGINT` uses Python `int(value)` semantics within BIGINT bounds,
+  including truncation of finite numeric inputs; other Trino integer text keeps
+  native syntax. ClickHouse `Int`/`UInt` widths from 8 through 256 bits preserve
+  Python integer conversions and enforce the declared signed/unsigned bounds.
+  String inference remains text.
+- Supported finite floating-point and Decimal text is checked against the
+  destination type. Floating conversion follows its native width; Greenplum
+  parameter adaptation preserves signed zero. Decimal precision and scale are
+  checked exactly without a floating-point detour. Nonfinite text tokens reject
+  before mutation rather than becoming SQL NULL. These numeric conversions apply
+  only to declared numeric scalar leaves; unrelated temporal fields retain their
+  identity and timezone handling.
 - Explicit or existing integer columns convert accepted boolean scalars to native
   `0`/`1`; automatic boolean and integer inference retain their respective types.
 - Trino binary columns preserve `bytes`, `bytearray` and `memoryview` payloads,
@@ -248,6 +263,10 @@ rows
   built-in Boolean column validates every selected row against that backend's
   Boolean cast rules before destination mutation. Validation uses a converted
   view; the requested stage schema and raw string payload remain unchanged.
+- Explicit GP `TEXT`/`VARCHAR`, Trino `VARCHAR` and ClickHouse `String` numeric
+  stages also preserve their raw payloads and schemas. Final cast validation
+  follows the destination's native SQL parser, which can differ from direct
+  Python conversion, including direct Trino `BIGINT` conversion.
 - ClickHouse timestamp keys compare native ticks at the declared precision and
   resolved write timezone. A raw tick value and a calendar value for the same
   instant are duplicate effective keys within one partition. Distinct native
@@ -257,6 +276,12 @@ rows
   insertion use the same schema; reordered and subset append columns retain
   their matching types. Explicit stage schemas retain precedence, and
   intentional replacement keeps its schema-inference behavior.
+- Key-validated Greenplum append checks uniqueness of stored stage keys. When an
+  explicit incoming stage type differs from its corresponding actual target
+  type, a final native owned checkpoint validates the converted keys before
+  publication. Same-type and equivalent integer-alias schemas retain their fast
+  path. Offline plans set `native_assignment_validation_pending=True` without
+  database I/O.
 - Explicit or existing ClickHouse `Array` schemas accept tuple sequences without
   changing the caller's values. Default inference still treats tuples as tuples.
 - When `upsert_partition_column` is supplied, the effective key is that column

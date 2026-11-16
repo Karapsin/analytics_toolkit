@@ -6,6 +6,7 @@ import json
 from copy import deepcopy
 
 import pytest
+from analytics_toolkit.sql.backends.ch.integer_values import ClickHouseIntegerValueError
 from analytics_toolkit.sql.dml.transfer.flow import stage
 from analytics_toolkit.sql.dml.transfer.flow.client_validation import (
     prepare_client_write_validation,
@@ -15,7 +16,13 @@ from analytics_toolkit.sql.dml.transfer.runtime.models import (
     TransferStageState,
 )
 
-from tests.sql._support.adaptive_transfer import RowBatch, TransferSlice
+from tests.sql._support.adaptive_transfer import (
+    Connection,
+    RowBatch,
+    TransferSlice,
+    adaptive_input,
+    attempt,
+)
 from tests.sql._support.ch_native_aliases import http_factory_available
 from tests.sql._support.ch_transfer_client_validation import (
     ClientConnection,
@@ -23,6 +30,46 @@ from tests.sql._support.ch_transfer_client_validation import (
     install_client_transfer,
 )
 from tests.sql.backends.ch._support.network_transport import encode_normalized
+
+
+def _observe_incomplete_input(monkeypatch, scenario):
+    observed = {"spools": [], "rows": [], "certifications": [], "closes": [], "source_closes": []}
+    original_spool = adaptive_input.ReplaySpool
+    source_close = Connection.close
+
+    class ObservedSpool(original_spool):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            observed["spools"].append(self)
+
+        def write_rows(self, rows):
+            batch = list(rows)
+            observed["rows"].extend(deepcopy(batch))
+            super().write_rows(batch)
+
+        def certify(self):
+            observed["certifications"].append(self)
+            return super().certify()
+
+        def close(self):
+            observed["closes"].append((self.certified, self.row_count, self.digest))
+            super().close()
+
+    def read(*args, **kwargs):
+        try:
+            yield from scenario.read(*args, **kwargs)
+        finally:
+            observed["stream_closed"] = True
+
+    def close_source(connection):
+        observed["source_closes"].append(connection)
+        source_close(connection)
+
+    monkeypatch.setattr(adaptive_input, "ReplaySpool", ObservedSpool)
+    monkeypatch.setattr(adaptive_input, "iter_source_batches", read)
+    monkeypatch.setattr(attempt, "iter_source_batches", read)
+    monkeypatch.setattr(Connection, "close", close_source)
+    return observed
 
 
 def test_ch_client_validation_http_object_factory_precedes_source_and_live_mutation(
@@ -114,16 +161,30 @@ def test_ch_client_validation_late_structural_range_error_precedes_target_mutati
         seed=seed,
         write_mode="truncate_insert",
     )
+    observed = _observe_incomplete_input(monkeypatch, scenario)
 
-    with pytest.raises(ValueError, match=r"authoritative|encoder|Selected input"):
+    with pytest.raises(ClickHouseIntegerValueError, match="authoritative integer range") as error:
         scenario.run()
 
-    assert scenario.events == [
-        f"read:{scenario.options.source_sql}",
-        f"complete:{scenario.options.source_sql}",
-    ]
-    assert scenario.read_count == 1
-    assert scenario.loaded == target.emitted_batches == []
+    assert error.value.analytics_toolkit_sql_retry_safe is False
+    assert "256" not in str(error.value)
+    assert scenario.events == [f"read:{scenario.options.source_sql}"]
+    assert scenario.source_open_count == scenario.read_count == 1
+    assert observed["stream_closed"] is True
+    assert len(observed["source_closes"]) == 1
+    assert observed["rows"] == [(7,)]
+    assert observed["certifications"] == []
+    assert observed["closes"] == [(False, 1, None)]
+    assert len(observed["spools"]) == 1
+    spool = observed["spools"][0]
+    assert spool.closed
+    assert not spool.certified
+    assert not spool.path.exists()
+    assert "spool" not in scenario.options.input_resolution
+    assert "client_write_certificate" not in scenario.options.input_resolution
+    assert not scenario.options.input_resolution.get("client_write_certificates")
+    assert scenario.loaded == target.emitted_batches == target.wire_columns == []
+    assert target.validations == []
     assert scenario.finalizations == 0
     assert target.live_rows == (seed or [])
 

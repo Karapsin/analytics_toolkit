@@ -11257,6 +11257,121 @@
         "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_distinct_dst_folds_survive_upfront_python_key_validation"
       ]
     },
+    "audit.load.gp_finite_numeric_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_numeric_text_values.py::test_finite_numeric_text_loads_preserve_exact_values_and_reject_invalid_last_rows[audit.load.gp_finite_numeric_text]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_numeric_text.py::test_gp_numeric_text_native_assignment_keeps_exact_values_and_physical_schema",
+        "tests/sql/dml/load/gp_numeric_text.py::test_gp_numeric_text_native_signed_zero_preserves_exact_physical_ieee_bits",
+        "tests/sql/dml/load/gp_numeric_text.py::test_gp_numeric_text_invalid_late_value_keeps_live_rows_and_never_creates_stage",
+        "tests/sql/dml/load/gp_numeric_text.py::test_gp_numeric_text_range_scale_and_nonfinite_reject_before_clear"
+      ]
+    },
+    "audit.load.trino_finite_numeric_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_numeric_text_values.py::test_finite_numeric_text_loads_preserve_exact_values_and_reject_invalid_last_rows[audit.load.trino_finite_numeric_text]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_numeric_text.py::test_trino_numeric_text_public_native_parameters_preserve_finite_values_exactly",
+        "tests/sql/dml/load/trino_numeric_text.py::test_trino_numeric_text_invalid_last_value_never_clears_or_inserts"
+      ]
+    },
+    "audit.load.clickhouse_finite_numeric_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_numeric_text_values.py::test_finite_numeric_text_loads_preserve_exact_values_and_reject_invalid_last_rows[audit.load.clickhouse_finite_numeric_text]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_numeric_text.py::test_ch_numeric_text_public_write_retains_exact_native_values_and_bytes",
+        "tests/sql/dml/load/ch_numeric_text.py::test_ch_numeric_text_invalid_last_value_rejects_before_any_native_write"
+      ]
+    },
+    "audit.load.gp_smallint_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.gp_smallint_text]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_load_preserves_exact_native_values_and_width",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_invalid_late_value_rejects_before_target_clear",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_width_overflow_rejects_before_target_clear"
+      ]
+    },
+    "audit.load.gp_integer_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.gp_integer_text]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_load_preserves_exact_native_values_and_width",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_invalid_late_value_rejects_before_target_clear",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_width_overflow_rejects_before_target_clear"
+      ]
+    },
+    "audit.load.gp_bigint_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.gp_bigint_text]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_load_preserves_exact_native_values_and_width",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_invalid_late_value_rejects_before_target_clear",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_width_overflow_rejects_before_target_clear"
+      ]
+    },
+    "audit.load.trino_tinyint_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.trino_tinyint_text]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_public_casts_preserve_native_grammar_and_width_bounds",
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_invalid_late_cast_preserves_target_before_mutation"
+      ]
+    },
+    "audit.load.trino_smallint_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.trino_smallint_text]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_public_casts_preserve_native_grammar_and_width_bounds",
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_invalid_late_cast_preserves_target_before_mutation"
+      ]
+    },
+    "audit.load.trino_integer_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.trino_integer_text]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_public_casts_preserve_native_grammar_and_width_bounds",
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_invalid_late_cast_preserves_target_before_mutation"
+      ]
+    },
+    "audit.load.trino_bigint_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_bigint_values.py::test_trino_bigint_loads_preserve_integer_strings_and_reject_invalid_last_values",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_bigints.py::test_trino_bigints_public_load_keeps_explicit_int_assignment_and_signed_bounds",
+        "tests/sql/dml/load/trino_bigints.py::test_trino_bigints_invalid_late_assignment_preserves_target_before_clear_or_insert"
+      ]
+    },
     "audit.load.clickhouse_boolean_values": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_ch_boolean_values.py::test_clickhouse_boolean_integer_loads_preserve_native_values_and_reject_invalid_input",

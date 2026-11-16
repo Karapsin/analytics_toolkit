@@ -78,7 +78,8 @@ from ..table.table_validation import (
     normalize_upsert_partition_column,
     validate_complete_upsert_columns,
     validate_key_columns_in_columns,
-    validate_stage_target_key_overlap,
+    validate_stage_append_keys,
+    validate_stage_target_key_overlap as _validate_stage_target_key_overlap,
     validate_stage_uniqueness,
     validate_upsert_partition_column_in_columns,
 )
@@ -156,6 +157,8 @@ from .stage import (
     cleanup_stage_table_with_retry,
     create_stage_table,
 )
+
+validate_stage_target_key_overlap = _validate_stage_target_key_overlap
 
 
 @timed_public_sql_function
@@ -1609,14 +1612,12 @@ def _load_dataframe(
         _run_load_target_action(
             options,
             "validate_stage",
-            lambda connection_ref: validate_stage_target_key_overlap(
+            lambda connection_ref: validate_stage_append_keys(
                 connection_type=options.connection_backend,
                 connection=connection_ref["connection"],
                 stage_table=state.overlap_stage_table,
                 target_table=options.destination_table,
                 key_columns=options.key_columns,
-                target_exists=state.target_exists,
-                replace_target_table=False,
             ),
         )
         _run_load_target_action(
@@ -1839,14 +1840,12 @@ def _finalize_loaded_dataframe_stage(
         return
 
     if options.append and state.target_exists and options.key_columns:
-        validate_stage_target_key_overlap(
+        validate_stage_append_keys(
             connection_type=options.connection_backend,
             connection=connection,
             stage_table=state.overlap_stage_table,
             target_table=options.destination_table,
             key_columns=options.key_columns,
-            target_exists=state.target_exists,
-            replace_target_table=False,
         )
 
     if state.native_assignment_checkpoint is not None:

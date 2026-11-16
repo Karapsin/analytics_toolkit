@@ -26,9 +26,12 @@ def test_duplicate_full_upsert_columns_are_rejected_even_when_all_names_exist():
         validate_complete_upsert_columns(["id", "value", "id"], {"id": "INTEGER", "value": "TEXT"})
 
 
-def test_fractional_float_cannot_be_truncated_into_authoritative_integer():
+@pytest.mark.parametrize("backend", ["gp", "trino"])
+def test_fractional_float_without_an_int_conversion_cannot_be_truncated(backend):
     with pytest.raises(ValueError, match="incompatible with authoritative integer schema"):
-        validate_dataframe_schema(pd.DataFrame({"id": [1.25]}), {"id": "Int64"}, "ch")
+        validate_dataframe_schema(pd.DataFrame({"id": [1.25]}), {"id": "INTEGER"}, backend)
+    # ClickHouse's deliberate native int(value) assignment is retained.
+    validate_dataframe_schema(pd.DataFrame({"id": [1.25]}), {"id": "Int64"}, "ch")
     validate_dataframe_schema(pd.DataFrame({"id": [1.25]}), {"id": "Float64"}, "ch")
     validate_dataframe_schema(pd.DataFrame({"id": [Decimal("1.25")]}), {"id": "Decimal(3,2)"}, "ch")
 
