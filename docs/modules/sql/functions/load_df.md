@@ -221,6 +221,13 @@ rows
 - Greenplum `DATE` columns also validate canonical date text before mutation.
   Native datetime parameters retain their clocks and offsets so the server
   performs the DATE assignment using its session settings.
+- Explicit or existing built-in Greenplum `BOOL`/`BOOLEAN` columns accept native
+  and NumPy Boolean scalars, NULL, and text using ASCII case-insensitive unique
+  prefixes of `true`, `false`, `yes`, `no`, `on` or `off`, or exact `1`/`0`.
+  Only surrounding ASCII whitespace (space, `\t`, `\n`, `\r`, `\v`, `\f`) is
+  trimmed. Ambiguous `o`, empty text and invalid values reject before mutation
+  with sanitized diagnostics. Domains retain server-assignment validation;
+  numeric casts and automatic inference keep their existing rules.
 - Explicit or existing Trino `BOOLEAN` columns accept native Boolean values,
   signed BIGINT, DOUBLE and finite DECIMAL casts, and the exact ASCII strings
   `true`, `false`, `t`, `f`, `1` and `0`, with ASCII case-insensitive letters.
@@ -229,8 +236,18 @@ rows
   fit precision and scale at most 38 and never pass through floating point.
   Strings are not trimmed.
   Invalid values fail before destination mutation with sanitized diagnostics;
-  NULL stays NULL. Greenplum behavior and automatic inference are unchanged:
+  NULL stays NULL. Automatic inference is unchanged:
   inferred integer 0/1 columns remain integers, and inferred strings remain text.
+- ClickHouse `Bool`/`Boolean` columns, including nullable wrappers, accept Boolean,
+  integral, standard floating-point and Decimal scalars using exact zero/nonzero
+  conversion. Decimals never pass through floating point, and the conversion
+  imposes no integer or Decimal storage-width bound on values becoming Boolean.
+  Existing NULL handling is unchanged. Strings and other truthy objects reject
+  before mutation. Ordinary integer 0/1 inference remains integer.
+- An explicit GP `TEXT`/`VARCHAR` or Trino `VARCHAR` stage feeding an existing
+  built-in Boolean column validates every selected row against that backend's
+  Boolean cast rules before destination mutation. Validation uses a converted
+  view; the requested stage schema and raw string payload remain unchanged.
 - ClickHouse timestamp keys compare native ticks at the declared precision and
   resolved write timezone. A raw tick value and a calendar value for the same
   instant are duplicate effective keys within one partition. Distinct native

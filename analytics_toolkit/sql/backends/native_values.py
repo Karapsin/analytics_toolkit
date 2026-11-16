@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from .ch.boolean_values import boolean_value as ch_boolean_value
+from .ch.boolean_values import is_boolean_type as is_ch_boolean_type
+from .ch.boolean_values import normalize_authoritative_boolean as normalize_ch_authoritative_boolean
+from .ch.boolean_values import validate_boolean_type_profile as validate_ch_boolean_type_profile
 from .ch.client_validation import (
     is_legacy_json_type,
     normalize_legacy_json_value,
@@ -19,9 +23,11 @@ from .ch.storage_types import logical_storage_type
 from .ch.timestamp_keys import source_key_validation_frame as ch_source_key_validation_frame
 from .ch.value_validation import validate_constrained_value
 from .decimal_values import convert_decimal_value, decimal_target_type
+from .gp.boolean_values import boolean_value as gp_boolean_value
+from .gp.boolean_values import is_boolean_type as is_gp_boolean_type
+from .gp.boolean_values import normalize_authoritative_boolean as normalize_gp_authoritative_boolean
 from .gp.date_values import date_value as gp_date_value
 from .gp.date_values import is_date_type as is_gp_date_type
-from .gp.date_values import normalize_authoritative_date as normalize_gp_authoritative_date
 from .gp.date_values import validate_date_profile as validate_gp_date_profile
 from .gp.json_values import convert_json_value, is_json_type
 from .gp.network_values import convert_network_value, is_network_type, validate_network_profile
@@ -115,9 +121,11 @@ def requires_native_assignment(native_type: str, backend: str) -> bool:
 
 def normalize_authoritative_value(value: Any, native_type: str | None, backend: str) -> Any:
     """Keep deliberate assignment views separate from inferred source families."""
+    if backend == "ch":
+        return normalize_ch_authoritative_boolean(value, native_type)
     if backend == "trino":
         return normalize_authoritative_boolean(value, native_type)
-    return normalize_gp_authoritative_date(value, native_type) if backend == "gp" else value
+    return normalize_gp_authoritative_boolean(value, native_type) if backend == "gp" else value
 
 
 def validate_transport_value(value: Any, native_type: str, backend: str) -> None:
@@ -140,8 +148,10 @@ def validate_backend_profile(
     allow_timestamp_precision_loss: bool,
 ) -> bool:
     if backend == "ch":
-        return validate_ch_network_profile(profile, native_type) or validate_legacy_json_profile(
-            profile, native_type
+        return (
+            validate_ch_boolean_type_profile(native_type)
+            or validate_ch_network_profile(profile, native_type)
+            or validate_legacy_json_profile(profile, native_type)
         )
     if backend == "trino":
         return (
@@ -201,6 +211,8 @@ def convert_native_value(value: Any, resolution: ResolvedColumn) -> tuple[bool, 
 def _convert_backend_value(
     value: Any, target_type: str, resolution: ResolvedColumn
 ) -> tuple[bool, Any]:
+    if resolution.target_backend == "ch" and is_ch_boolean_type(target_type):
+        return True, ch_boolean_value(value)
     if resolution.target_backend == "ch" and is_ch_network_type(target_type):
         if resolution.source_backend == "ch" and is_ch_network_type(resolution.source_type):
             value = convert_ch_network_value(value, resolution.source_type)
@@ -225,6 +237,8 @@ def _convert_trino_value(value: Any, target_type: str) -> tuple[bool, Any]:
 
 
 def _convert_gp_value(value: Any, target_type: str, resolution: ResolvedColumn) -> tuple[bool, Any]:
+    if is_gp_boolean_type(target_type):
+        return True, gp_boolean_value(value)
     if is_gp_date_type(target_type):
         return True, gp_date_value(value)
     if is_network_type(target_type):

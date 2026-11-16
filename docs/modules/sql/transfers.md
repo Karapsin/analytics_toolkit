@@ -353,6 +353,14 @@ without changing the captured raw rows. Trino uses each datetime's supplied
 calendar date; Greenplum retains native datetime parameters for server-side
 assignment. The same conversion is checked again during replay.
 
+Explicit or existing built-in Greenplum `BOOL`/`BOOLEAN` columns accept native
+and NumPy Boolean scalars, NULL, and ASCII case-insensitive unique text prefixes
+of `true`, `false`, `yes`, `no`, `on` and `off`, or exact `1`/`0`. Only surrounding
+ASCII whitespace (space, `\t`, `\n`, `\r`, `\v`, `\f`) is trimmed. Ambiguous `o`,
+empty text and invalid values fail before mutation with sanitized diagnostics.
+Domains retain server-assignment validation; numeric casts and inference keep
+their existing rules.
+
 Explicit or existing Trino `BOOLEAN` columns accept native Boolean values,
 signed BIGINT, DOUBLE and finite DECIMAL casts, and the exact ASCII strings
 `true`, `false`, `t`, `f`, `1` and `0`, with ASCII case-insensitive letters.
@@ -360,8 +368,21 @@ Numeric zero becomes false and nonzero becomes true, including infinite DOUBLE
 values; floating NaN retains its existing NULL handling. Decimals must fit
 precision and scale at most 38 and never pass through floating point. Strings
 are not trimmed. Invalid values fail before destination mutation with sanitized
-diagnostics; NULL stays NULL. Greenplum behavior and automatic inference are
-unchanged, including inferred integer 0/1 and text columns.
+diagnostics; NULL stays NULL. Automatic inference is unchanged, including
+inferred integer 0/1 and text columns.
+
+ClickHouse `Bool`/`Boolean`, including nullable wrappers, accepts Boolean,
+integral, standard floating-point and Decimal scalars using exact zero/nonzero
+conversion. Decimals never pass through floating point; no integer or Decimal
+storage-width bound is imposed on values becoming Boolean. Existing NULL
+handling is unchanged. Strings and other truthy objects reject before mutation,
+and integer 0/1 inference stays integer.
+
+For an explicit GP `TEXT`/`VARCHAR` or Trino `VARCHAR` stage feeding an existing
+built-in Boolean column, every selected row is validated using the destination
+backend's Boolean rules before publication. The original stage schema and
+string payload are preserved. Greenplum's prefix/ASCII-whitespace rules and
+Trino's exact, untrimmed tokens remain distinct.
 
 For Greenplum types requiring server assignment, the complete captured payload
 is certified in owned persistent native tables before live publication. This

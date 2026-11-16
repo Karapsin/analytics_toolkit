@@ -11257,6 +11257,28 @@
         "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_distinct_dst_folds_survive_upfront_python_key_validation"
       ]
     },
+    "audit.load.clickhouse_boolean_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_boolean_values.py::test_clickhouse_boolean_integer_loads_preserve_native_values_and_reject_invalid_input",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_booleans.py::test_ch_booleans_public_integer_zero_one_reaches_exact_native_bytes",
+        "tests/sql/dml/load/ch_booleans.py::test_ch_booleans_public_numeric_nonzero_matches_actual_default_encoders"
+      ]
+    },
+    "audit.load.gp_boolean_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_boolean_values.py::test_gp_boolean_text_loads_preserve_native_false_and_reject_invalid_values",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_booleans.py::test_gp_boolean_load_preserves_false_values_through_real_psycopg_formatter",
+        "tests/sql/dml/load/gp_booleans.py::test_gp_invalid_late_boolean_rejects_before_target_clear"
+      ]
+    },
     "audit.load.trino_boolean_values": {
       "profile": "core",
       "node_id": "tests/sql/integration/core/audit_trino_boolean_values.py::test_trino_boolean_integer_loads_preserve_native_casts_and_reject_invalid_values",

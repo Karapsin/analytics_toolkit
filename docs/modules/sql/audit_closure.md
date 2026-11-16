@@ -625,8 +625,43 @@ casts within precision/scale 38. Numeric zero/nonzero conversion preserves exact
 decimals, floating NaN NULL handling and infinite DOUBLE values. These restore
 casts rejected before mutation; they are not target-loss reproductions. Invalid text
 fails before mutation with sanitized diagnostics. These checks preserve
-Greenplum behavior and integer/text inference, and exercise the installed
+integer/text inference and exercise the installed
 parameter formatter with fake database I/O. The disposable
 `audit.load.trino_boolean_values` scenario was not run locally.
+
+The Greenplum Boolean regressions reproduce rejection of supported text before
+mutation. The latent `bool('false')` conversion hazard was established from
+source; the old profile gate blocked it, so it is not a runtime-corruption or
+target-loss reproduction.
+`dml/load/gp_booleans.py::test_gp_boolean_load_preserves_false_values_through_real_psycopg_formatter`,
+`dml/load/gp_booleans.py::test_gp_boolean_text_input_preserves_postgresql_forms`
+and `dml/load/gp_booleans.py::test_gp_invalid_late_boolean_rejects_before_target_clear`
+cover false-value preservation, PostgreSQL text forms and rejection before
+mutation using the real parameter formatter with fake database I/O. The bounded
+built-in conversion uses ASCII case-insensitive unique prefixes and ASCII-only
+whitespace trimming; domains retain server-assignment validation. Numeric casts
+and inference are unchanged.
+
+`dml/load/ch_booleans.py::test_ch_booleans_public_integer_zero_one_reaches_exact_native_bytes`
+and `dml/load/ch_booleans.py::test_ch_booleans_public_numeric_nonzero_matches_actual_default_encoders`
+cover ClickHouse Boolean numeric casts with real HTTP/native encoder bytes and
+fake database I/O. The numeric profile rejection occurred after the independent
+client-byte controls passed; it is a compatibility failure, not target loss.
+Exact tiny Decimal nonzero values remain true without a floating-point detour
+or an artificial integer/Decimal storage-width bound. Integer inference remains
+covered by `dml/load/ch_booleans.py::test_ch_boolean_integer_zero_one_inference_remains_integer`.
+`dml/load/ch_booleans.py::test_ch_booleans_invalid_last_value_rejects_before_native_encoder_or_target_mutation`
+checks sanitized rejection of late private text before encoding or mutation,
+preserving existing rows, schema and caller data.
+
+`dml/transfer/schema/intermediate_boolean_stage.py::test_explicit_text_boolean_stage_preserves_strings_and_validates_final_cast`
+and `dml/transfer/schema/intermediate_boolean_stage.py::test_explicit_text_boolean_stage_rejects_late_private_input_before_clearing`
+cover converted validation views for explicit GP text and Trino VARCHAR stages
+feeding existing built-in Boolean columns. Supported casts were blocked by the
+raw profile gate; initial invalid-stage probes stopped at that gate too, so they
+did not prove invalid admission or target loss. The stage schema and raw string
+payload remain unchanged while every selected value is checked against the
+destination backend's Boolean rules before publication. These fast tests do not
+establish live-server evidence.
 
 [SQL module index](index.md)
