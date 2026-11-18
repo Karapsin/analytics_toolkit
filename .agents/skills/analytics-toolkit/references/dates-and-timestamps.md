@@ -24,6 +24,33 @@ from atk import *
 | Timestamp comparisons and elapsed whole units | `dttm.is_greater`, `dttm.is_less`, `dttm.is_between`, `dttm.seconds_between`, `dttm.minutes_between`, `dttm.hours_between`, `dttm.days_between` |
 | Timestamp period boundaries | `dttm.datetime_bounds`, `dttm.is_period_start`, `dttm.is_period_end` |
 
+## Date helper signatures
+
+- `dt.gen_dates_list(start_dt, end_dt, interval="days", output_string=True)`:
+  `interval` is `"days"`, `"weeks"`, `"months"` or `"quarters"` (singular forms
+  also work). The list includes `end_dt`. Weekly, monthly and quarterly bounds
+  are truncated to period starts with a warning.
+- `dt.first_day(dt, period="month")`, `dt.last_day(dt, period="month")`,
+  `dt.period_bounds(dt, period="month")`: `period` is `"week"`, `"month"` or
+  `"quarter"` (singular only; `"months"` raises `ValueError`). Weeks start on
+  Monday. `last_day` and the second value of `period_bounds` are inclusive ends.
+- `dt.add_days(dt, n)`, `dt.add_weeks(dt, n)`, `dt.add_months(dt, n)`,
+  `dt.add_quarters(dt, n)`. `add_weeks`, `add_months` and `add_quarters` return
+  the period start (Monday, first of month, quarter start), so wrapping them in
+  `first_day` is redundant.
+- `dt.days_between(start_dt, end_dt, inclusive=False)`,
+  `dt.periods_between(start_dt, end_dt, interval="months")` (`"weeks"`,
+  `"months"` or `"quarters"`).
+- `dt.is_greater(dt, other_dt, inclusive=False)`,
+  `dt.is_less(dt, other_dt, inclusive=False)`,
+  `dt.is_between(dt, start_dt, end_dt, inclusive=True)`,
+  `dt.is_same_period(left_dt, right_dt, period="month")`.
+- The sequence, boundary and `add_*` helpers, plus `get_today` and
+  `get_random_day`, also take `output_string=True`; `False` returns midnight
+  `datetime` objects.
+- There is no `get_month_start`, `get_month_end` or `get_periods`. Use
+  `first_day`, `last_day`, `period_bounds` and `gen_dates_list`.
+
 ## Semantics to preserve
 
 - Date helpers accept ISO date strings, `date`, or `datetime` objects. Time
@@ -61,6 +88,20 @@ assert (start, end) == ("2026-03-01", "2026-03-31")
 assert len(days) == 31
 assert partition == "20260301"
 ```
+
+## Month batches with half-open windows
+
+```python
+end_excl = "2026-08-01"  # batches 2026-01 .. 2026-07
+for month in dt.gen_dates_list("2026-01-01", dt.add_months(end_excl, -1), interval="months"):
+    params = {"start_dt": month, "end_dt": dt.add_months(month, 1)}  # [start, end)
+```
+
+`gen_dates_list` includes `end_dt`, so pass the last month start, not the
+exclusive end. Date helpers and `read_file_here` params accept `datetime.date`
+values as they are. When SQL needs a date string from a timestamp, use
+`.strftime("%Y-%m-%d")` or cast to `varchar` in SQL. Do not use
+`dt.add_days(x, 0)` as a conversion.
 
 ## Time-preserving arithmetic and sequences
 

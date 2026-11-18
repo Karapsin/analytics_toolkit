@@ -20,13 +20,21 @@ otherwise. Preserve existing DAG conventions when editing them.
   Limit refactoring to the requested scope. Apply requested simplifications to
   the implementation rather than renaming unnecessary abstractions.
 - Keep metric definitions, source assumptions, attribution rules, and refresh
-  coverage in the DAG's documentation. Keep code, SQL, documentation, and tests
-  consistent with the final behavior.
+  coverage as short `#` comments in `dag.py` or its SQL files. Do not pass
+  `doc_md` to `DAG()`, and add no README or documentation pointers. Keep code,
+  SQL, comments, and tests consistent with the final behavior.
+- During ticket, recovery, or recalculation work, change files only in the
+  ticket folder. You may read DAG files, but edit the DAG repository only when
+  the user asks for a DAG change. If the user rejects repository changes, revert
+  only your own edits, then confirm with `git status` and `git diff` that only
+  the user's earlier changes remain.
 
 ## Python layout and processing
 
 - Keep Python logic in one `dag.py` and business queries in its `sql/` subfolder.
-  Import libraries at the top of the file.
+  Import libraries at the top of the file. Number new SQL files by stage in
+  execution order without zero padding (`0_ddl.sql`, `1_sources.sql`,
+  `2_publish.sql`).
 - Use `#` comments for explanations and headings; match neighboring separators
   and spacing. Multiline strings remain appropriate for simple metadata reads.
 - Group deployment settings, such as connection keys and table names. Keep
@@ -76,6 +84,12 @@ set_time_print_sink("logging")
 
 ## SQL boundaries and defaults
 
+- Apply the analytics-toolkit skill's SQL rules to every DAG query: look up
+  partition keys and filter on them, run one processing stage per
+  `sql.execute` call, make every call safe to replay, and replace data by
+  partition (never with row deletes in ClickHouse). Its
+  [SQL practices](../analytics-toolkit/references/sql-practices.md) hold the
+  recipes and the shared SQL style.
 - Keep business queries in SQL files. Python may substitute parameters through
   `read_file_here`; it must not construct statements, column lists, expressions,
   or predicates.
@@ -101,10 +115,57 @@ query = read_file_here("sql/1_refresh.sql", params)
 sql.execute(CONNECTION_KEY, query)
 ```
 
+## Schema changes and ClickHouse publication
+
+- When a change needs new columns in existing tables, assume the columns
+  already exist. Do not put `alter table ... add column`, other one-off
+  migrations, or backfills of existing history (such as populating new columns)
+  in DAG code. Keep `create table if not exists` for new tables, and keep the
+  DAG's normal refresh and first-run logic. Write migrations and backfills as
+  separate scripts in the ticket folder, and offer them.
+- Publish Trino results to ClickHouse through permanent stage pairs: a
+  Replicated `<stage>_shard` table and a Distributed facade, both created
+  `on cluster` with the target's structure. In SQL files read with
+  `read_file_here(path, params)`, write ClickHouse macros as `{{cluster}}`,
+  `{{uuid}}`, `{{shard}}`, and `{{replica}}`. Never drop the permanent stages.
+- Load a stage with one Trino `sql.execute` string:
+  `set session <clickhouse catalog>.non_transactional_insert = true;` followed
+  by `insert into <clickhouse catalog>.<db>.<stage> ...`. Keep both statements
+  in the same string; list items use separate connections, so the session
+  setting would be lost.
+- Clear the stage with `truncate table <stage>_shard on cluster '<cluster>'`
+  right before loading and again after publishing; truncating the Distributed
+  facade does not remove shard data. Publish on the local tables with
+  `alter table <target>_shard on cluster '<cluster>' replace partition <p> from <stage>_shard`,
+  using `tuple()` for unpartitioned tables. Both tables need the same columns,
+  partition key, order by, and storage policy. `exchange tables` (Atomic
+  databases only) and truncate plus insert are alternatives.
+- Do not add `sync` to `truncate`, and do not use `system flush distributed` or
+  `system sync replica`; DAG accounts often lack these privileges. If a
+  privileged command fails in production, remove it instead of adding
+  workarounds or guards.
+- Use the Trino connector insert in DAGs, with `sql.transfer` only as a
+  fallback when the connector is unavailable. Into existing stage tables, pass
+  `write_mode="truncate_insert"` or `"append"`, because replacing an existing
+  replicated target runs `SYSTEM SYNC REPLICA`.
+
 ## Airflow orchestration and retries
 
 - For a simple serial pipeline, prefer one task calling pipeline functions in
   sequence. Add task boundaries when they provide an operational benefit.
+- Split a heavy multi-stage pipeline into stage tasks (for example ddl,
+  sources, ..., publish, finalize, chained with `chain`) when a failure in a
+  later stage would otherwise rerun long earlier stages. An Airflow retry then
+  reruns only the failed stage. Pass data between stages through tables, not
+  XCom, and keep each stage safe to retry.
+- Run one-off backfill speed-ups outside the DAG and leave the scheduled path
+  unchanged unless asked. Use toolkit concurrency (`sql.execute` with a list of
+  independent batch queries and `concurrency=N`, or `sql.parallel_sql`) instead
+  of hand-written thread runners.
+- Before a long local run that reuses a deployed DAG's SQL, check the DAG's
+  schedule. Ask the user to pause it, or give the local run its own stage names
+  while the DAG code keeps its fixed names; a scheduled run can drop shared
+  stage tables.
 - Avoid `ti`, XCom plumbing, and task context when ordinary calls suffice.
   Disable XCom return storage when unused.
 - Do not add upstream dependencies, sensors, `dag_run.conf`, manual date
@@ -114,11 +175,13 @@ sql.execute(CONNECTION_KEY, query)
 - Prefer fixed staging table names with `max_active_runs=1` for serialized
   execution. Avoid run hashes, unique suffixes, or stored run IDs without a
   concrete need; concurrent runs must not share mutable stages unsafely.
-- Preserve library retry defaults unless retries can duplicate a committed
-  write, such as an append after a lost acknowledgement. Explain any exception
-  beside the call.
+- Preserve library retry defaults and make each write safe to replay: clear
+  the slice, then insert. Lower retries only when a write cannot be made
+  replay-safe, such as an append after a lost acknowledgement, and explain the
+  exception beside the call.
 - Make whole-task retries safe: recreate ordinary stages, replace affected data
-  consistently, and retain necessary pending work until success.
+  consistently, and retain necessary pending work until success. Permanent
+  ClickHouse publication stages are truncated, not dropped.
 
 ## Incremental state and affected results
 
@@ -133,17 +196,28 @@ Apply these rules when the pipeline needs persistent or incremental state:
 - Account for additions, removals, membership changes, baseline changes, and
   delayed or corrected events. Select affected periods using report attribution;
   an event's date alone may miss an earlier reporting period.
-- Keep source snapshots fresh on retries. Record pending changes before
-  overwriting the evidence needed to detect them; clear pending work only after
-  successful publication and state updates.
+- Drive incremental refresh windows and batches by business date columns,
+  ideally the source's date partition columns. Find the partitioning with the
+  analytics-toolkit
+  [partition discovery](../analytics-toolkit/references/sql-practices.md#partition-discovery)
+  recipes. Do not drive refresh by Iceberg snapshot IDs, time travel, or
+  technical load timestamps. Catch late data by re-reading a recent window of
+  those dates.
+- If a source has no business date or date partitioning (for example, only
+  `bucket(id, n)`), say so and propose an alternative for the user to approve,
+  such as refreshing from changed data files.
+- On retries, re-read the source date ranges instead of reusing stale staged
+  copies. Record pending changes before overwriting the evidence needed to
+  detect them; clear pending work only after successful publication and state
+  updates.
 - Derive entity counts and groups from source data. Deduplicate shared facts at
   the required grain before aggregation so shared identifiers do not multiply
   joins.
 - Recompute a whole affected comparison when calculations need its complete
   cohort. Updating only new users is insufficient for clipping, means, or CUPED
   coefficients.
-- Document refresh coverage and limits. A recent refresh window does not
-  necessarily detect historical corrections.
+- Note refresh coverage and limits in a `#` comment and in your final message.
+  A recent refresh window does not necessarily detect historical corrections.
 
 ## Dates, metrics, and statistics
 
@@ -165,8 +239,11 @@ Apply these rules when the pipeline needs persistent or incremental state:
 
 ## Verification and delivery
 
-- Put tests in the target project's approved test location; keep temporary
-  verification artifacts separate from deployed DAG files.
+- Deliver only `dag.py` and its `sql/` files to the DAG repository. Do not add
+  tests (including to an existing `tests/` folder), check or diagnostic SQL,
+  patches, READMEs, or other verification files there. Keep tests and
+  verification artifacts outside the repository, in the task's working folder
+  (for example, the ticket folder).
 - Test meaningful behavior using synthetic data or isolated substitutes. Cover
   changing source sizes, relevant date boundaries, affected-period selection,
   shared identifiers, and retries when the change involves them. Do not add
@@ -184,5 +261,5 @@ Apply these rules when the pipeline needs persistent or incremental state:
   repeating passing checks unless new changes or unresolved concerns warrant it.
 - When requested, supply reset or cleanup SQL covering all pipeline-owned tables
   while preserving source tables. Supplying SQL does not authorize executing it.
-- Remove temporary verification artifacts and report what changed, what was
-  checked, and any material limitations.
+- Leave no verification artifacts in the DAG repository, and report what
+  changed, what was checked, and any material limitations.
