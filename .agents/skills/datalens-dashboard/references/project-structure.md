@@ -52,7 +52,9 @@ silently sanitize names.
 Dataset selectors bind fields; cross-dataset aliases are explicit. Manual selectors bind declared QL/Editor parameters or Wizard dataset
 `parameters` (each has `type` and `default`). Dataset `default_filters` configure
 field-value queries; explicit chart filters still govern chart results.
-Selectors may receive other selectors, enabling dependent date choices.
+Selectors may receive other selectors, enabling dependent date choices. Version-1
+recipes limit this to manual or dataset selectors feeding a dataset selector on
+the same tab; see the skill's known recipe constraints.
 Use explicit aliases with `{parameter: name}` or `{dataset: role, field: title}`
 for parameter-to-field binding. Checkpoints track managed aliases so user
 aliases remain intact. Only previously managed obsolete tabs are retired.

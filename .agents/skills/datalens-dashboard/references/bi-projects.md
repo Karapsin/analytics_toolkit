@@ -58,5 +58,6 @@ content. Chart defaults are normalized onto every repeated placement.
 Read the public [copy-tab walkthrough](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/datalens_utils/copy-tab.md)
 and [recipe contract](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/datalens_utils/recipe-contract.md)
 for exact inputs, fidelity statuses, precedence and recovery boundaries. These
-contracts should resolve ordinary consumer work; package source is a debugging
-fallback. Match the documentation branch/version to the installed toolkit.
+contracts should resolve ordinary consumer work; read package source only when
+developing the toolkit itself. Match the documentation branch/version to the
+installed toolkit.

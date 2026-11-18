@@ -10,6 +10,24 @@ separate UI JSON, SQL/JavaScript assets, independent SQL tests and offline
 checks. Keep the engine in `analytics_toolkit.datalens_utils`. Follow the
 requested business scope and maintain coverage for the actual declared objects.
 
+## Work from the skill and public docs
+
+- In dashboard projects, use this skill, its references and the public DataLens
+  docs (the [datalens_utils docs](https://github.com/Karapsin/analytics_toolkit/blob/dev/docs/modules/datalens_utils/index.md),
+  the module README and `examples/datalens_bi`) for every `datalens_utils`
+  task, not only imports. Do not read the `analytics_toolkit.datalens_utils`
+  implementation or tests, or have subagents review them, to learn how to use
+  it. You may still use `--help` output, public signatures and the installed
+  datalens-sdk skill. Read toolkit source only when developing the toolkit
+  itself.
+- Use the package CLI and the project launcher for import, plan, apply, pull,
+  status and verify. Do not write project-specific extraction, import, export,
+  deployment or SDK-write scripts, or invent tooling. For numerical checks, use
+  the starter `sql_tests` runner or independent SQL through `sql.read`.
+  Preparing source data is a separate task and is not covered by this rule.
+- When a needed capability is missing, stop and report the library or
+  documentation gap with the failed stage, resource and request ID.
+
 ## Start or adapt
 
 For an existing dashboard URL, ID, or a project that identifies a live dashboard,
@@ -116,6 +134,46 @@ preparation is separate. Persistent resource IDs are ordinary configuration.
 Respect the installed SDK's result-handling requirement before data queries;
 use the user's authorized handling rather than assuming permission.
 
+## Known recipe constraints
+
+As of toolkit 1.3.12.5 (version 1 = legacy recipe, version 2 =
+`schema_version: 2`):
+
+- Selector-to-selector links: version 2 accepts any selector key as a
+  recipient in `configs/UI/links/connections.json`. Version 1 accepts only a
+  manual or dataset selector that feeds a dataset selector on the same tab;
+  Editor selectors cannot send links to selectors or receive links from them.
+  Both versions turn on `dependent_selectors` automatically.
+- Different links for the tabs inside one chart widget: version 2 uses
+  `group/member` recipients, and a group key addresses all members; version 1
+  routes the whole widget. Version-2 wiring is one map for the whole dashboard,
+  so the same sender and receiver cannot be linked on one dashboard tab and
+  ignored on another.
+- Measure Names works only as an encoding: color with `color_by_measure_name`
+  (bar, column, line) or shape with `shape_by_measure_name` (line), and only
+  with at least two measures. Field slots accept only dataset or chart-local
+  field titles, so Measure Names and Measure Values cannot be placed explicitly.
+  Bar and column charts insert Measure Names themselves.
+- Editor selectors keep their params, defaults and options in the selector
+  object's `params`, `sources` and `controls` scripts. Widget-level params or
+  defaults on a placed Editor selector cannot be declared, and imports mark them
+  captured-only. An Editor selector that must receive another selector's value
+  therefore cannot be finished through the recipe; report the gap instead of
+  scripting `set_chart_params`.
+- Dimension pickers: both versions support a manual selector with fixed
+  options, bound to a dataset parameter, with calculations that switch on that
+  parameter. A picker built as an Editor selector whose options follow another
+  selector hits the Editor-selector limit above.
+- `apply` refuses unapplied local edits that the updated dashboard reads.
+  Applying a dataset updates the dashboard, so put every dataset that `status`
+  reports as changed locally (`local` in version 1, `update` in version 2) into
+  one call, for example `--dataset month --dataset dynamics`. `--chart`,
+  `--dataset`, `--ui` and `--resource` are mutually exclusive, so for mixed
+  kinds repeat `--resource kind:key`. Version 2 also refuses other unapplied
+  charts; `plan` lists them. Version 1 phrases the refusal as
+  `Dependency dataset:<key> changed in DataLens. Pull it before apply` even when
+  the edit is local; add that key to the call instead of pulling.
+
 ## Edit and verify
 
 Use `dashboard.py validate` for local inputs, no command for creation/recovery,
@@ -124,9 +182,17 @@ published metadata. Read [recovery](references/recovery.md) for drafts, moves,
 conflicts and failed writes, and [verification](references/verification.md) for
 data comparisons.
 
+When iterating on an existing dashboard, publish once `dashboard.py validate`
+passes, the data load has finished and quick targeted checks pass; `apply`
+already re-fetches and verifies the metadata it wrote. Run full numeric
+verification after publishing, or when asked, with bounded queries. Migrations
+keep their comparison of exports before publishing.
+
 Keep fixture, metadata, numerical and rendering claims distinct. The default
 is API and code verification; do not add browser automation to imitate an SDK
-data method. Respect an explicit different scope in a future project.
+data method. Respect an explicit different scope in a future project. Do not
+report an interaction or rendering fix as done from API checks alone; say it is
+unverified in the UI.
 
 Report the dashboard URL, identities, performed checks and concrete gaps. A
 SQL/network failure is blocked numerical verification. Preserve successful
