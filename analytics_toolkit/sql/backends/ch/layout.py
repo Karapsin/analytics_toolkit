@@ -121,10 +121,23 @@ def _inspect_existing_layout_local(
 def _column_identity(create: exp.Create) -> tuple[str, ...]:
     schema = create.this
     return tuple(
-        _column_without_ttl(item).sql(dialect="clickhouse")
+        _logical_column_definition(item)
         for item in schema.expressions
         if isinstance(item, exp.ColumnDef)
     )
+
+
+def _logical_column_definition(column: exp.ColumnDef) -> str:
+    logical = _column_without_ttl(column)
+    logical.set(
+        "constraints",
+        [
+            constraint
+            for constraint in logical.constraints
+            if not isinstance(constraint.kind, exp.CompressColumnConstraint)
+        ],
+    )
+    return logical.sql(dialect="clickhouse")
 
 
 def _is_direct_storage(create: exp.Create) -> bool:

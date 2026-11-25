@@ -53,5 +53,9 @@ SQL plan: drop_partitions
 ## Notes
 
 - Greenplum, Trino, and ClickHouse use different generated SQL for partition removal.
+- ClickHouse verifies the logical column names, order, types and defaults before
+  treating a Distributed table and its referenced shard as a managed pair.
+  Physical column codecs (`CODEC`) and TTL clauses do not affect that identity;
+  the operation preserves the existing physical DDL
 
 [SQL functions index](index.md)
