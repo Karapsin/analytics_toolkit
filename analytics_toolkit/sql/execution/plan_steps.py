@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from .plans import SqlPlan
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def add_inspect_schema_step(
@@ -50,9 +53,15 @@ def add_create_table_placeholder_step(
     table_name: str,
     phase: str = "create_target",
     query_label: str | None = None,
+    replace_table: bool = False,
 ) -> None:
+    # Backend adapters import plan construction during registry initialization.
+    from analytics_toolkit.sql.backends import get_backend_adapter  # noqa: PLC0415
+
     plan.add(
-        f"CREATE TABLE {table_name} (<source query schema>)",
+        get_backend_adapter(backend).build_create_table_placeholder_sql(
+            table_name, replace_table=replace_table
+        ),
         alias=alias,
         backend=backend,
         phase=phase,
@@ -99,7 +108,9 @@ def add_insert_query_step(
             source_sql,
             {},
             query_label=query_label,
-        ).replace(" ()", "").replace("SELECT  FROM", "SELECT * FROM"),
+        )
+        .replace(" ()", "")
+        .replace("SELECT  FROM", "SELECT * FROM"),
         alias=alias,
         backend=backend,
         phase=phase,
@@ -210,6 +221,7 @@ def add_insert_from_stage_step(
     stage_table: str,
     phase: str,
     query_label: str | None = None,
+    column_types: Mapping[str, str] | None = None,
 ) -> None:
     from ..dml.table._basic_ops import build_insert_from_table_sql
 
@@ -218,6 +230,7 @@ def add_insert_from_stage_step(
             backend,
             target_table,
             stage_table,
+            column_types=column_types,
             query_label=query_label,
         ),
         alias=alias,

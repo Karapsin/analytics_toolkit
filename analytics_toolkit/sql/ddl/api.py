@@ -4,6 +4,7 @@ import warnings
 
 # ruff: noqa: EM101, TRY003
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any, cast
 
 import pandas as pd
@@ -17,7 +18,6 @@ from analytics_toolkit.sql.connection.errors import (
     SqlTableReadinessError,
     sql_preview,
 )
-from analytics_toolkit.sql.execution.retry_cleanup import connection_scope
 
 from ..connection.config import get_connection_config, resolve_connection_backend
 from ..connection.get_sql_connection import get_sql_connection
@@ -34,6 +34,15 @@ from .builders import (
     _validate_only_shard,
 )
 from .ch_policy import regular_ddl_properties, resolve_create_ch_policy
+from .creation_plan import build_create_table_plan
+from .drop_planning import require_resolved_creation_drop_sql
+from .existing_target import (
+    CONTINUE_CREATE as _CREATE_CONTINUE,
+)
+from .existing_target import (
+    ExistingCreateTarget,
+    skip_existing_schema_target,
+)
 from .models import CreateSqlTableOptions
 from .properties import overlay_with_properties
 from .schema import _build_column_definitions, normalize_table_schema
@@ -97,7 +106,7 @@ def create_table(
 
         validate_generated_source(sql)
     config = get_connection_config(db_key)
-    if not (dry_run or return_sql or only_generate_sql):
+    if sql is None and not (dry_run or return_sql or only_generate_sql):
         existing_result = _handle_existing_create_target(
             config=config,
             table_name=table_name,
@@ -106,6 +115,8 @@ def create_table(
             ch_replace_table=ch_replace_table,
             query_label=query_label,
             return_metadata=return_metadata,
+            retry_cnt=retry_cnt,
+            timeout_increment=timeout_increment,
         )
         if existing_result is not _CREATE_CONTINUE:
             return cast("str | SqlPlan | SqlOperationResult | int | None", existing_result)
@@ -117,6 +128,8 @@ def create_table(
             source_db=source_db,
             insert_data=insert_data,
             drop_target_if_exists=drop_if_exists,
+            if_not_exists=if_not_exists,
+            ch_replace_table=ch_replace_table,
             gp_distributed_by_key=gp_distributed_by_key,
             gp_partitions=gp_partitions,
             partition_by=partition_by,
@@ -183,6 +196,10 @@ def create_table(
         option_owner="db_key",
     )
     create_sqls = _build_create_sql_table_sqls(options, option_owner="db_key")
+    require_resolved_creation_drop_sql(
+        get_backend_adapter(config.backend),
+        requested=only_generate_sql and (drop_if_exists or ch_replace_table),
+    )
     drop_sqls = build_drop_target_sqls(options)
     metadata, plan = _build_create_table_plan(options, drop_sqls, create_sqls)
 
@@ -256,9 +273,6 @@ def _validate_create_schema_sources(
         )
 
 
-_CREATE_CONTINUE = object()
-
-
 def _resolve_drop_if_exists(
     *,
     drop_if_exists: bool,
@@ -305,27 +319,17 @@ def _handle_existing_create_target(
     ch_replace_table: bool,
     query_label: str | None,
     return_metadata: bool,
+    retry_cnt: int = 5,
+    timeout_increment: float = 5,
 ) -> object:
     if drop_if_exists or ch_replace_table or not if_not_exists:
         return _CREATE_CONTINUE
-    from ..dml.table._basic_ops import table_exists
-
-    connection = get_sql_connection(config.connection_key)
-    with connection_scope(connection, phase="close_existing_table_probe"):
-        exists = table_exists(
-            config.backend,
-            connection,
-            table_name,
-            config.connection_key,
-        )
-    if not exists:
-        return _CREATE_CONTINUE
-    if return_metadata:
-        return SqlOperationResult(
-            rows=None,
-            metadata=SqlOperationMetadata(statement_count=0, query_label=query_label),
-        )
-    return None
+    return skip_existing_schema_target(
+        ExistingCreateTarget(
+            config, table_name, return_metadata, query_label, retry_cnt, timeout_increment
+        ),
+        get_sql_connection,
+    )
 
 
 def _create_sql_table_from_sql_source(
@@ -336,6 +340,8 @@ def _create_sql_table_from_sql_source(
     source_db: str | None,
     insert_data: bool,
     drop_target_if_exists: bool,
+    if_not_exists: bool,
+    ch_replace_table: bool,
     gp_distributed_by_key: str | Sequence[str] | None,
     gp_partitions: Mapping[str, Any] | None,
     partition_by: Sequence[str] | str | None,
@@ -398,6 +404,9 @@ def _create_sql_table_from_sql_source(
             get_connection_config_fn=get_connection_config,
             get_backend_adapter_fn=get_backend_adapter,
             get_sql_connection_fn=get_sql_connection,
+            ch_creation_policy=policy,
+            ch_replace_table=ch_replace_table,
+            if_not_exists=if_not_exists,
         )
 
     from ..dml.table.create_table_from_sql import create_table_from_sql
@@ -409,6 +418,8 @@ def _create_sql_table_from_sql_source(
         table_db=db_key,
         insert_data=insert_data,
         drop_target_if_exists=drop_target_if_exists,
+        if_not_exists=if_not_exists,
+        ch_replace_table=ch_replace_table,
         gp_distributed_by_key=gp_distributed_by_key,
         gp_partitions=gp_partitions,
         partition_by=partition_by,
@@ -462,6 +473,8 @@ def _create_sql_table_with_connection(
     ddl_scope: str = "regular",
     ddl_properties: Mapping[str, Any] | None = None,
     ch_creation_policy: Any = None,
+    on_resource_created: Any = None,
+    on_scoped_resource_created: Any = None,
 ) -> SqlPlan | SqlOperationResult | None:
     resolved_backend = resolve_connection_backend(backend)
     resolved_key = connection_key or resolved_backend
@@ -505,10 +518,12 @@ def _create_sql_table_with_connection(
         ch_only_shard=ch_only_shard,
         ch_replace_table=ch_replace_table,
         drop_target_if_exists=False,
-        if_not_exists=getattr(
-            get_backend_adapter(resolved_backend),
-            "default_create_if_not_exists",
-            False,
+        if_not_exists=(
+            False
+            if on_resource_created is not None or on_scoped_resource_created is not None
+            else getattr(
+                get_backend_adapter(resolved_backend), "default_create_if_not_exists", False
+            )
         ),
         dry_run=dry_run,
         return_sql=return_sql,
@@ -517,6 +532,11 @@ def _create_sql_table_with_connection(
         ddl_properties=ddl_properties,
         ch_creation_policy=ch_creation_policy,
         option_owner="connection",
+    )
+    options = replace(
+        options,
+        on_resource_created=on_resource_created,
+        on_scoped_resource_created=on_scoped_resource_created,
     )
     create_sqls = _build_create_sql_table_sqls(options, option_owner="connection")
     metadata, plan = _build_create_table_plan(options, [], create_sqls)
@@ -677,43 +697,9 @@ def _build_create_table_plan(
     drop_sqls: list[str],
     create_sqls: list[str],
 ) -> tuple[SqlOperationMetadata, SqlPlan]:
-    metadata = SqlOperationMetadata(
-        statement_count=len(drop_sqls) + len(create_sqls),
-        query_label=options.query_label,
+    return build_create_table_plan(
+        options, drop_sqls, create_sqls, gp_partition_option=_gp_partition_plan_option
     )
-    plan = SqlPlan(
-        operation="create_table",
-        target_alias=options.connection_key,
-        target_backend=options.backend,
-        target_table=options.table_name,
-        options={
-            "drop_if_exists": options.drop_target_if_exists,
-            "drop_target_if_exists": options.drop_target_if_exists,
-            "if_not_exists": options.if_not_exists,
-            "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
-            "ch_ddl_wait_policy": (
-                options.ch_creation_policy.ddl_wait_policy
-                if options.ch_creation_policy is not None
-                else None
-            ),
-        },
-        metadata=metadata,
-    )
-    plan.extend(
-        drop_sqls,
-        alias=options.connection_key,
-        backend=options.backend,
-        phase="drop_target",
-        target_table=options.table_name,
-    )
-    plan.extend(
-        create_sqls,
-        alias=options.connection_key,
-        backend=options.backend,
-        phase="create_table",
-        target_table=options.table_name,
-    )
-    return metadata, plan
 
 
 def _execute_create_sql_table(
@@ -746,7 +732,23 @@ def _execute_create_sql_table(
             ch_distributed_table=options.ch_distributed_table,
             ch_only_shard=options.ch_only_shard,
         )
-        adapter.execute_commands(connection, create_sqls)
+        preflight = getattr(adapter, "preflight_create_table_replacement", None)
+        if callable(preflight):
+            preflight(connection, options)
+        scoped_callback = getattr(options, "on_scoped_resource_created", None)
+        if options.on_resource_created is None and scoped_callback is None:
+            adapter.execute_commands(connection, create_sqls)
+        else:
+            from .ownership import execute_owned_create_sqls
+
+            execute_owned_create_sqls(
+                adapter,
+                connection,
+                create_sqls,
+                options.on_resource_created,
+                on_scoped_resource_created=scoped_callback,
+                connection_key=options.connection_key,
+            )
         try:
             adapter.after_create_table(
                 connection,

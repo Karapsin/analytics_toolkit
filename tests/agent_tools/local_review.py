@@ -201,11 +201,12 @@ def test_stdio_exposes_only_immutable_reads(
 
 
 PROGRAM = """
-import json, os, sys
+import json, os, sys, uuid
 from pathlib import Path
 sys.path.insert(0, sys.argv[7])
 from agent_tools.local_review_files import Files
 root, job, head, base, mode, thread = sys.argv[1:7]
+thread = str(uuid.uuid4())
 names = ('GH_TOKEN', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'SSH_AUTH_SOCK')
 assert not any(name in os.environ for name in names)
 job = Path(job)
@@ -307,7 +308,23 @@ def test_fresh_review_execution_and_fail_closed_publication(
     else:
         receipt = local_review.review(candidate)
         assert receipt["payload"]["head"] == head
-        assert receipt["payload"]["reviewer_id"] == "reviewer:" + thread
+        assert receipt["payload"]["reviewer_id"].startswith("reviewer:")
+        compact = receipt["payload"]["review_iterations"]
+        proof = json.loads(
+            (
+                local_review.directory(candidate) / ("proof-" + compact["proof_sha256"] + ".json")
+            ).read_text()
+        )
+        assert (
+            len(
+                {
+                    child["payload"]["reviewer_id"]
+                    for wave in proof["waves"]
+                    for child in wave["payload"]["review_wave"]["children"]
+                }
+            )
+            == 1
+        )
         assert local_review.review(candidate) == receipt
     inputs = list(local_review.directory(candidate).glob("run-*/reviewer-input.txt"))
     assert len(inputs) == 1

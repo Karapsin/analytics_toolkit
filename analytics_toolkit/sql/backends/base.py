@@ -3,11 +3,16 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from analytics_toolkit.sql.backends.execution_outcome import (
+    close_cursor,  # noqa: F401 -- historical helper import.
+)
 from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 from . import adapter_defaults as _adapter_defaults
 from . import common_methods as _common_methods
+from . import key_literals as _key_literals
 from . import source_count as _source_count
+from . import target_acquisition as _target_acquisition
 from . import upsert as _upsert
 from . import validation as _validation
 from .models import (
@@ -22,7 +27,7 @@ from .models import (
 from .utils import extract_row_count
 
 
-class BackendAdapter:
+class BackendAdapter(_common_methods.DataframePreparationPolicy):
     backend: BackendName
     display_name: str
     sqlglot_dialect: str
@@ -87,6 +92,7 @@ class BackendAdapter:
 
     validate_airflow_file_overrides = _adapter_defaults.validate_airflow_file_overrides
     prepare_sql = _adapter_defaults.prepare_sql
+    render_transfer_literal = _key_literals.render_transfer_literal
 
     def open_connection(
         self,
@@ -120,9 +126,22 @@ class BackendAdapter:
     def execute_command(self, connection: Any, sql: str) -> Any:
         raise NotImplementedError
 
+    validate_connection = _common_methods.validate_connection
     execute_commands = _common_methods.execute_commands
+    local_creation_context = _common_methods.local_creation_context
+    preflight_create_table_replacement = _common_methods.preflight_create_table_replacement
+    build_create_table_placeholder_sql = _common_methods.build_create_table_placeholder_sql
     read_dataframe = _common_methods.read_dataframe
     get_table_column_names = _common_methods.get_table_column_names
+    get_writable_table_column_types = _common_methods.get_writable_table_column_types
+    get_required_column_defaults = _common_methods.get_required_column_defaults
+    validate_existing_dataframe_insert_columns = (
+        _common_methods.validate_existing_dataframe_insert_columns
+    )
+    resolve_upsert_execution_options = _common_methods.resolve_upsert_execution_options
+    resolve_upsert_execution_sqls = _common_methods.resolve_upsert_execution_sqls
+    execute_upsert_command = _common_methods.execute_upsert_command
+    prepare_upsert_target = _common_methods.prepare_upsert_target
     _read_dataframe_impl = _common_methods.read_dataframe_impl
 
     def table_exists(
@@ -220,6 +239,11 @@ class BackendAdapter:
             row = cursor.fetchone()
             return int(row[0]) if row else 0
 
+    destination_write_timezone = _adapter_defaults.destination_write_timezone
+    requires_destination_timezone = _adapter_defaults.requires_destination_timezone
+    requires_dataframe_timezone = _adapter_defaults.requires_dataframe_timezone
+    source_read_timezone = _adapter_defaults.source_read_timezone
+    normalize_source_temporal_batch = _adapter_defaults.normalize_source_temporal_batch
     build_source_count_sql = _source_count.build_source_count_sql
     count_source_rows = _source_count.count_source_rows
     source_sql_for_count_limited_read = _source_count.source_sql_for_count_limited_read
@@ -369,25 +393,7 @@ class BackendAdapter:
 
     _incoming_stage_source_sql = _upsert.incoming_stage_source_sql
 
-    def build_insert_from_stage_sql(
-        self,
-        target_table: str,
-        stage_table: str,
-        *,
-        columns: Sequence[str],
-        column_types: Mapping[str, str] | None,
-        query_label: str | None,
-    ) -> str:
-        typed_columns = self.column_types_for_columns(column_types, columns)
-        return _apply_query_label(
-            self.build_explicit_insert_from_stage_sql(
-                target_table,
-                stage_table,
-                columns=columns,
-                column_types=typed_columns,
-            ),
-            query_label,
-        )
+    build_insert_from_stage_sql = _common_methods.build_insert_from_stage_sql
 
     def build_explicit_insert_from_stage_sql(
         self,
@@ -574,28 +580,7 @@ class BackendAdapter:
             return False
         raise ValueError("replace_existing_non_ch must be one of: clear, drop.")
 
-    def ensure_stage_target_table(self, request: StageTargetTableRequest) -> bool:
-        from ..ddl.api import _create_sql_table_with_connection
-
-        create_kwargs: dict[str, Any] = {}
-        if request.partition_by is not None:
-            create_kwargs["partition_by"] = request.partition_by
-        if request.gp_partitions is not None:
-            create_kwargs["gp_partitions"] = request.gp_partitions
-        if request.order_by is not None:
-            create_kwargs["order_by"] = request.order_by
-        _create_sql_table_with_connection(
-            self.backend,
-            request.connection,
-            request.target_table,
-            None if request.target_column_types is not None else request.sample_batch,
-            connection_key=request.connection_key or self.backend,
-            table_schema=request.target_column_types,
-            gp_distributed_by_key=request.gp_distributed_by_key,
-            query_label=request.query_label,
-            **create_kwargs,
-        )
-        return True
+    ensure_stage_target_table = _target_acquisition.ensure_stage_target_table
 
     def finalize_stage_table(self, request: StageFinalizationRequest) -> None:
         from .safe_replace import finalize_existing_stage_replace  # noqa: PLC0415
@@ -641,28 +626,30 @@ class BackendAdapter:
                     incoming_stage_tables=request.incoming_stage_tables,
                 )
 
-            for sql in self.build_upsert_stage_sqls(
-                request.target_table,
-                request.stage_table,
-                columns=list(
-                    request.insert_column_types
-                    or request.target_column_types
-                    or request.sample_batch.columns
+            self.execute_commands(
+                request.connection,
+                self.build_upsert_stage_sqls(
+                    request.target_table,
+                    request.stage_table,
+                    columns=list(
+                        request.insert_column_types
+                        or request.target_column_types
+                        or request.sample_batch.columns
+                    ),
+                    key_columns=request.key_columns or [],
+                    column_types=request.insert_column_types,
+                    ch_cluster=request.ch_cluster,
+                    ch_only_shard=request.ch_only_shard,
+                    query_label=request.query_label,
+                    upsert_partition_column=request.upsert_partition_column,
+                    final_stage_table=request.final_upsert_stage_table,
+                    incoming_stage_tables=request.incoming_stage_tables,
+                    partition_values=partition_values,
+                    trino_partition_drop_sql_template=(
+                        request.trino_upsert_partition_drop_sql_template
+                    ),
                 ),
-                key_columns=request.key_columns or [],
-                column_types=request.insert_column_types,
-                ch_cluster=request.ch_cluster,
-                ch_only_shard=request.ch_only_shard,
-                query_label=request.query_label,
-                upsert_partition_column=request.upsert_partition_column,
-                final_stage_table=request.final_upsert_stage_table,
-                incoming_stage_tables=request.incoming_stage_tables,
-                partition_values=partition_values,
-                trino_partition_drop_sql_template=(
-                    request.trino_upsert_partition_drop_sql_template
-                ),
-            ):
-                self.execute_command(request.connection, sql)
+            )
             return
 
         if request.replace_target_table:
@@ -873,8 +860,8 @@ class BackendAdapter:
         return f"INSERT INTO {target_table} ({target_columns}) SELECT {select_columns} {from_sql}"
 
     column_list_sql = _common_methods.column_list_sql
-
     cast_select_expression = _common_methods.cast_select_expression
+    quote_identifier = _common_methods.quote_identifier
 
     def null_safe_key_equality(
         self,
@@ -886,10 +873,6 @@ class BackendAdapter:
         left_expr = f"{left_alias}.{quoted_column}"
         right_expr = f"{right_alias}.{quoted_column}"
         return f"({left_expr} = {right_expr} OR ({left_expr} IS NULL AND {right_expr} IS NULL))"
-
-    def quote_identifier(self, identifier: str) -> str:
-        escaped = identifier.replace(self.identifier_quote, self.identifier_quote * 2)
-        return f"{self.identifier_quote}{escaped}{self.identifier_quote}"
 
 
 def _apply_query_label(sql: str, query_label: str | None) -> str:

@@ -68,4 +68,17 @@ def _created_table_role(table_name: str, create_sqls: list[str]) -> str:
     return "distributed" if "DISTRIBUTED(" in matching.upper() else "shard"
 
 
-__all__ = ["wait_for_created_replacements"]
+def wait_for_cleanup(
+    connection: Any,
+    reconfiguration: Any,
+    absence_waits: tuple[Callable[..., None], Callable[..., None]],
+) -> None:
+    wait_local, wait_cluster = absence_waits
+    for table_name, cluster in reconfiguration.cleanup_tables:
+        if cluster is None:
+            wait_local(connection, table_name)
+        else:
+            wait_cluster(connection, table_name, ch_cluster=cluster)
+
+
+__all__ = ["wait_for_cleanup", "wait_for_created_replacements"]

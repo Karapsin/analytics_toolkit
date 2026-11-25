@@ -121,6 +121,7 @@ class LazyKeyedRuntime:
         self._lock = threading.Lock()
         self._first_error: BaseException | None = None
         self._source_stages: dict[str, ReadyKeyTask | None] = {}
+        self._owned_source_stages: set[str] = set()
         self._target_stages: dict[int, str] = {}
         self._target_stage_candidates: set[str] = set()
         self._verified: dict[int, VerifiedKey] = {}
@@ -151,12 +152,16 @@ class LazyKeyedRuntime:
     @property
     def source_stage_tables(self) -> list[str]:
         with self._lock:
-            return list(self._source_stages)
+            return [table for table in self._source_stages if table in self._owned_source_stages]
 
     @property
     def source_stage_entries(self) -> dict[str, ReadyKeyTask | None]:
         with self._lock:
-            return dict(self._source_stages)
+            return {
+                table: task
+                for table, task in self._source_stages.items()
+                if table in self._owned_source_stages
+            }
 
     @property
     def target_stage_candidates(self) -> set[str]:
@@ -200,12 +205,29 @@ class LazyKeyedRuntime:
                 message = "Source stage was not reserved before publication."
                 raise RuntimeError(message)
             self._source_stages[task.source_stage] = task
+            self._owned_source_stages.add(task.source_stage)
+
+    def mark_source_stage_owned(self, table: str) -> None:
+        with self._lock:
+            self._owned_source_stages.add(table)
+
+    def source_stage_is_owned(self, table: str) -> bool:
+        with self._lock:
+            return table in self._owned_source_stages
+
+    def abandon_unowned_source_stage(self, table: str) -> None:
+        with self._lock:
+            if table in self._owned_source_stages or table not in self._source_stages:
+                return
+            del self._source_stages[table]
+        self.live_stage_credits.release()
 
     def mark_source_stage_dropped(self, table: str) -> None:
         with self._lock:
             if table not in self._source_stages:
                 return
             del self._source_stages[table]
+            self._owned_source_stages.discard(table)
             self.source_stages_dropped += 1
         self.live_stage_credits.release()
 

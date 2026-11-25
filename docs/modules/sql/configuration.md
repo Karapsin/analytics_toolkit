@@ -327,11 +327,22 @@ how many additional `timeout_increment` readiness intervals each finalization
 attempt receives. The transfer argument
 `ch_ddl_ready_timeout_extension_cnt` takes precedence over the connection.
 The optional `ch_ddl_wait_policy` selects which created relations must pass
-readiness checks: `wait_all` (default) waits for shard and Distributed tables,
+readiness checks. Without an explicit function or connection value, the default
+is `wait_shard` when the resolved shard-table cluster is specified, and
+`wait_all` otherwise. `wait_all` waits for shard and Distributed tables,
 `wait_shard` waits only for physical/shard tables, `wait_distr` waits only for
 Distributed facades, and `wait_none` skips post-create waiting. An explicit
 function argument takes precedence over the connection value. For a single
 physical table, only `wait_all` and `wait_shard` wait.
+
+With the contextual `wait_shard` default, unavailable hosts in other facade
+deployment clusters produce a `ClickHouseDegradedClusterWarning` and do not
+block physical-table creation. The facade is created only on verified reachable
+hosts; no DDL is queued for excluded hosts, and an entirely unavailable optional
+facade scope is skipped. The shard cluster remains required. An absent/local
+shard-cluster setting retains the existing requirement for all participating
+clusters. Explicit `wait_all` or `wait_distr` still requires facade availability.
+Actual selected data coverage and destructive-operation checks remain enforced.
 Templates accept `{cluster}`, `{database}`,
 `{shard_table}`, and `{sharding_key}`. The actual target database and generated
 shard relation always replace template positions. Explicit
@@ -361,6 +372,19 @@ Older ClickHouse entries that relied on helper defaults must add explicit
 `regular` and `staging` policies (the generated dummy file is a working
 template) or pass all required helper overrides. Missing required effective
 settings fail before dry-run SQL generation or database access.
+
+ClickHouse storage clauses follow the selected engine in both `regular` and
+`staging` policies. MergeTree-family engines retain the default `ORDER BY tuple()`
+when no sorting key is supplied. `Memory` and other non-MergeTree engines receive
+no synthetic sorting clause. For `Memory`, explicit `partition_by` or `order_by`,
+and primary or sampling keys embedded in the engine expression, fail before DDL.
+Explicit clauses for other engines are preserved for native engine validation.
+
+Passwords preserve their exact string contents after direct, secret, environment,
+or Airflow resolution, including empty strings and leading/trailing whitespace.
+Ordinary connection names and namespace fields retain their normal trimming.
+Trino Basic authentication is enabled when a password is present, including an
+explicit empty password.
 
 ## Validation
 
@@ -428,6 +452,35 @@ protocol through the optional `clickhouse-driver` package; its default port is
 `9000`. Install it with `pip install 'analytics-toolkit[clickhouse-native]'`.
 The native extra does not install Airflow; DAG environments that need both use
 `analytics-toolkit[airflow,clickhouse-native]`.
+It includes the driver's CityHash and `zstd` compression dependencies; the
+separate `zstandard` package used by the HTTP transport does not replace them.
+
+Python 3.13 and newer use `clickhouse-connect>=1.4,<2`; older Python versions
+retain the supported `0.x` range. Version 1.4 includes the
+[upstream compiled-buffer fix](https://github.com/ClickHouse/clickhouse-connect/pull/822)
+for deprecated Unicode array initialization on Python 3.13+. The C accelerator
+remains enabled.
+
+Both transports preserve `DateTime64` fractional ticks at scales 0 through 9,
+including nested values, using `pandas.Timestamp` when Python `datetime` would
+lose precision. A declared timezone keeps its default timezone-aware result,
+including an explicit `UTC` zone. HTTP per-column timezone overrides follow the
+selected SDK query context, including its UTC-naive policy; integer read formats
+return the original ticks. Dataframe reads use positional column blocks and preserve
+duplicate labels, nullable large integers, decimals and nested values. Streaming
+native reads consume the driver's metadata header once and batch subsequent
+rows locally; HTTP streaming uses non-NumPy column blocks so intermediate
+timestamp scales do not require rounding.
+For dates beyond pandas' timestamp range, microsecond-aligned values use Python
+`datetime`. A value that also needs finer precision, such as a fractional
+`DateTime64(8)` in 2299, remains an internal `ExactTemporal` scalar containing
+`ticks`, `scale` and `timezone`. Its `isoformat()` preserves every fractional
+digit, and transfer, typed text and replay checkpoints retain those fields.
+Its `offset_naive` flag also preserves the native driver's server/client-local
+wallclock policy: the source zone remains available for exact tick replay while
+calendar and text results retain their original naive timezone semantics.
+Rows, dictionaries and dataframes keep their usual outer return shapes; native
+and HTTP writes accept this scalar without passing through floating point.
 
 Both transports map `secure`, `verify`, CA certificate settings, connection and
 send/receive timeouts, query `settings`, `client_name`, staging schema, and DDL
@@ -509,20 +562,24 @@ supported DDL receives `ON CLUSTER` automatically.
 Managed shard/Distributed pairs receive additional routing. When the named
 table is a local `Distributed(...)` facade that points to the same-database
 `<table>_shard` relation, the toolkit checks that physical shard on every
-replica of the effective routing cluster. Full coverage routes reads directly
-through `cluster(..., <table>_shard)` and routes SQL, dataframe, load, and
-transfer inserts through the physical shard table function. Explicit INSERT
-column lists are preserved. If full coverage cannot be proved, including when
-the topology probe fails, both reads and writes use the local Distributed
-facade instead. A similarly named table that is not an exact managed pair keeps
-the normal routing behavior.
+replica of the effective routing cluster. Verified coverage routes reads and
+writes through the physical shard table function. Replicated data uses one
+usable replica per shard; independent replica data uses `clusterAllReplicas`
+so every host contributes. Explicit INSERT column lists are preserved. Failed
+topology probes stop the operation. The default outage policy rejects missing
+required coverage; `healthy_shards` uses only verified available coverage and
+reports incomplete data when that coverage is partial. A local Distributed
+facade may be used only after its physical destination has been verified; it
+does not bypass a failed probe or an incomplete-coverage error. A similarly
+named table does not establish ownership of a managed pair.
 
 This makes `ch_ddl_wait_policy="wait_shard"` compatible with a fully deployed
 managed shard on the routing cluster because ordinary data operations do not
-depend on Distributed-facade readiness. The incomplete-coverage fallback still
-requires the facade on the connected host to exist and be usable; `wait_shard`
-does not promise facade readiness. Route decisions are cached per connection
-and cleared by table DDL.
+depend on Distributed-facade readiness when routing directly to verified
+storage. A verified route that uses a local facade still requires that facade
+to exist and be usable; `wait_shard` does not promise facade readiness. Topology
+membership is scoped to the operation, and table metadata is inspected again
+as needed.
 
 `sql.transfer` uses non-replicated scratch tables with cluster routing. Keep the
 staging policy on a single physical `MergeTree` and do not create a Distributed
@@ -569,7 +626,11 @@ name/path or a list of certificate file names/paths. A bare name such as
 `trino-ca.pem` resolves to `.certs/trino-ca.pem` next to `.connections`; a
 relative path such as `.certs/trino-ca.pem` resolves relative to the
 `.connections` directory; an absolute path is used as-is. Multiple CA files are
-bundled into a generated PEM bundle under `.certs/.generated/`. Missing
+bundled atomically into an immutable, content-addressed PEM file under
+`.certs/.generated/`. Changing a certificate creates a new bundle without replacing
+one another connection may still be using. ClickHouse `verify` accepts only
+booleans or `"true"`/`"false"` strings; use `ca_certs` for CA paths. Trino retains
+its supported `verify` CA-path form. Missing
 certificate files are reported when the connection is opened.
 
 Authentication is established by the backend driver, not by accepting a

@@ -67,7 +67,7 @@ def test_dataframe_column_type_inference_is_adapter_owned() -> None:
     assert ch_adapter.infer_dataframe_column_type(pd.Series([1, None])) == ("Nullable(Float64)")
     assert (
         ch_adapter.infer_dataframe_column_type(pd.Series([Decimal("1.2"), Decimal("3.4")]))
-        == "Float64"
+        == "Decimal(2, 1)"
     )
 
 

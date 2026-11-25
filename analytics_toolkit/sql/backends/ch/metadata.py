@@ -1,16 +1,26 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
-from typing import Any, Callable, cast
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Tuple, cast
 
 import pandas as pd
+import sqlglot.tokens as sqlglot_tokens
+from sqlglot import exp, parse
+from sqlglot.errors import SqlglotError
 
-from ..utils import sql_string_literal
+from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
+from analytics_toolkit.sql.execution.backend_options import backend_operation
 
+from .cluster_functions import static_name
+from .dialect import ClickHouseDialect, sql_string_literal
+from .outage_context import logical_statistics
 
 _ROW_COUNT_COLUMN = "row_count"
 _TABLE_SIZE_BYTES_COLUMN = "table_size_bytes"
+_DISTRIBUTED_IDENTITY_ARGS = 3
+_ZERO_ARGUMENT_CALL_TOKENS = 3
+_TOKEN_TYPE: Any = vars(sqlglot_tokens)["TokenType"]
 
 
 @dataclass(frozen=True)
@@ -18,6 +28,50 @@ class ClickHouseShardTable:
     cluster: str
     database: str
     table: str
+
+
+class _LogicalStats(Dict[ClickHouseShardTable, Tuple[object, object]]):
+    """Values retain the coverage evidence of their complete collection scope."""
+
+    data_complete = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.cluster_status: list[dict[str, Any]] = []
+
+
+def apply_clickhouse_logical_stats(
+    connection_key: str,
+    tables: pd.DataFrame,
+    *,
+    cluster: str,
+    read_sql: Callable[[str, str], Any],
+) -> pd.DataFrame:
+    refs = {
+        index: ClickHouseShardTable(cluster, row["schema"], row["table_name"])
+        for index, row in tables.iterrows()
+        if isinstance(row.get("engine"), str) and row["engine"].lower() != "distributed"
+    }
+    if not refs:
+        return tables
+    stats = read_clickhouse_shard_stats(connection_key, set(refs.values()), read_sql=read_sql)
+    result = tables.copy()
+    result[_ROW_COUNT_COLUMN] = result[_ROW_COUNT_COLUMN].astype(object)
+    for index, ref in refs.items():
+        if ref in stats:
+            result.loc[index, _ROW_COUNT_COLUMN] = stats[ref][0]
+            result.loc[index, _TABLE_SIZE_BYTES_COLUMN] = stats[ref][1]
+    _attach_stats_coverage(result, stats)
+    return result
+
+
+def _attach_stats_coverage(tables: pd.DataFrame, stats: Any) -> None:
+    if not getattr(stats, "data_complete", True):
+        tables.attrs["data_complete"] = False
+    tables.attrs["ch_cluster_status"] = [
+        *tables.attrs.get("ch_cluster_status", []),
+        *getattr(stats, "cluster_status", []),
+    ]
 
 
 def apply_clickhouse_shard_stats(
@@ -30,6 +84,7 @@ def apply_clickhouse_shard_stats(
         return tables
 
     shard_refs_by_index: dict[object, ClickHouseShardTable] = {}
+    unresolved = False
     for index, row in tables.iterrows():
         engine = row.get("engine")
         if not isinstance(engine, str) or engine.lower() != "distributed":
@@ -41,6 +96,11 @@ def apply_clickhouse_shard_stats(
         )
         if shard_ref is not None:
             shard_refs_by_index[index] = shard_ref
+        else:
+            unresolved = True
+
+    if unresolved:
+        tables.attrs["data_complete"] = False
 
     if not shard_refs_by_index:
         return tables
@@ -51,9 +111,11 @@ def apply_clickhouse_shard_stats(
         read_sql=read_sql,
     )
     if not stats:
+        _attach_stats_coverage(tables, stats)
         return tables
 
     resolved = tables.copy()
+    resolved[_ROW_COUNT_COLUMN] = resolved[_ROW_COUNT_COLUMN].astype(object)
     for index, shard_ref in shard_refs_by_index.items():
         stat = stats.get(shard_ref)
         if stat is None:
@@ -61,6 +123,7 @@ def apply_clickhouse_shard_stats(
         row_count, table_size_bytes = stat
         resolved.at[index, _ROW_COUNT_COLUMN] = row_count
         resolved.at[index, _TABLE_SIZE_BYTES_COLUMN] = table_size_bytes
+    _attach_stats_coverage(resolved, stats)
     return resolved
 
 
@@ -70,7 +133,9 @@ def read_clickhouse_shard_stats(
     *,
     read_sql: Callable[[str, str], Any],
 ) -> dict[ClickHouseShardTable, tuple[object, object]]:
-    stats: dict[ClickHouseShardTable, tuple[object, object]] = {}
+    from .metadata_values import decode_metadata_frame  # noqa: PLC0415
+
+    stats = _LogicalStats()
     refs_by_cluster: dict[str, set[ClickHouseShardTable]] = {}
     original_refs_by_resolved_ref: dict[
         ClickHouseShardTable,
@@ -92,11 +157,28 @@ def read_clickhouse_shard_stats(
 
     for cluster, cluster_refs in refs_by_cluster.items():
         query = build_clickhouse_shard_stats_query(cluster, cluster_refs)
+        targets = tuple(sorted((ref.cluster, ref.database, ref.table) for ref in cluster_refs))
         try:
-            result = cast(pd.DataFrame, read_sql(connection_key, query))
+            with logical_statistics(targets=targets), backend_operation() as state:
+                result = cast("pd.DataFrame", read_sql(connection_key, query))
+                result = decode_metadata_frame(result, ("shard_database", "shard_table"))
+                result.attrs["data_complete"] = (
+                    result.attrs.get("data_complete", True) and not state.partial
+                )
+                result.attrs["ch_cluster_status"] = list(state.statuses.values())
+        except ClickHouseClusterTopologyError:
+            # An unverified replication group cannot produce a certified logical
+            # estimate. Preserve deterministic topology failure semantics.
+            raise
         except Exception:
+            stats.data_complete = False
             continue
+        stats.data_complete = stats.data_complete and result.attrs.get("data_complete", True)
+        stats.cluster_status.extend(result.attrs.get("ch_cluster_status", []))
         for _, row in result.iterrows():
+            complete = row.get("statistics_complete", False)
+            if complete is None or pd.isna(complete) or not bool(complete):
+                stats.data_complete = False
             database = row.get("shard_database")
             table = row.get("shard_table")
             if not isinstance(database, str) or not isinstance(table, str):
@@ -113,6 +195,8 @@ def read_clickhouse_shard_stats(
             stats[resolved_ref] = stat
             for original_ref in original_refs_by_resolved_ref.get(resolved_ref, ()):
                 stats[original_ref] = stat
+    if not shard_refs.issubset(stats):
+        stats.data_complete = False
     return stats
 
 
@@ -120,25 +204,9 @@ def build_clickhouse_shard_stats_query(
     cluster: str,
     shard_refs: set[ClickHouseShardTable],
 ) -> str:
-    table_filters = ", ".join(
-        f"({sql_string_literal(shard_ref.database)}, "
-        f"{sql_string_literal(shard_ref.table)})"
-        for shard_ref in sorted(
-            shard_refs,
-            key=lambda value: (value.database, value.table),
-        )
-    )
-    return f"""
-SELECT
-    database AS shard_database,
-    name AS shard_table,
-    sum(ifNull(total_rows, 0)) AS row_count,
-    sum(ifNull(total_bytes, 0)) AS table_size_bytes
-FROM cluster({sql_string_literal(cluster)}, system, tables)
-WHERE (database, name) IN ({table_filters})
-GROUP BY database, name
-ORDER BY database, name
-""".strip()
+    from .statistics_query import build_shard_statistics_query  # noqa: PLC0415
+
+    return build_shard_statistics_query(cluster, shard_refs)
 
 
 def resolve_clickhouse_cluster_macro(
@@ -151,12 +219,9 @@ def resolve_clickhouse_cluster_macro(
     if macro_name is None:
         return cluster
 
-    query = (
-        "SELECT "
-        f"getMacro({sql_string_literal(macro_name)}) AS cluster_name"
-    )
+    query = f"SELECT getMacro({sql_string_literal(macro_name)}) AS cluster_name"
     try:
-        result = cast(pd.DataFrame, read_sql(connection_key, query))
+        result = cast("pd.DataFrame", read_sql(connection_key, query))
     except Exception:
         return cluster
 
@@ -165,7 +230,9 @@ def resolve_clickhouse_cluster_macro(
     value = result.iloc[0]["cluster_name"]
     if pd.isna(value):
         return cluster
-    resolved = str(value).strip()
+    from .metadata_values import metadata_text  # noqa: PLC0415
+
+    resolved = metadata_text(value).strip()
     return resolved or cluster
 
 
@@ -183,16 +250,19 @@ def extract_clickhouse_distributed_shard_table(
     if not isinstance(engine_full, str):
         return None
 
-    args = extract_clickhouse_function_args(engine_full, "Distributed")
-    if args is None or len(args) < 3:
+    args = _distributed_arguments(engine_full)
+    if args is None or len(args) < _DISTRIBUTED_IDENTITY_ARGS:
         return None
 
-    cluster = normalize_clickhouse_engine_arg(args[0])
-    database = normalize_clickhouse_distributed_database_arg(
-        args[1],
-        default_database,
+    cluster = static_name(args[0])
+    database = (
+        normalize_clickhouse_distributed_database_arg(
+            args[1].sql(dialect=ClickHouseDialect), default_database
+        )
+        if _is_current_database(args[1])
+        else static_name(args[1])
     )
-    table = normalize_clickhouse_engine_arg(args[2])
+    table = static_name(args[2])
     if not cluster or not database or not table:
         return None
     return ClickHouseShardTable(cluster=cluster, database=database, table=table)
@@ -202,18 +272,10 @@ def normalize_clickhouse_distributed_database_arg(
     value: str,
     default_database: object,
 ) -> str | None:
-    database = normalize_clickhouse_engine_arg(value)
-    if database is None:
-        return None
-
-    compact = "".join(database.split()).lower()
-    if compact in {"currentdatabase()", "database()"}:
-        if not isinstance(default_database, str):
-            return None
-        database = default_database.strip()
-        if not database:
-            return None
-    return database
+    expression = _engine_expression(value)
+    if _is_zero_argument_database_call(value) or _is_current_database(expression):
+        return default_database if isinstance(default_database, str) and default_database else None
+    return normalize_clickhouse_engine_arg(value)
 
 
 def normalize_clickhouse_engine_arg(value: str) -> str | None:
@@ -221,6 +283,15 @@ def normalize_clickhouse_engine_arg(value: str) -> str | None:
     if not normalized:
         return None
 
+    expression = _engine_expression(normalized)
+    if isinstance(expression, exp.Literal) and expression.is_string:
+        return str(expression.this)
+    decoded = static_name(expression) if expression is not None else None
+    if decoded is not None:
+        return decoded
+
+    # Keep the exported helper's historical best-effort fallback. Ownership
+    # extraction above accepts only a fully parsed static Distributed identity.
     if len(normalized) >= 2 and normalized[0] == normalized[-1]:
         if normalized[0] == "'":
             return normalized[1:-1].replace("''", "'")
@@ -228,6 +299,74 @@ def normalize_clickhouse_engine_arg(value: str) -> str | None:
             return normalized[1:-1].replace(normalized[0] * 2, normalized[0])
 
     return normalized
+
+
+def _engine_expression(value: str) -> exp.Expression | None:
+    try:
+        statements = parse(f"SELECT {value}", read=ClickHouseDialect)
+    except SqlglotError:
+        return None
+    if len(statements) != 1:
+        return None
+    statement = statements[0]
+    if (
+        not isinstance(statement, exp.Select)
+        or len(statement.expressions) != 1
+        or any(value for key, value in statement.args.items() if key != "expressions")
+    ):
+        return None
+    return cast("exp.Expression", statement.expressions[0])
+
+
+def _is_current_database(value: exp.Expression | None) -> bool:
+    if value is not None and value.key in {"currentdatabase", "currentschema"}:
+        return not any(value.args.values())
+    return (
+        isinstance(value, exp.Anonymous)
+        and value.name.casefold() in {"currentdatabase", "database"}
+        and not any(argument for key, argument in value.args.items() if key != "this")
+    )
+
+
+def _is_zero_argument_database_call(value: str) -> bool:
+    try:
+        tokens = ClickHouseDialect().tokenize(value)
+    except SqlglotError:
+        return False
+    return (
+        len(tokens) == _ZERO_ARGUMENT_CALL_TOKENS
+        and tokens[0].token_type in {_TOKEN_TYPE.VAR, _TOKEN_TYPE.DATABASE}
+        and tokens[0].text.casefold() in {"currentdatabase", "database"}
+        and tokens[1].token_type is _TOKEN_TYPE.L_PAREN
+        and tokens[2].token_type is _TOKEN_TYPE.R_PAREN
+    )
+
+
+def _distributed_arguments(value: str) -> list[exp.Expression] | None:
+    try:
+        tokens = ClickHouseDialect().tokenize(value)
+    except SqlglotError:
+        return None
+    if (
+        len(tokens) < _ZERO_ARGUMENT_CALL_TOKENS
+        or tokens[0].token_type is not _TOKEN_TYPE.VAR
+        or tokens[0].text.casefold() != "distributed"
+        or tokens[1].token_type is not _TOKEN_TYPE.L_PAREN
+        or tokens[-1].token_type is not _TOKEN_TYPE.R_PAREN
+    ):
+        return None
+    arguments = _argument_slices(value[tokens[1].end + 1 : tokens[-1].start])
+    if arguments is None:
+        return None
+    expressions = [
+        exp.Anonymous(this="currentDatabase")
+        if _is_zero_argument_database_call(argument)
+        else _engine_expression(argument)
+        for argument in arguments
+    ]
+    if any(expression is None for expression in expressions):
+        return None
+    return cast("list[exp.Expression]", expressions)
 
 
 def extract_clickhouse_function_args(
@@ -314,44 +453,38 @@ def find_matching_paren(sql: str, open_paren: int) -> int | None:
     return None
 
 
-def split_top_level_args(args_sql: str) -> list[str]:
-    args: list[str] = []
-    depth = 0
-    quote: str | None = None
+def _argument_slices(args_sql: str) -> list[str] | None:
+    try:
+        tokens = ClickHouseDialect().tokenize(args_sql)
+    except SqlglotError:
+        return None
+    delimiters = {
+        _TOKEN_TYPE.L_PAREN: _TOKEN_TYPE.R_PAREN,
+        _TOKEN_TYPE.L_BRACKET: _TOKEN_TYPE.R_BRACKET,
+        _TOKEN_TYPE.L_BRACE: _TOKEN_TYPE.R_BRACE,
+    }
+    closing = set(delimiters.values())
+    stack = []
+    arguments = []
     start = 0
-    index = 0
-    while index < len(args_sql):
-        char = args_sql[index]
-        if quote is not None:
-            if char == quote:
-                if index + 1 < len(args_sql) and args_sql[index + 1] == quote:
-                    index += 2
-                    continue
-                quote = None
-            elif char == "\\" and quote == "'" and index + 1 < len(args_sql):
-                index += 2
-                continue
-            index += 1
-            continue
-        if char in {"'", '"', "`"}:
-            quote = char
-            index += 1
-            continue
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth = max(depth - 1, 0)
-        elif char == "," and depth == 0:
-            arg = args_sql[start:index].strip()
-            if arg:
-                args.append(arg)
-            start = index + 1
-        index += 1
+    for token in tokens:
+        kind = token.token_type
+        if kind in delimiters:
+            stack.append(delimiters[kind])
+        elif kind in closing:
+            if not stack or stack.pop() != kind:
+                return None
+        elif kind is _TOKEN_TYPE.COMMA and not stack:
+            arguments.append(args_sql[start : token.start].strip())
+            start = token.end + 1
+    if stack:
+        return None
+    arguments.append(args_sql[start:].strip())
+    return arguments
 
-    arg = args_sql[start:].strip()
-    if arg:
-        args.append(arg)
-    return args
+
+def split_top_level_args(args_sql: str) -> list[str]:
+    return [argument for argument in (_argument_slices(args_sql) or []) if argument]
 
 
 def skip_whitespace(sql: str, position: int) -> int:
@@ -361,8 +494,12 @@ def skip_whitespace(sql: str, position: int) -> int:
 
 
 def is_clickhouse_identifier_boundary(sql: str, position: int) -> bool:
-    return position < 0 or position >= len(sql) or not is_clickhouse_identifier_char(
-        sql[position],
+    return (
+        position < 0
+        or position >= len(sql)
+        or not is_clickhouse_identifier_char(
+            sql[position],
+        )
     )
 
 

@@ -32,3 +32,5 @@ class CreateSqlTableOptions:
     return_metadata: bool = False
     ddl_properties: Mapping[str, Any] | None = None
     ch_creation_policy: Any = None
+    on_resource_created: Any = None
+    on_scoped_resource_created: Any = None

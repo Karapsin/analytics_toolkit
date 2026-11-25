@@ -15,6 +15,10 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
+def cleanup_failure_message(error: BaseException) -> str:
+    return f"Cleanup failed while handling transfer error: {type(error).__name__}"
+
+
 class TransferAttemptLogState:
     def __init__(self) -> None:
         self.previous_summary: dict[str, object] | None = None

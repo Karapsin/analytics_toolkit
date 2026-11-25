@@ -15,6 +15,7 @@ from ....backends.transfer_stage import (
     is_cluster_routed_source_snapshot,
 )
 from .range_scheduler import OrdinalRange
+from .source_generation import observed_source_operation
 from .stage_identity import TransferInternalColumns
 
 _MISSING_ROUTED_POLICY = "Cluster-routed ClickHouse source staging policy is missing."
@@ -96,6 +97,7 @@ def execute_source_snapshot_materialization(
     internal_columns: TransferInternalColumns,
     source_staging_ch_policy: Any = None,
     run_post_create_sqls: bool = True,
+    on_resource_created: Any = None,
 ) -> SourceSnapshotSql:
     adapter = get_backend_adapter(backend)
     cluster_routed = is_cluster_routed_source_snapshot(backend, connection)
@@ -106,30 +108,36 @@ def execute_source_snapshot_materialization(
         internal_columns=internal_columns,
         cluster_routed=cluster_routed,
     )
-    execute_transfer_materialization(
-        adapter,
-        backend,
-        connection,
-        snapshot_sql.create_sql,
-    )
-    if snapshot_sql.populate_sql is not None:
-        if source_staging_ch_policy is None:
-            raise RuntimeError(_MISSING_ROUTED_POLICY)
-        adapter.after_create_table(
-            connection,
-            snapshot_table,
-            ch_only_shard=True,
-            ch_creation_policy=source_staging_ch_policy,
-        )
+    with observed_source_operation():
         execute_transfer_materialization(
             adapter,
             backend,
             connection,
-            snapshot_sql.populate_sql,
+            snapshot_sql.create_sql,
         )
+        if on_resource_created is not None:
+            on_resource_created(snapshot_table)
+    if snapshot_sql.populate_sql is not None:
+        if source_staging_ch_policy is None:
+            raise RuntimeError(_MISSING_ROUTED_POLICY)
+        with observed_source_operation():
+            adapter.after_create_table(
+                connection,
+                snapshot_table,
+                ch_only_shard=True,
+                ch_creation_policy=source_staging_ch_policy,
+            )
+        with observed_source_operation():
+            execute_transfer_materialization(
+                adapter,
+                backend,
+                connection,
+                snapshot_sql.populate_sql,
+            )
     if run_post_create_sqls:
         for sql in snapshot_sql.post_create_sqls:
-            adapter.execute_command(connection, sql)
+            with observed_source_operation():
+                adapter.execute_command(connection, sql)
     return snapshot_sql
 
 
@@ -179,3 +187,31 @@ def build_snapshot_range_sql(
         f"{ordinal_column} < {ordinal_range.stop_ordinal} "
         f"ORDER BY {ordinal_column} LIMIT {row_limit}"
     )
+
+
+def snapshot_slice_counts(
+    options: Any,
+    connection: Any,
+    snapshot_table: str,
+    slice_column_name: str,
+    *,
+    read_backend: Any,
+) -> dict[int, int]:
+    adapter = get_backend_adapter(options.from_db_backend)
+    slice_column = adapter.quote_identifier(slice_column_name)
+    result = read_backend(
+        options.from_db_backend,
+        connection,
+        f"SELECT {slice_column}, COUNT(*) FROM {snapshot_table} GROUP BY {slice_column}",
+        print_queries=False,
+        output_type="dict",
+        action_name="snapshot counting",
+        phase="count_snapshot",
+    )
+    counts = {
+        int(slice_id): int(count) for slice_id, count in zip(result.columns[0], result.columns[1])
+    }
+    expected_slices = (
+        [item.index for item in options.transfer_slices] if options.transfer_slices else [0]
+    )
+    return {slice_id: counts.get(slice_id, 0) for slice_id in expected_slices}

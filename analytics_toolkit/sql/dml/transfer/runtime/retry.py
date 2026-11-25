@@ -6,6 +6,7 @@ from typing import Any, TypeVar
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
+from analytics_toolkit.sql.execution.backend_options import current_backend_operation
 from analytics_toolkit.sql.execution.cancellation import (
     current_cancellation_scope,
     raise_if_cancelled,
@@ -70,6 +71,9 @@ def run_with_retry(  # noqa: PLR0913
                 )
                 break
 
+            state = current_backend_operation()
+            if state is not None and state.live_submitted:
+                state.data_write_replay_possible = True
             sleep_seconds = attempt * timeout_increment
             time_print(
                 f"{log_prefix}Failed on attempt {attempt}/{retry_cnt}: "

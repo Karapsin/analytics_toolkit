@@ -39,6 +39,17 @@
                 </replica>
             </shard>
         </integration_facade_cluster>
+        <integration_archive_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse-replica</host>
+                    <port>9000</port>
+                    <user>integration</user>
+                    <password>integration</password>
+                </replica>
+            </shard>
+        </integration_archive_cluster>
         <integration_replicated_cluster>
             <shard>
                 <internal_replication>true</internal_replication>

@@ -7,6 +7,8 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from tests.sql._support.transfer_driver_boundary import install_fake_gp_cursor_boundary
+
 source_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.io.source")
 
 
@@ -74,7 +76,7 @@ class FakeDbapiCursor:
     def __init__(self, rows: list[Any], *, execute_error: Exception | None = None) -> None:
         self.rows = list(rows)
         self.execute_error = execute_error
-        self.description = [("id",), ("label",)]
+        self.description = [("id", 23), ("label", 25)]
         self.executed: list[str] = []
         self.fetch_sizes: list[int] = []
         self.close_calls = 0
@@ -100,6 +102,17 @@ class FakeDbapiConnection:
 
     def cursor(self) -> FakeDbapiCursor:
         return self.cursor_obj
+
+
+@pytest.fixture(autouse=True)
+def _offline_source_driver(monkeypatch):
+    install_fake_gp_cursor_boundary(monkeypatch, FakeDbapiCursor)
+
+    def unexpected_reconnect(_key, _ref):
+        message = "Source test must explicitly provide its replacement connection."
+        raise AssertionError(message)
+
+    monkeypatch.setattr(source_module, "replace_connection", unexpected_reconnect)
 
 
 def test_clickhouse_batches_drain_pending_rows_without_spinning() -> None:

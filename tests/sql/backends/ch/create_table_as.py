@@ -1,140 +1,36 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any
+import json
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
 
 import pytest
+from analytics_toolkit.general import set_connections_path
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import parse_create_table
+from sqlglot import exp, parse_one
 
 from tests.sql._support.assertions import strip_query_label as _strip_query_label
+from tests.sql._support.ch_create_table_as import (
+    CTE_JOIN_QUERY,
+    QUERY,
+    TARGET_SHARD_TABLE,
+    TARGET_TABLE,
+    FakeClickHouseClient,
+    FakeClickHouseResult,
+    FakeDatabaseError,
+    _SingletonDropScopeState,
+    fake_client,
+)
+from tests.sql._support.ch_drop_scope import _DropConnection
+
+__all__ = ["fake_client"]
 
 ch_ctas_module = importlib.import_module("analytics_toolkit.sql.backends.ch.create_table_as")
 ch_ctas_impl = ch_ctas_module
 sql_module = importlib.import_module("analytics_toolkit.sql")
-
-
-TARGET_TABLE = "default.events_result"
-TARGET_SHARD_TABLE = "default.events_result_shard"
-QUERY = """
-SELECT
-    dt,
-    id,
-    amount
-FROM default.events_source
-WHERE amount > 0
-""".strip()
-CTE_JOIN_QUERY = """
-WITH trigger_map AS (
-    SELECT 1 AS id
-)
-SELECT
-    events.id,
-    trigger_map.kind
-FROM default.events_source AS events
-LEFT JOIN trigger_map AS trigger_map
-    ON events.id = trigger_map.id
-""".strip()
-
-
-class FakeClickHouseResult:
-    def __init__(
-        self,
-        result_rows: list[tuple[Any, ...]],
-        column_names: tuple[str, ...] = (),
-        column_types: tuple[Any, ...] = (),
-    ) -> None:
-        self.result_rows = result_rows
-        self.column_names = column_names
-        self.column_types = column_types
-
-
-class FakeDatabaseError(Exception):
-    pass
-
-
-class FakeClickHouseClient:
-    def __init__(self) -> None:
-        self.commands: list[str] = []
-        self.command_settings: list[dict[str, object] | None] = []
-        self.queries: list[str] = []
-        self.created_tables: set[str] = set()
-        self.close_calls = 0
-        self.insert_error: Exception | None = None
-        self.schema_query_error: Exception | None = None
-
-    def command(
-        self,
-        sql: str,
-        settings: dict[str, object] | None = None,
-    ) -> None:
-        self.commands.append(sql)
-        self.command_settings.append(settings)
-        self._track_table_ddl(sql)
-        if self.insert_error is not None and sql.startswith("INSERT INTO"):
-            raise self.insert_error
-
-    def query(self, sql: str) -> FakeClickHouseResult:
-        self.queries.append(sql)
-        if sql.startswith("SELECT getMacro("):
-            return FakeClickHouseResult([("core",)])
-        if sql.startswith("SELECT *\nFROM (\n"):
-            if self.schema_query_error is not None:
-                raise self.schema_query_error
-            return FakeClickHouseResult(
-                [],
-                column_names=("dt", "id", "amount"),
-                column_types=(
-                    type("FakeType", (), {"name": "Date"})(),
-                    type("FakeType", (), {"name": "UInt64"})(),
-                    type("FakeType", (), {"name": "Decimal(18, 4)"})(),
-                ),
-            )
-        if "clusterAllReplicas" in sql and "system, one" in sql:
-            return FakeClickHouseResult([(1,)])
-        if "FROM system.clusters" in sql:
-            return FakeClickHouseResult([(1,)])
-        if "clusterAllReplicas" in sql and "system, tables" in sql:
-            return FakeClickHouseResult([(self._cluster_table_count(sql),)])
-        if "clusterAllReplicas" in sql:
-            return FakeClickHouseResult([(1,)])
-        if sql.startswith("EXISTS TABLE "):
-            table_name = sql[len("EXISTS TABLE ") :].strip()
-            return FakeClickHouseResult([(int(table_name in self.created_tables),)])
-        raise AssertionError(f"Unexpected query: {sql}")
-
-    def close(self) -> None:
-        self.close_calls += 1
-
-    def _track_table_ddl(self, sql: str) -> None:
-        body = _strip_query_label(sql)
-        if body.startswith("CREATE TABLE IF NOT EXISTS "):
-            table_name = body[len("CREATE TABLE IF NOT EXISTS ") :].split()[0]
-            self.created_tables.add(table_name)
-            return
-        if body.startswith("DROP TABLE IF EXISTS "):
-            table_name = body[len("DROP TABLE IF EXISTS ") :].split()[0]
-            self.created_tables.discard(table_name)
-
-    def _cluster_table_count(self, sql: str) -> int:
-        marker = "AND name = '"
-        if marker not in sql:
-            return len(self.created_tables)
-        relation_name = sql.split(marker, 1)[1].split("'", 1)[0]
-        return sum(
-            1
-            for table_name in self.created_tables
-            if table_name.rsplit(".", 1)[-1] == relation_name
-        )
-
-
-@pytest.fixture
-def fake_client(monkeypatch: pytest.MonkeyPatch) -> FakeClickHouseClient:
-    client = FakeClickHouseClient()
-    monkeypatch.setattr(
-        ch_ctas_module,
-        "get_sql_connection",
-        lambda connection_key: client,
-    )
-    return client
 
 
 def test_ch_create_table_as_is_exported() -> None:
@@ -182,18 +78,9 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
         ch_sharding_key="cityHash64(dt, id)",
     )
 
-    assert fake_client.commands[:4] == [
-        f"DROP TABLE IF EXISTS {TARGET_TABLE}",
-        f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE}",
-        f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'",
-        f"DROP TABLE IF EXISTS {TARGET_SHARD_TABLE} ON CLUSTER '{{cluster}}'",
-    ]
-    assert fake_client.command_settings[2] == {
-        "distributed_ddl_task_timeout": 0,
-        "distributed_ddl_output_mode": "none",
-    }
-    shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = fake_client.commands[4:8]
-    assert shard_sql.startswith(f"CREATE OR REPLACE TABLE {TARGET_SHARD_TABLE}")
+    assert not any(command.startswith("DROP TABLE") for command in fake_client.commands)
+    shard_sql, local_shard_sql, distributed_sql, local_distributed_sql = fake_client.commands[:4]
+    assert shard_sql.startswith(f"CREATE TABLE {TARGET_SHARD_TABLE}")
     assert "ON CLUSTER '{cluster}'" in shard_sql
     assert "ENGINE = ReplicatedMergeTree" in shard_sql
     assert "PARTITION BY `dt`" in shard_sql
@@ -206,7 +93,7 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
     assert "ON CLUSTER" not in local_shard_sql
     assert "UUID '" in local_shard_sql
     assert "ENGINE = ReplicatedMergeTree" in local_shard_sql
-    assert distributed_sql.startswith(f"CREATE OR REPLACE TABLE {TARGET_TABLE}")
+    assert distributed_sql.startswith(f"CREATE TABLE {TARGET_TABLE}")
     assert "ON CLUSTER '{cluster}'" in distributed_sql
     assert "ENGINE = Distributed(" in distributed_sql
     assert "    '{cluster}'," in distributed_sql
@@ -217,17 +104,98 @@ def test_ch_create_table_as_creates_pair_and_inserts_query(
     assert QUERY not in distributed_sql
     assert local_distributed_sql.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
     assert "ON CLUSTER" not in local_distributed_sql
-    assert fake_client.commands[8] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
-    assert fake_client.command_settings[4] == {
+    assert fake_client.commands[4] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
+    assert fake_client.command_settings[0] == {
         "distributed_ddl_task_timeout": 0,
         "distributed_ddl_output_mode": "none",
     }
-    assert (
-        f"SELECT *\nFROM (\n{QUERY}\n) AS _ch_create_table_as_source\nLIMIT 0"
-    ) in fake_client.queries
+    assert f"DESCRIBE TABLE ({QUERY})" in fake_client.queries
     assert f"EXISTS TABLE {TARGET_TABLE}" in fake_client.queries
     assert f"EXISTS TABLE {TARGET_SHARD_TABLE}" in fake_client.queries
     assert any("clusterAllReplicas" in query for query in fake_client.queries)
+    assert fake_client.close_calls == 1
+
+
+def test_ch_create_table_as_recreates_only_verified_existing_pair(
+    fake_client: FakeClickHouseClient,
+) -> None:
+    path = Path(".connections")
+    config = json.loads(path.read_text())
+    config["ch"]["host"] = "coordinator"
+    path.write_text(json.dumps(config))
+    set_connections_path(path)
+    state = _SingletonDropScopeState()
+    state.clusters.update(core=(state.coordinator,))
+    state.clusters["{cluster}"] = (state.coordinator,)
+    columns = "(`dt` Date, `id` UInt64, `amount` Decimal(18, 4))"
+    fake_client.created_tables.update((TARGET_TABLE, TARGET_SHARD_TABLE))
+    fake_client.table_ddls.update(
+        {
+            TARGET_TABLE: (
+                f"CREATE TABLE {TARGET_TABLE} {columns} "
+                "ENGINE = Distributed('{cluster}', 'default', 'events_result_shard', rand())"
+            ),
+            TARGET_SHARD_TABLE: (
+                f"CREATE TABLE {TARGET_SHARD_TABLE} {columns} "
+                "ENGINE = ReplicatedMergeTree ORDER BY id"
+            ),
+        }
+    )
+    for name, ddl in fake_client.table_ddls.items():
+        state._create(state.coordinator, parse_create_table(ddl, name))
+    foreign = parse_create_table(
+        f"CREATE TABLE {TARGET_TABLE} {columns} ENGINE=MergeTree ORDER BY id", TARGET_TABLE
+    )
+    state._create(state.remote, foreign, [(date(2026, 1, 1), 100, Decimal("9.0000"))])
+    foreign_physical = parse_create_table(
+        f"CREATE TABLE {TARGET_SHARD_TABLE} {columns} ENGINE=MergeTree ORDER BY id",
+        TARGET_SHARD_TABLE,
+    )
+    state._create(state.remote, foreign_physical, [(date(2026, 1, 1), 101, Decimal("8.0000"))])
+    before = state.snapshot()
+    fake_client.ownership_connection = _DropConnection(state, state.coordinator, native=False)
+    ch_ctas_module.ch_create_table_as("ch", TARGET_TABLE, QUERY)
+
+    drops = [
+        parse_one(_strip_query_label(statement), read=ClickHouseDialect)
+        for statement in fake_client.commands[:2]
+    ]
+    assert all(isinstance(statement, exp.Drop) for statement in drops)
+    assert [
+        (table.db, table.name, statement.find(exp.OnCluster).this.name)
+        for statement in drops
+        for table in statement.args.get("tables") or [statement.this]
+    ] == [("default", "events_result", "core"), ("default", "events_result_shard", "core")]
+    assert len(fake_client.commands) == 6
+    assert fake_client.commands[2].startswith(f"CREATE TABLE {TARGET_SHARD_TABLE}")
+    assert len(fake_client.data_inserts) == 1
+    inserted_table, inserted_columns, inserted_rows = fake_client.data_inserts[0]
+    inserted_target = parse_one(inserted_table, read=ClickHouseDialect, into=exp.Table)
+    assert (inserted_target.db, inserted_target.name) == ("default", "events_result")
+    assert inserted_columns == ["dt", "id", "amount"]
+    expected_rows = [(date(2026, 1, 1), 1, Decimal("1.2500"))]
+    assert inserted_rows == expected_rows
+    assert f"SHOW CREATE TABLE {TARGET_TABLE}" in fake_client.queries
+    assert any(query.startswith("SELECT create_table_query") for query in fake_client.queries)
+    assert state.snapshot()[state.remote] == before[state.remote]
+    assert state.rows(state.coordinator, TARGET_TABLE) == expected_rows
+    assert state.rows(state.coordinator, TARGET_SHARD_TABLE) == expected_rows
+    for table in (TARGET_TABLE, TARGET_SHARD_TABLE):
+        assert (
+            state.host_tables[state.coordinator][table].uuid
+            != before[state.coordinator][table]["uuid"]
+        )
+    assert {
+        column: exp.DataType.build(native, dialect=ClickHouseDialect)
+        for column, native in state.host_tables[state.coordinator][TARGET_TABLE].schema.items()
+    } == {
+        column: exp.DataType.build(native, dialect=ClickHouseDialect)
+        for column, native in {"dt": "Date", "id": "UInt64", "amount": "Decimal(18, 4)"}.items()
+    }
+    assert state.host_tables[state.coordinator][TARGET_SHARD_TABLE].schema == (
+        state.host_tables[state.coordinator][TARGET_TABLE].schema
+    )
+    assert any(settings == {"skip_unavailable_shards": 0} for settings in state.query_settings)
     assert fake_client.close_calls == 1
 
 
@@ -241,12 +209,13 @@ def test_ch_create_table_as_table_schema_overrides_inferred_types(
         table_schema={"dt": "String", "id": "String", "amount": "Float64"},
     )
 
-    shard_sql = fake_client.commands[4]
+    shard_sql = fake_client.commands[0]
     assert "`dt` String" in shard_sql
     assert "`id` String" in shard_sql
     assert "`amount` Float64" in shard_sql
     assert "`dt` Date" not in shard_sql
-    assert any(query.startswith("SELECT *\nFROM (\n") for query in fake_client.queries)
+    assert f"DESCRIBE TABLE ({QUERY})" in fake_client.queries
+    assert fake_client.data_inserts[-1][2] == [(b"2026-01-01", b"1", 1.25)]
 
 
 def test_ch_create_table_as_dry_run_uses_table_schema() -> None:
@@ -281,7 +250,7 @@ def test_ch_create_table_as_skips_insert_when_insert_data_false(
         insert_data=False,
     )
 
-    assert len(fake_client.commands) == 8
+    assert len(fake_client.commands) == 4
     assert not any(command.startswith("INSERT INTO ") for command in fake_client.commands)
 
 
@@ -297,7 +266,7 @@ def test_ch_create_table_as_skips_drop_when_drop_target_if_exists_false(
     )
 
     assert not any(command.startswith("DROP TABLE") for command in fake_client.commands)
-    assert fake_client.commands[0].startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}")
+    assert fake_client.commands[0].startswith(f"CREATE TABLE {TARGET_SHARD_TABLE}")
     assert fake_client.commands[-1] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
 
 
@@ -324,8 +293,8 @@ def test_ch_create_table_as_quotes_cluster_macro(
         QUERY,
     )
 
-    assert f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'" in (fake_client.commands)
-    shard_sql, _, distributed_sql, _ = fake_client.commands[4:8]
+    assert not any(command.startswith("DROP TABLE") for command in fake_client.commands)
+    shard_sql, _, distributed_sql, _ = fake_client.commands[:4]
     assert "ON CLUSTER '{cluster}'" in shard_sql
     assert "ON CLUSTER '{cluster}'" in distributed_sql
     assert "    '{cluster}'," in distributed_sql
@@ -425,10 +394,12 @@ def test_ch_create_table_as_only_shard_executes_drop_create_and_metadata(
         return_metadata=True,
         table_schema={"dt": "Date", "id": "UInt64", "amount": "Float64"},
     )
-    assert fake_client.commands[0] == f"DROP TABLE IF EXISTS {TARGET_TABLE}"
-    assert fake_client.commands[1].startswith(f"CREATE OR REPLACE TABLE {TARGET_TABLE}")
-    assert fake_client.commands[2] == f"INSERT INTO {TARGET_TABLE}\n{QUERY}"
-    assert result.metadata.statement_count == 3
+    assert fake_client.commands[0].startswith(f"CREATE TABLE {TARGET_TABLE}")
+    assert fake_client.data_inserts == [
+        (TARGET_TABLE, ["dt", "id", "amount"], [(date(2026, 1, 1), 1, 1.25)])
+    ]
+    assert not any(command.startswith("DROP TABLE") for command in fake_client.commands)
+    assert result.metadata.statement_count == 2
     assert fake_client.close_calls == 1
 
 
@@ -458,7 +429,14 @@ def test_ch_create_table_as_dry_schema_placeholders_and_validation() -> None:
         ch_only_shard=True,
         dry_run=True,
     )
-    assert local_plan.sqls[1] == (f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE} (<query schema>)")
+    assert local_plan.sqls[0].startswith(f"CREATE TABLE {TARGET_TABLE}")
+    assert "<query schema>" in local_plan.sqls[0]
+    assert local_plan.options["pending_schema_inspection"] is True
+    assert local_plan.options["pending_existing_layout_verification"] is True
+    assert local_plan.options["pending_resource_scope_resolution"] is True
+    assert local_plan.metadata.statement_count is None
+    assert all(step.phase != "drop_target" for step in local_plan.statements)
+    assert all(not statement.lstrip().startswith("DROP ") for statement in local_plan.sqls)
     distributed_plan = ch_ctas_module.ch_create_table_as(
         "ch",
         TARGET_TABLE,
@@ -466,6 +444,11 @@ def test_ch_create_table_as_dry_schema_placeholders_and_validation() -> None:
         dry_run=True,
     )
     assert sum("<query schema>" in sql for sql in distributed_plan.sqls) == 4
+    assert distributed_plan.options["pending_existing_layout_verification"] is True
+    assert distributed_plan.options["pending_resource_scope_resolution"] is True
+    assert distributed_plan.metadata.statement_count is None
+    assert all(step.phase != "drop_target" for step in distributed_plan.statements)
+    assert all(not statement.lstrip().startswith("DROP ") for statement in distributed_plan.sqls)
     with pytest.raises(ValueError, match="ch_only_shard must be a boolean"):
         ch_ctas_impl.build_ch_create_table_as_sqls(
             TARGET_TABLE,

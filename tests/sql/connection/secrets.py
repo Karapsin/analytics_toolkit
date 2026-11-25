@@ -115,11 +115,11 @@ def test_secret_resolution_uses_selected_connections_directory(
 
 
 @pytest.mark.parametrize(
-    ("secret_text", "message"),
+    ("secret_text", "message", "field_name"),
     [
-        (None, "Missing SQL secrets file"),
-        ("export OTHER='value'\n", "is not set"),
-        ("export GP_PASSWORD=''\n", "is empty"),
+        (None, "Missing SQL secrets file", "password"),
+        ("export OTHER='value'\n", "is not set", "password"),
+        ("export GP_PASSWORD=''\n", "is empty", "host"),
     ],
 )
 def test_secret_reference_reports_missing_file_key_and_empty_value(
@@ -127,6 +127,7 @@ def test_secret_reference_reports_missing_file_key_and_empty_value(
     write_sql_connections: Callable[[dict[str, dict[str, object]]], Path],
     secret_text: str | None,
     message: str,
+    field_name: str,
 ) -> None:
     write_sql_connections(
         {
@@ -134,8 +135,9 @@ def test_secret_reference_reports_missing_file_key_and_empty_value(
                 "type": "gp",
                 "host": "gp.example",
                 "user": "user",
-                "password": {"from": ".secrets", "key": "GP_PASSWORD"},
+                "password": "password",
                 "database": "db",
+                field_name: {"from": ".secrets", "key": "GP_PASSWORD"},
             }
         }
     )

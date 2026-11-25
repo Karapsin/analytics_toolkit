@@ -1,24 +1,38 @@
 from __future__ import annotations
 
 # ruff: noqa: BLE001, EM101, PLR0913, S608, TRY003, TRY301
-from dataclasses import replace
+from contextlib import nullcontext
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from sqlglot import parse_one
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.finalization_outcome import record_final_target_rows
 from analytics_toolkit.sql.backends.models import StageFinalizationRequest, StageTargetTableRequest
+from analytics_toolkit.sql.connection.ddl_defaults import legacy_clickhouse_scope
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError, SqlConfigError
 from analytics_toolkit.sql.ddl.schema import (
     _build_column_definitions,
     build_table_schema_column_definitions,
 )
-from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
+from analytics_toolkit.sql.execution.backend_options import (
+    backend_operation,
+    current_backend_operation,
+    preflight_sql_statements,
+    preserve_recovery_artifacts,
+)
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
-from .creation_policy import DEFAULT_DDL_READY_TIMEOUT_SECONDS, ClickHouseCreationPolicy
+from .creation_policy import (
+    ClickHouseCreationPolicy,
+    _render_distributed_engine,
+    resolve_clickhouse_creation_policy,
+)
 from .ddl import _sql_string_literal, split_ch_table_name_for_distributed_engine
+from .dialect import ClickHouseDialect
+from .identifiers import quote_identifier
 from .reconfigure_ddl import distributed_table_parts
 from .reconfigure_execution import (
     SYNCHRONOUS_CLUSTER_COMMAND_SETTINGS,
@@ -35,13 +49,35 @@ from .reconfigure_support import (
     supports_exchange,
     unquoted_table_name,
 )
+from .recovery_inventory import attach_recovery_details
+from .replace_layout import prepare_replacement_layout
+from .replacement_cutover import CutoverResources
+from .replacement_identity import capture_replacement_identity, require_replacement_identity
+from .replacement_resources import (
+    ReplacementCreate,
+    submit_replacement_create,
+)
+from .replacement_resources import (
+    create_replacement_physical as _create_replacement_physical,
+)
 from .routing import connection_cluster_routing, local_sql, query_local, routed_connection_sql
 from .wait import _resolve_ch_cluster_name_for_wait
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from .drop_layout import VerifiedDropResource
+
 _CLUSTER_REPLICA_COLUMNS = 3
+
+
+@dataclass(frozen=True)
+class _ReplacementTargetObservation:
+    expected_rows: int
+    identities: tuple[VerifiedDropResource, ...]
+    fingerprint: tuple[tuple[Any, ...], ...]
+    physical_exchange: bool
+    facade_exchange: bool
 
 
 def finalize_stage_table(adapter: Any, request: StageFinalizationRequest) -> None:
@@ -109,6 +145,13 @@ def _finalize_upsert(adapter: Any, request: StageFinalizationRequest) -> None:
         )
         return
 
+    execution_options = adapter.resolve_upsert_execution_options(
+        request.connection,
+        request.target_table,
+        ch_cluster=request.ch_cluster,
+        ch_only_shard=request.ch_only_shard,
+    )
+    request = replace(request, **execution_options)
     adapter.ensure_distributed_target_pair(
         request.connection,
         request.target_table,
@@ -136,7 +179,7 @@ def _finalize_upsert(adapter: Any, request: StageFinalizationRequest) -> None:
         partition_column=request.upsert_partition_column,
         incoming_stage_tables=request.incoming_stage_tables,
     )
-    for sql in adapter.build_upsert_stage_sqls(
+    sqls = adapter.build_upsert_stage_sqls(
         request.target_table,
         request.stage_table,
         columns=list(
@@ -153,8 +196,11 @@ def _finalize_upsert(adapter: Any, request: StageFinalizationRequest) -> None:
         final_stage_table=request.final_upsert_stage_table,
         incoming_stage_tables=request.incoming_stage_tables,
         partition_values=partition_values,
+    )
+    for sql in adapter.resolve_upsert_execution_sqls(
+        request.connection, request.target_table, sqls
     ):
-        adapter.execute_command(request.connection, sql)
+        adapter.execute_upsert_command(request.connection, request.target_table, sql)
 
 
 def _replacement_physical_target(adapter: Any, request: StageFinalizationRequest) -> str:
@@ -169,7 +215,13 @@ def _replacement_physical_target(adapter: Any, request: StageFinalizationRequest
 
 
 def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None:
-    request = _qualify_replacement_target(request)
+    with backend_operation():
+        _replace_from_stage_once(adapter, request)
+
+
+def _replace_from_stage_once(adapter: Any, request: StageFinalizationRequest) -> None:
+    request = _replacement_request(request)
+    prepare_replacement_layout(adapter, request)
     token = uuid4().hex[:12]
     physical_target = _replacement_physical_target(adapter, request)
     replacement_physical = suffixed_table(physical_target, f"__replace_guarded_{token}")
@@ -189,34 +241,29 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
         request, shard_cluster, distributed_cluster
     )
     physical_scopes = [(physical_target, scope) for scope in dict.fromkeys((shard_cluster, None))]
-    local_replacement = [(replacement_physical, None)] if shard_cluster is not None else []
     _cleanup_orphan_replacements(
         adapter,
         request.connection,
         [*physical_scopes, (request.target_table, facade_cluster)],
     )
-    database, _relation = distributed_table_parts(physical_target)
-    use_exchange = supports_exchange(
-        _database_engine_on_scope(request.connection, database, shard_cluster)
-    )
-    facade_exchange = (
-        supports_exchange(_database_engine_on_scope(request.connection, database, facade_cluster))
-        if replacement_facade is not None
-        else False
-    )
-    expected_rows = _count_rows_routed(adapter, request.connection, request.stage_table)
-    target_fingerprint = _target_fingerprint(
-        request.connection,
+    observation = _observe_replacement_targets(
+        adapter,
+        request,
         physical_target,
-        shard_cluster,
+        shard_cluster=shard_cluster,
+        facade_cluster=facade_cluster,
     )
     cleanup_tables: list[tuple[str, str | None]] = []
     rollback_sql: list[str] = []
+    cutover_steps: list[tuple[str, str]] = []
+    owned_tables: list[tuple[str, str | None]] = []
+    cutover_resources: CutoverResources | None = None
     try:
         _create_replacement_physical(
             adapter,
             request,
             replacement_physical,
+            on_resource_created=owned_tables.append,
         )
         if replacement_facade is not None:
             _create_replacement_facade(
@@ -226,6 +273,8 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
                 physical_target=physical_target,
                 facade_cluster=facade_cluster,
                 distributed_cluster=distributed_cluster,
+                on_resource_created=owned_tables.append,
+                original_ddl=observation.identities[-1].ddl,
             )
         _load_replacement(adapter, request, replacement_physical, data_cluster, data_function)
         _synchronize_replacement(request, replacement_physical, data_cluster, replicated=replicated)
@@ -237,13 +286,14 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
             data_function=data_function,
             query_label=request.query_label,
         )
-        if replacement_rows != expected_rows:
+        if replacement_rows != observation.expected_rows:
             raise RuntimeError(
                 "ClickHouse replacement row count does not match the staged row count."
             )
+        require_replacement_identity(request.connection, observation.identities, owned_tables)
         if (
             _target_fingerprint(request.connection, physical_target, shard_cluster)
-            != target_fingerprint
+            != observation.fingerprint
         ):
             raise RuntimeError(
                 "ClickHouse destination changed during replacement; pause writers and retry."
@@ -254,7 +304,7 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
             replacement_physical,
             backup_physical,
             ch_cluster=shard_cluster,
-            use_exchange=use_exchange,
+            use_exchange=observation.physical_exchange,
         )
         cutover_steps = list(zip(physical_cutover, reversed(physical_rollback)))
         cleanup_tables.append((physical_cleanup, shard_cluster))
@@ -264,12 +314,17 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
                 replacement_facade,
                 backup_facade,
                 ch_cluster=facade_cluster,
-                use_exchange=facade_exchange,
+                use_exchange=observation.facade_exchange,
             )
             cutover_steps.extend(zip(facade_cutover, reversed(facade_rollback)))
             cleanup_tables.append((facade_cleanup, facade_cluster))
 
-        _execute_cutover_steps(adapter, request.connection, cutover_steps, rollback_sql)
+        cutover_resources = CutoverResources(
+            request.connection, observation.identities, owned_tables, cutover_steps
+        )
+        _execute_cutover_steps(
+            adapter, request.connection, cutover_steps, rollback_sql, resources=cutover_resources
+        )
         final_rows = _count_rows_on_scope(
             adapter,
             request.connection,
@@ -278,27 +333,82 @@ def _replace_from_stage(adapter: Any, request: StageFinalizationRequest) -> None
             data_function=data_function,
             query_label=request.query_label,
         )
-        if final_rows != expected_rows:
+        if final_rows != observation.expected_rows:
             raise RuntimeError(
                 "ClickHouse final target row count does not match the staged row count."
             )
     except Exception as exc:
-        if preserve_recovery_artifacts():
+        if isinstance(exc, AmbiguousSqlReplaceError) or preserve_recovery_artifacts():
             raise
-        _rollback_completed_steps(adapter, request.connection, rollback_sql, exc)
+        _rollback_completed_steps(
+            adapter,
+            request.connection,
+            rollback_sql,
+            exc,
+            recovery_scopes=[*owned_tables, *cleanup_tables],
+            cutover_journal=[
+                {"sql": statement, "inverse": inverse, "submitted": True, "acknowledged": True}
+                for (statement, inverse), _completed in zip(cutover_steps, rollback_sql)
+            ],
+            resources=cutover_resources,
+        )
         _best_effort_drop(
             adapter,
             request.connection,
-            [
-                (replacement_facade, facade_cluster),
-                (replacement_physical, shard_cluster),
-                *local_replacement,
-            ],
+            owned_tables,
         )
         raise
 
-    if _drop_completed_replacements(adapter, request.connection, cleanup_tables):
-        _best_effort_drop(adapter, request.connection, local_replacement)
+    record_final_target_rows(final_rows)
+    _drop_completed_replacements(adapter, request.connection, cleanup_tables)
+
+
+def _observe_replacement_targets(
+    adapter: Any,
+    request: StageFinalizationRequest,
+    physical_target: str,
+    *,
+    shard_cluster: str | None,
+    facade_cluster: str | None,
+) -> _ReplacementTargetObservation:
+    database, _relation = distributed_table_parts(physical_target)
+    physical_exchange = supports_exchange(
+        _database_engine_on_scope(request.connection, database, shard_cluster)
+    )
+    facade_exchange = (
+        supports_exchange(_database_engine_on_scope(request.connection, database, facade_cluster))
+        if not request.ch_only_shard
+        else False
+    )
+    expected_rows = _count_rows_routed(adapter, request.connection, request.stage_table)
+    original_targets = [(physical_target, shard_cluster)]
+    if not request.ch_only_shard:
+        original_targets.append((request.target_table, facade_cluster))
+    identities = capture_replacement_identity(request.connection, original_targets)
+    fingerprint = _target_fingerprint(request.connection, physical_target, shard_cluster)
+    return _ReplacementTargetObservation(
+        expected_rows, identities, fingerprint, physical_exchange, facade_exchange
+    )
+
+
+def _legacy_replacement_policy(request: StageFinalizationRequest) -> ClickHouseCreationPolicy:
+    return resolve_clickhouse_creation_policy(
+        legacy_clickhouse_scope(),
+        ch_engine=request.ch_engine,
+        ch_cluster=request.ch_cluster,
+        ch_sharding_key=request.ch_sharding_key,
+        ch_distributed_table=not request.ch_only_shard,
+        ch_only_shard=request.ch_only_shard,
+        ch_distributed_engine_template=None,
+        ch_distributed_cluster=None,
+        warn_ch_cluster=False,
+    )
+
+
+def _replacement_request(request: StageFinalizationRequest) -> StageFinalizationRequest:
+    if request.ch_creation_policy is None:
+        request = replace(request, ch_creation_policy=_legacy_replacement_policy(request))
+    return _qualify_replacement_target(request)
 
 
 def _drop_completed_replacements(
@@ -330,35 +440,78 @@ def _execute_cutover_steps(
     connection: Any,
     steps: Sequence[tuple[str, str]],
     completed_rollbacks: list[str],
+    *,
+    resources: CutoverResources | None = None,
 ) -> None:
     for statement, inverse in steps:
-        try:
-            with local_sql(connection):
+        context = resources.step(statement) if resources is not None else nullcontext(None)
+        with context as step, local_sql(connection):
+            preflight_sql_statements(connection, [statement])
+            try:
                 execute_reconfiguration_sqls(adapter, connection, [statement])
-        except Exception as exc:
-            raise AmbiguousSqlReplaceError(
-                "ClickHouse cutover statement completion is uncertain; "
-                "replacement artifacts were preserved for recovery."
-            ) from exc
+            except Exception as exc:
+                if step is not None and step.observed and not step.submitted:
+                    raise
+                _retain_structural_recovery()
+                message = (
+                    "ClickHouse cutover statement completion is uncertain; "
+                    f"replacement artifacts were preserved for recovery. Statement: {statement}"
+                )
+                raise AmbiguousSqlReplaceError(message) from exc
         completed_rollbacks.append(inverse)
+        if resources is not None:
+            resources.acknowledge(statement)
 
 
 def _rollback_completed_steps(
-    adapter: Any, connection: Any, completed_rollbacks: Sequence[str], error: Exception
+    adapter: Any,
+    connection: Any,
+    completed_rollbacks: Sequence[str],
+    error: Exception,
+    *,
+    recovery_scopes: Sequence[tuple[str, str | None]] = (),
+    cutover_journal: Sequence[dict[str, Any]] = (),
+    resources: CutoverResources | None = None,
 ) -> None:
     if completed_rollbacks:
+        journal = [dict(step) for step in cutover_journal] or [
+            {"inverse": inverse, "acknowledged": True} for inverse in completed_rollbacks
+        ]
         try:
-            with local_sql(connection):
-                execute_reconfiguration_sqls(
-                    adapter, connection, list(reversed(completed_rollbacks))
-                )
+            for step, inverse in zip(reversed(journal), reversed(completed_rollbacks)):
+                context = resources.step(inverse) if resources is not None else nullcontext(None)
+                with context as permit, local_sql(connection):
+                    preflight_sql_statements(connection, [inverse])
+                    try:
+                        execute_reconfiguration_sqls(adapter, connection, [inverse])
+                    except BaseException:
+                        step["rollback_submitted"] = (
+                            permit is None or not permit.observed or permit.submitted
+                        )
+                        raise
+                step["rollback_submitted"] = True
+                step["rollback_acknowledged"] = True
+                if resources is not None:
+                    resources.acknowledge(inverse)
         except Exception as rollback_exc:
-            raise AmbiguousSqlReplaceError(
+            _retain_structural_recovery()
+            failure = AmbiguousSqlReplaceError(
                 "ClickHouse replacement and automatic rollback both failed; "
-                "replacement artifacts were preserved for recovery."
-            ) from rollback_exc
+                f"replacement artifacts were preserved for recovery: {tuple(recovery_scopes)!r}. "
+                f"Rollback: {rollback_exc}"
+            )
+            failure.rollback_error = rollback_exc
+            attach_recovery_details(failure, scopes=recovery_scopes, cutover_journal=journal)
+            raise failure from error
     if isinstance(error, AmbiguousSqlReplaceError):
         raise error
+
+
+def _retain_structural_recovery() -> None:
+    state = current_backend_operation()
+    if state is not None:
+        state.preserve_recovery = True
+        state.structural_replay_blocked = True
 
 
 def _replacement_data_route(
@@ -370,7 +523,7 @@ def _replacement_data_route(
         else request.ch_engine
     )
     replicated = (
-        parse_one(engine, read="clickhouse").name.lower().startswith(("replicated", "shared"))
+        parse_one(engine, read=ClickHouseDialect).name.lower().startswith(("replicated", "shared"))
     )
     cluster = shard_cluster if request.ch_only_shard else distributed_cluster
     # A managed facade reads one replica per shard. Preserve that same cluster's
@@ -413,52 +566,15 @@ def _validate_nonreplicated_facade_cluster(connection: Any, cluster: str) -> Non
 
 
 def _qualify_replacement_target(request: StageFinalizationRequest) -> StageFinalizationRequest:
+    policy = request.ch_creation_policy
+    if policy is not None and not policy.create_distributed_pair:
+        request = replace(request, ch_only_shard=True)
     database, _relation = unquoted_table_name(request.target_table)
     if database is not None:
         return request
     with local_sql(request.connection):
         database = str(query_scalar(request.connection, "SELECT currentDatabase()"))
     return replace(request, target_table=qualify_with_database(request.target_table, database))
-
-
-def _create_replacement_physical(
-    adapter: Any,
-    request: StageFinalizationRequest,
-    replacement_physical: str,
-) -> None:
-    policy = request.ch_creation_policy
-    if policy is None:
-        # The legacy only-shard builder is local-only. Normalize replacement DDL
-        # to a physical policy so its placement matches the load and cutover.
-        policy = ClickHouseCreationPolicy(
-            create_distributed_pair=False,
-            shard_engine=request.ch_engine,
-            shard_on_cluster=request.ch_cluster,
-            distributed_engine_template=None,
-            distributed_cluster=None,
-            distributed_on_cluster=None,
-            sharding_key=request.ch_sharding_key,
-            ddl_ready_timeout_seconds=DEFAULT_DDL_READY_TIMEOUT_SECONDS,
-        )
-    with local_sql(request.connection):
-        adapter.ensure_stage_target_table(
-            StageTargetTableRequest(
-                connection=request.connection,
-                target_table=replacement_physical,
-                sample_batch=request.sample_batch,
-                target_column_types=request.target_column_types,
-                gp_distributed_by_key=request.gp_distributed_by_key,
-                partition_by=request.partition_by,
-                order_by=request.order_by,
-                ch_engine=request.ch_engine,
-                ch_cluster=request.ch_cluster,
-                ch_sharding_key=request.ch_sharding_key,
-                query_label=request.query_label,
-                connection_key=request.connection_key,
-                ch_only_shard=True,
-                ch_creation_policy=policy,
-            )
-        )
 
 
 def _create_replacement_facade(
@@ -469,6 +585,8 @@ def _create_replacement_facade(
     physical_target: str,
     facade_cluster: str | None,
     distributed_cluster: str,
+    on_resource_created: Any = None,
+    original_ddl: str | None = None,
 ) -> None:
     database_expression, target_relation = split_ch_table_name_for_distributed_engine(
         physical_target
@@ -480,14 +598,30 @@ def _create_replacement_facade(
         if request.target_column_types is not None
         else _build_column_definitions("ch", request.sample_batch, None)
     )
-    sql = (
-        f"CREATE TABLE {replacement_facade}{cluster_clause(facade_cluster)} "
-        f"({columns}) ENGINE = Distributed("
-        f"{_sql_string_literal(distributed_cluster)}, {database_expression}, "
+    policy = request.ch_creation_policy
+    engine = (
+        _render_distributed_engine(policy, physical_target)
+        if policy is not None
+        else f"Distributed({_sql_string_literal(distributed_cluster)}, {database_expression}, "
         f"{_sql_string_literal(target_relation)}, {request.ch_sharding_key})"
     )
-    with local_sql(request.connection):
-        adapter.execute_command(request.connection, sql)
+    sql = (
+        f"CREATE TABLE {replacement_facade}{cluster_clause(facade_cluster)} "
+        f"({columns}) ENGINE = {engine}"
+    )
+    if original_ddl is not None:
+        # Resolve existing facade properties only when needed.
+        from .replacement_facade import preserve_facade_properties  # noqa: PLC0415
+
+        sql = preserve_facade_properties(sql, original_ddl)
+    submit_replacement_create(
+        adapter,
+        request,
+        ReplacementCreate(
+            apply_query_label(sql, request.query_label), replacement_facade, facade_cluster
+        ),
+        on_resource_created,
+    )
 
 
 def _clusters(request: StageFinalizationRequest) -> tuple[str | None, str | None, str]:
@@ -580,7 +714,8 @@ def _synchronize_replacement(
     # cluster() may select. Synchronize the off-side table before either count
     # or cutover, waiting for every configured host rather than only active ones.
     sql = apply_query_label(
-        f"SYSTEM SYNC REPLICA{cluster_clause(cluster)} {table}", request.query_label
+        f"SYSTEM SYNC REPLICA ON CLUSTER {quote_identifier(cluster)} {table}",
+        request.query_label,
     )
     with local_sql(request.connection):
         request.connection.command(
@@ -668,6 +803,7 @@ def _cleanup_orphan_replacements(
     connection: Any,
     targets: list[tuple[str, str | None]],
 ) -> None:
+    del adapter
     unresolved: list[str] = []
     for target, cluster in targets:
         database, relation = distributed_table_parts(target)
@@ -691,12 +827,6 @@ def _cleanup_orphan_replacements(
                     continue
                 orphan = f"{database}.{name}"
                 active = _replacement_is_active(connection, orphan, cluster)
-                disposable = name.startswith(f"{relation}__replace_guarded_") and name.endswith(
-                    "__discardable"
-                )
-                if not active and disposable:
-                    _best_effort_drop(adapter, connection, [(orphan, cluster)])
-                    continue
                 unresolved.append(orphan + (" (active)" if active else ""))
                 time_print(
                     f"Retaining ClickHouse recovery artifact {orphan}; "

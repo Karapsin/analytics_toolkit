@@ -142,14 +142,8 @@ def test_wait_for_clickhouse_distributed_pair_polls_cluster_schema() -> None:
     assert "clusterAllReplicas('core', system, columns)" in cluster_column_queries[0]
     assert "WHERE database = 'analytics'" in cluster_column_queries[0]
     assert "AND table = 'events'" in cluster_column_queries[0]
-    assert (
-        "name = 'month_date' AND replaceRegexpAll(type, '\\\\s+', '') = 'Date'"
-        in cluster_column_queries[0]
-    )
-    assert (
-        "name = 'cheque_cnt_total' "
-        "AND replaceRegexpAll(type, '\\\\s+', '') = 'Decimal(38,5)'" in cluster_column_queries[0]
-    )
+    assert "name = 'month_date' AND type = 'Date'" in cluster_column_queries[0]
+    assert "name = 'cheque_cnt_total' AND type = 'Decimal(38, 5)'" in cluster_column_queries[0]
     assert "AND table = 'events_shard'" in cluster_column_queries[2]
 
 

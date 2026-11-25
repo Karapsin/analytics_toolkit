@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from analytics_toolkit import sql_format
 from analytics_toolkit.sql_explorer.app import SqlExplorerApp
-from analytics_toolkit.sql_explorer.formatting import format_editor, format_script
-from textual.document._document import Selection
+from analytics_toolkit.sql_explorer.formatting import _selected_ranges, format_editor, format_script
+from textual.document._document import Document, Selection
 
 from tests.sql._support.explorer import FakeSession
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from analytics_toolkit.sql_explorer.editor import SqlEditor
 
 
 @pytest.mark.parametrize(
@@ -146,3 +149,13 @@ def test_formatting_moves_unselected_cursors_with_surrounding_text() -> None:
             assert Selection.cursor((0, 2)) in editor.cursor_selections
 
     asyncio.run(exercise())
+
+
+def test_raw_overlapping_selection_snapshot_coalesces_before_formatting() -> None:
+    statement = "select a, b from orders;"
+    text = statement + "\nuntouched"
+    snapshot = SimpleNamespace(
+        cursor_selections=(Selection((0, 0), (0, 12)), Selection((0, 8), (0, len(statement)))),
+    )
+    assert _selected_ranges(cast("SqlEditor", snapshot), Document(text)) == [(0, len(statement))]
+    assert format_script(text[: len(statement)], "gp") == format_script(statement, "gp")

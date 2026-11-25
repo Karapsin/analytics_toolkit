@@ -96,6 +96,28 @@ class MetadataLedger:
                 [(self.identity, *key) for key in keys],
             )
 
+    def incomplete(self) -> set[SnapshotKey]:
+        """Restore unresolved refresh status without treating saved names as fresh."""
+        with self.transaction() as connection:
+            return {
+                (row[0], row[1], row[2])
+                for row in connection.execute(
+                    "SELECT kind,catalog,schema_name FROM scan_state "
+                    "WHERE identity=? AND failures>0",
+                    (self.identity,),
+                )
+            }
+
+    def request_retry(self, keys: Sequence[SnapshotKey]) -> None:
+        """Schedule observed interactive incompleteness without inventing query usage."""
+        self.ensure(keys)
+        with self.transaction() as connection:
+            connection.executemany(
+                "UPDATE scan_state SET failures=MAX(failures,1) WHERE identity=? "
+                "AND kind=? AND catalog=? AND schema_name=?",
+                [(self.identity, *key) for key in keys],
+            )
+
     def checkpoint(self) -> int:
         with self.transaction() as connection:
             row = connection.execute(
@@ -164,7 +186,7 @@ class MetadataLedger:
         with self.transaction() as connection:
             row = connection.execute(
                 "SELECT * FROM scan_state WHERE identity=? AND lease_until<=? AND retry_at<=? "
-                "AND (scanned_at IS NULL OR urgent_sequence>covered_sequence "
+                "AND (scanned_at IS NULL OR failures>0 OR urgent_sequence>covered_sequence "
                 "OR (used_sequence>covered_sequence AND scanned_at+?<=?)) "
                 "ORDER BY (urgent_sequence>covered_sequence) DESC, "
                 "CASE kind WHEN 'catalog' THEN 0 WHEN 'schema' THEN 1 ELSE 2 END, "
@@ -220,8 +242,7 @@ class MetadataLedger:
                 removed = [
                     (self.identity, *child[:3])
                     for child in children
-                    if child[3] is not None
-                    and (
+                    if (
                         (kind == "catalog" and child[0] != "catalog" and child[1] not in names)
                         or (
                             kind == "schema"

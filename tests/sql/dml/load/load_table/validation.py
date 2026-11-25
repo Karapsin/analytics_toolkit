@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.sql._support.gp_upsert_load import native_upsert_load
 from tests.sql._support.load_table import (
     FakeDbapiConnection,
     SimpleNamespace,
@@ -188,24 +189,19 @@ def test_load_df_rejects_non_dataframe_before_connection_lookup() -> None:
 
 
 def test_load_df_upsert_missing_target_creates_and_inserts(monkeypatch) -> None:
-    connection = FakeDbapiConnection()
-    create_calls: list[str] = []
+    database = native_upsert_load(monkeypatch, {"id": "BIGINT", "score": "BIGINT"})
+    database.tables.pop(("public", "target"))
+    create_calls = []
+    original_create = load_df_module._create_sql_table_with_connection
 
-    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
-    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr(
-        load_df_module,
-        "_create_sql_table_with_connection",
-        lambda connection_type, connection, table_name, *args, **kwargs: create_calls.append(
-            table_name
-        ),
-    )
-    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
-    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
+    def create(*args, **kwargs):
+        create_calls.append(args[2])
+        return original_create(*args, **kwargs)
 
+    monkeypatch.setattr(load_df_module, "_create_sql_table_with_connection", create)
     result = load_df_module.load_df(
         "gp",
-        "sandbox.target",
+        "public.target",
         pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
         write_mode="upsert",
         key_columns=["id"],
@@ -214,7 +210,9 @@ def test_load_df_upsert_missing_target_creates_and_inserts(monkeypatch) -> None:
     )
 
     assert result == 2
-    assert create_calls == ["sandbox.target"]
+    assert create_calls == ["public.target"]
+    assert database.target.rows == [{"id": 1, "score": 10}, {"id": 2, "score": 20}]
+    assert set(database.tables) == {("public", "target")}
 
 
 @pytest.mark.parametrize("progress", [None, 0, 1, "yes"])
@@ -284,7 +282,11 @@ def test_load_lifecycle_remaining_validation_and_metadata_paths(
         object(),
         pd.DataFrame({"id": [1]}),
     )
-    assert create_calls == [{"connection_key": "gp", "query_label": "candidate-9"}]
+    assert len(create_calls) == 1
+    request = dict(create_calls[0])
+    assert callable(request.pop("on_resource_created"))
+    assert callable(request.pop("on_scoped_resource_created"))
+    assert request == {"connection_key": "gp", "query_label": "candidate-9"}
 
     analyze_calls: list[dict[str, object]] = []
     monkeypatch.setattr(

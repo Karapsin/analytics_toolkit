@@ -99,7 +99,7 @@ def test_extract_ddl_trino_resolves_unqualified_table_name(
     calls = _capture_read_sql(
         monkeypatch,
         {
-            "SHOW CREATE TABLE iceberg.sandbox.events": (
+            'SHOW CREATE TABLE "iceberg"."sandbox"."events"': (
                 "CREATE TABLE iceberg.sandbox.events (id bigint)"
             ),
         },
@@ -107,7 +107,7 @@ def test_extract_ddl_trino_resolves_unqualified_table_name(
 
     result = extract_ddl_module.extract_ddl("trino", "events")
 
-    assert calls == [("trino", "SHOW CREATE TABLE iceberg.sandbox.events")]
+    assert calls == [("trino", 'SHOW CREATE TABLE "iceberg"."sandbox"."events"')]
     assert result == "CREATE TABLE iceberg.sandbox.events (id bigint);"
 
 
@@ -117,7 +117,7 @@ def test_extract_ddl_trino_resolves_schema_qualified_table_name(
     calls = _capture_read_sql(
         monkeypatch,
         {
-            "SHOW CREATE TABLE iceberg.mart.events": (
+            'SHOW CREATE TABLE "iceberg"."mart"."events"': (
                 "CREATE TABLE iceberg.mart.events (id bigint)"
             ),
         },
@@ -125,7 +125,7 @@ def test_extract_ddl_trino_resolves_schema_qualified_table_name(
 
     result = extract_ddl_module.extract_ddl("trino", "mart.events")
 
-    assert calls == [("trino", "SHOW CREATE TABLE iceberg.mart.events")]
+    assert calls == [("trino", 'SHOW CREATE TABLE "iceberg"."mart"."events"')]
     assert result == "CREATE TABLE iceberg.mart.events (id bigint);"
 
 

@@ -69,8 +69,8 @@ def test_multiple_ca_certs_are_bundled_in_order(
     connection_module.get_sql_connection("trino_bundle")
 
     bundle_path = Path(str(connect_calls[0]["verify"]))
-    expected_bundle_path = Path.cwd() / ".certs" / ".generated" / "trino_bundle-ca-bundle.pem"
-    assert bundle_path == expected_bundle_path
+    assert bundle_path.parent == Path.cwd() / ".certs" / ".generated"
+    assert bundle_path.name.startswith("trino_bundle-ca-bundle-")
     assert bundle_path.read_text(encoding="utf-8") == "ROOT\nINTERMEDIATE\n"
 
 

@@ -145,10 +145,77 @@ and hands the published PR to the Pi. Local agents finish with the PR link;
 they do not wait for review, approval, GitHub checks or merge and do not correct
 handed-off branches. `git_workflow(action="handoff")` recovers an interrupted
 handoff. Publication failures retain local ownership.
-Before publication a fresh independent read-only local reviewer (Codex or Claude
-Code) must approve the exact source, dev base and task; rejection starts another
-local correction/review cycle. That signed local review receipt travels with the
-PR and is the only source review: the Pi runs no source, plan or visual review.
+Before publication, fresh independent read-only local reviewers (Codex or Claude
+Code) must collectively approve the exact source, dev base and task. Local review
+uses frozen-candidate discovery batches with parallel scoped review cycles. The
+author assigns bounded component chunks and bounded cross-component integration
+checks in a frozen coverage plan. Validate that the assignments exhaustively cover the
+immutable inventory and its interactions; no candidate item or required
+interaction may be left unassigned. Each fresh isolated reviewer uses the
+selected CLI with high reasoning and enforced read-only access, completes its
+assigned scope and interacting context, and reports ALL novel current issues.
+Record bounded worker concurrency, scope and resource budgets in the plan. Do
+not send the whole candidate to every worker as a substitute for partitioning
+the work.
+
+Collect every worker's result in the active cycle. A component or integration
+scope retires as soon as its completed result reports zero new issues. Keep that
+scope retired for the same frozen candidate and assignment; never revisit it
+because another scope found issues. Later cycles run only scopes whose latest
+result found new issues, failed, was incomplete or remains missing. A failed,
+incomplete, tool-failed or uncertain result cannot retire a scope. One clean
+chunk cannot establish aggregate approval.
+
+Bind the coverage plan and each result to all six frozen subject fields:
+`repository`, `head`, `base`, `tree`, `task_digest` and `producer_id`. Resume
+interrupted cycles and reuse retired-scope proof only while every subject field
+and the plan binding match. Preserve the original signed result and reviewer
+identity; reused proof is not a fresh review. An explicit non-approving,
+procedure-only migration may carry forward completed zero-new-issue reports
+for the unchanged head, tree, dev base and assignments. It must validate their
+original signed bindings and exhaustive coverage, record the transition to the current
+subject and plan, and cannot itself approve source or publication.
+
+Later cycles exclude only issues already OPEN in the current frozen discovery
+batch, including rewordings of the same issue. Do not fix code or retest during
+discovery. Discovery closes once every component and integration scope has
+retired. Known unresolved issues still block approval after discovery closes.
+Only then fix ALL OPEN current-batch issues as one batch and run focused and
+mandatory checks.
+
+A changed head, tree or dev base starts a new full discovery cycle with EMPTY
+findings history. Never supply repaired finding text or fix summaries, or ask
+reviewers to verify earlier fixes. An old issue rediscovered on the new candidate
+is a new current-batch finding; a private closed/fixed record must not hide it. A change
+to any subject field or the plan binding invalidates scope clearances and resume
+eligibility unless the explicit non-approving migration above validates their
+reuse. A changed candidate always resets ALL scope clearances and starts every
+scope's first pass again. When head, tree and dev base are unchanged, retain
+current OPEN issues across replanning and task-only policy corrections. Those
+changes do not clear exclusions. Preserve the private audit history and source
+bindings internally; fixed findings from older candidates are never reviewer
+input.
+
+Final aggregate approval requires one complete clean signed result for EVERY
+component and integration scope on the exact current subject and plan, no OPEN
+issues, and all approval gates. Retired-scope results satisfy this requirement
+through their validated original proof; there is no minimum cycle count or
+second clean pass. Initial feature validation and commit guards still apply.
+Diagnostic discovery of immutable committed HEAD with a dirty procedure worktree
+can never approve source or publication; final approval retains clean,
+current-check and task-binding requirements.
+
+Reviewer input is limited to the current task/specification, assigned scope and
+purpose, plan/inventory digests and interacting context, current check
+evidence and original image evidence, plus only the current batch's OPEN issues
+as exclusions in later cycles. Historical author NAV packets, repaired findings
+and fix summaries remain private audit material and must not be forwarded to
+reviewers.
+
+The signed final local review receipt travels with the PR and is the only source
+review: the Pi runs no source, plan or visual review. Follow the recorded visual
+order; a source-first task completes visuals only after final aggregate source
+approval and before publication.
 The controller admits a PR (`agent-review` success) only when the receipt matches
 its exact head; heads without a covering receipt get `action_required`, never a
 correction loop. The orchestrator stays and owns checks and merging; the GitHub
@@ -201,15 +268,20 @@ there outside a release. Package code reaches main only through releases.
 
 Any change under `analytics_toolkit/sql_explorer/`, its visual harness, or its
 scene manifest requires the full SQL Explorer visual review before commit or
-push. Use `visual_workflow` to capture the application headlessly on the current
-Linux, macOS, or Windows host. No VM, OS image download, desktop session, or VNC
+push, except that an explicit task-bound source-first order defers capture until
+final aggregate source approval and still requires it before publication. The
+exhaustive discovery/batch-repair procedure above always applies. Use
+`visual_workflow` to capture the application headlessly on the current Linux,
+macOS, or Windows host. No VM, OS image download, desktop session, or VNC
 server is required. Render every manifest scene with Textual's headless driver
 at a fixed 208x47 terminal grid and export full 1280x800 PNGs. Open every full
 PNG and record an individual `pass` verdict with `visual_review`. Completion
 requires every automated geometry check and agent verdict to pass, and removes
 only the run-owned temporary checkout. The receipt records the host and binds
-to the full reviewed content. `git_workflow` blocks SQL Explorer commits and
-pushes when this receipt is missing, stale, partial, or non-green. Treat reference images as design guidance, not pixel baselines.
+to the full reviewed content. `git_workflow` blocks SQL Explorer publication when
+this receipt is missing, stale, partial, or non-green; the normal pre-commit
+visual guard is deferred only by the recorded source-first order. Treat
+reference images as design guidance, not pixel baselines.
 
 Local advisory integration investigation requires an explicit user request or release
 readiness scope. An incidentally observed failure does not expand the current

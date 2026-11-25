@@ -187,6 +187,7 @@ def test_failed_empty_source_cleanup_includes_zero_keys_and_preserves_first_erro
     zero.source_stage = stages[1]
     nonempty = _task(options, expected_rows=1)
     nonempty.source_stage = stages[2]
+    runtime.mark_source_stage_owned(stages[0])
     runtime.publish_source_stage(zero)
     runtime.publish_source_stage(nonempty)
     manager = _Manager()
@@ -287,9 +288,11 @@ def test_keyed_io_drop_retry_replaces_failed_connection(
 
 
 @pytest.mark.parametrize("cleanup_fails", [False, True])
+@pytest.mark.parametrize("acknowledged", [False, True])
 def test_reader_materialization_failure_cleans_exact_reserved_stage_when_possible(
     monkeypatch: pytest.MonkeyPatch,
     cleanup_fails: bool,
+    acknowledged: bool,
 ) -> None:
     options = _options(transfer_slices=[_options().transfer_slices[0]])
     runtime = LazyKeyedRuntime(options.transfer_slices or [], read_workers=1, write_workers=1)
@@ -312,11 +315,14 @@ def test_reader_materialization_failure_cleans_exact_reserved_stage_when_possibl
         "allocate_source_stage_name",
         lambda *_args: "source.reserved",
     )
-    monkeypatch.setattr(
-        staged_keyed_pipeline,
-        "materialize_source_key",
-        lambda *_args: (_ for _ in ()).throw(OSError("CTAS failed")),
-    )
+
+    def materialize(_options, source_ref, *_args):
+        if acknowledged:
+            source_ref["on_source_resource_created"]("source.reserved")
+        message = "CTAS failed"
+        raise OSError(message)
+
+    monkeypatch.setattr(staged_keyed_pipeline, "materialize_source_key", materialize)
     monkeypatch.setattr(staged_keyed_pipeline, "cleanup_source_stages", cleanup)
     monkeypatch.setattr(staged_keyed_pipeline, "time_print", logs.append)
 
@@ -331,7 +337,9 @@ def test_reader_materialization_failure_cleans_exact_reserved_stage_when_possibl
             0,
         )
 
-    assert cleaned == ["source.reserved"]
+    assert cleaned == (["source.reserved"] if acknowledged else [])
     assert runtime.cancellation.is_set()
-    assert ("source.reserved" in runtime.source_stage_tables) is cleanup_fails
-    assert any("could not be removed" in message for message in logs) is cleanup_fails
+    assert ("source.reserved" in runtime.source_stage_tables) is (acknowledged and cleanup_fails)
+    assert any("could not be removed" in message for message in logs) is (
+        acknowledged and cleanup_fails
+    )

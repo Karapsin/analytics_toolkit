@@ -1,9 +1,14 @@
-# ruff: noqa: S608 -- SQL builders quote values; catalog identifiers are quoted by the caller.
 from __future__ import annotations
+
+# ruff: noqa: S608 -- SQL builders quote values; catalog identifiers are quoted by the caller.
+from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
 from .utils import sql_string_literal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def build_clickhouse_show_tables_query(
@@ -13,7 +18,14 @@ def build_clickhouse_show_tables_query(
     *,
     include_distributed_metadata: bool = False,
 ) -> str:
-    filters = metadata_filters(schema, table_names, conditions)
+    from .ch.dialect import (  # noqa: PLC0415 - generic metadata and CH registry cycle.
+        sql_string_literal as ch_string_literal,
+    )
+
+    filters = metadata_filters(schema, table_names, conditions, render_literal=ch_string_literal)
+    inner_filters = _base_filters(
+        "database", "name", schema, table_names, render_literal=ch_string_literal
+    )
     distributed_metadata_columns = (
         ",\n    engine,\n    engine_full" if include_distributed_metadata else ""
     )
@@ -25,7 +37,7 @@ def build_clickhouse_show_tables_query(
         total_rows AS row_count,
         total_bytes AS table_size_bytes{distributed_metadata_columns}
     FROM system.tables
-    WHERE 1 = 1{_base_filters("database", "name", schema, table_names)}
+    WHERE 1 = 1{inner_filters}
     """.strip()
     return normalized_metadata_query(inner_query, filters)
 
@@ -61,12 +73,13 @@ def build_gp_show_tables_query(
 
 
 def build_trino_show_tables_query(
-    catalog: str,
+    catalog: str | exp.Identifier,
     schema: str | None,
     table_names: list[str] | None,
     conditions: str | None,
 ) -> str:
     filters = metadata_filters(schema, table_names, conditions)
+    catalog = _trino_catalog_sql(catalog)
     inner_query = f"""
     SELECT
         table_catalog AS db,
@@ -84,12 +97,14 @@ def metadata_filters(
     schema: str | None,
     table_names: list[str] | None,
     conditions: str | None,
+    *,
+    render_literal: Callable[[str], str] = sql_string_literal,
 ) -> list[str]:
     filters: list[str] = []
     if schema is not None:
-        filters.append(f"schema = {sql_string_literal(schema)}")
+        filters.append(f"schema = {render_literal(schema)}")
     if table_names is not None:
-        filters.append(table_names_filter("table_name", table_names))
+        filters.append(table_names_filter("table_name", table_names, render_literal=render_literal))
     if conditions is not None:
         filters.append(f"({conditions})")
     return filters
@@ -110,10 +125,15 @@ def format_filter_lines(filters: list[str]) -> str:
     return "".join(f"\n  AND {filter_sql}" for filter_sql in filters)
 
 
-def table_names_filter(column: str, table_names: list[str]) -> str:
+def table_names_filter(
+    column: str,
+    table_names: list[str],
+    *,
+    render_literal: Callable[[str], str] = sql_string_literal,
+) -> str:
     if len(table_names) == 1:
-        return f"{column} = {sql_string_literal(table_names[0])}"
-    values = ", ".join(sql_string_literal(name) for name in table_names)
+        return f"{column} = {render_literal(table_names[0])}"
+    values = ", ".join(render_literal(name) for name in table_names)
     return f"{column} IN ({values})"
 
 
@@ -169,6 +189,8 @@ def build_ch_completion_query(schema: str | None, prefix: str) -> str:
     if schema is not None:
         database = exp.Literal.string(schema).sql(dialect="clickhouse")
         filters.append(f"database = {database}")
+    else:
+        filters.append("database = currentDatabase()")
     return "SELECT name FROM system.tables WHERE " + " AND ".join(filters) + " ORDER BY name"
 
 
@@ -203,6 +225,7 @@ def build_gp_reference_query(name: str, search_path: list[str] | None = None) ->
 
 
 CH_CURRENT_DATABASE_QUERY = "SELECT currentDatabase()"
+CH_DATABASES_QUERY = "SELECT name FROM system.databases ORDER BY name"
 TRINO_CURRENT_NAMESPACE_QUERY = "SELECT current_catalog, current_schema"
 
 
@@ -216,6 +239,7 @@ def build_gp_search_path_query(search_path: list[str] | None = None) -> str:
 
 
 def build_trino_completion_query(catalog: str, schema: str | None, prefix: str) -> str:
+    catalog = _trino_catalog_sql(catalog)
     filters = [completion_prefix_filter("table_name", prefix)]
     if schema is not None:
         filters.append(f"table_schema = {sql_string_literal(schema)}")
@@ -227,11 +251,32 @@ def build_trino_completion_query(catalog: str, schema: str | None, prefix: str) 
 
 
 def _base_filters(
-    schema_column: str, name_column: str, schema: str | None, names: list[str] | None
+    schema_column: str,
+    name_column: str,
+    schema: str | None,
+    names: list[str] | None,
+    *,
+    render_literal: Callable[[str], str] = sql_string_literal,
 ) -> str:
     filters = []
     if schema is not None:
-        filters.append(f"{schema_column} = {sql_string_literal(schema)}")
+        filters.append(f"{schema_column} = {render_literal(schema)}")
     if names is not None:
-        filters.append(table_names_filter(name_column, names))
+        filters.append(table_names_filter(name_column, names, render_literal=render_literal))
     return format_filter_lines(filters)
+
+
+def _trino_catalog_sql(catalog: str | exp.Identifier) -> str:
+    if isinstance(catalog, exp.Identifier):
+        return exp.to_identifier(catalog.name, quoted=True).sql(dialect="trino")
+    # Legacy string callers may supply a rendered SQL identifier.
+    # Known raw names use the Identifier branch above.
+    if catalog.startswith('"') and catalog.endswith('"'):
+        from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- adapter cycle.
+            TableIdentifier,
+        )
+
+        identifier = TableIdentifier.parse(catalog, "trino")
+        if len(identifier.parts) == 1 and identifier.quoted[0]:
+            catalog = identifier.parts[0]
+    return exp.to_identifier(catalog, quoted=True).sql(dialect="trino")

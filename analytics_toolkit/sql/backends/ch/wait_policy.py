@@ -24,9 +24,13 @@ def parse_ch_ddl_wait_policy(
 def resolve_ch_ddl_wait_policy(
     explicit: str | None,
     configured: str | None,
+    *,
+    shard_on_cluster: str | None = None,
 ) -> ChDdlWaitPolicy:
     return parse_ch_ddl_wait_policy(
-        explicit if explicit is not None else configured or DEFAULT_CH_DDL_WAIT_POLICY,
+        explicit
+        if explicit is not None
+        else configured or ("wait_shard" if shard_on_cluster else DEFAULT_CH_DDL_WAIT_POLICY),
     )
 
 

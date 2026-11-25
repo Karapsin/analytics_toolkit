@@ -10,6 +10,7 @@ import pytest
 from release_routines.lib import python_support
 
 from tests._support.paths import REPO_ROOT
+from tests.release_routines._support.install_targets import editable_extras
 
 
 def _policy(**changes: Any) -> dict[str, Any]:
@@ -101,12 +102,19 @@ def test_invalid_policies_are_rejected(changes: dict[str, Any], message: str) ->
 def test_matrix_skips_lagging_extras_only_on_newest_minor() -> None:
     policy = _policy(newest="3.15", minimum="3.8", lagging_extras=["datalens", "tui"])
     rows = {row["env_name"]: row for row in python_support.compatibility_matrix(policy)["include"]}
-    assert rows["py315-latest"]["install_target"] == "."
-    assert rows["py314-latest"]["install_target"] == ".[tui,datalens]"
+    assert editable_extras(rows["py315-latest"]["install_target"]) == {"clickhouse-native"}
+    assert editable_extras(rows["py314-latest"]["install_target"]) == {
+        "tui",
+        "datalens",
+        "clickhouse-native",
+    }
     assert rows["py39-min"]["constraints"] == "constraints/py39-min.txt"
     assert "py38-latest" not in rows
     partial = _policy(newest="3.15", minimum="3.8", lagging_extras=["tui"])
-    assert python_support.install_target(partial, "3.15") == ".[datalens]"
+    assert editable_extras(python_support.install_target(partial, "3.15")) == {
+        "datalens",
+        "clickhouse-native",
+    }
     table = python_support.render_support_table(partial)
     assert "| `tui` extra | 3.8-3.14 |" in table
     assert "| `datalens` extra | 3.10-3.15 |" in table

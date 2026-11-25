@@ -78,6 +78,7 @@ def test_create_stage_table_retries_collision_and_uses_explicit_schema(
         "sales.target__stage__second",
         None,
     )
+    assert callable(created["kwargs"].pop("on_resource_created"))
     assert created["kwargs"] == {
         "connection_key": "warehouse",
         "ddl_scope": "staging",

@@ -3,12 +3,16 @@ from __future__ import annotations
 import importlib
 
 import pytest
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
 from analytics_toolkit.sql.connection.errors import (
     InvalidSqlInputError,
     UnsupportedConnectionTypeError,
 )
+from sqlglot import exp, parse_one
 
-from tests.sql._support.fakes import FakeClickHouseClient, FakeDbapiConnection
+from tests.sql._support.assertions import strip_query_label
+from tests.sql._support.ch_partition_scope import install_partition_scope
+from tests.sql._support.fakes import FakeDbapiConnection
 
 sql_module = importlib.import_module("analytics_toolkit.sql")
 dml_table_module = importlib.import_module("analytics_toolkit.sql.dml.table")
@@ -117,25 +121,45 @@ def test_drop_partitions_executes_trino_delete_without_commit(
 
 def test_drop_partitions_executes_clickhouse_shard_drops(
     monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections,
 ) -> None:
-    connection = FakeClickHouseClient()
-    monkeypatch.setattr(
-        table_ops_module,
-        "get_sql_connection",
-        lambda key: connection,
+    state = install_partition_scope(
+        monkeypatch, write_sql_connections, driver="http", layout="pair"
     )
+    physical = state.host_tables[state.remote]["analytics.events_shard"]
+    physical.rows = [("2025-05-01", 1), ("2025-05-02", 2), ("kept", 3)]
+    before = state.snapshot()
 
     table_ops_module.drop_partitions(
         "ch",
-        "sandbox.events",
+        "analytics.events",
         ["2025-05-01", "2025-05-02"],
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
-    assert connection.commands == [
-        "ALTER TABLE sandbox.events_shard ON CLUSTER '{cluster}' DROP PARTITION '2025-05-01'",
-        "ALTER TABLE sandbox.events_shard ON CLUSTER '{cluster}' DROP PARTITION '2025-05-02'",
+    before[state.remote]["analytics.events_shard"]["rows"] = [("kept", 3)]
+    assert state.snapshot() == before
+    statements = [
+        parse_one(strip_query_label(statement), read=ClickHouseDialect)
+        for statement in state.commands
     ]
-    assert connection.close_calls == 1
+    assert len(statements) == 2
+    for statement, value in zip(statements, ("2025-05-01", "2025-05-02")):
+        assert isinstance(statement, exp.Alter)
+        assert statement.this.db == "analytics"
+        assert statement.this.name == "events_shard"
+        cluster = statement.find(exp.OnCluster)
+        assert cluster is not None
+        assert cluster.this.name == "storage"
+        partition = statement.find(exp.DropPartition)
+        assert partition is not None
+        operand = partition.expressions[0].expressions[0]
+        assert isinstance(operand, exp.Literal)
+        assert operand.is_string
+        assert operand.this == value
+    assert state.opened
+    assert all(connection.close_calls == 1 for connection in state.opened)
 
 
 def test_drop_partitions_dry_run_returns_plan_without_connection(

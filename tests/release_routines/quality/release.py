@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import configparser
 import os
 import pathlib
+import shlex
 import subprocess
 
 import pytest
@@ -10,6 +12,7 @@ from release_routines.lib.check_minimum_constraints import validate_minimum_cons
 from release_routines.lib.project_metadata import load_project
 
 from tests._support.paths import REPO_ROOT
+from tests.release_routines._support.install_targets import editable_extras
 
 
 def _write_sql_function_doc(path: pathlib.Path, name: str, signature: str) -> None:
@@ -109,12 +112,22 @@ def test_github_test_matrix_installs_optional_tui_dependencies() -> None:
     assert workflow.count('-e "${{ matrix.install_target }}"') == 2
     policy = python_support.load_policy(REPO_ROOT)
     rows = python_support.compatibility_matrix(policy)["include"]
-    assert {row["install_target"] for row in rows} == {".[tui,datalens]"}
+    required_extras = {"tui", "datalens", "clickhouse-native"}
+    assert all(required_extras <= editable_extras(row["install_target"]) for row in rows)
     fast = (REPO_ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
     assert "tox -e coverage" in fast
     tox = (REPO_ROOT / "tox.ini").read_text(encoding="utf-8")
-    coverage = tox.split("[testenv:coverage]", 1)[1].split("[testenv:artifacts]", 1)[0]
-    assert "-e .[tui,datalens]" in coverage
+    configuration = configparser.ConfigParser(interpolation=None)
+    configuration.read_string(tox)
+    commands = configuration["testenv:coverage"]["commands_pre"].splitlines()
+    editable_targets = [
+        tokens[index + 1]
+        for line in commands
+        for tokens in [shlex.split(line)]
+        for index, token in enumerate(tokens[:-1])
+        if token in {"-e", "--editable"}
+    ]
+    assert any(required_extras <= editable_extras(target) for target in editable_targets)
 
 
 def test_auth_integration_jobs_keep_mcp_out_of_airflow_environment() -> None:

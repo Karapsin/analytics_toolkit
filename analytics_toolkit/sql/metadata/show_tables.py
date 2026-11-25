@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 import math
+from collections.abc import Sequence
+from numbers import Integral
 from typing import cast
 
 import pandas as pd
@@ -12,7 +13,6 @@ from ..connection.config import get_connection_config
 from ..connection.errors import InvalidSqlInputError
 from ..dml.io.read_sql import read_sql
 from ..execution.operation_runner import timed_public_sql_function
-
 
 _SHOW_TABLES_COLUMNS = ["db", "schema", "table_name", "row_count", "table_size"]
 _ROW_COUNT_COLUMN = "row_count"
@@ -37,20 +37,16 @@ def show_tables(
     )
     config = get_connection_config(db_key)
     adapter = get_backend_adapter(config.backend)
-    schema_filter = _validate_optional_string(schema, "schema")
+    schema_filter = _validate_optional_string(schema, "schema", preserve_identity=True)
     table_name_filter = _validate_table_names(table_name, schema_filter)
     conditions_filter = _validate_conditions(conditions)
     trino_catalog_filter = _validate_optional_string(
         trino_catalog,
         "trino_catalog",
+        preserve_identity=True,
     )
-    if (
-        trino_catalog_filter is not None
-        and not adapter.allows_show_tables_catalog_filter()
-    ):
-        raise InvalidSqlInputError(
-            "trino_catalog is only supported for Trino connections."
-        )
+    if trino_catalog_filter is not None and not adapter.allows_show_tables_catalog_filter():
+        raise InvalidSqlInputError("trino_catalog is only supported for Trino connections.")
 
     query = adapter.build_show_tables_query(
         config,
@@ -61,16 +57,21 @@ def show_tables(
         trino_catalog=trino_catalog_filter,
     )
 
-    result = cast(pd.DataFrame, read_sql(config.connection_key, query))
+    result = cast("pd.DataFrame", read_sql(config.connection_key, query))
     if result.empty:
-        return pd.DataFrame(columns=_SHOW_TABLES_COLUMNS)
+        result = result.reindex(columns=_SHOW_TABLES_COLUMNS)
 
     normalized = adapter.postprocess_show_tables(
         config.connection_key,
         result.copy(),
         ch_distributed_table_stats=ch_distributed_table_stats,
         read_sql=read_sql,
+        conditions=conditions_filter,
     )
+    if normalized.empty:
+        empty = pd.DataFrame(columns=_SHOW_TABLES_COLUMNS)
+        empty.attrs.update(normalized.attrs)
+        return empty
     normalized["row_count"] = pd.Series(
         (_normalize_row_count(value) for value in normalized[_ROW_COUNT_COLUMN]),
         index=normalized.index,
@@ -82,7 +83,9 @@ def show_tables(
     return normalized.loc[:, _SHOW_TABLES_COLUMNS].copy()
 
 
-def _validate_optional_string(value: str | None, parameter_name: str) -> str | None:
+def _validate_optional_string(
+    value: str | None, parameter_name: str, *, preserve_identity: bool = False
+) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
@@ -91,7 +94,7 @@ def _validate_optional_string(value: str | None, parameter_name: str) -> str | N
     normalized = value.strip()
     if not normalized:
         raise InvalidSqlInputError(f"{parameter_name} must not be empty.")
-    return normalized
+    return value if preserve_identity else normalized
 
 
 def _validate_bool(value: bool, parameter_name: str) -> None:
@@ -115,17 +118,14 @@ def _validate_table_names(
     if not table_name:
         raise InvalidSqlInputError("table_name must not be empty.")
 
-    return [
-        _validate_table_name_value(value, schema)
-        for value in table_name
-    ]
+    return [_validate_table_name_value(value, schema) for value in table_name]
 
 
 def _validate_table_name_value(value: str, schema: str | None) -> str:
     if not isinstance(value, str):
         raise TypeError("table_name values must be strings.")
-    normalized = value.strip()
-    if not normalized:
+    normalized = value
+    if not normalized.strip():
         raise InvalidSqlInputError("table_name values must not be empty.")
     if schema is not None and normalized.startswith(f"{schema}."):
         normalized = normalized[len(schema) + 1 :]
@@ -140,14 +140,10 @@ def _validate_conditions(conditions: str | None) -> str | None:
         return None
 
     statements = [
-        statement.strip()
-        for statement in sqlparse.split(normalized)
-        if statement.strip()
+        statement.strip() for statement in sqlparse.split(normalized) if statement.strip()
     ]
     if len(statements) != 1:
-        raise InvalidSqlInputError(
-            "conditions must contain exactly one SQL expression."
-        )
+        raise InvalidSqlInputError("conditions must contain exactly one SQL expression.")
 
     expression = statements[0].rstrip(";").rstrip()
     if not expression:
@@ -183,6 +179,9 @@ def _format_table_size(value: object) -> str | None:
 def _normalize_row_count(value: object) -> int | None:
     if pd.isna(value):
         return None
+    if isinstance(value, Integral):
+        integer_value = int(value)
+        return integer_value if integer_value >= 0 else None
 
     try:
         count = float(value)

@@ -21,7 +21,9 @@ from analytics_toolkit.sql.execution.cancellation import (
 )
 
 from .journal_workers import cancel_metadata
+from .metadata_coverage import removed_by_parent, scope_keys
 from .metadata_ledger import MetadataLedger, ScanTicket
+from .metadata_listing import IncompleteMetadataError, listing_failure, listing_result
 from .metadata_store import MetadataStore, SnapshotKey, Snapshots
 from .metadata_usage import event_usage
 
@@ -47,6 +49,8 @@ class BackgroundMetadata:
         journal: QueryJournal | None = None,
         on_error: Callable[[Exception], None],
         context: dict[str, Any] | None = None,
+        on_complete: Callable[[], None] | None = None,
+        identity_provider: Callable[[], str] | None = None,
     ) -> None:
         self.connection_key = connection_key
         self.journal = journal
@@ -55,6 +59,9 @@ class BackgroundMetadata:
         self.store = store
         self.default_catalog = default_catalog
         self.on_error = on_error
+        self.on_complete = on_complete
+        self.identity_provider = identity_provider
+        self.on_snapshot: Callable[[], None] | None = None
         self.context = context or {"catalog": default_catalog}
         self.on_ddl: Callable[[dict[SnapshotKey, str]], None] | None = None
         self._lock = Lock()
@@ -65,6 +72,9 @@ class BackgroundMetadata:
         self._scope = SqlCancellationScope()
         self._cancellations: list[Thread] = []
         self._snapshots: Snapshots = {}
+        self.incomplete: set[SnapshotKey] = set()
+        self._unpersisted_incomplete: set[SnapshotKey] = set()
+        self._deferred_incomplete: set[tuple[str, str | None, str | None]] = set()
         if store is not None:
             try:
                 self._snapshots = store.load()
@@ -77,6 +87,7 @@ class BackgroundMetadata:
             self.on_error(exc)
             self.store = None
             self.ledger = MetadataLedger(None)
+        self.incomplete = self.ledger.incomplete()
         self._ticket: ScanTicket | None = None
         self._history_sequence = self.ledger.checkpoint()
         self._heartbeat_stop = Event()
@@ -96,6 +107,10 @@ class BackgroundMetadata:
         from .completion import normalize_completion_values  # noqa: PLC0415 -- provider protocol.
 
         catalog = (catalog or self.default_catalog or "") if kind != "catalog" else ""
+        if kind == "table" and schema is None and self.backend in {"ch", "clickhouse"}:
+            schema = self.context.get("database")
+            if schema is None:
+                return None
         with self._lock:
             if kind != "table" or schema is not None:
                 return self._snapshots.get((kind, catalog, schema or ""))
@@ -112,6 +127,77 @@ class BackgroundMetadata:
     def invalidate(self) -> None:
         """Wake journal-driven discovery without discarding completed snapshots."""
         self._wake.set()
+
+    def note_incomplete(self, kind: str, catalog: str | None, schema: str | None) -> None:
+        """Make an interactive failure recoverable by a newly certified background scan."""
+        with self._lock:
+            keys = self._scope_keys(kind, catalog, schema)
+            if keys is None:
+                self._deferred_incomplete.add((kind, catalog, schema))
+            else:
+                self.incomplete.update(keys)
+                self._unpersisted_incomplete.update(keys)
+            try:
+                if keys is not None:
+                    self.ledger.request_retry(keys)
+                    self._unpersisted_incomplete.difference_update(keys)
+            finally:
+                self._wake.set()
+
+    def scope_incomplete(self, kind: str, catalog: str | None, schema: str | None) -> bool:
+        with self._lock:
+            keys = self._scope_keys(kind, catalog, schema)
+            return (
+                (kind, catalog, schema) in self._deferred_incomplete
+                or keys is None
+                or any(key in self.incomplete or key not in self._snapshots for key in keys)
+            )
+
+    def _scope_keys(
+        self, kind: str, catalog: str | None, schema: str | None
+    ) -> tuple[SnapshotKey, ...] | None:
+        return scope_keys(
+            kind,
+            catalog,
+            schema,
+            backend=self.backend,
+            context=self.context,
+            snapshots=self._snapshots,
+            default_catalog=self.default_catalog,
+        )
+
+    def _check_identity(self) -> None:
+        if self.identity_provider is not None and self.identity_provider() != self.context.get(
+            "identity"
+        ):
+            message = "Metadata connection configuration changed; refresh the connection."
+            raise IncompleteMetadataError(message)
+
+    def _notify_snapshot(self, *, was_incomplete: bool) -> None:
+        with self._lock:
+            if self._stopping or self._scope.cancelled:
+                return
+            complete = not self.incomplete
+        if self.on_snapshot is not None:
+            self.on_snapshot()
+        if was_incomplete and complete and self.on_complete is not None:
+            self.on_complete()
+
+    def _retry_unpersisted(self) -> None:
+        with self._lock:
+            keys = tuple(self._unpersisted_incomplete)
+            if not keys:
+                return
+            try:
+                self.ledger.request_retry(keys)
+            except (OSError, sqlite3.Error, ValueError):
+                if self.store is None:
+                    raise
+                self.store = None
+                self.ledger = MetadataLedger(None)
+                self._history_sequence = 0
+                self.ledger.request_retry(tuple(self.incomplete))
+            self._unpersisted_incomplete.difference_update(keys)
 
     def stop(self) -> None:
         with self._lock:
@@ -273,37 +359,33 @@ class BackgroundMetadata:
                     self.on_error(exc)
 
     def _discover(self, generation: int) -> bool:
-        from .completion import normalize_completion_values  # noqa: PLC0415 -- provider protocol.
-
+        self._check_identity()
+        self._retry_unpersisted()
         if self.store is not None:
             with self._lock:
                 self._snapshots = self.store.load()
+                was_incomplete = bool(self.incomplete)
+                self.incomplete = self.ledger.incomplete() | self._unpersisted_incomplete
+            self._notify_snapshot(was_incomplete=was_incomplete)
+        if self.backend in {"ch", "clickhouse"} and not self.context.get("database"):
+            namespace = self._resolve("", {})
+            if namespace is not None:
+                self.context["database"] = namespace[1]
+        for kind, catalog, schema in tuple(self._deferred_incomplete):
+            if self._scope_keys(kind, catalog, schema) is not None:
+                self._deferred_incomplete.discard((kind, catalog, schema))
+                self.note_incomplete(kind, catalog, schema)
         self._consume_history()
         self._seed()
         ticket = self.ledger.claim(time())
         if ticket is None:
             return False
         self._ticket = ticket
-        kind, catalog, schema = ticket.key
         try:
-            if kind == "catalog":
-                result = self.provider.list_catalogs(connection_key=self.connection_key)
-            elif kind == "schema":
-                result = self.provider.list_schemas(
-                    connection_key=self.connection_key, catalog=catalog or None
-                )
-            else:
-                result = self.provider.list_tables(
-                    connection_key=self.connection_key,
-                    catalog=catalog or None,
-                    schema=schema,
-                    prefix="",
-                )
+            result = self._read_listing(ticket)
             raise_if_cancelled()
             self._consume_history()
-            names = normalize_completion_values(result)
-            if self.ledger.finish(ticket, names, time()):
-                self._publish(ticket.key, names, generation, persist=False)
+            self._finish_listing(ticket, result, generation)
         except AsyncSqlCancelled:
             self.ledger.failed(ticket, time(), cancelled=True)
             raise
@@ -313,10 +395,55 @@ class BackgroundMetadata:
                 message = "Metadata discovery cancelled"
                 raise AsyncSqlCancelled(message) from exc
             self.ledger.failed(ticket, time())
-            self.on_error(exc)
+            with self._lock:
+                self.incomplete.add(ticket.key)
+            self.on_error(listing_failure(exc))
         finally:
             self._ticket = None
         return True
+
+    def _read_listing(self, ticket: ScanTicket) -> tuple[str, ...]:
+        kind, catalog, schema = ticket.key
+        if kind == "catalog":
+            return self.provider.list_catalogs(connection_key=self.connection_key)
+        if kind == "schema":
+            return self.provider.list_schemas(
+                connection_key=self.connection_key, catalog=catalog or None
+            )
+        return self.provider.list_tables(
+            connection_key=self.connection_key,
+            catalog=catalog or None,
+            schema=schema,
+            prefix="",
+        )
+
+    def _finish_listing(self, ticket: ScanTicket, result: tuple[str, ...], generation: int) -> None:
+        from .completion import normalize_completion_values  # noqa: PLC0415 -- provider protocol.
+
+        listing = listing_result(result)
+        self._check_identity()
+        if not listing.complete:
+            self.incomplete.add(ticket.key)
+            message = "Metadata is incomplete; retaining the last complete names."
+            raise IncompleteMetadataError(message)
+        names = normalize_completion_values(listing)
+        with self._lock:
+            current = (
+                not self._stopping and not self._scope.cancelled and generation == self._generation
+            )
+            finished = current and self.ledger.finish(ticket, names, time())
+            was_incomplete = bool(self.incomplete)
+            if finished:
+                self.incomplete = {
+                    key
+                    for key in self.incomplete
+                    if key != ticket.key and not removed_by_parent(key, ticket.key, names)
+                } | self._unpersisted_incomplete
+        if not current:
+            self.ledger.failed(ticket, time(), cancelled=True)
+        elif finished:
+            self._publish(ticket.key, names, generation, persist=False)
+            self._notify_snapshot(was_incomplete=was_incomplete)
 
     def _worker(self) -> None:
         try:
@@ -358,19 +485,21 @@ def persistent_discovery(  # noqa: PLR0913 -- provider, cache and journal depend
     on_error: Callable[[Exception], None],
     *,
     journal: QueryJournal | None = None,
+    on_complete: Callable[[], None] | None = None,
 ) -> BackgroundMetadata:
     """Bind snapshots to resolved configuration without writing credentials."""
     config = get_connection_config(connection_key)
-    values = {field.name: getattr(config, field.name) for field in fields(config)}
-    identity = hashlib.sha256(json.dumps(values, sort_keys=True, default=repr).encode()).hexdigest()
+    identity = _configuration_identity(config)
     return BackgroundMetadata(
         connection_key,
         backend,
         provider,
-        MetadataStore(directory, identity),
+        MetadataStore(directory, "metadata-v2:" + identity),
         default_catalog=getattr(config, "catalog", None),
         on_error=on_error,
         journal=journal,
+        on_complete=on_complete,
+        identity_provider=lambda: _configuration_identity(get_connection_config(connection_key)),
         context={
             "identity": identity,
             "catalog": getattr(config, "catalog", None),
@@ -378,3 +507,8 @@ def persistent_discovery(  # noqa: PLR0913 -- provider, cache and journal depend
             "database": getattr(config, "database", None),
         },
     )
+
+
+def _configuration_identity(config: Any) -> str:
+    values = {field.name: getattr(config, field.name) for field in fields(config)}
+    return hashlib.sha256(json.dumps(values, sort_keys=True, default=repr).encode()).hexdigest()

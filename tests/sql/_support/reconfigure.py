@@ -24,6 +24,7 @@ from analytics_toolkit.sql.execution.plans import SqlOperationResult, SqlPlan
 from sqlglot import exp
 
 from tests.sql._support.fakes import FakeClickHouseResult
+from tests.sql._support.reconfigure_metadata import ReconfigureMetadata
 
 reconfigure_api = importlib.import_module("analytics_toolkit.sql.dml.table.ch_reconfigure")
 
@@ -90,33 +91,47 @@ class ReconfigureClient:
         self.commands: list[str] = []
         self.command_settings: list[object] = []
         self.queries: list[str] = []
+        self.query_settings: list[object] = []
+        self.metadata_macros = {"cluster": "core", "copy_route": "archive"}
+        self.metadata_overrides: dict[tuple[str, str], str] = {}
+        self.metadata = ReconfigureMetadata(self)
         self.closed = False
 
-    def query(self, query: str) -> FakeClickHouseResult:  # noqa: PLR0911
+    def query(self, query: str, settings: object = None) -> FakeClickHouseResult:
         self.queries.append(query)
-        if query == "SHOW CREATE TABLE analytics.events":
-            return FakeClickHouseResult([(TABLE_DDL,)])
-        if query == "SHOW CREATE TABLE analytics.events_shard":
-            return FakeClickHouseResult([(SHARD_DDL,)])
+        self.query_settings.append(settings)
+        ddl = self.metadata.show_create(query) or self._show_create_ddl(query)
+        if ddl is not None:
+            return FakeClickHouseResult([(ddl,)])
         if query.startswith("SELECT engine FROM system.databases"):
             return FakeClickHouseResult([(self.database_engine,)])
-        if "getMacro('cluster')" in query:
-            return FakeClickHouseResult([("core",)])
-        if "FROM system.clusters" in query and "'core'" in query:
-            return FakeClickHouseResult(list(self.source_hosts))
-        if "FROM system.clusters" in query and "'archive'" in query:
-            return FakeClickHouseResult(list(self.target_hosts))
-        if "clusterAllReplicas('archive', system, tables)" in query:
-            return FakeClickHouseResult([(0,)])
-        if query.startswith("SELECT count() FROM "):
-            return FakeClickHouseResult([(3,)])
         if query.startswith("EXISTS TABLE "):
             return FakeClickHouseResult([(1,)])
+        if (rows := self.metadata.rows(query)) is not None:
+            return FakeClickHouseResult(rows)
+        if query.startswith("SELECT count() FROM "):
+            return FakeClickHouseResult([(3,)])
         return FakeClickHouseResult([])
+
+    def metadata_definitions(self) -> dict[tuple[str, str], str]:
+        definitions = {
+            ("analytics", table): ddl
+            for table in ("events", "events_shard")
+            if (ddl := self._show_create_ddl(f"SHOW CREATE TABLE analytics.{table}")) is not None
+        }
+        return {**definitions, **self.metadata_overrides}
+
+    @staticmethod
+    def _show_create_ddl(query: str) -> str | None:
+        return {
+            "SHOW CREATE TABLE analytics.events": TABLE_DDL,
+            "SHOW CREATE TABLE analytics.events_shard": SHARD_DDL,
+        }.get(query)
 
     def command(self, query: str, settings: object = None) -> None:
         self.commands.append(query)
         self.command_settings.append(settings)
+        self.metadata.command(query)
 
     def close(self) -> None:
         self.closed = True
@@ -127,19 +142,31 @@ class CountingReconfigureClient(ReconfigureClient):
         super().__init__()
         self.counts = counts
 
-    def query(self, query: str) -> FakeClickHouseResult:
+    def query(self, query: str, settings: object = None) -> FakeClickHouseResult:
         if query.startswith("SELECT count() FROM ") and self.counts:
             self.queries.append(query)
             return FakeClickHouseResult([(self.counts.pop(0),)])
-        return super().query(query)
+        return super().query(query, settings=settings)
 
 
 class LocalReconfigureClient(ReconfigureClient):
-    def query(self, query: str) -> FakeClickHouseResult:
+    def metadata_definitions(self) -> dict[tuple[str, str], str]:
+        return {
+            **super().metadata_definitions(),
+            ("analytics", "local_events"): self.metadata_overrides.get(
+                ("analytics", "local_events"), LOCAL_DDL
+            ),
+        }
+
+    def query(self, query: str, settings: object = None) -> FakeClickHouseResult:
         if query == "SHOW CREATE TABLE analytics.local_events":
             self.queries.append(query)
-            return FakeClickHouseResult([(LOCAL_DDL,)])
-        return super().query(query)
+            self.query_settings.append(settings)
+            ddl = self.metadata.show_create(query) or self.metadata_overrides.get(
+                ("analytics", "local_events"), LOCAL_DDL
+            )
+            return FakeClickHouseResult([(ddl,)])
+        return super().query(query, settings=settings)
 
 
 def _options(**overrides: object) -> ChReconfigureOptions:

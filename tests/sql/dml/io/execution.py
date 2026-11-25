@@ -135,7 +135,7 @@ def test_execute_sql_dry_run_does_not_open_connection(monkeypatch) -> None:
     assert plan.options["print_queries"] is False
     assert "random_sleep_seconds" not in plan.options
     assert plan.metadata.statement_count == 2
-    assert sum("query_label=dry-exec" in sql for sql in plan.sqls) == 1
+    assert [sql.count("query_label=dry-exec") for sql in plan.sqls] == [1, 1]
 
 
 def test_execute_sql_trino_executes_split_statements_in_order(monkeypatch) -> None:

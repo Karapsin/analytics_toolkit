@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
+from sqlglot import exp
+
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.ddl.properties import overlay_with_properties
 from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
@@ -124,7 +126,7 @@ def build_show_tables_query(
     from ..metadata import build_trino_show_tables_query
 
     return build_trino_show_tables_query(
-        catalog,
+        exp.to_identifier(catalog, quoted=True),
         schema,
         table_names,
         conditions,
@@ -138,17 +140,16 @@ def extract_table_ddl(
     *,
     read_sql: Callable[[str, str], Any],
 ) -> str:
-    del adapter
     from .adapter import split_trino_table_name
 
     catalog, schema_name, relation_name = split_trino_table_name(
         table_name,
         connection_key=connection_key,
     )
-    result = read_sql(
-        connection_key,
-        f"SHOW CREATE TABLE {catalog}.{schema_name}.{relation_name}",
+    relation = ".".join(
+        adapter.quote_identifier(part) for part in (catalog, schema_name, relation_name)
     )
+    result = read_sql(connection_key, f"SHOW CREATE TABLE {relation}")
     return _first_result_value(result, table_name)
 
 
@@ -197,7 +198,6 @@ def query_transfer_stage_table_names(
     transfer_staging_schema: str,
     table_pattern: str,
 ) -> list[str]:
-    del adapter
     from .adapter import split_trino_table_name
 
     catalog_name, schema_name, _ = split_trino_table_name(
@@ -208,7 +208,7 @@ def query_transfer_stage_table_names(
         cursor.execute(
             f"""
             SELECT table_name
-            FROM {catalog_name}.information_schema.tables
+            FROM {adapter.quote_identifier(catalog_name)}.information_schema.tables
             WHERE table_schema = ?
               AND table_name LIKE ?
             """.strip(),
@@ -229,7 +229,9 @@ def qualify_transfer_stage_table_name(
         f"{transfer_staging_schema}.__analytics_toolkit_stage_marker__",
         connection_key=connection_key,
     )
-    return f"{catalog_name}.{schema_name}.{adapter.quote_identifier(table_name)}"
+    return ".".join(
+        adapter.quote_identifier(part) for part in (catalog_name, schema_name, table_name)
+    )
 
 
 def _first_result_value(result: Any, table_name: str) -> str:

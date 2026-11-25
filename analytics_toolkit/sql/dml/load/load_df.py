@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from analytics_toolkit.sql.execution.backend_options import (
+    clear_data_replay_retention,
     preserve_recovery_artifacts,
     require_complete_operation,
 )
@@ -13,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from analytics_toolkit.sql.backends.trino.storage import parquet_storage_options
+from analytics_toolkit.sql.backends.stage_ownership import drop_owned_resource
 from tqdm import tqdm
 
 from analytics_toolkit.general import time_print
@@ -24,6 +26,11 @@ from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 from analytics_toolkit.sql.dml.ddl_options import resolve_operation_ddl
 
 from ...backends import get_backend_adapter
+from ...backends.upsert import prepare_upsert_target
+from ...backends.native_values import (
+    dataframe_key_validation_frames,
+    timestamp_capability_plan_options,
+)
 from ...connection.config import get_connection_config
 from ...connection.errors import (
     SqlOperationContext,
@@ -57,6 +64,7 @@ from ...execution.plan_steps import (
     add_load_stage_step,
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from ...execution.upsert_state import bind_upsert_state
 from ..transfer.flow.stage_identity import resolve_destination_identity
 from ...execution.validation import validate_optional_positive_int
 from ..table._basic_ops import (
@@ -70,10 +78,13 @@ from ..table.maintenance import (
     drop_table_with_retry,
 )
 from ..table.table_validation import (
+    effective_upsert_key_columns,
     normalize_key_columns,
     normalize_upsert_partition_column,
+    validate_complete_upsert_columns,
     validate_key_columns_in_columns,
-    validate_stage_target_key_overlap,
+    validate_stage_append_keys,
+    validate_stage_target_key_overlap as _validate_stage_target_key_overlap,
     validate_stage_uniqueness,
     validate_upsert_partition_column_in_columns,
 )
@@ -82,6 +93,23 @@ from ..table.write_modes import (
     build_upsert_stage_sqls,
     finalize_stage_table,
     upsert_stage_table,
+)
+from .type_validation import (
+    _validated_dataframe_profiles,
+    convert_dataframe_schema,
+    normalize_dataframe_columns,
+    validate_dataframe_schema,
+)
+from .client_validation import (
+    client_creation_schema,
+    client_input_dataframe,
+    client_validation_pending,
+    prepare_load_client_values,
+)
+from analytics_toolkit.sql.dml.destination_context import (
+    freeze_destination_timezone,
+    infer_dataframe_write_schema,
+    prepare_dataframe_write_context,
 )
 from ..empty_source import (
     EmptySourceError,
@@ -104,14 +132,53 @@ from ..transfer.runtime.retry import (
     run_with_retry,
 )
 from ..transfer.staging import _sanitize_transfer_staging_username
+from .json_values import (
+    attach_json_dataframe,
+    convert_prepared_load_dataframe,
+    prepare_initial_json_dataframe,
+    prepare_json_dataframe,
+    retain_json_dataframe,
+)
 from .load_sql_table import insert_table_batch
 from .models import LoadOptions, LoadState
+from .key_validation import validate_key_nulls, validate_source_keys
+from .owned_payload import (
+    inferred_load_schema,
+    prepare_owned_load_dataframe,
+    retain_prepared_load_error,
+)
+from .native_assignment import (
+    _own_assignment_resource,
+    assignment_required,
+    assignment_validation_pending,
+    can_cleanup_assignment,
+    checkpoint_options,
+    has_assignment_checkpoint,
+    insert_checkpoint_rows,
+    load_input_dataframe,
+    prepare_load_profiles,
+    publish_assignment_checkpoint,
+    record_assignment_configuration,
+    require_assignment_identity,
+    require_assignment_session_context,
+    require_load_timestamp_capabilities,
+    run_assignment_operation,
+    validated_local_profiles,
+)
 from .stage import (
     STAGE_TABLE_NAME_MAX_ATTEMPTS,
     build_stage_table_name,
     cleanup_stage_table_with_retry,
     create_stage_table,
 )
+from .resource_ownership import (
+    attach_resource_diagnostics,
+    cleanup_created_load_target,
+    cleanup_owned_load_stages,
+    scoped_creation_kwargs,
+)
+
+validate_stage_target_key_overlap = _validate_stage_target_key_overlap
 
 
 @timed_public_sql_function
@@ -153,6 +220,7 @@ def load_df(
 ) -> int | SqlPlan | SqlOperationResult:
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df must be a pandas DataFrame.")
+    df = normalize_dataframe_columns(df)
     validate_retry_options(retry_cnt, timeout_increment)
     validate_optional_positive_int(
         trino_insert_chunk_size,
@@ -196,6 +264,10 @@ def load_df(
         timeout_increment=timeout_increment,
     )
 
+    df, prepared_json_dataframe = prepare_initial_json_dataframe(
+        df, options.table_schema, options.connection_backend
+    )
+
     if dry_run or return_sql:
         return build_load_df_plan(options, df)
 
@@ -205,9 +277,12 @@ def load_df(
     )
     preview_sql = _load_df_preview_sql(options, df)
 
+    retained_upsert_state: LoadState | None = None
+
     def operation(attempt: int) -> int | SqlOperationResult:
-        state: LoadState | None = None
-        operation_error: Exception | None = None
+        nonlocal retained_upsert_state, prepared_json_dataframe
+        state: LoadState | None = retained_upsert_state
+        operation_error: BaseException | None = None
         try:
             with tracked_sql_operation(
                 metadata=operation_metadata,
@@ -219,49 +294,79 @@ def load_df(
                 query_label=options.query_label,
                 preview_sql=preview_sql,
             ):
-                state = _run_load_target_action(
-                    options,
-                    "target_state",
-                    lambda connection_ref: _initialize_load_state(
+                if state is None:
+                    state = _run_load_target_action(
                         options,
-                        connection_ref["connection"],
-                    ),
-                )
-                _validate_load_dataframe(options, df)
-                if df.empty:
-                    empty_result = _handle_empty_dataframe_load(
-                        options,
-                        state,
-                        df,
-                        operation_metadata=operation_metadata,
-                        return_metadata=return_metadata,
+                        "target_state",
+                        lambda connection_ref: _initialize_load_state(
+                            options,
+                            connection_ref["connection"],
+                        ),
                     )
-                    if empty_result is not None:
-                        return empty_result
-                _run_load_target_action(
+                    attempt_df = attach_json_dataframe(state, prepared_json_dataframe, df)
+                    _validate_load_dataframe(options, attempt_df)
+                    if attempt_df.empty:
+                        empty_result = _handle_empty_dataframe_load(
+                            options,
+                            state,
+                            attempt_df,
+                            operation_metadata=operation_metadata,
+                            return_metadata=return_metadata,
+                        )
+                        if empty_result is not None:
+                            return empty_result
+                    _run_load_target_action(
+                        options,
+                        "prepare_target",
+                        lambda connection_ref: _prepare_load_target(
+                            options=options,
+                            state=state,
+                            connection=connection_ref["connection"],
+                            df=attempt_df,
+                        ),
+                    )
+
+                input_df, operation_metadata.type_resolutions = load_input_dataframe(
                     options,
-                    "prepare_target",
-                    lambda connection_ref: _prepare_load_target(
-                        options=options,
-                        state=state,
-                        connection=connection_ref["connection"],
-                        df=df,
+                    state,
+                    df,
+                    lambda: _run_load_target_action(
+                        options,
+                        "prepare_target",
+                        lambda ref: _prepare_load_target(
+                            options=options,
+                            state=state,
+                            connection=ref["connection"],
+                            df=df,
+                        ),
+                    ),
+                    lambda opts, target_state, frame: client_input_dataframe(
+                        opts, target_state, frame, convert_prepared_load_dataframe
                     ),
                 )
-
                 progress_bar = _make_load_progress_bar(
-                    total=len(df),
+                    total=len(input_df),
                     options=options,
                     progress=progress,
                 )
                 progress_tracker = _ProgressTracker(progress_bar)
                 try:
-                    inserted_rows = _load_dataframe(
-                        options=options,
-                        state=state,
-                        df=df,
-                        on_progress=progress_tracker.update,
-                    )
+                    if state.upsert_checkpoint.prepared:
+                        _resume_load_upsert(
+                            checkpoint_options(options, state)
+                            if state.native_assignment_checkpoint is not None
+                            else options,
+                            state,
+                            input_df,
+                        )
+                        inserted_rows = len(input_df)
+                    else:
+                        inserted_rows = _load_dataframe(
+                            options=options,
+                            state=state,
+                            df=input_df,
+                            on_progress=progress_tracker.update,
+                        )
                     progress_tracker.complete_to(inserted_rows)
                 finally:
                     progress_bar.close()
@@ -282,20 +387,17 @@ def load_df(
                 return _build_load_result(
                     options=options,
                     state=state,
-                    source_rows=len(df),
+                    source_rows=len(input_df),
                     inserted_rows=inserted_rows,
                     operation_metadata=operation_metadata,
                     return_metadata=return_metadata,
                 )
-        except Exception as exc:
+        except BaseException as exc:
             operation_error = exc
             raise
         finally:
-            _cleanup_load(
-                options,
-                state,
-                drop_created_target=operation_error is not None,
-            )
+            prepared_json_dataframe = retain_json_dataframe(state, prepared_json_dataframe)
+            retained_upsert_state = _retain_or_cleanup_load(options, state, operation_error)
 
     def context(attempt: int) -> SqlOperationContext:
         return SqlOperationContext(
@@ -308,14 +410,12 @@ def load_df(
             sql_preview=sql_preview(options.destination_table),
         )
 
-    return run_retrying_operation(
-        operation_name=(
-            f"loading DataFrame into {options.connection_key}.{options.destination_table}"
-        ),
-        retry_cnt=retry_cnt,
-        timeout_increment=timeout_increment,
-        operation=operation,
-        context_factory=context,
+    return run_assignment_operation(
+        options,
+        operation,
+        context,
+        lambda: retained_upsert_state,
+        (run_retrying_operation, _cleanup_load),
     )
 
 
@@ -402,7 +502,14 @@ def _build_load_options(
             "gp_distributed_by_key",
         ),
         gp_partitions=normalized_gp_partitions,
-        key_columns=normalize_key_columns(key_columns),
+        key_columns=(
+            effective_upsert_key_columns(
+                normalize_key_columns(key_columns),
+                normalize_upsert_partition_column(upsert_partition_column),
+            )
+            if resolved_write_mode == "upsert"
+            else normalize_key_columns(key_columns)
+        ),
         upsert_partition_column=normalize_upsert_partition_column(upsert_partition_column),
         trino_upsert_partition_drop_sql_template=(
             target_defaults.upsert_partition_drop_sql_template
@@ -505,6 +612,7 @@ def _build_load_options(
         ch_sharding_key=options.ch_sharding_key,
         ch_only_shard=options.ch_only_shard,
     )
+    record_assignment_configuration(options, config)
     return options
 
 
@@ -535,6 +643,9 @@ def _initialize_load_state(options: LoadOptions, connection: Any) -> LoadState:
         connection,
         options.destination_table,
         connection_key=options.connection_key,
+    )
+    freeze_destination_timezone(
+        options.destination_context, options.connection_backend, connection, options.table_schema
     )
     return LoadState(
         target_exists=target_exists,
@@ -582,6 +693,17 @@ def _handle_empty_dataframe_load(
 def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
     if options.table_schema is not None:
         validate_table_schema_columns(options.table_schema, df.columns)
+        validator = (
+            validated_local_profiles
+            if assignment_required(options.table_schema, options.connection_backend)
+            else validate_dataframe_schema
+        )
+        validator(
+            df,
+            options.table_schema,
+            options.connection_backend,
+            destination_timezone=options.destination_context.get("destination_timezone"),
+        )
 
     if options.gp_distributed_by_key:
         validate_key_columns_in_columns(options.gp_distributed_by_key, df.columns)
@@ -603,7 +725,9 @@ def _validate_load_dataframe(options: LoadOptions, df: pd.DataFrame) -> None:
         "order_by",
         data_name="staged data",
     )
-    _validate_dataframe_key_uniqueness(df, options.key_columns)
+    validate_source_keys(
+        df, options.key_columns, options.connection_backend, _validate_dataframe_key_uniqueness
+    )
 
 
 def _prepare_load_target(
@@ -613,9 +737,86 @@ def _prepare_load_target(
     connection: Any,
     df: pd.DataFrame,
 ) -> None:
+    if state.prepared_json_dataframe is not None:
+        df = state.prepared_json_dataframe
+    if options.write_mode == "upsert" and state.original_target_exists:
+        state.target_column_types = get_backend_adapter(
+            options.connection_backend
+        ).get_writable_table_column_types(
+            connection, options.destination_table, connection_key=options.connection_key
+        )
+        columns = validate_complete_upsert_columns(df.columns, state.target_column_types)
+        df = df.loc[:, columns]
+    elif state.original_target_exists and options.write_mode in {"append", "truncate_insert"}:
+        state.target_column_types = get_table_column_types(
+            options.connection_backend,
+            connection,
+            options.destination_table,
+            connection_key=options.connection_key,
+        )
+    prepared = prepare_json_dataframe(
+        df, options.table_schema or state.target_column_types, options.connection_backend
+    )
+    if prepared is not None:
+        state.prepared_json_dataframe = prepared
+        df = prepared
+    prepare_dataframe_write_context(options, state, connection, df)
+    df = prepare_owned_load_dataframe(options, state, df)
+    null_columns = prepare_load_profiles(
+        options,
+        state,
+        connection,
+        df,
+        (_validated_dataframe_profiles, convert_dataframe_schema),
+    )
+    if state.original_target_exists and options.write_mode in {
+        "append",
+        "truncate_insert",
+        "upsert",
+    }:
+        get_backend_adapter(options.connection_backend).validate_existing_dataframe_insert_columns(
+            connection,
+            options.destination_table,
+            [str(column) for column in df.columns],
+            connection_key=options.connection_key,
+            null_columns=null_columns,
+            row_count=len(df),
+        )
+    if options.use_parquet_staging and not df.empty:
+        get_backend_adapter(options.connection_backend).validate_dataframe_staging_schema(
+            _incoming_column_types(options, state, df), use_parquet=True
+        )
+    prepare_load_client_values(
+        options,
+        state,
+        connection,
+        df,
+        (convert_prepared_load_dataframe, _incoming_column_types),
+    )
+    for key_df in dataframe_key_validation_frames(
+        state.client_validated_dataframe if state.client_validated_dataframe is not None else df,
+        options.key_columns,
+        (state.target_column_types, options.table_schema),
+        options.connection_backend,
+        destination_timezone=options.destination_context.get("destination_timezone"),
+        connection=connection,
+    ):
+        _validate_dataframe_key_uniqueness(key_df, options.key_columns)
+    require_assignment_identity(options, state)
+    require_assignment_session_context(options, connection)
+    if options.write_mode == "upsert" and state.original_target_exists:
+        with bind_upsert_state(connection, state.upsert_checkpoint):
+            prepare_upsert_target(
+                get_backend_adapter(options.connection_backend),
+                connection,
+                options.destination_table,
+                partition_column=options.upsert_partition_column,
+            )
     _apply_load_target_write_mode(options, state, connection)
     _ensure_load_target_table(options, state, connection, df)
     _load_target_column_metadata(options, state, connection, df)
+    if state.native_assignment_checkpoint is not None:
+        state.native_assignment_target_prepared = True
 
 
 def _apply_load_target_write_mode(
@@ -669,8 +870,6 @@ def _ensure_load_target_table(
         return
 
     _create_load_target_table(options, state, connection, df)
-    if not state.original_target_exists:
-        state.target_created_by_operation = True
     state.target_exists = True
 
 
@@ -681,10 +880,29 @@ def _create_load_target_table(
     df: pd.DataFrame,
 ) -> None:
     create_kwargs: dict[str, Any] = {}
+    acknowledged: list[str] = []
+    if not state.target_exists:
+
+        def record_target(resource: str) -> None:
+            acknowledged.append(resource)
+            state.owned_target_resources.append(resource)
+            options.destination_context.setdefault("native_assignment_owned_resources", []).append(
+                resource
+            )
+
+        create_kwargs["on_resource_created"] = record_target
+        create_kwargs.update(scoped_creation_kwargs(options, state, target=True))
     if options.query_label is not None:
         create_kwargs["query_label"] = options.query_label
-    if options.table_schema is not None:
-        create_kwargs["table_schema"] = options.table_schema
+    client_schema = client_creation_schema(options) or inferred_load_schema(options)
+    if (
+        options.table_schema is not None
+        or client_schema is not None
+        or options.destination_context.get("context_inferred_schema")
+    ):
+        create_kwargs["table_schema"] = (
+            options.table_schema or client_schema or options.destination_context["inferred_schema"]
+        )
     create_kwargs.update(
         get_backend_adapter(options.connection_backend).build_load_target_create_kwargs(
             gp_distributed_by_key=options.gp_distributed_by_key,
@@ -708,10 +926,13 @@ def _create_load_target_table(
         options.connection_backend,
         connection,
         options.destination_table,
-        None if options.table_schema is not None else df,
+        None if create_kwargs.get("table_schema") is not None else df,
         connection_key=options.connection_key,
         **create_kwargs,
     )
+    if acknowledged:
+        state.target_created_by_operation = True
+    options.destination_context["load_timestamp_target_acknowledged"] = True
 
 
 def _load_target_column_metadata(
@@ -720,11 +941,14 @@ def _load_target_column_metadata(
     connection: Any,
     df: pd.DataFrame,
 ) -> None:
+    if state.target_column_types is not None and state.original_target_exists:
+        return
     if options.write_mode == "replace" and not options.append and state.original_target_exists:
-        adapter = get_backend_adapter(options.connection_backend)
-        state.target_column_types = options.table_schema or {
-            str(column): adapter.infer_dataframe_column_type(df[column]) for column in df.columns
-        }
+        state.target_column_types = options.table_schema or infer_dataframe_write_schema(
+            df, options.connection_backend, options.destination_context
+        )
+        return
+    if options.write_mode == "upsert" and state.original_target_exists:
         return
     if get_backend_adapter(
         options.connection_backend,
@@ -784,6 +1008,11 @@ def _build_load_result(
 def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
     adapter = get_backend_adapter(options.connection_backend)
     uses_partition_replacement_upsert = adapter.uses_partition_replacement_upsert()
+    pending_layout = adapter.supports_distributed_table_targets() and options.write_mode in {
+        "replace",
+        "truncate_insert",
+        "upsert",
+    }
     metadata = SqlOperationMetadata(
         source_rows=len(df),
         staged_rows=(
@@ -805,11 +1034,21 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "append": options.append,
             "key_columns": options.key_columns,
             "upsert_partition_column": options.upsert_partition_column,
+            "upsert_requires_complete_writable_rows": options.write_mode == "upsert",
+            "pending_existing_layout_verification": pending_layout,
+            "pending_resource_scope_resolution": pending_layout,
+            "execution_requires": (
+                "Verify the existing destination layout and actual resource scopes before mutation."
+                if pending_layout
+                else None
+            ),
             "gp_distributed_by_key": options.gp_distributed_by_key,
             "gp_partitions": _gp_partition_plan_option(options.gp_partitions),
             "trino_insert_chunk_size": options.trino_insert_chunk_size,
             "gp_insert_chunk_size": options.gp_insert_chunk_size,
             "table_schema": options.table_schema,
+            "native_assignment_validation_pending": assignment_validation_pending(options),
+            "pending_client_write_validation": client_validation_pending(options, df),
             "partition_by": options.partition_by,
             "order_by": options.order_by,
             "ch_engine": options.ch_engine,
@@ -827,6 +1066,12 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             "use_parquet_staging": options.use_parquet_staging,
         },
         metadata=metadata,
+    )
+    plan.options.update(
+        timestamp_capability_plan_options(
+            options.connection_backend,
+            options.table_schema or {},
+        )
     )
 
     if df.empty:
@@ -847,7 +1092,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
                 "with object-typed columns."
             )
 
-    if options.write_mode == "replace":
+    if options.write_mode == "replace" and not pending_layout:
         add_drop_target_steps(
             plan,
             alias=options.connection_key,
@@ -857,7 +1102,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             query_label=options.query_label,
             ch_only_shard=options.ch_only_shard,
         )
-    elif options.write_mode == "truncate_insert":
+    elif options.write_mode == "truncate_insert" and not pending_layout:
         add_clear_target_steps(
             plan,
             alias=options.connection_key,
@@ -904,7 +1149,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             table_name=options.destination_table,
         )
 
-    if options.use_parquet_staging:
+    if options.use_parquet_staging and not df.empty:
         _add_parquet_load_plan_steps(plan, options, df, metadata)
     elif options.write_mode == "upsert":
         stage_table = _dry_run_load_stage_name(options, "dry_run")
@@ -1036,6 +1281,7 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
             stage_table=stage_table,
             phase="insert_from_stage",
             query_label=options.query_label,
+            column_types=_incoming_column_types(options, None, df),
         )
         add_cleanup_stage_step(
             plan,
@@ -1076,6 +1322,15 @@ def build_load_df_plan(options: LoadOptions, df: pd.DataFrame) -> SqlPlan:
 
 
 def _load_df_preview_sql(options: LoadOptions, df: pd.DataFrame) -> str | None:
+    if (
+        get_backend_adapter(options.connection_backend).load_execution_preview_requires_schema
+        and options.table_schema is None
+    ):
+        # Execution discovers existing JSON types before certifying payloads;
+        # its diagnostic preview must not infer or serialize raw adapters.
+        return _build_dataframe_insert_placeholder(
+            options.connection_backend, options.destination_table, df
+        )
     plan = build_load_df_plan(options, df)
     if not plan.sqls:
         return None
@@ -1099,6 +1354,8 @@ def _add_parquet_load_plan_steps(
     metadata: SqlOperationMetadata,
 ) -> None:
     adapter = get_backend_adapter(options.connection_backend)
+    incoming_types = _incoming_column_types(options, None, df)
+    adapter.validate_dataframe_staging_schema(incoming_types, use_parquet=True)
     uses_partition_replacement_upsert = adapter.uses_partition_replacement_upsert()
     parquet_schema = options.s3_transfer_staging_schema
     stage_table = build_stage_table_name(
@@ -1121,7 +1378,7 @@ def _add_parquet_load_plan_steps(
         [
             build_create_parquet_stage_table_sql(
                 stage_table,
-                options.table_schema,
+                incoming_types,
                 stage_external_location,
                 query_label=options.query_label,
                 ddl_properties=options.parquet_ddl_properties,
@@ -1172,6 +1429,8 @@ def _add_parquet_load_plan_steps(
                 columns=[str(column) for column in df.columns],
                 key_columns=options.key_columns or [],
                 column_types=options.table_schema,
+                ch_cluster=options.ch_cluster,
+                ch_only_shard=options.ch_only_shard,
                 query_label=options.query_label,
                 upsert_partition_column=options.upsert_partition_column,
                 final_stage_table=(
@@ -1195,6 +1454,7 @@ def _add_parquet_load_plan_steps(
             stage_table=stage_table,
             phase="insert_from_stage",
             query_label=options.query_label,
+            column_types=_incoming_column_types(options, None, df),
         )
 
     add_cleanup_stage_step(
@@ -1270,7 +1530,15 @@ def _load_dataframe(
     df: pd.DataFrame,
     on_progress: Any | None = None,
 ) -> int:
-    if options.use_parquet_staging:
+    if state.native_assignment_checkpoint is not None:
+        return publish_assignment_checkpoint(
+            options,
+            state,
+            df,
+            _run_load_target_action,
+            _finalize_loaded_dataframe_stage,
+        )
+    if options.use_parquet_staging and not df.empty:
         return _load_dataframe_via_parquet_stage(
             options=options,
             state=state,
@@ -1289,6 +1557,8 @@ def _load_dataframe(
         stage_create_kwargs: dict[str, Any] = {}
         if options.table_schema is not None:
             stage_create_kwargs["table_schema"] = options.table_schema
+        elif not safe_staged_replace and state.target_column_types is not None:
+            stage_create_kwargs["table_schema"] = _incoming_column_types(options, state, df)
         state.overlap_stage_table = _run_load_target_action(
             options,
             "create_stage",
@@ -1303,6 +1573,12 @@ def _load_dataframe(
                 transfer_staging_schema=options.transfer_staging_schema,
                 transfer_staging_username=options.transfer_staging_username,
                 destination_hash=options.destination_hash,
+                on_stage_candidate=state.stage_candidates.append,
+                on_resource_created=lambda resource: _own_assignment_resource(
+                    options, state, resource
+                ),
+                **scoped_creation_kwargs(options, state),
+                ch_creation_policy=options.staging_ch_policy,
                 **stage_create_kwargs,
             ),
         )
@@ -1339,33 +1615,29 @@ def _load_dataframe(
                 ),
             )
             _ensure_final_upsert_stage_table(options, state, df)
-            try:
-                _run_load_target_action(
-                    options,
-                    "finalize_target",
-                    lambda connection_ref: upsert_stage_table(
-                        options.connection_backend,
-                        connection_ref["connection"],
-                        options.destination_table,
-                        state.overlap_stage_table,
-                        columns=[str(column) for column in df.columns],
-                        key_columns=options.key_columns or [],
-                        column_types=options.table_schema or state.target_column_types,
-                        ch_cluster=options.ch_cluster,
-                        ch_only_shard=options.ch_only_shard,
-                        query_label=options.query_label,
-                        upsert_partition_column=options.upsert_partition_column,
-                        final_stage_table=state.final_upsert_stage_table,
-                        trino_partition_drop_sql_template=(
-                            options.trino_upsert_partition_drop_sql_template
-                        ),
-                    ),
-                )
-            except Exception as exc:
-                get_backend_adapter(
+            _run_load_target_action(
+                options,
+                "finalize_target",
+                lambda connection_ref: upsert_stage_table(
                     options.connection_backend,
-                ).mark_upsert_finalization_error(exc)
-                raise
+                    connection_ref["connection"],
+                    options.destination_table,
+                    state.overlap_stage_table,
+                    columns=[str(column) for column in df.columns],
+                    key_columns=options.key_columns or [],
+                    column_types=state.target_column_types or options.table_schema,
+                    ch_cluster=options.ch_cluster,
+                    ch_only_shard=options.ch_only_shard,
+                    query_label=options.query_label,
+                    upsert_partition_column=options.upsert_partition_column,
+                    final_stage_table=state.final_upsert_stage_table,
+                    checkpoint=state.upsert_checkpoint,
+                    connection_key=options.connection_key,
+                    trino_partition_drop_sql_template=(
+                        options.trino_upsert_partition_drop_sql_template
+                    ),
+                ),
+            )
             return len(df)
 
         if safe_staged_replace:
@@ -1402,14 +1674,12 @@ def _load_dataframe(
         _run_load_target_action(
             options,
             "validate_stage",
-            lambda connection_ref: validate_stage_target_key_overlap(
+            lambda connection_ref: validate_stage_append_keys(
                 connection_type=options.connection_backend,
                 connection=connection_ref["connection"],
                 stage_table=state.overlap_stage_table,
                 target_table=options.destination_table,
                 key_columns=options.key_columns,
-                target_exists=state.target_exists,
-                replace_target_table=False,
             ),
         )
         _run_load_target_action(
@@ -1420,6 +1690,7 @@ def _load_dataframe(
                 connection_ref["connection"],
                 options.destination_table,
                 state.overlap_stage_table,
+                column_types=_incoming_column_types(options, state, df),
                 query_label=options.query_label,
             ),
         )
@@ -1456,6 +1727,7 @@ def _load_dataframe_via_parquet_stage(
     on_progress: Any | None,
 ) -> int:
     pa, pq, fsspec_module = ensure_parquet_staging_dependencies()
+    incoming_types = _incoming_column_types(options, state, df)
     _run_load_target_action(
         options,
         "create_stage",
@@ -1463,6 +1735,7 @@ def _load_dataframe_via_parquet_stage(
             options,
             state,
             connection_ref["connection"],
+            incoming_types,
         ),
     )
     if state.stage_external_location is None or state.overlap_stage_table is None:
@@ -1477,6 +1750,7 @@ def _load_dataframe_via_parquet_stage(
         storage_options=options.parquet_storage_options,
         row_group_size=PARQUET_STAGE_DEFAULT_MAX_ROW_GROUP_SIZE,
         on_progress=on_progress,
+        column_types=incoming_types,
     )
     _run_load_target_action(
         options,
@@ -1495,13 +1769,18 @@ def _create_load_parquet_stage_table(
     options: LoadOptions,
     state: LoadState,
     connection: Any,
+    column_types: Mapping[str, str] | None = None,
 ) -> None:
     parquet_schema = options.s3_transfer_staging_schema
     if not parquet_schema:
         raise ValueError("s3_transfer_staging_schema is required for Parquet staging.")
     if not options.s3_transfer_staging_location:
         raise ValueError("s3_transfer_staging_location is required for Parquet staging.")
-    stage_column_types = options.table_schema or state.target_column_types
+    stage_column_types = (
+        column_types
+        if column_types is not None
+        else options.table_schema or state.target_column_types
+    )
     if stage_column_types is None:
         raise ValueError(
             "Could not resolve target schema before creating a Parquet load stage "
@@ -1538,12 +1817,25 @@ def _create_load_parquet_stage_table(
             query_label=options.query_label,
             ddl_properties=options.parquet_ddl_properties,
         )
-        get_backend_adapter(options.connection_backend).execute_command(
-            connection,
-            create_sql,
-        )
-        state.overlap_stage_table = stage_table
+        state.stage_candidates.append(stage_table)
         state.stage_external_location = stage_external_location
+        try:
+            get_backend_adapter(options.connection_backend).execute_command(
+                connection,
+                create_sql,
+            )
+        except BaseException as error:
+            state.uncertain_stage_resources.append((stage_table, stage_external_location))
+            error.__dict__.update(
+                {
+                    "analytics_toolkit_sql_stage_candidate": stage_table,
+                    "analytics_toolkit_sql_stage_external_location": stage_external_location,
+                    "analytics_toolkit_sql_retry_safe": False,
+                }
+            )
+            raise
+        _own_assignment_resource(options, state, stage_table)
+        state.overlap_stage_table = stage_table
         return
 
     raise RuntimeError("Could not generate a unique Parquet load stage table name.")
@@ -1575,10 +1867,16 @@ def _finalize_loaded_dataframe_stage(
                 state.overlap_stage_table,
                 columns=[str(column) for column in df.columns],
                 key_columns=options.key_columns or [],
-                column_types=options.table_schema or state.target_column_types,
+                column_types=(
+                    None
+                    if state.native_assignment_checkpoint is not None
+                    else state.target_column_types or options.table_schema
+                ),
                 query_label=options.query_label,
                 upsert_partition_column=options.upsert_partition_column,
                 final_stage_table=state.final_upsert_stage_table,
+                checkpoint=state.upsert_checkpoint,
+                connection_key=options.connection_key,
                 trino_partition_drop_sql_template=(
                     options.trino_upsert_partition_drop_sql_template
                 ),
@@ -1595,7 +1893,11 @@ def _finalize_loaded_dataframe_stage(
             target_exists=True,
             sample_batch=df,
             target_column_types=state.target_column_types,
-            insert_column_types=state.target_column_types,
+            insert_column_types=(
+                None
+                if state.native_assignment_checkpoint is not None
+                else state.target_column_types
+            ),
             write_mode="replace",
             gp_distributed_by_key=options.gp_distributed_by_key,
             gp_partitions=options.gp_partitions,
@@ -1613,23 +1915,65 @@ def _finalize_loaded_dataframe_stage(
         return
 
     if options.append and state.target_exists and options.key_columns:
-        validate_stage_target_key_overlap(
+        validate_stage_append_keys(
             connection_type=options.connection_backend,
             connection=connection,
             stage_table=state.overlap_stage_table,
             target_table=options.destination_table,
             key_columns=options.key_columns,
-            target_exists=state.target_exists,
-            replace_target_table=False,
         )
 
+    if state.native_assignment_checkpoint is not None:
+        insert_checkpoint_rows(options, state, connection)
+        return
     insert_from_table(
         options.connection_backend,
         connection,
         options.destination_table,
         state.overlap_stage_table,
+        column_types=_incoming_column_types(options, state, df),
         query_label=options.query_label,
     )
+
+
+def _resume_load_upsert(options: LoadOptions, state: LoadState, df: pd.DataFrame) -> None:
+    incoming_stage = state.overlap_stage_table
+    if incoming_stage is None:
+        message = "Certified upsert payload has no incoming stage."
+        raise RuntimeError(message)
+    _run_load_target_action(
+        options,
+        "finalize_target",
+        lambda connection_ref: upsert_stage_table(
+            options.connection_backend,
+            connection_ref["connection"],
+            options.destination_table,
+            incoming_stage,
+            columns=list(df.columns),
+            key_columns=options.key_columns or [],
+            final_stage_table=state.final_upsert_stage_table,
+            checkpoint=state.upsert_checkpoint,
+            connection_key=options.connection_key,
+            column_types=state.target_column_types or options.table_schema,
+        ),
+    )
+
+
+def _incoming_column_types(
+    options: LoadOptions, state: LoadState | None, df: pd.DataFrame
+) -> dict[str, str]:
+    adapter = get_backend_adapter(options.connection_backend)
+    types = (
+        options.table_schema
+        or (state.target_column_types if state is not None else None)
+        or client_creation_schema(options)
+        or inferred_load_schema(options)
+        or {}
+    )
+    return {
+        str(column): types.get(str(column)) or adapter.infer_dataframe_column_type(df[column])
+        for column in df.columns
+    }
 
 
 def _ensure_final_upsert_stage_table(
@@ -1646,7 +1990,7 @@ def _ensure_final_upsert_stage_table(
     if state.final_upsert_stage_table is not None:
         return
 
-    create_schema = options.table_schema or state.target_column_types
+    create_schema = state.target_column_types or options.table_schema
     state.final_upsert_stage_table = _run_load_target_action(
         options,
         "create_final_upsert_stage",
@@ -1662,6 +2006,10 @@ def _ensure_final_upsert_stage_table(
             transfer_staging_schema=options.transfer_staging_schema,
             transfer_staging_username=options.transfer_staging_username,
             destination_hash=options.destination_hash,
+            on_stage_candidate=state.stage_candidates.append,
+            on_resource_created=lambda resource: _own_assignment_resource(options, state, resource),
+            **scoped_creation_kwargs(options, state),
+            ch_creation_policy=options.staging_ch_policy,
         ),
     )
 
@@ -1706,10 +2054,21 @@ def _cleanup_load(
     drop_created_target: bool = False,
 ) -> None:
 
+    if not can_cleanup_assignment(options):
+        time_print("Preserving native assignment resources after a destination identity change.")
+        return
     if preserve_recovery_artifacts():
         time_print("Preserving ClickHouse load recovery artifacts after an uncertain mutation.")
         return
-    if state is not None and state.overlap_stage_table is not None:
+    if state is not None and (state.owned_stage_resources or state.owned_stage_scoped_resources):
+        _cleanup_owned_load_stages(options, state)
+    if (
+        state is not None
+        and state.overlap_stage_table is not None
+        and not state.owned_stage_resources
+        and not state.owned_stage_scoped_resources
+        and not state.scoped_stage_ownership_requested
+    ):
         try:
             _run_load_target_action(
                 options,
@@ -1729,7 +2088,13 @@ def _cleanup_load(
             )
         except Exception:
             time_print(f"Failed to drop temporary load_df stage table {state.overlap_stage_table}")
-    if state is not None and state.final_upsert_stage_table is not None:
+    if (
+        state is not None
+        and state.final_upsert_stage_table is not None
+        and not state.owned_stage_resources
+        and not state.owned_stage_scoped_resources
+        and not state.scoped_stage_ownership_requested
+    ):
         try:
             _run_load_target_action(
                 options,
@@ -1752,31 +2117,19 @@ def _cleanup_load(
                 "Failed to drop temporary load_df final upsert stage table "
                 f"{state.final_upsert_stage_table}"
             )
-    if drop_created_target and _should_drop_created_load_target(state):
-        try:
-            _run_load_target_action(
-                options,
-                "cleanup_target",
-                lambda connection_ref: drop_table_with_retry(
-                    options.connection_backend,
-                    options.connection_key,
-                    connection_ref,
-                    options.destination_table,
-                    retry_fn=run_with_retry,
-                    retry_cnt=options.retry_cnt,
-                    timeout_increment=options.timeout_increment,
-                    rollback_fn=rollback_quietly,
-                    replace_connection_fn=replace_connection,
-                    query_label=options.query_label,
-                    operation_label="created target table",
-                ),
-            )
-        except Exception:
-            time_print(
-                f"Failed to drop load_df target table {options.destination_table} "
-                "created by this failed operation"
-            )
-    if state is not None and state.stage_external_location is not None:
+    if drop_created_target and state is not None and _should_drop_created_load_target(state):
+        cleanup_created_load_target(
+            options,
+            state,
+            _run_load_target_action,
+            lambda: _cleanup_legacy_created_load_target(options),
+        )
+    if (
+        state is not None
+        and state.stage_external_location is not None
+        and not state.uncertain_stage_resources
+        and not state.retained_resource_messages
+    ):
         try:
             if options.parquet_storage_options is None:
                 cleanup_parquet_stage_location(state.stage_external_location)
@@ -1790,6 +2143,56 @@ def _cleanup_load(
                 "Failed to delete temporary load_df Parquet stage files "
                 f"{state.stage_external_location}"
             )
+
+
+def _cleanup_legacy_created_load_target(options: LoadOptions) -> None:
+    try:
+        _run_load_target_action(
+            options,
+            "cleanup_target",
+            lambda ref: drop_table_with_retry(
+                options.connection_backend,
+                options.connection_key,
+                ref,
+                options.destination_table,
+                retry_fn=run_with_retry,
+                retry_cnt=options.retry_cnt,
+                timeout_increment=options.timeout_increment,
+                rollback_fn=rollback_quietly,
+                replace_connection_fn=replace_connection,
+                query_label=options.query_label,
+                operation_label="created target table",
+            ),
+        )
+    except Exception:
+        time_print(
+            f"Failed to drop load_df target table {options.destination_table} "
+            "created by this failed operation"
+        )
+
+
+def _retain_or_cleanup_load(
+    options: LoadOptions, state: LoadState | None, error: BaseException | None
+) -> LoadState | None:
+    if (
+        error is not None
+        and state is not None
+        and (state.upsert_checkpoint.prepared or has_assignment_checkpoint(state))
+    ):
+        retain_prepared_load_error(error, state)
+        attach_resource_diagnostics(error, state)
+        time_print("Retaining certified native payload for replay and recovery.")
+        return state
+    if error is None:
+        clear_data_replay_retention()
+    _cleanup_load(options, state, drop_created_target=error is not None)
+    if error is not None and state is not None:
+        attach_resource_diagnostics(error, state)
+    return None
+
+
+def _cleanup_owned_load_stages(options: LoadOptions, state: LoadState) -> None:
+    cleanup_owned_load_stages(options, state, _run_load_target_action, dropper=drop_owned_resource)
 
 
 def _should_drop_created_load_target(state: LoadState | None) -> bool:
@@ -1806,9 +2209,21 @@ def _run_load_target_action(
     return run_with_fresh_connection(
         options.connection_key,
         role,
-        operation,
+        lambda ref: _run_context_checked_load_action(options, ref, operation, role=role),
         open_connection=get_sql_connection,
     )
+
+
+def _run_context_checked_load_action(
+    options: LoadOptions, ref: dict[str, Any], operation: Any, *, role: str = "write"
+) -> Any:
+    freeze_destination_timezone(
+        options.destination_context, options.connection_backend, ref["connection"]
+    )
+    require_assignment_session_context(options, ref["connection"])
+    if not role.startswith("cleanup"):
+        require_load_timestamp_capabilities(options, ref["connection"])
+    return operation(ref)
 
 
 def _validate_dataframe_key_uniqueness(
@@ -1818,11 +2233,7 @@ def _validate_dataframe_key_uniqueness(
     if not key_columns:
         return
 
-    null_columns = [column for column in key_columns if df[column].isna().any()]
-    if null_columns:
-        raise ValueError(
-            "Null key values found in DataFrame for key_columns: " + ", ".join(null_columns)
-        )
+    validate_key_nulls(df, key_columns)
 
     if df.duplicated(subset=key_columns, keep=False).any():
         raise ValueError(

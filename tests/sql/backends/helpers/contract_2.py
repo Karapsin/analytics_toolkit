@@ -116,7 +116,7 @@ def test_gp_insert_rows_normalizes_json_array_values_by_target_type(
     monkeypatch.setattr(
         gp_insert,
         "execute_values",
-        lambda _cursor, _sql, rows, *, page_size: captured_rows.extend(rows),
+        lambda _cursor, _sql, rows, *, page_size, template=None: captured_rows.extend(rows),
     )
 
     gp_insert.insert_rows(
@@ -380,4 +380,4 @@ def test_trino_stage_type_reuse_and_parquet_null_edge_cases() -> None:
     with pytest.raises(ValueError, match="Invalid target table name"):
         trino_parquet.parquet_stage_target_table_base(adapter, "function_call()")
     assert trino_parquet._infer_trino_type_from_values([None, pd.NA, 3]) == "BIGINT"
-    assert trino_parquet._infer_trino_type_from_values([[1, 2]]) == "VARCHAR"
+    assert trino_parquet._infer_trino_type_from_values([[1, 2]]) == "ARRAY(BIGINT)"

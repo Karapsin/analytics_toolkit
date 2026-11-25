@@ -13,6 +13,7 @@ from sqlparse import tokens
 from analytics_toolkit._sql_statements import sql_tokens
 
 from .editor_actions import code_context
+from .identifier_completion import identifier_tokens
 
 DIALECTS = {"gp": "postgres", "ch": "clickhouse", "trino": "trino"}
 _RELATION_MARKER = "__explorer_cursor_relation__"
@@ -42,12 +43,14 @@ class RelationPosition:
 
 def relation_position(text: str, cursor: int, backend: str) -> RelationPosition | None:
     """Recognize relation positions across whitespace and comments using SQL tokens."""
-    if not code_context(text, cursor):
-        return None
     dialect = DIALECTS.get(backend, backend)
     try:
-        parsed = sqlglot.tokenize(text[:cursor], read=dialect)
+        parsed = identifier_tokens(text[:cursor], dialect)
     except SqlglotError:
+        return None
+    if not code_context(text, cursor) and not (
+        parsed and parsed[-1].token_type == TokenType.IDENTIFIER and parsed[-1].end + 1 == cursor
+    ):
         return None
     parts: list[str] = []
     start = cursor

@@ -43,6 +43,7 @@ class AmbiguousSqlReplaceError(SqlUtilsError):
     """A replacement cutover failed and its final table state could not be proven."""
 
     analytics_toolkit_sql_retry_safe = False
+    rollback_error: Exception | None = None
 
 
 @dataclass(frozen=True)

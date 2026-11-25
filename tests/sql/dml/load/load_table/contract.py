@@ -18,6 +18,7 @@ from tests.sql._support.load_table import (
     table_ops_module,
     trino_insert_module,
 )
+from tests.sql._support.load_table_replacement import LoadTableReplacementClient
 
 
 def test_batch_insert_sql_builders_preserve_backend_shapes() -> None:
@@ -88,16 +89,7 @@ def test_finalize_stage_table_clickhouse_ensures_existing_pair_before_insert() -
     )
 
     assert f"DROP TABLE IF EXISTS {TEST_CH_TABLE}" not in client.commands
-    assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")
-        and "ON CLUSTER core" in command
-        for command in client.commands
-    )
-    assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
-        and "ON CLUSTER core" in command
-        for command in client.commands
-    )
+    assert not any(command.startswith("CREATE TABLE") for command in client.commands)
     assert client.commands[-1] == (
         f"INSERT INTO {TEST_CH_TABLE} (`month_date`, `users`) "
         f"SELECT CAST(`month_date` AS Nullable(Date)) AS `month_date`, "
@@ -105,18 +97,14 @@ def test_finalize_stage_table_clickhouse_ensures_existing_pair_before_insert() -
         f"FROM {TEST_CH_STAGE_TABLE}"
     )
 
-    insert_index = client.commands.index(client.commands[-1])
-    create_indices = [
-        idx
-        for idx, command in enumerate(client.commands)
-        if command.startswith("CREATE TABLE IF NOT EXISTS")
-    ]
-    assert create_indices
-    assert max(create_indices) < insert_index
+    assert len(client.commands) == 1
 
 
 def test_finalize_stage_table_clickhouse_only_shard_upsert_deletes_target() -> None:
     client = FakeClickHouseClient()
+    client.table_ddls[TEST_CH_TABLE] = (
+        f"CREATE TABLE {TEST_CH_TABLE} (id UInt64, score Int64) ENGINE = MergeTree ORDER BY id"
+    )
     batch = pd.DataFrame({"id": [1], "score": [10]})
 
     table_ops_module.finalize_stage_table(
@@ -137,12 +125,14 @@ def test_finalize_stage_table_clickhouse_only_shard_upsert_deletes_target() -> N
     )
 
     drop_sql = next(sql for sql in client.commands if "DROP PARTITION" in sql)
-    assert drop_sql == f"ALTER TABLE {TEST_CH_TABLE} DROP PARTITION 1"
+    assert drop_sql == f"ALTER TABLE default.{TEST_CH_TABLE} DROP PARTITION 1"
     assert "ON CLUSTER" not in drop_sql
 
 
 def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> None:
-    client = FakeClickHouseClient()
+    client = LoadTableReplacementClient(
+        {"month_date": "Date", "min_month_use": "Date", "users": "Int64"}
+    )
     qualified_target = f"default.{TEST_CH_TABLE}"
     qualified_shard = f"default.{TEST_CH_SHARD_TABLE}"
     batch = pd.DataFrame(
@@ -169,7 +159,7 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
     assert f"DROP TABLE IF EXISTS {qualified_target}" not in client.commands
     assert f"DROP TABLE IF EXISTS {qualified_shard}" not in client.commands
     assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {qualified_shard}__replace_")
+        command.startswith(f"CREATE TABLE {qualified_shard}__replace_")
         for command in client.commands
     )
     assert any(
@@ -196,10 +186,14 @@ def test_finalize_stage_table_clickhouse_recreates_pair_and_inserts_target() -> 
         for command, settings in zip(client.commands, client.command_settings)
         if command.startswith("RENAME TABLE")
     )
+    client.assert_replaced(
+        ("month_date", "min_month_use", "users"),
+        ("Date", "Date", "Int64"),
+    )
 
 
 def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() -> None:
-    client = FakeClickHouseClient()
+    client = LoadTableReplacementClient({"month_date": "String", "users": "String"})
     batch = pd.DataFrame(
         {
             "month_date": ["2024-02-01"],
@@ -241,6 +235,7 @@ def test_finalize_stage_table_clickhouse_uses_explicit_types_and_casts_insert() 
     assert client.command_settings[client.commands.index(insert_sql)] == {
         "distributed_foreground_insert": 1
     }
+    client.assert_replaced(tuple(column_types), tuple(column_types.values()))
 
 
 def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:
@@ -260,7 +255,14 @@ def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:
         insert_column_types={"id": "BIGINT", "sub_id": "BIGINT", "score": "INTEGER"},
     )
 
-    assert connection.executed[0] == (
+    metadata_reads = [
+        statement
+        for statement in connection.executed
+        if "FROM pg_catalog.pg_attribute AS a" in statement
+    ]
+    assert metadata_reads
+    statements = [statement for statement in connection.executed if statement not in metadata_reads]
+    assert statements[0] == (
         "DELETE FROM sandbox.target AS target_dst\n"
         "USING sandbox.target__stage AS stage_src\n"
         'WHERE (target_dst."id" = stage_src."id" '
@@ -268,9 +270,7 @@ def test_finalize_stage_table_greenplum_upsert_deletes_then_inserts() -> None:
         'AND (target_dst."sub_id" = stage_src."sub_id" '
         'OR (target_dst."sub_id" IS NULL AND stage_src."sub_id" IS NULL))'
     )
-    assert connection.executed[1].startswith(
-        'INSERT INTO sandbox.target ("id", "sub_id", "score") '
-    )
+    assert statements[1].startswith('INSERT INTO sandbox.target ("id", "sub_id", "score") ')
 
 
 def test_finalize_stage_table_trino_replace_recreates_target() -> None:
@@ -328,8 +328,19 @@ def test_finalize_stage_table_trino_replace_recreates_target() -> None:
     )
 
 
-def test_finalize_stage_table_trino_upsert_replaces_affected_partitions() -> None:
+def test_finalize_stage_table_trino_upsert_replaces_affected_partitions(monkeypatch) -> None:
     connection = FakeDbapiConnection(rows=[("2026-06-24",)])
+    original_cursor = connection.cursor
+
+    def cursor():
+        result = original_cursor()
+        fetchall = result.fetchall
+        result.fetchall = lambda: (
+            [] if "is_nullable = 'NO'" in connection.executed[-1] else fetchall()
+        )
+        return result
+
+    monkeypatch.setattr(connection, "cursor", cursor)
     batch = pd.DataFrame({"id": [1], "score": [10]})
 
     table_ops_module.finalize_stage_table(
@@ -350,16 +361,21 @@ def test_finalize_stage_table_trino_upsert_replaces_affected_partitions() -> Non
         insert_column_types={"id": "BIGINT", "score": "INTEGER"},
     )
 
-    assert connection.executed[0] == ('SELECT DISTINCT "event_date" FROM sandbox.target__stage')
-    assert connection.executed[1].startswith(
+    metadata_reads = [
+        statement for statement in connection.executed if "is_nullable = 'NO'" in statement
+    ]
+    assert metadata_reads
+    statements = [statement for statement in connection.executed if statement not in metadata_reads]
+    assert statements[0] == ('SELECT DISTINCT "event_date" FROM sandbox.target__stage')
+    assert statements[1].startswith(
         'INSERT INTO sandbox.target__final_stage ("id", "score")\n'
         'SELECT target_dst."id", target_dst."score"\n'
         "FROM sandbox.target AS target_dst"
     )
-    assert connection.executed[3] == (
+    assert statements[3] == (
         "ALTER TABLE sandbox.target DROP PARTITION (\"event_date\" = '2026-06-24')"
     )
-    assert connection.executed[4].startswith('INSERT INTO sandbox.target ("id", "score") ')
+    assert statements[4].startswith('INSERT INTO sandbox.target ("id", "score") ')
 
 
 def test_insert_gp_rows_can_change_page_size_between_calls(monkeypatch) -> None:
@@ -450,7 +466,7 @@ def test_insert_rows_batch_clickhouse_uses_rows_and_column_type_names() -> None:
     assert client.calls == [
         {
             "table": "schema.stage_table",
-            "data": [(Decimal("1.2"), "ok"), (None, None)],
+            "data": [(Decimal("1.2"), b"ok"), (None, None)],
             "column_names": ["amount", "label"],
             "column_type_names": [
                 "Nullable(Decimal(10, 2))",
@@ -615,6 +631,6 @@ def test_insert_table_batch_normalizes_decimal_for_clickhouse() -> None:
 
     inserted_df = client.calls[0]["df"]
     assert isinstance(inserted_df, pd.DataFrame)
-    assert inserted_df["amount"].tolist() == [1.2, None]
+    assert inserted_df["amount"].tolist() == [Decimal("1.20"), None]
     assert inserted_df["label"].tolist() == ["ok", None]
     assert inserted_df["count"].tolist() == [1, 2]

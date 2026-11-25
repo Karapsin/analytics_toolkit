@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.dml.transfer.flow import target_ownership
+
 from tests.sql._support.row_batches import (
     Any,
     DatabaseError,
@@ -16,6 +18,7 @@ from tests.sql._support.row_batches import (
     transfer_api_module,
     transfer_stage_module,
 )
+from tests.sql._support.transfer_ownership import acknowledge_target
 
 
 @pytest.mark.parametrize("target_cleanup_fails", [False, True])
@@ -116,7 +119,7 @@ def test_transfer_attempt_cleanup_only_error(
     [
         ({"id": "BIGINT"}, [SimpleNamespace(name="id", native_type="int")], {"id": "BIGINT"}),
         ({"id": "BIGINT"}, [], {"id": "BIGINT"}),
-        (None, [SimpleNamespace(name="id", native_type="int")], {"id": "MAPPED"}),
+        (None, [SimpleNamespace(name="id", native_type="int")], {"id": "int"}),
     ],
 )
 def test_transfer_attempt_schema_selection_matrix(
@@ -189,6 +192,7 @@ def test_transfer_creates_missing_target_before_stage_batches(
 
     def fake_ensure_stage_target_table(**kwargs: Any) -> bool:
         calls.append(kwargs)
+        kwargs["on_resource_created"](kwargs["target_table"])
         return True
 
     monkeypatch.setattr(
@@ -364,11 +368,24 @@ def test_transfer_failure_cleanup_drops_only_target_absent_at_start(
         ),
     )
     monkeypatch.setattr(
-        finalize_module,
-        "cleanup_stage_table_with_retry",
-        lambda _backend, _key, _ref, table_name, **_kwargs: dropped.append(table_name),
+        target_ownership,
+        "drop_owned_resource",
+        lambda _adapter, _connection, resource, **_kwargs: dropped.append(resource.name),
     )
 
+    owned = models_module.TransferStageState(
+        target_exists=True,
+        target_existed_at_start=False,
+    )
+    acknowledge_target(owned, options.target_table)
+
+    finalize_module.cleanup_stage(
+        options=options,
+        connection_refs=models_module.TransferConnectionRefs(),
+        stage_state=owned,
+        read_retry_cnt=1,
+        drop_created_target=True,
+    )
     finalize_module.cleanup_stage(
         options=options,
         connection_refs=models_module.TransferConnectionRefs(),

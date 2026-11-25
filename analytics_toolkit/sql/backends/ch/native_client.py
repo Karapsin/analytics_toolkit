@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import logging
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
 
-import pandas as pd
-
 from analytics_toolkit.sql.ddl.identifiers import _parse_table_name, quote_identifier
+from analytics_toolkit.sql.dml.io.dataframes import dataframe_from_columns
+
+from .native_codec import install_exact_native_codec
+from .temporal_context import native_context_timezone, timezone_name
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
     from types import TracebackType
+
+    import pandas as pd
 
     _NativeStreamContext = AbstractContextManager[Iterator[pd.DataFrame]]
 else:
@@ -18,6 +23,8 @@ else:
 _METADATA_PAIR_LENGTH = 2
 _INVALID_STREAM_METADATA = "Native ClickHouse stream did not return column metadata."
 _INVALID_STREAM_ROWS = "Native ClickHouse stream returned an invalid row block."
+_LOGGER = logging.getLogger(__name__)
+_STREAM_BATCH_SIZE = 65_536
 
 
 class NativeQueryResult:
@@ -79,7 +86,7 @@ class _NativeDataFrameStream(_NativeStreamContext):
             self._client.execute_iter(
                 self._sql,
                 with_column_types=True,
-                chunk_size=65_536,
+                chunk_size=1,
                 **({"settings": dict(self._settings)} if self._settings is not None else {}),
             )
         )
@@ -93,7 +100,10 @@ class _NativeDataFrameStream(_NativeStreamContext):
     ) -> None:
         del traceback
         if exc_type is not None or not self._exhausted:
-            self._client.disconnect_connection()
+            try:
+                self._client.disconnect_connection()
+            except Exception as close_error:  # noqa: BLE001 -- cleanup preserves the query outcome
+                _LOGGER.warning("Native stream disconnect failed: %s", type(close_error).__name__)
 
     def _dataframes(self) -> Iterator[pd.DataFrame]:
         if self._iterator is None:
@@ -104,14 +114,19 @@ class _NativeDataFrameStream(_NativeStreamContext):
             self._exhausted = True
             return
 
-        rows, columns_with_types = _split_first_stream_block(first)
-        columns = [name for name, _type_name in columns_with_types]
+        if not _is_column_metadata(first):
+            raise ValueError(_INVALID_STREAM_METADATA)
+        columns = [name for name, _type_name in first]
+        rows = []
+        for row in self._iterator:
+            if not isinstance(row, (list, tuple)) or len(row) != len(columns):
+                raise TypeError(_INVALID_STREAM_ROWS)
+            rows.append(row)
+            if len(rows) == _STREAM_BATCH_SIZE:
+                yield _rows_dataframe(columns, rows)
+                rows = []
         if rows:
-            yield pd.DataFrame.from_records(rows, columns=columns)
-        for raw_rows in self._iterator:
-            rows = _normalize_stream_rows(raw_rows)
-            if rows:
-                yield pd.DataFrame.from_records(rows, columns=columns)
+            yield _rows_dataframe(columns, rows)
         self._exhausted = True
 
 
@@ -121,23 +136,50 @@ class NativeClickHouseClient:
     def __init__(self, client: Any) -> None:
         self._client = client
         self._closed = False
+        self._exact_source_values = False
+        install_exact_native_codec(client)
+
+    def enable_exact_source_values(self) -> None:
+        """Keep source instants raw before any dataframe inference; never shared globally."""
+        self._exact_source_values = True
+        current = getattr(self._client, "connection", None)
+        for connection in [current, *getattr(self._client, "connections", ())]:
+            context = getattr(connection, "context", None)
+            if context is not None:
+                context._atk_exact_source_values = True  # noqa: SLF001 -- connection-local codec policy
+
+    @property
+    def effective_write_timezone(self) -> str | None:
+        connection = getattr(self._client, "connection", None)
+        return timezone_name(native_context_timezone(getattr(connection, "context", None)))
+
+    @property
+    def effective_read_timezone(self) -> str | None:
+        return "UTC" if self._exact_source_values else self.effective_write_timezone
 
     def command(
         self,
         sql: str,
         settings: Mapping[str, Any] | None = None,
     ) -> Any:
+        connection = getattr(self._client, "connection", None)
+        for current in [connection, *getattr(self._client, "connections", ())]:
+            if current is not None:
+                current._atk_written_rows_known = False  # noqa: SLF001
         result = (
             self._client.execute(sql)
             if settings is None
             else self._client.execute(sql, settings=dict(settings))
         )
         progress = getattr(getattr(self._client, "last_query", None), "progress", None)
-        written_rows = getattr(progress, "written_rows", 0)
+        written_rows = getattr(progress, "written_rows", None)
+        connection = getattr(self._client, "connection", None)
+        count_known = connection is None or getattr(connection, "_atk_written_rows_known", False)
         if (
             isinstance(written_rows, int)
             and not isinstance(written_rows, bool)
-            and written_rows > 0
+            and written_rows >= 0
+            and count_known
         ):
             return {"written_rows": written_rows}
         return result
@@ -163,8 +205,9 @@ class NativeClickHouseClient:
         )
 
     def query_df(self, sql: str, *, settings: Any = None) -> pd.DataFrame:
-        return self._client.query_dataframe(
-            sql, **({"settings": dict(settings)} if settings is not None else {})
+        result = self.query(sql, column_oriented=True, settings=settings)
+        return dataframe_from_columns(
+            result.column_names, result.result_columns, row_count=result.row_count
         )
 
     def query_df_stream(
@@ -217,34 +260,50 @@ class NativeClickHouseClient:
         self._client.disconnect_connection()
 
 
+def _rows_dataframe(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> pd.DataFrame:
+    return dataframe_from_columns(columns, list(zip(*rows)), row_count=len(rows))
+
+
 def _prepare_binary_string_insert(
     client: Any,
     data: Sequence[Sequence[Any]],
     column_type_names: Sequence[str] | None,
 ) -> tuple[Sequence[Sequence[Any]], dict[str, bool] | None]:
-    if column_type_names is None:
+    from .string_values import (  # noqa: PLC0415 -- recursive declared String leaves.
+        contains_string_type,
+        iter_string_values,
+        map_string_values,
+    )
+
+    client_settings = getattr(client, "client_settings", {})
+    if column_type_names is None or not client_settings.get("strings_as_bytes", False):
         return data, None
     string_indexes = {
-        index for index, type_name in enumerate(column_type_names) if _is_string_type(type_name)
+        index
+        for index, type_name in enumerate(column_type_names)
+        if contains_string_type(type_name)
     }
     if not string_indexes or not any(
-        isinstance(row[index], (bytes, bytearray, memoryview))
+        isinstance(value, (bytes, bytearray, memoryview))
         for row in data
         for index in string_indexes
-        if row[index] is not None
+        for value in iter_string_values(row[index], column_type_names[index])
     ):
         return data, None
 
-    client_settings = getattr(client, "client_settings", {})
     encoding = client_settings.get("strings_encoding", "utf-8")
     byte_rows = [
         tuple(
-            _as_insert_bytes(value, encoding) if index in string_indexes else value
+            map_string_values(
+                value, column_type_names[index], lambda item: _as_insert_bytes(item, encoding)
+            )
+            if index in string_indexes
+            else value
             for index, value in enumerate(row)
         )
         for row in data
     ]
-    return byte_rows, {"strings_as_bytes": True}
+    return byte_rows, None
 
 
 def _is_string_type(type_name: str) -> bool:

@@ -8,33 +8,56 @@ from analytics_toolkit.sql.backends.base import (
     BackendAdapter,
     BackendName,
     StageFinalizationRequest,
-    StageTargetTableRequest,
-    TargetWriteModeRequest,
     _apply_query_label,
+)
+from analytics_toolkit.sql.backends.base import (
+    StageTargetTableRequest as _StageTargetTableRequest,
 )
 from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
 
 from . import column_names as _column_names
 from . import create_table_from_sql as _create_from_sql
+from . import identifiers as _identifiers
 from . import insert as _insert
+from . import key_literals as _key_literals
 from . import operations as _operations
+from . import partition_scope as _partition_scope
 from . import queries as _queries
 from . import reconfigure_proxy as _reconfigure
 from . import routing as _routing
 from . import source_count as _source_count
 from . import source_schema as _ch_source_schema
+from . import source_temporals as _source_temporals
 from . import target_create as _target_create
 from . import transfer_cleanup as _cleanup
 from . import upsert as _upsert
-from .config import AIRFLOW_EXTRA_FIELDS
+from . import write_preflight as _write_preflight
+from .config import AIRFLOW_EXTRA_FIELDS, validate_connection
+
+StageTargetTableRequest = _StageTargetTableRequest
 
 
 class ClickHouseAdapter(BackendAdapter):
+    destination_write_timezone = _write_preflight.destination_write_timezone
+    requires_destination_timezone = _write_preflight.requires_destination_timezone
+    requires_dataframe_timezone = _write_preflight.requires_dataframe_timezone
+    source_read_timezone = _source_temporals.source_read_timezone
+    normalize_source_temporal_batch = _source_temporals.normalize_source_temporal_batch
+    validate_connection = validate_connection
     get_table_column_names = _column_names.get_table_column_names
+    get_writable_table_column_types = _column_names.get_writable_table_column_types
+    validate_existing_dataframe_insert_columns = (
+        _column_names.validate_existing_dataframe_insert_columns
+    )
+    resolve_upsert_execution_options = _upsert.resolve_upsert_execution_options
+    resolve_upsert_execution_sqls = _upsert.resolve_upsert_execution_sqls
+    execute_upsert_command = _upsert.execute_upsert_command
+    prepare_upsert_target = _upsert.prepare_upsert_target
     backend: BackendName = "ch"
     display_name = "ClickHouse"
     sqlglot_dialect = "clickhouse"
     identifier_quote = "`"
+    quote_identifier = staticmethod(_identifiers.quote_identifier)
     supports_transactions = False
     supports_analyze = False
     supports_distributed_tables = True
@@ -49,9 +72,13 @@ class ClickHouseAdapter(BackendAdapter):
     supports_ch_create_table_options = True
     resolve_ch_retry_per_host_drops = staticmethod(bool)
     prepare_sql = _routing.prepare_sql
+    render_transfer_literal = _key_literals.render_transfer_literal
     prepare_plan_sql = _routing.prepare_plan_sql
     local_sql_context = staticmethod(_routing.local_sql)
     execute_commands = _routing.execute_commands
+    local_creation_context = _target_create.local_creation_context
+    preflight_create_table_replacement = _target_create.preflight_create_table_replacement
+    build_create_table_placeholder_sql = _target_create.build_create_table_placeholder_sql
     build_execute_create_as_sqls = _operations.build_execute_create_as_sqls
     create_table_from_sql_fast_path = _create_from_sql.create_table_from_sql_fast_path
     uses_create_table_from_sql_fast_path = _create_from_sql.uses_create_table_from_sql_fast_path
@@ -223,10 +250,16 @@ class ClickHouseAdapter(BackendAdapter):
     postprocess_show_tables = _operations.postprocess_show_tables
     extract_table_ddl = _operations.extract_table_ddl
     build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
+    execute_drop_partitions = _partition_scope.execute_drop_partitions
+    prepare_drop_partitions_plan = _partition_scope.prepare_drop_partitions_plan
     query_transfer_stage_table_names = _operations.query_transfer_stage_table_names
     qualify_transfer_stage_table_name = _operations.qualify_transfer_stage_table_name
     build_drop_tables_sqls = _operations.build_drop_tables_sqls
+    pending_drop_plan_options = _operations.pending_drop_plan_options
+    execute_create_target_exists = _operations.execute_create_target_exists
+    prepare_execute_create_target = _operations.prepare_execute_create_target
     drop_table_with_options = _operations.drop_table_with_options
+    drop_tables_with_options = _operations.drop_tables_with_options
     build_clear_target_sqls = _operations.build_clear_target_sqls
     build_transfer_replace_target_sqls = _operations.build_transfer_replace_target_sqls
     transfer_replace_target_phase = _operations.transfer_replace_target_phase
@@ -344,6 +377,9 @@ class ClickHouseAdapter(BackendAdapter):
 
     inspect_source_query_schema = _ch_source_schema.inspect_source_query_schema
     map_source_type_to_target = _ch_source_schema.map_source_type_to_target
+    map_same_backend_source_type_to_target = (
+        _ch_source_schema.map_same_backend_source_type_to_target
+    )
     refine_stage_column_types_from_rows = _ch_source_schema.refine_stage_column_types_from_rows
     normalize_transfer_source_batch = _ch_source_schema.normalize_transfer_source_batch
     mark_upsert_finalization_error = _ch_source_schema.mark_upsert_finalization_error
@@ -352,6 +388,7 @@ class ClickHouseAdapter(BackendAdapter):
     build_preserved_target_rows_insert_sql = _upsert.build_preserved_target_rows_insert_sql
     build_upsert_stage_placeholder_sqls = _upsert.build_upsert_stage_placeholder_sqls
     build_drop_upsert_partition_sqls = _upsert.build_drop_upsert_partition_sqls
+    build_upsert_partition_values_sql = _upsert.build_upsert_partition_values_sql
 
     def _build_delete_matching_stage_sql(
         self,
@@ -392,34 +429,19 @@ class ClickHouseAdapter(BackendAdapter):
         gp_commit_each_statement: bool,
         progress: bool,
     ) -> Any:
-        del gp_break_query, gp_commit_each_statement
-        from analytics_toolkit.general import time_print
-        from analytics_toolkit.sql.dml.io.execute_sql import (
-            _iterate_statements_with_progress,
-            _maybe_print_query,
-            _split_sql_statements,
-        )
-        from analytics_toolkit.sql.execution.query_timing import run_timed_query
+        from .execution import execute_sql
 
-        statements = _split_sql_statements(sql)
-        time_print(f"Executing {len(statements)} statement(s)", backend=self.backend)
-        statement: str | None = None
-        try:
-            for statement in _iterate_statements_with_progress(
-                statements,
-                self.backend,
-                progress=progress,
-            ):
-                _maybe_print_query(statement, print_queries, split_preview=True)
-                run_timed_query(
-                    self.backend,
-                    lambda statement=statement: connection.command(statement),
-                )
-        except Exception:
-            failed_query = statement if statement is not None else sql
-            time_print(f"Failed SQL:\n{failed_query}", backend=self.backend)
-            raise
-        return None
+        return execute_sql(
+            self,
+            connection,
+            sql,
+            {
+                "print_queries": print_queries,
+                "gp_break_query": gp_break_query,
+                "gp_commit_each_statement": gp_commit_each_statement,
+                "progress": progress,
+            },
+        )
 
     def fetch_upsert_partition_values(
         self,
@@ -581,7 +603,12 @@ class ClickHouseAdapter(BackendAdapter):
     ) -> None:
         connection.insert(
             table=table_name,
-            data=_insert.normalize_rows(columns, rows, column_types),
+            data=_insert.normalize_rows(
+                columns,
+                rows,
+                column_types,
+                native_transport=bool(getattr(connection, "is_native_transport", False)),
+            ),
             column_names=list(columns),
             column_type_names=_insert.column_type_names(columns, column_types),
         )
@@ -596,93 +623,9 @@ class ClickHouseAdapter(BackendAdapter):
                 table_name, policy=creation_policy, cluster=None, only_shard=False
             )
 
-    def apply_target_write_mode(self, request: TargetWriteModeRequest) -> bool:
-        from analytics_toolkit.general import time_print
-        from analytics_toolkit.sql.connection.get_sql_connection import get_ch_connection_for_host
+    apply_target_write_mode = _target_create.apply_target_write_mode
 
-        from .lifecycle import (
-            drop_ch_distributed_table_pair,
-            truncate_ch_distributed_table_pair,
-        )
-
-        if request.write_mode == "append":
-            return request.target_exists
-
-        if request.write_mode == "replace" and not request.target_exists:
-            return False
-
-        if request.ch_only_shard:
-            if request.write_mode == "truncate_insert" and request.target_exists:
-                self.clear_table(
-                    request.connection,
-                    request.table_name,
-                    query_label=request.query_label,
-                )
-                return True
-            if (
-                request.write_mode == "truncate_insert"
-                and not request.drop_missing_ch_truncate_target
-            ):
-                return False
-
-            time_print(f"Dropping existing ClickHouse table {request.table_name}")
-            self.drop_table(
-                request.connection,
-                request.table_name,
-                ch_cluster=None,
-                query_label=request.query_label,
-            )
-            return False
-
-        if request.write_mode == "truncate_insert" and request.target_exists:
-            truncate_ch_distributed_table_pair(
-                request.connection,
-                request.table_name,
-                ch_cluster=request.ch_cluster,
-                query_label=request.query_label,
-            )
-            return True
-        if request.write_mode == "truncate_insert" and not request.drop_missing_ch_truncate_target:
-            return False
-
-        time_print(f"Dropping existing ClickHouse distributed table pair {request.table_name}")
-        per_host_connection_factory = (
-            (lambda host: get_ch_connection_for_host(request.connection_key, host))
-            if request.connection_key is not None
-            else None
-        )
-        drop_ch_distributed_table_pair(
-            request.connection,
-            request.table_name,
-            ch_cluster=request.ch_cluster,
-            query_label=request.query_label,
-            wait_for_absence=True,
-            ch_retry_per_host_drops=request.ch_retry_per_host_drops,
-            per_host_connection_factory=per_host_connection_factory,
-        )
-        return False
-
-    def ensure_stage_target_table(self, request: StageTargetTableRequest) -> bool:
-        self.ensure_distributed_target_pair(
-            request.connection,
-            request.target_table,
-            request.sample_batch,
-            target_exists=False,
-            target_column_types=request.target_column_types,
-            insert_column_types=request.target_column_types,
-            gp_distributed_by_key=request.gp_distributed_by_key,
-            partition_by=request.partition_by,
-            order_by=request.order_by,
-            ch_engine=request.ch_engine,
-            ch_cluster=request.ch_cluster,
-            ch_sharding_key=request.ch_sharding_key,
-            query_label=request.query_label,
-            connection_key=request.connection_key,
-            ch_replace_table=False,
-            ch_only_shard=request.ch_only_shard,
-            ch_creation_policy=request.ch_creation_policy,
-        )
-        return True
+    ensure_stage_target_table = _target_create.ensure_stage_target_table
 
     def finalize_stage_table(self, request: StageFinalizationRequest) -> None:
         from .safe_replace import finalize_stage_table  # noqa: PLC0415
@@ -710,31 +653,17 @@ class ClickHouseAdapter(BackendAdapter):
         ch_only_shard: bool = False,
         ch_creation_policy: Any = None,
     ) -> None:
-        if (
-            target_exists
-            and not ch_replace_table
-            and getattr(connection, "_ch_outage_client", False)
-        ):
-            if not connection.outage_table_exists(target_table):
+        if target_exists and not ch_replace_table:
+            if getattr(
+                connection, "_ch_outage_client", False
+            ) and not connection.outage_table_exists(target_table):
                 msg = "The existing target disappeared; reconcile it before continuing."
                 raise ClickHouseClusterTopologyError(msg)
             return
-        import pandas as pd
-
         from analytics_toolkit.sql.ddl.api import _create_sql_table_with_connection
 
         create_batch = sample_batch
         create_column_types = target_column_types or insert_column_types
-        if target_exists:
-            existing_column_types = self.get_table_column_types(
-                connection,
-                target_table,
-                connection_key=connection_key or self.backend,
-            )
-            if existing_column_types:
-                create_batch = pd.DataFrame(columns=list(existing_column_types))
-                create_column_types = existing_column_types
-
         _create_sql_table_with_connection(
             self.backend,
             connection,

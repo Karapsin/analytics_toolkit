@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from types import SimpleNamespace
 from typing import Any
 
 from sqlglot import exp, parse_one
@@ -9,6 +10,8 @@ import analytics_toolkit.sql.backends.common_methods as _common_methods
 from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.models import ReadColumnResult
 
+# The adapter binds this operation through the operations facade.
+from .execute_create_target import execute_create_target_exists  # noqa: F401
 from .routing import (
     connection_cluster_routing,
     local_sql,
@@ -89,7 +92,7 @@ def build_show_tables_query(
     trino_catalog: str | None = None,
     ch_distributed_table_stats: bool = False,
 ) -> str:
-    del adapter, config
+    del adapter
     if trino_catalog is not None:
         from ...connection.errors import InvalidSqlInputError
 
@@ -99,34 +102,57 @@ def build_show_tables_query(
     return build_clickhouse_show_tables_query(
         schema,
         table_names,
-        conditions,
-        include_distributed_metadata=ch_distributed_table_stats,
+        None if (config.cluster_routing is not None or ch_distributed_table_stats) else conditions,
+        include_distributed_metadata=True,
     )
 
 
-def postprocess_show_tables(
+def postprocess_show_tables(  # noqa: PLR0913 - preserve the cross-backend adapter hook signature.
     adapter: Any,
     connection_key: str,
     tables: Any,
     *,
     ch_distributed_table_stats: bool = False,
     read_sql: Callable[[str, str], Any] | None = None,
+    conditions: str | None = None,
 ) -> Any:
     del adapter
-    if not ch_distributed_table_stats:
-        return tables
-    from .metadata import apply_clickhouse_shard_stats
+    from analytics_toolkit.sql.connection.config import get_connection_config
+
+    from .metadata import apply_clickhouse_logical_stats, apply_clickhouse_shard_stats
+    from .metadata_values import decode_metadata_frame
 
     if read_sql is None:
         from ...dml.io.read_sql import read_sql as read_sql_impl
     else:
         read_sql_impl = read_sql
+    tables = decode_metadata_frame(tables, ("db", "schema", "table_name", "engine", "engine_full"))
+    tables = tables.drop_duplicates(subset=["schema", "table_name"]).copy()
+    from analytics_toolkit.sql.execution.backend_options import current_backend_operation
 
-    return apply_clickhouse_shard_stats(
-        connection_key,
-        tables,
-        read_sql=read_sql_impl,
-    )
+    state = current_backend_operation()
+    if state is not None:
+        tables.attrs["data_complete"] = (
+            tables.attrs.get("data_complete", True) and not state.partial
+        )
+        tables.attrs["ch_cluster_status"] = list(state.statuses.values())
+    routing = getattr(get_connection_config(connection_key), "cluster_routing", None)
+    if routing is not None:
+        tables = apply_clickhouse_logical_stats(
+            connection_key,
+            tables,
+            cluster=routing.cluster,
+            read_sql=read_sql_impl,
+        )
+    if ch_distributed_table_stats:
+        tables = apply_clickhouse_shard_stats(connection_key, tables, read_sql=read_sql_impl)
+    if conditions is not None and (routing is not None or ch_distributed_table_stats):
+        from .statistics_filter import filter_resolved_statistics
+
+        tables = filter_resolved_statistics(
+            connection_key, tables, conditions, read_sql=read_sql_impl
+        )
+    return tables
 
 
 def extract_table_ddl(
@@ -152,14 +178,14 @@ def build_drop_partitions_sqls(
     ch_cluster: str = "{cluster}",
 ) -> list[str]:
     del adapter, partition_column, gp_truncate
-    from ..utils import sql_string_literal
     from .adapter import ch_cluster_clause
     from .ddl import build_ch_shard_table_name
+    from .partition_literals import render_partition_value
 
     shard_table = build_ch_shard_table_name(table)
     cluster_clause = ch_cluster_clause(ch_cluster)
     return [
-        f"ALTER TABLE {shard_table}{cluster_clause} DROP PARTITION {sql_string_literal(key)}"
+        f"ALTER TABLE {shard_table}{cluster_clause} DROP PARTITION {render_partition_value(key)}"
         for key in partition_keys
     ]
 
@@ -281,7 +307,7 @@ def drop_table_with_options(
     connection: Any,
     table_name: str,
     *,
-    connection_key: str,
+    connection_key: str | None,
     ch_cluster: str | None = "{cluster}",
     ch_drop_shard: bool = True,
     ch_drop_distributed: bool = True,
@@ -292,99 +318,105 @@ def drop_table_with_options(
     if_exists: bool = False,
     query_label: str | None = None,
 ) -> None:
+    drop_tables_with_options(
+        adapter,
+        connection,
+        [table_name],
+        connection_key=connection_key,
+        ch_cluster=ch_cluster,
+        ch_drop_shard=ch_drop_shard,
+        ch_drop_distributed=ch_drop_distributed,
+        if_exists=if_exists,
+        query_label=query_label,
+        ch_wait_for_absence=ch_wait_for_absence,
+        ch_wait_timeout_seconds=ch_wait_timeout_seconds,
+        ch_wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
+        ch_retry_per_host_drops=ch_retry_per_host_drops,
+    )
+
+
+def drop_tables_with_options(
+    adapter: Any, connection: Any, tables: Sequence[str], **options: Any
+) -> None:
+    from .drop_execution import DropExecutionOptions, execute_verified_drop
+    from .drop_layout import (
+        DropIntent,
+        VerifiedDropLayout,
+        VerifiedDropResource,
+        certify_existing_drop,
+        verified_drop_resource_identity,
+    )
+
+    intent = DropIntent(
+        options.get("connection_key") or "ch",
+        options.get("ch_cluster", "{cluster}"),
+        options.get("ch_drop_shard", True),
+        options.get("ch_drop_distributed", True),
+        options.get("if_exists", False),
+    )
+    plans = [certify_existing_drop(connection, table, intent) for table in tables]
+    resources: dict[tuple[object, ...], VerifiedDropResource] = {}
+    for plan in plans:
+        for resource in plan.resources:
+            resources.setdefault(verified_drop_resource_identity(resource), resource)
+    execute_verified_drop(
+        adapter,
+        connection,
+        VerifiedDropLayout(tuple(resources.values()), plans[0].config),
+        DropExecutionOptions(
+            if_exists=intent.if_exists,
+            wait_for_absence=options.get("ch_wait_for_absence", False),
+            timeout_seconds=options.get("ch_wait_timeout_seconds", 300),
+            poll_interval_seconds=options.get("ch_wait_poll_interval_seconds", 1),
+            retry_per_host_drops=options.get("ch_retry_per_host_drops", True),
+            query_label=options.get("query_label"),
+        ),
+    )
+
+
+def pending_drop_plan_options(adapter: Any) -> dict[str, Any]:
     del adapter
-    from analytics_toolkit.general import time_print
+    return {
+        "pending_existing_layout_verification": True,
+        "pending_resource_scope_resolution": True,
+        "execution_requires": "Complete existing table-role ownership and endpoint certification.",
+    }
 
-    from ...connection.get_sql_connection import get_ch_connection_for_host
-    from .ddl import build_ch_shard_table_name
-    from .lifecycle import drop_ch_distributed_table_pair, drop_ch_table
 
-    if _is_default_ch_shard_table_name(table_name):
-        if not ch_drop_shard:
-            raise ValueError("ch_drop_shard must be True when dropping a ClickHouse shard table.")
-        time_print(
-            f"Dropping ClickHouse table {table_name}",
-            connection=connection_key,
-            backend="ch",
-        )
-        drop_ch_table(
-            connection,
-            table_name,
-            ch_cluster=None,
-            query_label=query_label,
-            if_exists=if_exists,
-            wait_for_absence=ch_wait_for_absence,
-            wait_timeout_seconds=ch_wait_timeout_seconds,
-            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
-        )
+def prepare_execute_create_target(adapter: Any, connection: Any, options: Any) -> None:
+    """Authorize the resolved policy, then remove only verified existing resources."""
+    from .availability import bind_creation_availability  # noqa: PLC0415 -- backend cycle.
+
+    bind_creation_availability(connection, options.ch_creation_policy)
+    if not options.drop_if_exists:
         return
+    from .creation_preflight import (  # noqa: PLC0415 - adapter operations initialization cycle.
+        preflight_create_table_replacement,
+    )
 
-    if ch_drop_distributed and ch_drop_shard:
-        shard_table = build_ch_shard_table_name(table_name)
-        time_print(
-            f"Dropping ClickHouse table {table_name}",
-            connection=connection_key,
-            backend="ch",
-        )
-        time_print(
-            f"Dropping paired ClickHouse shard table {shard_table}",
-            connection=connection_key,
-            backend="ch",
-        )
-        drop_ch_distributed_table_pair(
-            connection,
-            table_name,
-            ch_cluster=ch_cluster,
-            query_label=query_label,
-            if_exists=if_exists,
-            wait_for_absence=ch_wait_for_absence,
-            wait_timeout_seconds=ch_wait_timeout_seconds,
-            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
-            ch_retry_per_host_drops=ch_retry_per_host_drops,
-            per_host_connection_factory=(
-                lambda host: get_ch_connection_for_host(connection_key, host)
-            ),
-        )
-        return
-
-    if ch_drop_distributed:
-        time_print(
-            f"Dropping ClickHouse table {table_name}",
-            connection=connection_key,
-            backend="ch",
-        )
-        drop_ch_table(
-            connection,
-            table_name,
-            ch_cluster=ch_cluster,
-            query_label=query_label,
-            if_exists=if_exists,
-            wait_for_absence=ch_wait_for_absence,
-            wait_timeout_seconds=ch_wait_timeout_seconds,
-            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
-        )
-        return
-
-    if ch_drop_shard:
-        shard_table = build_ch_shard_table_name(table_name)
-        time_print(
-            f"Dropping ClickHouse shard table {shard_table} for {table_name}",
-            connection=connection_key,
-            backend="ch",
-        )
-        drop_ch_table(
-            connection,
-            shard_table,
-            ch_cluster=ch_cluster,
-            query_label=query_label,
-            if_exists=if_exists,
-            wait_for_absence=ch_wait_for_absence,
-            wait_timeout_seconds=ch_wait_timeout_seconds,
-            wait_poll_interval_seconds=ch_wait_poll_interval_seconds,
-        )
-        return
-
-    raise ValueError("At least one of ch_drop_shard or ch_drop_distributed must be True.")
+    policy = options.ch_creation_policy
+    preflight_create_table_replacement(
+        adapter,
+        connection,
+        SimpleNamespace(
+            ch_replace_table=True,
+            ch_creation_policy=policy,
+            table_name=options.table_name,
+            connection_key=options.connection_key,
+            query_label=options.query_label,
+            ch_only_shard=options.ch_only_shard,
+        ),
+    )
+    drop_tables_with_options(
+        adapter,
+        connection,
+        [options.table_name],
+        connection_key=options.connection_key,
+        ch_cluster=policy.distributed_cluster or policy.shard_on_cluster,
+        if_exists=True,
+        ch_wait_for_absence=True,
+        query_label=options.query_label,
+    )
 
 
 def build_clear_target_sqls(
@@ -397,7 +429,7 @@ def build_clear_target_sqls(
     ch_only_shard: bool = False,
 ) -> list[str]:
     if not include_ch_shard or ch_only_shard:
-        return adapter.clear_table_sqls(table_name, query_label=query_label)
+        return list(adapter.clear_table_sqls(table_name, query_label=query_label))
 
     from .lifecycle import build_truncate_ch_distributed_table_pair_sqls
 
@@ -449,50 +481,26 @@ def prepare_existing_target_for_create_from_sql(
     connection_key: str | None = None,
     ch_retry_per_host_drops: bool = True,
 ) -> bool:
+    del ch_only_shard
     if not drop_target_if_exists:
         return False
-
-    from analytics_toolkit.general import time_print
-
-    from ...connection.get_sql_connection import get_ch_connection_for_host
-    from .lifecycle import drop_ch_distributed_table_pair
-
-    target_existed_before_drop = False
-    if not ch_only_shard:
-        target_existed_before_drop = bool(
-            adapter.table_exists(
-                connection,
-                table_name,
-                connection_key=connection_key or "ch",
-            )
-        )
-
-    if ch_only_shard:
-        time_print(f"Dropping existing ClickHouse table {table_name}")
-        adapter.drop_table(
-            connection,
-            table_name,
-            ch_cluster=None,
-            query_label=query_label,
-        )
-        return False
-
-    time_print(f"Dropping existing ClickHouse distributed table pair {table_name}")
-    per_host_connection_factory = (
-        (lambda host: get_ch_connection_for_host(connection_key, host))
-        if connection_key is not None
-        else None
+    exists = bool(
+        adapter.table_exists(connection, table_name, connection_key=connection_key or "ch")
     )
-    drop_ch_distributed_table_pair(
+    if not exists:
+        return False
+    drop_table_with_options(
+        adapter,
         connection,
         table_name,
+        connection_key=connection_key,
         ch_cluster=ch_cluster,
-        query_label=query_label,
-        wait_for_absence=True,
+        ch_wait_for_absence=True,
         ch_retry_per_host_drops=ch_retry_per_host_drops,
-        per_host_connection_factory=per_host_connection_factory,
+        if_exists=True,
+        query_label=query_label,
     )
-    return target_existed_before_drop
+    return True
 
 
 def wait_for_table_absence(

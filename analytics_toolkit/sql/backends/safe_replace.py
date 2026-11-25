@@ -5,6 +5,9 @@ from typing import Any
 from uuid import uuid4
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.execution_outcome import (
+    close_cursor,  # noqa: F401 -- historical helper import.
+)
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
 from analytics_toolkit.sql.ddl.identifiers import (
     _add_table_identifier_suffix,
@@ -16,6 +19,7 @@ from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_err
 
 from .gp.stage import GP_IDENTIFIER_MAX_BYTES, _fit_identifier_bytes
 from .models import StageFinalizationRequest, StageTargetTableRequest
+from .replacement_journal import ReplacementCutover, execute_replacement_cutover
 
 
 def finalize_existing_stage_replace(
@@ -132,39 +136,25 @@ def _reversible_cutover(
     backup: str,
     expected_rows: int,
 ) -> None:
-    old_moved = False
-    new_moved = False
-    try:
-        adapter.execute_command(
-            request.connection,
-            _rename_sql(adapter, request.target_table, backup),
-        )
-        old_moved = True
-        adapter.execute_command(
-            request.connection,
-            _rename_sql(adapter, replacement, request.target_table),
-        )
-        new_moved = True
-        if adapter.count_table_rows(request.connection, request.target_table) != expected_rows:
-            raise RuntimeError("Final replacement row count does not match the staged row count.")
-    except Exception:
-        try:
-            if new_moved:
-                adapter.execute_command(
-                    request.connection,
-                    _rename_sql(adapter, request.target_table, replacement),
-                )
-            if old_moved:
-                adapter.execute_command(
-                    request.connection,
+    execute_replacement_cutover(
+        adapter,
+        request,
+        ReplacementCutover(
+            replacement,
+            backup,
+            expected_rows,
+            (
+                (
+                    _rename_sql(adapter, request.target_table, backup),
                     _rename_sql(adapter, backup, request.target_table),
-                )
-        except Exception as rollback_exc:
-            raise AmbiguousSqlReplaceError(
-                "Replacement and automatic rollback both failed; replacement artifacts "
-                "were preserved for recovery."
-            ) from rollback_exc
-        raise
+                ),
+                (
+                    _rename_sql(adapter, replacement, request.target_table),
+                    _rename_sql(adapter, request.target_table, replacement),
+                ),
+            ),
+        ),
+    )
 
     try:
         adapter.drop_table(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.backends.ch.creation_policy import ClickHouseCreationPolicy
+
 from tests.sql._support.transfer_schema import (
     gp_adapter_module,
     pd,
@@ -132,8 +134,19 @@ def test_create_stage_table_uses_batch_when_schema_is_not_supplied(
 
     assert result == "analytics.target__stage__fixed"
     assert captured["args"][3] is batch
+    assert callable(captured["kwargs"].pop("on_resource_created"))
     assert captured["kwargs"] == {
         "connection_key": "ch",
         "ddl_scope": "staging",
         "gp_distributed_by_key": None,
+        "ch_creation_policy": ClickHouseCreationPolicy(
+            create_distributed_pair=False,
+            shard_engine="MergeTree",
+            shard_on_cluster=None,
+            distributed_engine_template=None,
+            distributed_cluster=None,
+            distributed_on_cluster=None,
+            sharding_key=None,
+            ddl_ready_timeout_seconds=300,
+        ),
     }

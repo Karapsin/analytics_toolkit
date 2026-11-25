@@ -146,7 +146,7 @@ def test_map_source_schema_to_target_preserves_common_types() -> None:
         "is_active": "BOOLEAN",
         "user_id": "INTEGER",
         "amount": "DECIMAL(12, 2)",
-        "created_at": "TIMESTAMP",
+        "created_at": "TIMESTAMP(6)",
         "payload": "VARCHAR",
     }
     assert schema_module.map_source_schema_to_target(source_schema, "ch") == {
@@ -184,7 +184,7 @@ def test_map_source_schema_to_target_preserves_same_trino_native_types() -> None
     assert schema_module.map_source_schema_to_target(source_schema, "trino") == {
         "campaign_codes": "VARCHAR",
         "po_bonus_pk": "VARCHAR",
-        "attributes": "BIGINT",
+        "attributes": "VARCHAR",
         "details": "VARCHAR",
         "untyped_value": "VARCHAR",
     }
@@ -248,8 +248,14 @@ def test_table_basic_compatibility_delegates_and_identifier_limit(
         table_basic_module.quote_qualified_table_name("one.two.three.four", "trino")
 
 
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [({"id": "String"}, {"id": "String"}), (None, {"id": "Int64"})],
+)
 def test_transfer_table_schema_overrides_clickhouse_nullability_refinement(
     monkeypatch: pytest.MonkeyPatch,
+    schema: dict[str, str] | None,
+    expected: dict[str, str],
 ) -> None:
     captured: dict[str, object] = {}
 
@@ -270,7 +276,7 @@ def test_transfer_table_schema_overrides_clickhouse_nullability_refinement(
         to_db_backend="ch",
         source_sql="select id from source_table",
         target_table="target",
-        table_schema={"id": "String"},
+        table_schema=schema,
     )
     stage_state = runtime_models.TransferStageState(
         target_exists=False,
@@ -286,8 +292,8 @@ def test_transfer_table_schema_overrides_clickhouse_nullability_refinement(
         batch=runtime_models.RowBatch(columns=["id"], rows=[(1,)]),
     )
 
-    assert stage_state.stage_column_types == {"id": "String"}
-    assert captured["column_types"] == {"id": "String"}
+    assert stage_state.stage_column_types == expected
+    assert captured["column_types"] == expected
     assert stage_state.stage_table == "target__stage"
 
 

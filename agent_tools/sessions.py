@@ -225,6 +225,8 @@ def push(root: Path) -> dict[str, Any]:
 
     head = run(root, "git", "rev-parse", "HEAD")
     review = local_review.verified(root, head)
+    subject = local_review.binding(root, head)
+    _publication_ready(root, state, subject, review)
     prefix = (
         "Implemented and independently reviewed on the developing machine. "
         "Publication is a one-way handoff to the orchestrator; later failures belong "
@@ -233,7 +235,7 @@ def push(root: Path) -> dict[str, Any]:
     # Complete transport preflight precedes even the feature push. Archive refs
     # contain only task data and do not change the reviewed candidate tree.
     task_context.protocol().publication(task_context.read(root), prefix=prefix)
-    head = run(root, "git", "rev-parse", "HEAD")
+    _publication_ready(root, state, subject, review)
     task_context.protocol().verify_commit(
         task_context.protocol().public_context(task_context.read(root)),
         run(root, "git", "log", "-1", "--format=%B"),
@@ -241,10 +243,7 @@ def push(root: Path) -> dict[str, Any]:
     body_text = task_context.publish_attachment(root, prefix=prefix)
     # Archive I/O can outlive a new hold or ownership change. Recheck the exact
     # session/head and signed attachment before publishing the candidate.
-    if writable(root) != state or run(root, "git", "rev-parse", "HEAD") != head:
-        message = "Session or candidate changed during task archive publication."
-        raise RuntimeError(message)
-    clean(root)
+    _publication_ready(root, state, subject, review)
     task_context.protocol().verify_commit(
         task_context.parse_attachment(root, body_text),
         run(root, "git", "log", "-1", "--format=%B"),
@@ -253,9 +252,15 @@ def push(root: Path) -> dict[str, Any]:
         task_context.protocol().public_context(task_context.read(root)),
         run(root, "git", "log", "-1", "--format=%B"),
     )
-    run(root, "git", "push", "--set-upstream", "origin", f"HEAD:{state['branch']}")
+    _publication_ready(root, state, subject, review)
+    run(root, "git", "push", "origin", f"{head}:refs/heads/{state['branch']}")
     state["publication_sha"] = head
     save(root, state)
+    # An object-ID refspec does not always create origin/<branch> locally. Set
+    # tracking configuration from the acknowledged destination without requiring
+    # that optional remote-tracking ref or fetching mutable remote source.
+    run(root, "git", "config", f"branch.{state['branch']}.remote", "origin")
+    run(root, "git", "config", f"branch.{state['branch']}.merge", f"refs/heads/{state['branch']}")
     if not state.get("pr"):
         # Discover an existing PR after an interrupted create/push before creating another.
         matches = json.loads(
@@ -300,6 +305,32 @@ def push(root: Path) -> dict[str, Any]:
     run(root, "gh", "pr", "edit", str(state["pr"]), "--body-file", str(body))
     receipt = handoff(root)
     return {"sha": head, "push_target": f"origin/{state['branch']}", "pr": state["pr"], **receipt}
+
+
+def _publication_ready(
+    root: Path, state: dict[str, Any], subject: dict[str, str], receipt: dict[str, Any]
+) -> None:
+    """Pin the reviewed source and enforce visuals at the actual publication boundary."""
+    from agent_tools import local_review  # noqa: PLC0415 - session/reviewer cycle.
+
+    if (
+        writable(root) != state
+        or run(root, "git", "rev-parse", "HEAD") != subject["head"]
+        or local_review.binding(root, subject["head"]) != subject
+    ):
+        message = "Session, candidate or task changed during publication."
+        raise RuntimeError(message)
+    clean(root)
+    if local_review.verified(root, subject["head"]) != receipt:
+        message = "Final source approval changed during publication."
+        raise RuntimeError(message)
+    try:
+        # Verify the completed producer/session evidence, including source-first
+        # approval proof, against the immutable reviewed base rather than origin.
+        local_review.visual_evidence(root, subject)
+    except (OSError, ValueError, RuntimeError) as exc:
+        message = "Completed visual review is required before publication: " + str(exc)
+        raise RuntimeError(message) from exc
 
 
 def handoff(root: Path) -> dict[str, Any]:

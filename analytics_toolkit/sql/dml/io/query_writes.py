@@ -9,7 +9,7 @@ import sqlparse
 
 from analytics_toolkit._sql_statements import join_statements
 
-from ...backends.utils import extract_row_count
+from ...backends.utils import extract_row_count_or_none
 from ...connection.errors import InvalidSqlInputError
 from ...core.identifiers import TableIdentifier
 from ...execution.labels import apply_query_label
@@ -166,8 +166,7 @@ def _prepare_query_insert(
         *statements[:-1],
         f"INSERT INTO {target_table}\n{final_query}",
     ]
-    if query_label is not None:
-        write_statements = [apply_query_label(sql, query_label) for sql in write_statements]
+    write_statements = [apply_query_label(sql, query_label) for sql in write_statements]
     write_sql = _join_statements(write_statements)
     options = _build_execute_sql_options(
         db_key=db_key,
@@ -180,7 +179,7 @@ def _prepare_query_insert(
         query_label=None,
         dry_run=dry_run,
         return_sql=return_sql,
-        return_metadata=False,
+        return_metadata=True,
         progress=progress,
     )
     options = replace(options, query_label=query_label, attempt_numbers=attempt_numbers)
@@ -200,16 +199,21 @@ def _finish_query_insert(
     options: Any, plan: SqlPlan, *, return_metadata: bool
 ) -> int | SqlOperationResult:
     result = _execute_sql_options(options)
-    affected_rows = extract_row_count(result)
+    if isinstance(result, SqlOperationResult):
+        affected_rows = result.metadata.affected_rows
+        plan.metadata = result.metadata
+    else:
+        affected_rows = extract_row_count_or_none(result)
+    public_count = 0 if affected_rows is None else affected_rows
     if return_metadata:
         plan.metadata.affected_rows = affected_rows
         plan.metadata.inserted_rows = affected_rows
         return SqlOperationResult(
-            rows=affected_rows,
+            rows=public_count,
             metadata=plan.metadata,
             plan=plan,
         )
-    return affected_rows
+    return public_count
 
 
 def _build_query_insert_plan(

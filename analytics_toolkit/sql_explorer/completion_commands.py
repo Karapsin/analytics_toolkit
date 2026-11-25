@@ -18,6 +18,7 @@ from .completion import (
     schema_completion_values,
 )
 from .editor_actions import completion_text
+from .identifier_completion import completion_identifier_parts, quote_completion_name
 
 if TYPE_CHECKING:
     from .workspace import SqlExplorerWorkspace
@@ -42,12 +43,46 @@ class SqlExplorerCompletionCommandsMixin:
             database.connection_key,
             database.backend,
             workspace.tab_id,
+            on_complete=lambda: app._post_metadata(
+                app._receive_metadata_complete,
+                workspace.tab_id,
+                app._completion_pool.coordinator_for(database.connection_key),
+            ),
             on_error=lambda result, exc: app._metadata_error_from_thread(
                 workspace.tab_id,
                 result,
                 exc,
+                coordinator=app._completion_pool.coordinator_for(database.connection_key),
+            ),
+            on_replace=lambda coordinator: app._replace_completion_coordinator(
+                workspace.tab_id, coordinator
+            ),
+            on_state=lambda coordinator, result, exc: app._metadata_state_from_thread(
+                workspace.tab_id, coordinator, result, exc
             ),
         )
+
+    def _metadata_state_from_thread(
+        self, tab_id: str, coordinator: Any, result: CompletionResult | None, exc: Exception | None
+    ) -> None:
+        app = cast("Any", self)
+        if exc is None:
+            app._post_metadata(app._receive_metadata_complete, tab_id, coordinator)
+        elif result is not None:
+            app._metadata_error_from_thread(tab_id, result, exc, coordinator=coordinator)
+
+    def _replace_completion_coordinator(self, tab_id: str, coordinator: Any) -> None:
+        app = cast("Any", self)
+        workspace = app._workspaces.get(tab_id)
+        if (
+            workspace is None
+            or workspace.session.database.connection_key != coordinator.connection_key
+        ):
+            return
+        workspace.completion = coordinator
+        app._cancel_completion_request(workspace)
+        workspace.completion_menu.action_close()
+        app._receive_metadata_complete(tab_id, coordinator)
 
     def _completion_at_cursor(
         self,
@@ -85,6 +120,8 @@ class SqlExplorerCompletionCommandsMixin:
             if not app._exit_requested and editor.cursor_count == 1 and editor.selection.is_empty
             else None
         )
+        if self._suppress_quoted_keyword(context, workspace):
+            return True
         if context is None or (columns_only and context.request.kind != "column"):
             app._cancel_completion_request(workspace)
             workspace.completion_allow_empty_columns = False
@@ -99,12 +136,22 @@ class SqlExplorerCompletionCommandsMixin:
                 app._open_completion(context, suggestions, workspace=workspace)
             return handled
 
+        return self._request_metadata_completion(context, workspace)
+
+    def _request_metadata_completion(
+        self, context: CompletionContext, workspace: SqlExplorerWorkspace
+    ) -> bool:
+        app = cast("Any", self)
+        editor = workspace.editor
         coordinator = workspace.completion
         if coordinator is None:
             return self._open_local_relations(context, workspace)
         workspace.completion_context = context
         if context.request.kind == "table":
+            before = editor.text
             app._open_namespace_completion(context, workspace)
+            if editor.text != before:
+                return True
         cached = coordinator.cached(context.request)
         if cached is not None:
             if context.local_relations:
@@ -129,9 +176,23 @@ class SqlExplorerCompletionCommandsMixin:
                 result,
                 exc,
                 epoch,
+                coordinator,
             ),
             owner_id=tab_id,
         )
+        return True
+
+    @staticmethod
+    def _suppress_quoted_keyword(
+        context: CompletionContext | None, workspace: SqlExplorerWorkspace
+    ) -> bool:
+        if (
+            context is None
+            or context.request.kind != "keyword"
+            or not context.request.prefix.startswith(('"', "`"))
+        ):
+            return False
+        workspace.completion_menu.action_close()
         return True
 
     def _open_namespace_completion(
@@ -164,6 +225,7 @@ class SqlExplorerCompletionCommandsMixin:
                         result,
                         exc,
                         epoch,
+                        coordinator,
                     ),
                     owner_id=tab_id,
                 )
@@ -186,23 +248,31 @@ class SqlExplorerCompletionCommandsMixin:
     def _local_relation_candidates(
         self, context: CompletionContext, workspace: SqlExplorerWorkspace
     ) -> tuple[str, ...]:
-        """Merge editor-local CTEs with cached names; dots identify namespaces."""
+        """Merge SQL-rendered identifiers while filtering each raw identity."""
         coordinator = workspace.completion
-        names = set(context.local_relations)
+        request = context.request
+        prefix = request.prefix.casefold()
+        names = {
+            name
+            for name in context.local_relations
+            if completion_identifier_parts(name, request.backend)[-1].casefold().startswith(prefix)
+        }
         if coordinator is not None:
-            request = context.request
             namespaces = (
                 coordinator.known_catalogs()
                 if request.backend == "trino" and request.catalog is None
                 else schema_completion_values(coordinator.cached_schemas(request.catalog))
             )
-            names.update(name + "." for name in namespaces or ())
-            names.update(coordinator.cached(request) or ())
-        return tuple(
-            name
-            for name in sorted(names, key=str.casefold)
-            if name.lstrip('"`').casefold().startswith(context.request.prefix.casefold())
-        )
+            names.update(
+                quote_completion_name(name, request.backend) + "."
+                for name in namespaces or ()
+                if name.casefold().startswith(prefix)
+            )
+            names.update(
+                quote_completion_name(name, request.backend)
+                for name in coordinator.cached(request) or ()
+            )
+        return tuple(sorted(names, key=str.casefold))
 
     def _open_local_relations(
         self,
@@ -217,7 +287,10 @@ class SqlExplorerCompletionCommandsMixin:
         suggestions = app._local_relation_candidates(context, workspace)
         if suggestions:
             app._open_completion(
-                context, suggestions, workspace=workspace, accept_single=accept_single
+                replace(context, rendered_relations=True),
+                suggestions,
+                workspace=workspace,
+                accept_single=accept_single,
             )
         return bool(suggestions)
 
@@ -247,21 +320,50 @@ class SqlExplorerCompletionCommandsMixin:
         _result: CompletionResult,
         exc: Exception,
         epoch: int | None = None,
+        coordinator: Any = None,
     ) -> None:
         app = cast("Any", self)
-        app._post_metadata(app._receive_metadata_error, tab_id, exc, epoch)
+        app._post_metadata(app._receive_metadata_error, tab_id, exc, epoch, coordinator)
 
     def _receive_metadata_error(
-        self, tab_id: str, exc: Exception, epoch: int | None = None
+        self, tab_id: str, exc: Exception, epoch: int | None = None, coordinator: Any = None
     ) -> None:
         app = cast("Any", self)
         workspace = app._workspaces.get(tab_id)
-        if workspace is not None and (epoch is None or epoch == workspace.completion_epoch):
+        if (
+            workspace is not None
+            and (epoch is None or epoch == workspace.completion_epoch)
+            and (coordinator is None or workspace.completion is coordinator)
+        ):
+            if (
+                coordinator is not None
+                and getattr(exc, "analytics_toolkit_metadata_listing_failure", False)
+                and not coordinator.metadata_incomplete
+            ):
+                return
             workspace.completion_loading_notice = None
-            app._set_notice(
-                f"Metadata completion unavailable: {type(exc).__name__}: {exc}",
-                workspace,
-            )
+            workspace.metadata_incomplete_notice = True
+            message = f"Metadata completion unavailable: {type(exc).__name__}: {exc}"
+            workspace.metadata_notice_text = message
+            app._set_notice(message, workspace)
+
+    def _receive_metadata_complete(self, tab_id: str, coordinator: Any = None) -> None:
+        app = cast("Any", self)
+        workspace = app._workspaces.get(tab_id)
+        if (
+            workspace is not None
+            and (coordinator is None or workspace.completion is coordinator)
+            and workspace.metadata_incomplete_notice
+            and not getattr(workspace.completion, "metadata_incomplete", False)
+        ):
+            workspace.metadata_incomplete_notice = False
+            notice = workspace.query_one("#notice")
+            if (
+                workspace.metadata_notice_text is None
+                or notice.tooltip == workspace.metadata_notice_text
+            ):
+                app._set_notice("", workspace)
+            workspace.metadata_notice_text = None
 
     def _receive_completion(
         self,
@@ -285,6 +387,7 @@ class SqlExplorerCompletionCommandsMixin:
         if context.request.scope != result.request.scope:
             return
         app._finish_completion_loading(workspace)
+        app._receive_metadata_complete(workspace.tab_id, workspace.completion)
         if context.local_relations and app._open_local_relations(
             context, workspace, accept_single=False
         ):
@@ -405,10 +508,40 @@ class SqlExplorerCompletionCommandsMixin:
             menu.action_close()
             return
         context = app._completion_at_cursor(workspace)
-        if workspace.completion_context is not None:
-            context = replace(context, namespace=workspace.completion_context.namespace)
+        previous = workspace.completion_context
+        if previous is not None and previous.request.scope != context.request.scope:
+            menu.action_close()
+            return
+        if previous is None and context.request.kind != "keyword":
+            menu.action_close()
+            return
+        if previous is not None:
+            context = replace(
+                context,
+                namespace=previous.namespace,
+                rendered_relations=previous.rendered_relations,
+            )
+        candidates = self._acceptance_candidates(context, workspace)
+        if suggestion not in candidates:
+            menu.action_close()
+            return
         app._insert_completion(context, suggestion, workspace)
         menu.action_close()
+
+    def _acceptance_candidates(
+        self, context: CompletionContext, workspace: SqlExplorerWorkspace
+    ) -> tuple[str, ...]:
+        if context.request.kind == "keyword":
+            return keyword_suggestions(context.request.prefix)
+        if context.local_relations:
+            return self._local_relation_candidates(context, workspace)
+        if workspace.completion_candidates:
+            return filter_suggestions(workspace.completion_candidates, context.request.prefix)
+        coordinator = workspace.completion
+        cached = coordinator.cached(context.request) if coordinator else None
+        if cached is not None:
+            return cached
+        return filter_suggestions(workspace.completion_menu.suggestions, context.request.prefix)
 
     def _insert_completion(
         self,
@@ -418,12 +551,26 @@ class SqlExplorerCompletionCommandsMixin:
     ) -> None:
         app = cast("Any", self)
         workspace = workspace or app.active_workspace
+        if self._suppress_quoted_keyword(context, workspace):
+            return
         editor = workspace.editor
         start = app._offset_to_location(editor.text, context.replacement_start)
         end_offset = context.replacement_end
-        namespace = context.namespace or suggestion.endswith(".")
+        namespace = context.namespace or (
+            bool(context.local_relations) and suggestion.endswith(".")
+        )
+        if context.request.kind not in {"keyword", "column"}:
+            raw_name = (
+                suggestion[:-1]
+                if namespace and context.rendered_relations and suggestion.endswith(".")
+                else suggestion
+            )
+            if not context.rendered_relations and suggestion not in context.local_relations:
+                suggestion = quote_completion_name(raw_name, context.request.backend)
+            else:
+                suggestion = raw_name
         if namespace:
-            suggestion = suggestion.rstrip(".") + "."
+            suggestion = suggestion + "."
             if editor.text[end_offset : end_offset + 1] == ".":
                 end_offset += 1
         end = app._offset_to_location(editor.text, end_offset)
@@ -465,6 +612,7 @@ class SqlExplorerCompletionCommandsMixin:
         if context.request.kind == "keyword":
             suggestions = keyword_suggestions(context.request.prefix)
         elif context.local_relations:
+            context = replace(context, rendered_relations=True)
             suggestions = app._local_relation_candidates(context, workspace)
         elif workspace.completion_candidates:
             suggestions = filter_suggestions(

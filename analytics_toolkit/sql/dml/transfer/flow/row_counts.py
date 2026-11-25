@@ -49,6 +49,10 @@ def best_effort_transfer_target_count(
     count_rows: Any = count_table_rows,
     target_connection_runner: Any | None = None,
 ) -> int | None:
+    known_rows: int | None = getattr(options, "final_target_rows", None)
+    if known_rows is not None:
+        return known_rows
+
     def count(connection: Any) -> int:
         return int(
             count_rows(
@@ -161,6 +165,11 @@ def prepare_row_count_validated_options(
         enabled=options.ch_count_limit_read,
     )
     return replace(options, source_sql=source_sql)
+
+
+def require_partial_source_snapshot(options: TransferOptions) -> None:
+    """Apply the shared source-snapshot guard for adaptive and streaming paths."""
+    _require_partial_source_snapshot(options)
 
 
 def _require_partial_source_snapshot(options: TransferOptions) -> None:

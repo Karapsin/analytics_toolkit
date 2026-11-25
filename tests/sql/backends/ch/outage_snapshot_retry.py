@@ -14,11 +14,13 @@ from tests.sql._support.outage_gp import MemoryGreenplum
 
 
 @pytest.mark.parametrize("policy", ["stop", "healthy_shards"])
+@pytest.mark.parametrize("driver", ["http", "native"])
 def test_outage_public_transfer_repopulates_snapshot_after_failed_first_population(
-    outage: Any, monkeypatch: Any, policy: str
+    outage: Any, monkeypatch: Any, policy: str, driver: str
 ) -> None:
     cluster, configure = outage
     configure(
+        driver=driver,
         aliases=("ch", "gp"),
         ch_unavailable_shards=policy,
         transfer_staging_schema="db",
@@ -31,6 +33,7 @@ def test_outage_public_transfer_repopulates_snapshot_after_failed_first_populati
     original = Client.insert
     original_command = Client.command
     attempts: list[tuple[str, str]] = []
+    foreign = []
 
     def insert(client: Any, table: str, *args: Any, **kwargs: Any) -> None:
         if "__source" in table:
@@ -42,6 +45,10 @@ def test_outage_public_transfer_repopulates_snapshot_after_failed_first_populati
             attempts.append((name, obj.uuid))
             original(client, table, *args, **kwargs)
             if len(attempts) == 1:
+                cluster.create("h2", f"CREATE TABLE {name} (id UInt64) ENGINE=Memory")
+                remote = cluster.tables[("h2", name)]
+                remote.rows = [(index,) for index in range(100)]
+                foreign.append((name, remote.uuid, remote.ddl, list(remote.rows)))
                 msg = "disposable snapshot population interrupted after acceptance"
                 raise ConnectionError(msg)
             return
@@ -68,7 +75,7 @@ def test_outage_public_transfer_repopulates_snapshot_after_failed_first_populati
         if policy == "healthy_shards"
         else nullcontext()
     )
-    with warning:
+    with backend_operation(policy) as operation, warning:
         result = sql.transfer(
             from_db="ch",
             to_db="gp",
@@ -92,7 +99,15 @@ def test_outage_public_transfer_repopulates_snapshot_after_failed_first_populati
     assert result.metadata.row_count_validated is True
     assert greenplum.tables["db.retried"].id.tolist() == expected
     assert greenplum.tables["db.target"].id.tolist() == [99]
-    assert not any("__source" in name for _host, name in cluster.tables)
+    assert not any(host == "h1" and "__source" in name for host, name in cluster.tables)
+    for name, identity, ddl, rows in foreign:
+        remote = cluster.tables[("h2", name)]
+        assert (remote.uuid, remote.ddl, remote.rows) == (identity, ddl, rows)
+    assert not any(
+        key[0] in {"ch_owned", "ch_owned_local"} and key[-1][1].endswith("__source")
+        for key in operation.resources
+        if isinstance(key, tuple)
+    )
 
 
 def test_outage_truncating_owned_stage_preserves_its_existing_creation_identity(

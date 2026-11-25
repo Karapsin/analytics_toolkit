@@ -13,9 +13,16 @@ if TYPE_CHECKING:
 
 basic_ops = importlib.import_module("analytics_toolkit.sql.dml.table._basic_ops")
 write_modes = importlib.import_module("analytics_toolkit.sql.dml.table.write_modes")
+insert_constraints = importlib.import_module("analytics_toolkit.sql.dml.table.insert_constraints")
 
 
 class RecordingAdapter:
+    def resolve_upsert_execution_sqls(self, _connection, _table, sqls):
+        return sqls
+
+    def resolve_upsert_execution_options(self, _connection, _table, **options):
+        return options
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
         self.results: dict[str, Any] = {
@@ -25,6 +32,7 @@ class RecordingAdapter:
             "build_drop_tables_sqls": ["DROP shard", "DROP distributed"],
             "analyze_table_sql": "ANALYZE target",
             "get_table_column_types": {"id": "bigint"},
+            "get_required_column_defaults": {},
             "insert_from_query": 4,
             "build_insert_from_query_sql": "INSERT query",
             "build_insert_from_table_sql": "INSERT table",
@@ -62,6 +70,9 @@ def adapter(monkeypatch: pytest.MonkeyPatch) -> RecordingAdapter:
     monkeypatch.setattr(basic_ops, "get_backend_adapter", lambda _backend: recording_adapter)
     monkeypatch.setattr(write_modes, "resolve_connection_backend", lambda value: value)
     monkeypatch.setattr(write_modes, "get_backend_adapter", lambda _backend: recording_adapter)
+    monkeypatch.setattr(
+        insert_constraints, "get_backend_adapter", lambda _backend: recording_adapter
+    )
     monkeypatch.setattr(write_modes, "time_print", lambda *_args, **_kwargs: None)
     return recording_adapter
 
@@ -281,7 +292,8 @@ def test_upsert_stage_table_fetches_optional_partitions_and_executes_sqls(
     )
 
     names = [call[0] for call in adapter.calls]
-    assert names.count("execute_command") == 2
+    assert names.count("execute_commands") == 1
+    assert names.count("get_required_column_defaults") == 1
     assert ("fetch_upsert_partition_values" in names) is (partition_column is not None)
 
 

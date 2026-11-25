@@ -179,8 +179,7 @@ def _build_execute_read_options(
     statements[-1], _ = apply_row_limit(
         statements[-1], row_limit, dialect=get_backend_adapter(backend).sqlglot_dialect
     )
-    if query_label is not None:
-        statements = [apply_query_label(statement, query_label) for statement in statements]
+    statements = [apply_query_label(statement, query_label) for statement in statements]
     statements = [
         get_backend_adapter(backend).prepare_sql(config, statement) for statement in statements
     ]

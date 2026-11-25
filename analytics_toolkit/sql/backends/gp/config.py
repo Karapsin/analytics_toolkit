@@ -2,6 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from analytics_toolkit.sql.connection.validation import (
+    close_validation_resource,
+    validating,
+    validation_timeout,
+)
+
+from .connectivity import ValidationConnection, wait_ready
+
 
 def build_config(connection_key: str, raw_config: dict[str, Any]) -> Any:
     from analytics_toolkit.sql.connection.ddl_defaults import (  # noqa: PLC0415
@@ -131,4 +139,15 @@ def open_connection(
         )
         connect_kwargs["sslkey"] = str(ssl_key)
 
-    return psycopg2.connect(**connect_kwargs)
+    if not validating():
+        return psycopg2.connect(**connect_kwargs)
+    timeout = float(validation_timeout(config.connect_timeout) or 5)
+    connect_kwargs["connect_timeout"] = max(1, int(timeout))
+    connect_kwargs["async_"] = True
+    connection = psycopg2.connect(**connect_kwargs)
+    try:
+        wait_ready(connection, timeout)
+    except BaseException:
+        close_validation_resource(connection)
+        raise
+    return ValidationConnection(connection, timeout)

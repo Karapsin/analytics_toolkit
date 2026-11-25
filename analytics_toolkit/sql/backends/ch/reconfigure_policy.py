@@ -69,7 +69,7 @@ def resolve_desired_reconfigure_policy(
     )
     shard_cluster = (
         configured.shard_on_cluster
-        if options.to_defaults and configured is not None
+        if configured is not None and (options.to_defaults or not source_pair)
         else (options.ch_shard_on_cluster or source_shard_cluster)
     )
 

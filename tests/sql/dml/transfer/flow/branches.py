@@ -9,6 +9,7 @@ from analytics_toolkit.sql.dml.transfer.flow import (
     row_counts,
     stage_validation,
     staged_attempt,
+    staged_source_read,
     superseded,
 )
 from analytics_toolkit.sql.dml.transfer.flow.lazy_keyed_runtime import (
@@ -162,6 +163,7 @@ def _snapshot_options() -> Any:
         from_db_backend="gp",
         transfer_id="transfer",
         canonical_destination_identity="target",
+        input_resolution={},
     )
 
 
@@ -231,11 +233,9 @@ def test_unkeyed_snapshot_read_rejects_invalid_raw_and_normalized_batches(
         ),
     )
     monkeypatch.setattr(
-        staged_attempt,
-        "get_backend_adapter",
-        lambda _backend: SimpleNamespace(
-            normalize_transfer_source_batch=lambda *_args: RowBatch(["id"], [(1,), (2,)])
-        ),
+        staged_source_read,
+        "normalize_source_batch",
+        lambda *_args: RowBatch(["id"], [(1,), (2,)]),
     )
     with pytest.raises(RuntimeError, match="Normalized source batch"):
         staged_attempt._read_snapshot_range(

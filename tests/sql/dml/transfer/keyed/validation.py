@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.dml.transfer.flow import staged_source_read
+
 from tests.sql._support.transfer_keyed import (
     Any,
     KeyReadComplete,
@@ -214,14 +216,12 @@ def test_keyed_io_rejects_unequal_and_normalized_oversized_batches(
         )
 
     result = SimpleNamespace(column_names=["id"], columns=[[1, 2]])
-    adapter = SimpleNamespace(
-        normalize_transfer_source_batch=lambda _batch, _types: RowBatch(
-            ["id"],
-            [(1,), (2,), (3,)],
-        )
-    )
     monkeypatch.setattr(staged_keyed_io, "_read_backend", lambda *_args, **_kwargs: result)
-    monkeypatch.setattr(staged_keyed_io, "get_backend_adapter", lambda _backend: adapter)
+    monkeypatch.setattr(
+        staged_source_read,
+        "normalize_source_batch",
+        lambda *_args: RowBatch(["id"], [(1,), (2,), (3,)]),
+    )
 
     with pytest.raises(RuntimeError, match="Normalized source batch returned 3"):
         staged_keyed_io.read_key_batch(

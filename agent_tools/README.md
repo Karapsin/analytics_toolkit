@@ -27,6 +27,8 @@ agent_tools/mcp_tool.sh visual-workflow capture --review-id <review-id>
 agent_tools/mcp_tool.sh visual-workflow status --review-id <review-id>
 agent_tools/mcp_tool.sh visual-review --review-id <review-id> --scene-id <scene-id> --verdict pass
 agent_tools/mcp_tool.sh visual-workflow complete --review-id <review-id>
+agent_tools/mcp_tool.sh git-workflow review-plan --review-plan /tmp/author-review-plan.json
+agent_tools/mcp_tool.sh git-workflow discover
 agent_tools/mcp_tool.sh git-workflow commit --message "Update agent workflow" --path agent_tools/mcp_server.py --path tests/agent_tools/mcp
 agent_tools/mcp_tool.sh git-workflow checks --sha <exact-pushed-sha>
 agent_tools/mcp_tool.sh release-workflow --action merge-dev
@@ -236,7 +238,154 @@ Handed-off branches prohibit local corrections. Optional
 Local cleanup prunes remote references and deletes only proven merged, unused
 branches reachable from dev. Unknown, active and squash-only unique local work
 is preserved and reported; the Pi safely cleans verified merged remote branches.
-Each reviewer is a fresh read-only session separate from the candidate authors.
+Local source review uses bounded parallel discovery cycles on a frozen candidate.
+The implementing author assigns manageable component chunks and bounded
+cross-component integration checks. Each worker is a fresh isolated read-only
+session, separate from the candidate authors, using the selected native CLI and
+fixed high reasoning effort. A worker reads every assigned immutable diff page,
+recovers truncated reads, and reads interacting source and tests needed for its
+scope. It lists ALL novel issues without stopping at the first defect. It does
+not repeat a serial whole-candidate review. Later cycles receive only OPEN issues
+from the current frozen batch as exclusions, including rewordings or examples of
+those same issues. No review-derived fixes or retests occur between discovery
+cycles.
+
+The frozen author plan binds all six subject fields: `repository`, `head`,
+`base`, `tree`, `task_digest` and `producer_id`. Its full
+immutable inventory records each changed path, diff hash, diff size and binary
+status (`path`, `diff_sha256`, `diff_chars`, `binary`). Components assign every
+changed path exactly one primary owner;
+component chunks partition that inventory with no omissions or duplicate primary
+ownership. Explicit integration chunks overlap relevant paths, link components,
+and leave no component without an integration check when multiple components
+exist. The plan records each chunk's purpose and bounded scope. `max_workers`
+allows 1–8 workers in parallel, defaulting to 4. Each chunk obeys `max_paths`
+(at most 30) and `max_diff_chars` (at most 96,000). An oversized individual path
+blocks planning rather than allowing partial approval.
+
+Install the author's JSON plan before discovery or final review when the candidate
+needs multiple chunks:
+
+```python
+git_workflow(action="review-plan", review_plan_path="/tmp/author-review-plan.json")
+git_workflow(action="discover")
+```
+
+The terminal equivalents are:
+
+```bash
+agent_tools/mcp_tool.sh git-workflow review-plan --review-plan /tmp/author-review-plan.json
+agent_tools/mcp_tool.sh git-workflow discover
+```
+
+The frozen version-one manifest contains `subject`, `limits`, `inventory`,
+`components`, `chunks` and a nonblank `author_plan`. Input JSON may omit derived
+version/kind, subject and inventory fields; installation fills them from the
+current immutable candidate and rejects any supplied mismatches. The plan and
+chunk purposes describe scope and interface assignments, never implementation/fix
+NAV or historical findings.
+Component entries contain `id` and `paths`;
+chunk entries contain `id`, `kind` (`component` or `integration`),
+`component_ids`, `paths` and `purpose`. Installing it validates the exact subject,
+complete immutable inventory, ownership, interaction coverage and resource
+bounds. It can run while the worktree is dirty and does not run reviewers,
+checks, commits or publication. `discover` and `review` consume the frozen plan.
+A complete candidate that fits one component within every scope bound may use a
+derived single-component plan; larger candidates require an explicit installed
+plan. Relative manifest paths follow the wrapper's current working directory.
+
+The first pass assigns every component and integration scope. Collect ALL
+assigned worker results before completing a cycle. A completed scope with zero
+new issues retires from discovery for that same frozen head, base, tree and
+assignment. Do not review a retired scope again because another scope found an
+issue. Later cycles assign only scopes whose latest result found new issues or
+was missing, failed, incomplete or uncertain; those scopes receive fresh
+independent workers. A completed scope may retire while known OPEN issues remain
+in its scope: retirement records that the latest search found nothing
+additional, not that those issues were fixed.
+
+Discovery closes when every required component and integration scope has
+retired with valid signed scope coverage. The aggregate coverage must still
+cover the full immutable inventory and its assigned interactions. A failed,
+missing, incomplete or uncertain scope stays active and prevents closure; one
+clean chunk never approves the whole candidate. Known OPEN issues continue to
+block approval after discovery closes. Only then repair ALL OPEN batch issues
+together and run focused and mandatory checks.
+
+A changed head, tree or dev base resets every scope clearance and starts a new
+full first pass with EMPTY finding history. Do not supply repaired finding texts,
+fix summaries or instructions to verify earlier fixes. A defect found afresh is
+a new finding in that candidate's batch; private closed records never hide it.
+On the exact final candidate, one complete clean signed approval result for every
+component and integration scope can establish aggregate source approval when
+all required checks, task and plan bindings pass and no OPEN issues remain.
+There is no minimum number of clean cycles or mandatory repeat of already
+retired scopes, and no retry limit or opt-in switch for discovery and batch repair.
+
+Each CLI worker receives the current task/specification, assigned scope and
+purpose, plan/inventory digests, current check and original image evidence, and
+current OPEN exclusions. The full manifest, other chunk definitions, global
+author-plan prose and finding-origin provenance stay with the coordinator and
+its private certification proof. Workers may read any immutable interacting
+context; the bounded prompt does not restrict source access. Historical author NAV
+packets and repaired finding/fix-summary history remain private audit material;
+never forward them or ask a reviewer to verify them.
+
+Initial feature validation and commit guards remain mandatory. Diagnostic
+discovery can inspect immutable committed HEAD while procedure work is dirty;
+such a run is always non-approving. Final source
+approval still requires a clean candidate, current exact checks and matching
+task/head/base bindings.
+Use the installed plan with `git_workflow(action="discover")` or
+`agent_tools/mcp_tool.sh git-workflow discover` for a non-approving diagnostic cycle.
+It reports convergence and current-batch
+issues for batch repair, without committing, testing, fixing or publishing.
+Codex source reviews request fixed `high` reasoning effort. The orchestrator
+also applies this setting when the immutable dev-base adapter predates it;
+the selected model, source access and isolation checks stay unchanged.
+The current source-review budget is 7,200 seconds; an older trusted adapter
+cannot reduce it.
+Higher effort does not guarantee completion: all assigned pages and interaction
+contracts must have validated aggregate coverage before approval.
+
+The private task journal persists the frozen plan, active and retired scopes,
+and signed cycle outcomes. The append-only audit retains historical findings
+and source bindings internally.
+An OS lock prevents concurrent invocations from creating independent discovery
+batches. Interrupted active scopes resume with fresh reviewers; durably recorded
+completed results remain usable only while their subject fields and plan binding
+match. Changed subject fields or plan bindings invalidate coverage and resume
+eligibility. With unchanged head, tree and dev base, current OPEN exclusions
+survive replanning and task-only policy corrections; neither clears them. A
+changed source candidate resets all scope clearances and finding history.
+Historical fixed findings remain private and are not inherited as reviewer input.
+Loading the private aggregate history verifies each signed predecessor sequence
+and finding-context digest. Reordering or deleting an earlier signed result
+invalidates that history rather than restoring an older clearance.
+Final approval also requires its exact aggregate receipt to remain associated
+with that validated signed history; a cached receipt cannot replace missing history.
+Ordered wave and partial-outcome saves append independently signed checkpoints,
+binding their predecessor and aggregate-history prefix. Reordering or removing
+the mutable wave index cannot restore an earlier clearance. Unsealed historical
+waves retain their original facts for audit and authorized diagnostic migration;
+they cannot supply current final approval.
+
+The explicit non-approving policy-19 to policy-20 diagnostic migration may reuse
+completed zero-new scope reports from the unchanged source candidate under its
+verified assignment mapping. It retains current OPEN issues and original signed
+origins; it cannot fabricate a fresh review, transfer approval to a different
+task or source subject, or itself approve publication. This exception supplies
+no repaired finding history to workers.
+
+Only a complete aligned aggregate with no OPEN issues and one complete clean
+signed approval result for every scope on the exact current task, source subject
+and plan creates the final source receipt. Its version-four `review_iterations` proof
+records scope retirement, exhaustive aggregate coverage and each result's
+original signed provenance, even when scopes completed in different cycles.
+Discovery convergence and intermediate records cannot authorize publication.
+When source-first visual ordering is explicitly requested, final aggregate source
+approval precedes capture; the complete final visual gate still precedes publication.
+
 Confirmed reviewer defects start a fresh Pi correction agent followed by
 independent review, repeating until approved. An unfinished source assessment
 continues in fresh read-only invocations of the same immutable assignment; it
@@ -344,8 +493,42 @@ not native window decorations. `visual-workflow status` returns the next PNG
 batch; the agent must open every full image and record a verdict through
 `visual-review`. Geometry checks and every agent verdict must pass before
 completion. The receipt records the host and capture method and is bound to
-the complete reviewed content; only a current all-pass receipt allows commit
-or push. Failed or interrupted captures require a new review session.
+the complete reviewed content; a current all-pass receipt is always required
+before publication. Failed or interrupted captures require a new review session.
+
+By default the completed visual receipt also precedes local source review and
+commit. An explicitly recorded user instruction can instead order source review,
+then visual checks, then publication. The supported instruction is
+"do visual checks only after final review approval" (case, whitespace and trailing
+punctuation may vary). Record the exact message with `task_context(action="append")`.
+The recorded task correction remains authoritative when the private evidence
+file or its ordering field is absent. An optional
+`.git/atk-local-review-evidence.json` may carry the current task digest and a
+`visual_review_order` object with exactly these fields:
+
+```json
+{
+  "decision": "source-review-before-visuals",
+  "message_source": "user",
+  "correction_index": 0,
+  "user_prompt": "do visual checks only after final review approval"
+}
+```
+
+Use the actual zero-based correction index and exact recorded message; unrelated
+messages and mismatched task digests fail closed. This decision permits a local
+candidate commit and independent source review before capture. The workflow then
+reports source approval and blocks publication until every current visual check
+passes. Run `visual-workflow` only after source approval, then retry
+`git_workflow(action="push")`. Completing visuals leaves the exact source/task
+approval valid; source or task changes require fresh approval. This orders the
+two required phases and never waives either gate.
+Source-first captures bind the complete subject and exact final signed source
+receipt at start, capture and completion. A capture from before that approval,
+or from a replaced approval receipt, cannot satisfy publication even when its
+source fingerprint happens to match. Direct session publication also verifies
+the complete visual producer/session before task archival and before pushing
+the originally reviewed SHA, preventing a changed HEAD from borrowing approval.
 
 Capture waits for both intended scene state and passing geometry, with a bounded
 timeout. Save scenes require the active document name and requested button focus;
@@ -854,6 +1037,10 @@ x86_64 hosts, runs the marked integration tests, captures failure logs, and
 always removes its containers and volumes. It must not be redirected to
 external database endpoints.
 
+Focused checks use the prepared checkout's `.venv` interpreter and dependencies.
+Its version-marked SDK dependencies can differ from the canonical Python 3.14
+coverage environment; a focused result covers the prepared environment.
+
 Managed pre-commit checks run as separate static, coverage and artifact commands,
 stopping before downstream work when a stage fails. Coverage and artifacts use
 Python 3.14; static tooling retains its pinned Python 3.11 environment. The full
@@ -941,8 +1128,9 @@ extras. It does not use vector stores, hosted LLM SDKs, Ollama, or embedding
 models.
 
 Telegram feature intake and feature development are disabled. Develop features
-locally; publication starts a fresh read-only reviewer with immutable Git reads
-and no shell. It is the only source review and fails closed. The reviewer runs the
+locally; publication starts bounded parallel discovery cycles of fresh read-only reviewers
+with immutable Git reads and no shell. Aggregate review is the only source review
+and fails closed. Every worker runs the
 session's CLI unless `ATK_LOCAL_REVIEWER=codex|claude` overrides it; a missing CLI
 never falls back to the other. Codex runs `codex exec` read-only and ephemeral.
 Claude Code runs `claude -p --restricted --tools ""` with only the `source_files`
@@ -953,9 +1141,18 @@ server, permission mode, subscription auth) and the structured result. The
 runtime adapter is loaded from the dev base like the source provider; a base
 without it supports only the built-in Codex reviewer. Receipts record
 `reviewer_runtime`, `reviewer_version`, `reviewer_model` and `reviewer_auth`.
-It must inspect every diff page and approve the complete task.
-Rejections remain local for correction and another fresh review. The signed
-receipt binds head, tree, dev base, task digest and separate reviewer identity.
+Each worker inspects its complete assigned scope and interacting context. A
+complete zero-new scope retires for the unchanged frozen candidate and assignment;
+later cycles revisit only scopes that found new issues or lack a complete result.
+Every required component and integration scope must retire before discovery
+closes. Current OPEN issues then require one batch repair and checks, and a
+changed source candidate resets all clearances and finding history for a new
+full first pass. Final aggregate approval requires one complete clean signed
+approval result for every scope on the exact current task, source and plan, no
+OPEN issues and all required gates; it does not require another clean cycle over
+retired scopes.
+The final signed receipt binds head, tree, dev base, task digest, frozen plan,
+aggregate coverage and separate reviewer identities.
 After newer dev is merged into a feature branch (`git fetch origin dev` and
 `git merge origin/dev`), `git-workflow refresh`, `review` and `commit` fetch dev
 and advance the session's recorded base to the newest `origin/dev` commit
@@ -967,8 +1164,10 @@ When the candidate diff touches SQL Explorer or its visual harness, `review`
 attaches the completed `visual_workflow` receipt as verified evidence bound to
 the task digest, head and tree. It requires the completion metadata, every
 scene's screenshot and geometry hashes and a matching completed capture session
-record. Missing, stale, partial or non-pass receipts stop before the reviewer
-starts; no hand-written evidence is needed, and private
+record. Under normal visual-first ordering, missing, stale, partial or non-pass
+receipts stop before the reviewer starts. Under the recorded source-first order,
+final aggregate source approval precedes capture and the complete visual receipt
+still gates publication. No hand-written evidence is needed, and private
 evidence files cannot supply the visual-review entry.
 The orchestrator verifies it against host-owned enrollment before accepting it.
 `git-workflow review` reviews a committed candidate; `push` retries publication.

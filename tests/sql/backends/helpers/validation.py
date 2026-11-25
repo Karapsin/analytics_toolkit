@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
+from analytics_toolkit import sql
+from analytics_toolkit.sql.backends import get_backend_adapter
+
 from tests.sql._support.backend_helpers import (
     Any,
     RecordingConnection,
@@ -9,10 +14,10 @@ from tests.sql._support.backend_helpers import (
     gp_adapter_module,
     gp_ddl,
     gp_insert,
-    importlib,
     pd,
     pytest,
 )
+from tests.sql._support.ch_drop_scope import install_drop_scope
 
 
 @pytest.mark.parametrize(
@@ -34,55 +39,40 @@ def test_clickhouse_distributed_engine_invalid_forms(
     assert ch_metadata.extract_clickhouse_distributed_shard_table(engine_full, database) is expected
 
 
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("analytics.events_shard", False, True, "coordinator", "analytics.events_shard"),
+        ("analytics.events", False, True, "coordinator", "analytics.events"),
+        ("analytics.events", True, False, "remote", "analytics.events_shard"),
+    ],
+)
 def test_clickhouse_operations_dispatches_missing_modes(
     monkeypatch: pytest.MonkeyPatch,
+    write_sql_connections: Any,
+    case: tuple[str, bool, bool, str, str],
 ) -> None:
-    lifecycle = importlib.import_module("analytics_toolkit.sql.backends.ch.lifecycle")
-    calls: list[tuple[str, str, dict[str, Any]]] = []
-    monkeypatch.setattr(
-        lifecycle,
-        "drop_ch_table",
-        lambda _connection, table, **kwargs: calls.append(("table", table, kwargs)),
-    )
-    monkeypatch.setattr(
-        lifecycle,
-        "drop_ch_distributed_table_pair",
-        lambda _connection, table, **kwargs: calls.append(("pair", table, kwargs)),
-    )
-    monkeypatch.setattr(
-        importlib.import_module("analytics_toolkit.general"),
-        "time_print",
-        lambda *_args, **_kwargs: None,
-    )
-
-    with pytest.raises(ValueError, match="ch_drop_shard must be True"):
+    table, shard, facade, selected_host, selected_table = case
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    before = state.snapshot()
+    expected = deepcopy(before)
+    expected[selected_host].pop(selected_table)
+    connection = sql.get_sql_connection("ch")
+    try:
         ch_operations.drop_table_with_options(
-            object(),
-            object(),
-            "analytics.events_shard",
+            get_backend_adapter("ch"),
+            connection,
+            table,
             connection_key="ch",
-            ch_drop_shard=False,
+            ch_cluster="storage",
+            ch_drop_shard=shard,
+            ch_drop_distributed=facade,
         )
-    ch_operations.drop_table_with_options(
-        object(),
-        object(),
-        "analytics.events",
-        connection_key="ch",
-        ch_drop_shard=False,
-        ch_drop_distributed=True,
-    )
-    ch_operations.drop_table_with_options(
-        object(),
-        object(),
-        "analytics.events",
-        connection_key="ch",
-        ch_drop_shard=True,
-        ch_drop_distributed=False,
-    )
-    assert [call[:2] for call in calls] == [
-        ("table", "analytics.events"),
-        ("table", "analytics.events_shard"),
-    ]
+        assert state.snapshot() == expected
+        assert len(state.commands) == 1
+    finally:
+        connection.close()
+    assert all(client.closed and client.close_calls == 1 for client in state.opened)
     with pytest.raises(ValueError, match="At least one"):
         ch_operations.drop_table_with_options(
             object(),

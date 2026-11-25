@@ -207,12 +207,12 @@ def test_outage_coverage_remains_partial_after_empty_schema_repair(outage: Any) 
     assert cluster.tables[("h2", "db.events_shard")].rows == []
 
 
-def test_outage_successful_batch_is_not_replayed_after_later_preflight_failure(outage: Any) -> None:
+def test_outage_prior_submission_does_not_disable_transient_data_replay(outage: Any) -> None:
     cluster, _ = outage
     with backend_operation() as state:
         sql.execute("ch", "INSERT INTO db.events VALUES (9)")
         assert state.live_submitted is True
-        assert is_non_retryable_sql_error(ConnectionError("next connection unavailable")) is True
+        assert is_non_retryable_sql_error(ConnectionError("next connection unavailable")) is False
         assert state.preserve_recovery is True
     assert len(cluster.commands) == 1
 

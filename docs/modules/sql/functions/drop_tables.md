@@ -24,7 +24,7 @@ drop_tables(db_key: 'str', table: 'str | list[str]', *, if_exists: 'bool' = Fals
 
 - `ch_unavailable_shards` - ClickHouse outage policy: `None` uses the connection default (`stop` when omitted); `healthy_shards` enables ad hoc partial work with prominent warnings; see [outage policies](../clickhouse-distributed-tables.md#unavailable-shards)
 
-- `ch_cluster` - cluster name or macro for ClickHouse distributed/shard DDL; `None` skips cluster DDL where supported
+- `ch_cluster` - ClickHouse inspection scope name or macro; `None` restricts selected resources to the coordinator's local scope
 - `ch_drop_distributed` - whether ClickHouse distributed tables should be dropped
 - `ch_drop_shard` - whether ClickHouse shard tables should be dropped
 - `ch_retry_per_host_drops` - whether ClickHouse replace/drop flows may retry direct local drops on affected hosts
@@ -46,20 +46,53 @@ plan = sql.drop_tables(
 print(sql.format_plan(plan))
 ```
 
-Output example:
-
-```text
-SQL plan: drop_tables
-- ch: DROP TABLE IF EXISTS sandbox.events_daily
-- ch: DROP TABLE IF EXISTS sandbox.events_archive
-```
+The offline plan records unresolved execution requirements. It does not inspect
+the existing pair or guess its DROP scopes.
 
 ## Notes
 
 - ClickHouse-specific flags control whether the distributed table, shard table, or both are dropped.
+- For an existing ClickHouse table, execution verifies the selected roles and
+  their actual placement. A physical companion requires a verified storage
+  relationship and matching column metadata. A facade-only drop does not require
+  unselected storage to be available. A facade on
+  one cluster can reference physical storage on another; each role uses its
+  verified scope. Same-named local companions or remote logical tables are not
+  selected merely because they match the caller's cluster or a `_shard` suffix.
+- All selected resources and endpoints across the request are verified before
+  the first DROP. Each existing endpoint resource requires a verified native
+  table UUID and complete definition. Ordinary databases retain zero UUIDs and
+  use their verified engine, exact table name, definition and server/endpoint
+  scope; a zero UUID cannot identify recreation with the same definition.
+  Unverifiable identities stop before DDL. A non-`None` `ch_cluster` cannot widen
+  an already known role's placement. With `ch_cluster=None`, a selected remote
+  or multi-host role rejects before DDL; a verified singleton coordinator alias
+  can execute locally.
+- Equivalent identifier spellings and cluster aliases drop the same resource
+  once when its complete verified endpoint and table identities match.
+  Overlapping requested scopes also remove each selected endpoint resource
+  once, while retaining checks for changes outside the operation's acknowledged
+  removals.
+- `if_exists=True` permits verified absent resources, including a partially
+  occupied cluster scope, but still requires every selected endpoint to be
+  available. Existing identities and observed absences are rechecked before
+  DROP; missing metadata is not treated as permission to guess a resource.
+- Absence waits and per-host recovery retain each selected role's table and
+  endpoint scope. Recovery rechecks the verified table and server identities,
+  retaining the discovered native host/port identity. HTTP drops reject multiple
+  discovered native instances sharing one host; use independently addressable
+  endpoints or the native driver. Unrelated same-named resources are not used
+  for absence checks.
+- Offline `dry_run`/`return_sql` plans open no connection and leave
+  `pending_existing_layout_verification=True` and
+  `pending_resource_scope_resolution=True` in `plan.options`. Their execution
+  requirements remain unresolved until actual resource verification; they do
+  not provide a certified DROP statement list or count.
 - Plain `DROP TABLE` is the default; set `if_exists=True` to keep the historical safe-drop form.
 - `ch_wait_timeout_seconds` must be a built-in positive integer, and
   `ch_wait_poll_interval_seconds` must be a finite positive real number. These
   values are validated even when returning a dry-run plan.
+  Polling respects the remaining timeout and responds to cancellation even when
+  the configured poll interval is longer.
 
 [SQL functions index](index.md)

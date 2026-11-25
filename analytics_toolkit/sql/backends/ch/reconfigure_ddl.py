@@ -17,6 +17,7 @@ from analytics_toolkit.sql.ddl.identifiers import (
 
 from .creation_policy import validate_distributed_template
 from .ddl import _sql_string_literal
+from .dialect import ClickHouseDialect
 from .metadata import (
     extract_clickhouse_distributed_shard_table,
     extract_clickhouse_function_args,
@@ -36,6 +37,7 @@ def transform_create_table(
     ch_settings: Mapping[str, str | int | float | bool | None] | None,
     ch_reset_partition_by: bool,
     ch_reset_order_by: bool,
+    defer_replication_isolation: bool = False,
 ) -> exp.Create:
     transformed = retarget_create(create, table_name, execution_cluster)
     if ch_engine is not None:
@@ -58,7 +60,8 @@ def transform_create_table(
         )
     if ch_settings:
         _apply_settings_to_create(transformed, ch_settings)
-    _validate_replicated_path(transformed)
+    if not defer_replication_isolation:
+        _validate_replicated_path(transformed)
     return transformed
 
 
@@ -73,6 +76,31 @@ def transform_distributed_create(
     ch_distributed_engine_template: str | None = None,
 ) -> exp.Create:
     transformed = retarget_create(create, table_name, execution_cluster)
+    if engine_name(create).lower() != "distributed":
+        properties = _properties(transformed)
+        properties.set(
+            "expressions",
+            [
+                prop
+                for prop in properties.expressions
+                if isinstance(prop, (exp.EngineProperty, exp.OnCluster))
+                or type(prop).__name__ in {"CommentProperty", "UuidProperty"}
+            ],
+        )
+        schema = transformed.this
+        assert isinstance(schema, exp.Schema)
+        schema.set(
+            "expressions", [item for item in schema.expressions if isinstance(item, exp.ColumnDef)]
+        )
+    schema = transformed.this
+    assert isinstance(schema, exp.Schema)
+    schema.set(
+        "expressions",
+        [
+            _column_without_ttl(item) if isinstance(item, exp.ColumnDef) else item
+            for item in schema.expressions
+        ],
+    )
     database, relation = distributed_table_parts(shard_table)
     current_engine = engine_sql(create)
     existing = extract_clickhouse_distributed_shard_table(current_engine, database)
@@ -101,19 +129,23 @@ def transform_distributed_create(
         args.append("rand()")
     distributed_engine = f"Distributed({', '.join(args)})"
     engine_property = _engine_property(distributed_engine)
-    engine = engine_property.this
-    if (
-        len(args) >= 4
-        and args[3].strip().lower() == "rand()"
-        and isinstance(engine, exp.Anonymous)
-        and len(engine.expressions) >= 4
-        and isinstance(engine.expressions[3], exp.Rand)
-    ):
-        _restore_clickhouse_rand(engine.expressions[3])
     _replace_property(
         transformed,
         exp.EngineProperty,
         engine_property,
+    )
+    return transformed
+
+
+def _column_without_ttl(column: exp.ColumnDef) -> exp.ColumnDef:
+    transformed = column.copy()
+    transformed.set(
+        "constraints",
+        [
+            constraint
+            for constraint in transformed.constraints
+            if not isinstance(constraint.kind, exp.MergeTreeTTL)
+        ],
     )
     return transformed
 
@@ -154,7 +186,7 @@ def retarget_create(
     if not isinstance(schema, exp.Schema):
         raise InvalidSqlInputError("ClickHouse CREATE TABLE statement has no column schema.")
     schema.set("this", _parse_table_name(table_name, "clickhouse"))
-    transformed.set("exists", True)
+    transformed.set("exists", False)
     properties = _properties(transformed)
     properties.set(
         "expressions",
@@ -170,7 +202,7 @@ def retarget_create(
 
 def parse_create_table(sql: str, table: str) -> exp.Create:
     try:
-        parsed = parse_one(sql.strip().rstrip(";"), read="clickhouse")
+        parsed = parse_one(sql.strip().rstrip(";"), read=ClickHouseDialect)
     except Exception as exc:
         raise InvalidSqlInputError(f"Could not parse ClickHouse DDL for {table}: {exc}") from exc
     if not isinstance(parsed, exp.Create) or str(parsed.args.get("kind", "")).upper() != "TABLE":
@@ -214,13 +246,25 @@ def distributed_table_parts(table_name: str) -> tuple[str, str]:
 
 def comparable_create_sql(create: exp.Create) -> str:
     comparable = create.copy()
-    _restore_clickhouse_rand(comparable)
     comparable.set("exists", False)
     properties = _properties(comparable)
     properties.set(
         "expressions",
         [item for item in properties.expressions if not _is_transient_create_property(item)],
     )
+    engine = comparable.find(exp.EngineProperty)
+    if engine is not None and isinstance(engine.this, exp.Anonymous):
+        name = engine.this.name.casefold()
+        arguments = list(engine.this.expressions)
+        if (
+            name.startswith("replicated")
+            and name.endswith("mergetree")
+            and len(arguments) >= 2
+            and isinstance(arguments[1], exp.Literal)
+            and arguments[1].is_string
+        ):
+            arguments[1] = exp.Literal.string("<replica>")
+            engine.this.set("expressions", arguments)
     return comparable.sql(dialect="clickhouse")
 
 
@@ -237,7 +281,7 @@ def expression_sql(value: Sequence[str] | str, option_name: str) -> str:
     if isinstance(value, str):
         normalized = _non_empty_string(value, option_name)
         try:
-            parse_one(normalized, read="clickhouse")
+            parse_one(normalized, read=ClickHouseDialect)
         except Exception as exc:
             raise InvalidSqlInputError(f"Invalid {option_name}: {exc}") from exc
         return normalized
@@ -299,7 +343,7 @@ def _apply_settings_to_create(
                 "exp.Expression",
                 parse_one(
                     f"{name}={setting_value_sql(value)}",
-                    read="clickhouse",
+                    read=ClickHouseDialect,
                 ),
             )
     replacement = exp.SettingsProperty(expressions=list(by_name.values())) if by_name else None
@@ -396,8 +440,6 @@ def _distributed_sharding_key(create: exp.Create) -> str | None:
     values = prop.this.expressions
     if len(values) < 4:
         return None
-    if isinstance(values[3], exp.Rand):
-        return "rand()"
     return cast("str", values[3].sql(dialect="clickhouse"))
 
 

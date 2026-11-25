@@ -299,13 +299,20 @@ query are excluded. Schema-qualified names continue to use database metadata.
 
 Column completion is available in SELECT projections and WHERE expressions,
 including operands after AND/OR, when the source tables are present after FROM/JOIN.
-A non-keyword identifier prefix must touch the cursor
+An unquoted non-keyword identifier prefix must touch the cursor
 on its left on the same line, and the character cell immediately on its right
-must be whitespace or the end of the line. Blank prefixes, keywords, and positions
-inside words do not request columns with Tab. Shift+Tab explicitly allows a blank
+must be whitespace or the end of the line. Blank prefixes, unquoted keywords, and
+positions inside words do not request columns with Tab. Shift+Tab explicitly allows a blank
 left-hand prefix, while keeping the right-hand whitespace and single-cursor rules.
 It resolves aliases, joined tables, nested SELECTs,
 derived tables, and CTE output names, including explicit column lists and stars.
+Quoted column names retain their exact identity, including whitespace inside
+the quotes; `" id"` remains distinct from `id` when completion is accepted.
+Quoted reserved column names also remain identifiers when Tab accepts completion.
+At boundaries that do not allow column completion, such as before a comma or
+closing quote, Tab leaves the quoted identifier intact.
+Escaped quote characters and dots inside a quoted name remain part of its identity.
+Database table names retain that identity when offered alongside CTEs.
 Press Tab or Ctrl+Space immediately after `alias.` to list all columns from that
 source; typing the dot alone does not open the menu. A prefix after the dot filters
 the suggestions. Aliases with or without AS work for physical tables and CTEs.
@@ -457,10 +464,21 @@ are hidden when their logical parent is accessible; parent tables and views
 remain available. Full `sql.show_tables` calls retain their statistics and
 output shape while explicit schema/table filters narrow their base queries.
 
+Metadata names keep their exact case and whitespace; names differing only by case
+remain distinct. Completion quotes reserved words and other identifiers when
+inserting SQL. Unqualified ClickHouse table completion searches only the current
+database; an explicit database prefix searches that database. Database discovery
+uses a SELECT from `system.databases`, including with automatic cluster routing.
+
 Every launch loads saved names immediately. On first activation, a connection's
 background worker discovers visible catalogs, schemas/databases, and table names,
-one namespace at a time. Each successful listing, including an empty listing, is
-marked scanned. Relaunching, reopening tabs, or switching back to a connection
+one namespace at a time. Each complete successful listing, including an empty
+listing, is marked scanned. Partial cluster results never replace or prune complete
+snapshots or mark a scan successful. The last complete names remain available
+with an incomplete notice. Partial scans release their lease and retry with
+bounded backoff, even without another usage event; a complete recovery clears
+its own notice while preserving newer operation or file notices. Failed or partial
+status survives relaunch during retry backoff. Relaunching, reopening tabs, or switching back to a connection
 resumes incomplete discovery without rescanning completed namespaces.
 
 Successful user queries update a separate metadata ledger using the query
@@ -482,11 +500,14 @@ Names, scan state, query-use times, and journal replay checkpoints are stored tr
 `.sql_explorer/metadata.sqlite3`, beside the selected `.connections` file.
 Snapshots and scan state are isolated by connection configuration and namespace; changing the
 connection configuration prevents reuse of its old snapshots. Credentials, SQL
-text, and query results are not stored. Unavailable or corrupt storage produces
+text, and query results are not stored. Configuration changes rebind every tab
+sharing the connection, and stale or cancelled workers cannot publish names or notices.
+Unavailable or corrupt storage produces
 a notice while Explorer continues with in-memory metadata.
 
-Existing snapshots retain their completed status and saved refresh timestamps
-when upgraded. Successful refreshes replace names, including dropped objects;
+The metadata identity is versioned. Upgrading from older, potentially normalized
+metadata rebuilds names and scan state while preserving query history. Successful
+refreshes replace names, including dropped objects;
 failed refreshes retain saved names, show a notice, and retry with increasing
 delays from one minute up to one hour. Concurrent workers share scan claims.
 Query activity arriving during a scan is retained for subsequent refresh.

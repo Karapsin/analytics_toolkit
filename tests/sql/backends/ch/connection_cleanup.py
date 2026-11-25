@@ -13,6 +13,7 @@ from analytics_toolkit.sql.backends.ch.outage_hosts import host_connection
 from analytics_toolkit.sql.backends.ch.outage_topology import ClusterScope
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.execution.backend_options import backend_operation
+from analytics_toolkit.sql.execution.retry_errors import classify_sql_error
 
 from tests.sql._support.outage import Client, Cluster
 
@@ -69,7 +70,9 @@ def test_relay_primary_error_survives_delivery_close_and_retains_live_write_guar
     primary = TimeoutError("insert acknowledgement was lost")
     cluster.failure = primary
 
-    with pytest.warns(sql.ClickHouseDegradedClusterWarning), pytest.raises(TimeoutError) as caught:
+    degraded = pytest.warns(sql.ClickHouseDegradedClusterWarning)
+    failure = pytest.raises(TimeoutError)
+    with degraded, failure as caught, backend_operation("healthy_shards") as state:
         sql.execute(
             "ch",
             "INSERT INTO db.events SELECT id FROM db.events",
@@ -79,11 +82,16 @@ def test_relay_primary_error_survives_delivery_close_and_retains_live_write_guar
         )
 
     assert caught.value is primary
-    assert primary.analytics_toolkit_sql_retry_safe is False  # type: ignore[attr-defined]
-    assert any("close_delivery" in note for note in getattr(primary, "__notes__", ()))
-    assert len(writers) == 1
-    assert writers[0].closed
-    assert cluster.tables[("h1", "db.events_shard")].rows == [(1,), (1,)]
+    assert classify_sql_error(primary, backend="ch").retryable
+    assert sum("close_delivery" in note for note in getattr(primary, "__notes__", ())) == 3
+    assert len(writers) == 3
+    assert len({id(writer) for writer in writers}) == 3
+    assert all(writer.closed for writer in writers)
+    assert state.live_submitted
+    assert state.preserve_recovery
+    assert state.data_write_replay_possible
+    assert not state.structural_replay_blocked
+    assert cluster.tables[("h1", "db.events_shard")].rows == [(1,)] * 8
 
 
 @pytest.mark.parametrize("operation_fails", [False, True])

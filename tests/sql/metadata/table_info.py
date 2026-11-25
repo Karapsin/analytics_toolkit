@@ -19,11 +19,11 @@ def test_table_info_gp_reads_columns_and_skips_row_count_by_default(
         if sql == "SELECT to_regclass(%s)":
             assert params == ("sandbox.events",)
             return [("sandbox.events",)]
-        if "information_schema.columns" in sql:
+        if "pg_catalog.format_type" in sql:
             assert params == ("sandbox", "events")
             return [
-                ("id", "bigint", "int8", None, None),
-                ("amount", "numeric", "numeric", 12, 2),
+                ("id", "bigint"),
+                ("amount", "numeric(12,2)"),
             ]
         if "COUNT" in sql:
             pytest.fail("count SQL should not run by default")
@@ -58,8 +58,8 @@ def test_table_info_row_count_when_requested(monkeypatch) -> None:
     ) -> list[tuple[Any, ...]]:
         if sql == "SELECT to_regclass(%s)":
             return [("sandbox.events",)]
-        if "information_schema.columns" in sql:
-            return [("id", "bigint", "int8", None, None)]
+        if "pg_catalog.format_type" in sql:
+            return [("id", "bigint")]
         if sql == "SELECT COUNT(*) FROM sandbox.events":
             return [(42,)]
         return []

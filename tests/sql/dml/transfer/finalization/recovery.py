@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from analytics_toolkit.sql.backends.ch.creation_policy import ClickHouseCreationPolicy
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
 from analytics_toolkit.sql.dml.transfer.flow import finalize
 from analytics_toolkit.sql.dml.transfer.runtime.models import (
@@ -12,7 +13,9 @@ from analytics_toolkit.sql.dml.transfer.runtime.models import (
     TransferOptions,
     TransferStageState,
 )
+from sqlglot import exp, parse_one
 
+from tests.sql._support.assertions import strip_query_label
 from tests.sql._support.ch_replace import (
     LOCAL,
     PHYSICAL,
@@ -64,7 +67,7 @@ def replacement(
                 "Distributed({cluster}, {database}, {shard_table}, {sharding_key})"
             ),
             distributed_cluster="core",
-            distributed_on_cluster="core",
+            distributed_on_cluster=None,
             sharding_key="cityHash64(id)",
             ddl_ready_timeout_seconds=1,
             ddl_wait_policy="wait_none",
@@ -99,6 +102,14 @@ def _finalize(
     )
 
 
+def _drop_resource(statement: str) -> tuple[str, str | None]:
+    drop = parse_one(strip_query_label(statement), read=ClickHouseDialect)
+    assert isinstance(drop, exp.Drop)
+    table = drop.this or drop.args["tables"][0]
+    cluster = drop.find(exp.OnCluster)
+    return f"{table.db}.{table.name}", cluster.this.name if cluster is not None else None
+
+
 def test_final_count_failure_restores_existing_target_through_finalization(
     replacement: tuple[ReplacementClient, TransferOptions, TransferStageState],
 ) -> None:
@@ -110,6 +121,7 @@ def test_final_count_failure_restores_existing_target_through_finalization(
         _finalize(client, options, state)
 
     assert client.tables == original_tables
+    assert all(client.tables[key] is table for key, table in original_tables.items())
     assert client.facade_sources == original_facades
     assert state.target_exists is True
     assert state.target_existed_at_start is True
@@ -122,11 +134,20 @@ def test_final_count_failure_restores_existing_target_through_finalization(
     assert client.local_loads == []
     assert len(client.swaps) == 4
     assert client.swaps[2:] == list(reversed(client.swaps[:2]))
-    assert all(scope == "core" for scope, _left, _right in client.swaps)
+    assert [(scope, left) for scope, left, _right in client.swaps[:2]] == [
+        ("core", PHYSICAL),
+        (LOCAL, TARGET),
+    ]
     drops = [sql for sql, _settings in client.commands if "DROP TABLE" in sql]
-    assert len(drops) == 3
+    assert len(drops) == 2
     assert all("__replace_" in sql for sql in drops)
-    assert sum("ON CLUSTER" in sql for sql in drops) == 2
+    resources = [_drop_resource(statement) for statement in drops]
+    assert sum(scope == "core" for _table, scope in resources) == 1
+    assert sum(scope is None for _table, scope in resources) == 1
+    assert all(
+        table.startswith((PHYSICAL if scope == "core" else TARGET) + "__replace_")
+        for table, scope in resources
+    )
     counts = [sql for sql in client.queries if "query_label=replacement recovery" in sql]
     assert len(counts) == 2
     assert all("FROM cluster('core', 'sandbox', 'events_shard" in sql for sql in counts)
@@ -138,29 +159,38 @@ def test_failed_rollback_preserves_artifacts_through_finalization(
 ) -> None:
     client, options, state = replacement
     original_physical = client.tables["core", PHYSICAL]
-    original_facade = client.tables["core", TARGET]
+    original_facade = client.tables[LOCAL, TARGET]
+    unrelated_facade = client.tables["core", TARGET]
+    original_route = client.facade_sources[LOCAL, TARGET]
     client.fail_rollback = True
 
     with pytest.raises(AmbiguousSqlReplaceError, match="automatic rollback") as exc_info:
         _finalize(client, options, state)
 
-    assert isinstance(exc_info.value.__cause__, OSError)
-    assert str(exc_info.value.__cause__) == "rollback unavailable"
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert "final target row count" in str(exc_info.value.__cause__)
+    assert str(exc_info.value.rollback_error) == "rollback unavailable"
     remote_artifacts = {
         name: table
         for (scope, name), table in client.tables.items()
         if scope == "core" and "__replace_" in name
     }
-    assert len(remote_artifacts) == 2
-    assert original_physical in remote_artifacts.values()
-    assert original_facade in remote_artifacts.values()
+    assert len(remote_artifacts) == 1
+    physical_name, physical_artifact = next(iter(remote_artifacts.items()))
+    assert physical_name.startswith(PHYSICAL + "__replace_")
+    assert physical_artifact is original_physical
     local_artifacts = {
         name: table
         for (scope, name), table in client.tables.items()
         if scope == LOCAL and "__replace_" in name
     }
     assert len(local_artifacts) == 1
-    assert all(table.rows == 0 for table in local_artifacts.values())
+    facade_name, facade_artifact = next(iter(local_artifacts.items()))
+    assert facade_name.startswith(TARGET + "__replace_")
+    assert facade_artifact is original_facade
+    assert client.facade_sources[LOCAL, facade_name] == original_route
+    assert len(remote_artifacts) + len(local_artifacts) == 2
+    assert client.tables["core", TARGET] is unrelated_facade
     assert client.tables["core", PHYSICAL].rows == STAGED_ROWS
     assert client.tables[LOCAL, STAGE].rows == STAGED_ROWS
     assert len(client.loads) == 1
@@ -168,7 +198,10 @@ def test_failed_rollback_preserves_artifacts_through_finalization(
     assert client.loads[0][1] == (LOCAL, STAGE)
     assert client.local_loads == []
     assert len(client.swaps) == 2
-    assert all(scope == "core" for scope, _left, _right in client.swaps)
+    assert [(scope, left) for scope, left, _right in client.swaps] == [
+        ("core", PHYSICAL),
+        (LOCAL, TARGET),
+    ]
     assert not any("DROP" in sql for sql, _settings in client.commands)
     assert state.target_created_by_operation is False
 
@@ -177,9 +210,14 @@ def test_next_finalization_refuses_unresolved_recovery_before_mutation(
     replacement: tuple[ReplacementClient, TransferOptions, TransferStageState],
 ) -> None:
     client, options, state = replacement
+    original_tables = dict(client.tables)
     client.fail_rollback = True
     with pytest.raises(AmbiguousSqlReplaceError, match="automatic rollback"):
         _finalize(client, options, state)
+    assert all(
+        any(table is original for table in client.tables.values())
+        for original in original_tables.values()
+    )
     retained_tables = dict(client.tables)
     retained_facades = dict(client.facade_sources)
     commands = list(client.commands)
@@ -193,6 +231,7 @@ def test_next_finalization_refuses_unresolved_recovery_before_mutation(
         _finalize(client, options, state)
 
     assert client.tables == retained_tables
+    assert all(client.tables[key] is table for key, table in retained_tables.items())
     assert client.facade_sources == retained_facades
     assert client.commands == commands
     assert client.loads == loads

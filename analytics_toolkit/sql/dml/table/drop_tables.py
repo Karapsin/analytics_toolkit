@@ -3,15 +3,21 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.connection.config import get_connection_config
+from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.execution.backend_options import preflight_sql_statements
+from analytics_toolkit.sql.execution.operation_runner import (
+    timed_public_sql_function,
+    tracked_sql_operation,
+)
+from analytics_toolkit.sql.execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from analytics_toolkit.sql.execution.retry_cleanup import connection_scope
+from analytics_toolkit.sql.execution.validation import (
+    validate_positive_int,
+    validate_positive_number,
+)
 
-from ...backends import get_backend_adapter
-from ...connection.config import get_connection_config
-from ...connection.get_sql_connection import get_sql_connection
-from ...execution.operation_runner import timed_public_sql_function, tracked_sql_operation
-from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
-from ...execution.validation import validate_positive_int, validate_positive_number
 from .models import ChDropTableOptions
 
 
@@ -85,21 +91,25 @@ def drop_tables(
                 preview_sql=plan.sqls[0] if plan.sqls else None,
             ):
                 preflight_sql_statements(connection, plan.sqls)
-                for target_table in target_tables:
-                    get_backend_adapter(options.backend).drop_table_with_options(
-                        connection,
-                        target_table,
-                        connection_key=options.connection_key,
-                        ch_cluster=options.ch_cluster,
-                        ch_drop_shard=bool(ch_drop_shard),
-                        ch_drop_distributed=bool(ch_drop_distributed),
-                        ch_wait_for_absence=options.ch_wait_for_absence,
-                        ch_wait_timeout_seconds=options.ch_wait_timeout_seconds,
-                        ch_wait_poll_interval_seconds=(options.ch_wait_poll_interval_seconds),
-                        ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-                        if_exists=bool(if_exists),
-                        query_label=options.query_label,
-                    )
+                adapter = get_backend_adapter(options.backend)
+                drop_options = {
+                    "connection_key": options.connection_key,
+                    "ch_cluster": options.ch_cluster,
+                    "ch_drop_shard": bool(ch_drop_shard),
+                    "ch_drop_distributed": bool(ch_drop_distributed),
+                    "ch_wait_for_absence": options.ch_wait_for_absence,
+                    "ch_wait_timeout_seconds": options.ch_wait_timeout_seconds,
+                    "ch_wait_poll_interval_seconds": options.ch_wait_poll_interval_seconds,
+                    "ch_retry_per_host_drops": options.ch_retry_per_host_drops,
+                    "if_exists": bool(if_exists),
+                    "query_label": options.query_label,
+                }
+                batch_drop = getattr(adapter, "drop_tables_with_options", None)
+                if callable(batch_drop):
+                    batch_drop(connection, target_tables, **drop_options)
+                else:
+                    for target_table in target_tables:
+                        adapter.drop_table_with_options(connection, target_table, **drop_options)
                 metadata.affected_rows = None
         finally:
             time_print(
@@ -133,12 +143,16 @@ def build_drop_table_plan(
         for table_name in target_tables
     ]
     statement_count = sum(len(plan.statements) for plan in sql_plans)
+    pending_options = {
+        key: value for subplan in sql_plans for key, value in subplan.options.items()
+    }
     plan = SqlPlan(
         operation="drop_tables",
         target_alias=options.connection_key,
         target_backend=options.backend,
         target_table=options.target_table,
         options={
+            **pending_options,
             "tables": list(target_tables),
             "if_exists": if_exists,
             "ch_cluster": options.ch_cluster,
@@ -150,7 +164,7 @@ def build_drop_table_plan(
             "ch_retry_per_host_drops": options.ch_retry_per_host_drops,
         },
         metadata=SqlOperationMetadata(
-            statement_count=statement_count,
+            statement_count=None if pending_options else statement_count,
             query_label=options.query_label,
         ),
     )
@@ -175,13 +189,18 @@ def _build_drop_table_plan_for_one(
         if_exists=if_exists,
         query_label=options.query_label,
     )
+    pending_hook = getattr(get_backend_adapter(options.backend), "pending_drop_plan_options", None)
+    pending_options = pending_hook() if callable(pending_hook) else {}
+    if pending_options:
+        sqls = []
     plan = SqlPlan(
         operation="drop_tables",
         target_alias=options.connection_key,
         target_backend=options.backend,
         target_table=table_name,
+        options=pending_options,
         metadata=SqlOperationMetadata(
-            statement_count=len(sqls),
+            statement_count=None if pending_options else len(sqls),
             query_label=options.query_label,
         ),
     )

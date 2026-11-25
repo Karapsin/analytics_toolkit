@@ -6,6 +6,14 @@ from typing import Any
 from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 
+def prepare_upsert_target(
+    adapter: Any, connection: Any, table_name: str, *, partition_column: str | None
+) -> None:
+    prepare = getattr(adapter, "prepare_upsert_target", None)
+    if callable(prepare):
+        prepare(connection, table_name, partition_column=partition_column)
+
+
 def build_upsert_partition_values_sql(
     adapter: Any,
     stage_table: str,
@@ -133,7 +141,7 @@ def build_preserved_target_rows_insert_sql(
     )
     key_predicates = " AND ".join(
         adapter.null_safe_key_equality("target_dst", "stage_src", column_name)
-        for column_name in key_columns
+        for column_name in dict.fromkeys([partition_column, *key_columns])
     )
     partition_sql = adapter.quote_identifier(partition_column)
     return _apply_query_label(

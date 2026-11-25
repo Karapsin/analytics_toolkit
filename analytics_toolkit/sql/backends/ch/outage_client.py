@@ -6,7 +6,6 @@ from typing import Any, cast
 
 from sqlglot import exp, parse_one
 
-from analytics_toolkit.sql.backends.utils import sql_string_literal
 from analytics_toolkit.sql.connection.errors import (
     AmbiguousSqlReplaceError,
     ClickHouseClusterTopologyError,
@@ -20,26 +19,49 @@ from analytics_toolkit.sql.execution.backend_options import (
 from analytics_toolkit.sql.execution.labels import apply_query_label
 from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
-from .outage_context import INSERT_KEY, INTERNAL_IO, WRITING, internal_io
+from .cluster_functions import (
+    canonicalize_cluster_functions,
+    function_insert_target,
+    insert_coverage_intent,
+)
+from .cluster_functions import cluster_names as _cluster_names
+from .dialect import sql_string_literal  # noqa: F401 - preserve the historical helper import.
+from .outage_context import (
+    INSERT_KEY,
+    INTERNAL_IO,
+    LOGICAL_STATISTICS,
+    PRESERVE_SOURCE_SCOPE,
+    WRITING,
+    internal_io,
+)
 from .outage_ddl import (
     _execute_local,
     copy_table_definition,
     create_on_healthy_hosts,
     create_target,
 )
-from .outage_ownership import assert_new_target, claim_private_create
+from .outage_layout import inspect_outage_layout
+from .outage_ownership import (
+    assert_new_target,
+    claim_private_create,
+    owned_local,
+    owned_private,
+    retire_host_drop,
+)
 from .outage_passthrough import modeled_statement
+from .outage_preflight import is_facade_create
 from .outage_session import OutageSession, configured_cluster, private_table
 from .outage_topology import execution_settings, warn_degraded
+from .replacement_cutover import mark_cutover_submitted, preflight_cutover
 from .routing import (
     _LOCAL_SQL_EXECUTION,
     ChClusterRouting,
     ClusterRoutingClient,
-    _identifier_value,
     _RoutingClickHouse,
 )
+from .upsert_context import certified_partition_rebuild_alter, verified_local_partition_alter
+from .upsert_storage import apply_upsert_write_key, upsert_write_scope
 
-_CLUSTER_REQUIRED_ARGS = 3
 _DESCRIBE_DEFAULT_FIELDS = 3
 
 _DESTRUCTIVE = (exp.Alter, exp.Drop, exp.Detach, exp.Delete, exp.Update, exp.TruncateTable)
@@ -70,28 +92,6 @@ def _named_target(statement: exp.Expr, database: str | None) -> tuple[str, str] 
     if isinstance(target, exp.Table) and isinstance(target.this, exp.Identifier):
         return target.db or database or "", target.name
     return None
-
-
-def _cluster_names(statement: exp.Expr) -> list[str]:
-    names = [str(node.this.this) for node in statement.find_all(exp.OnCluster)]
-    for table in statement.find_all(exp.Table):
-        function = table.this
-        if (
-            isinstance(function, exp.Anonymous)
-            and function.name.lower()
-            in {
-                "cluster",
-                "clusterallreplicas",
-            }
-            and function.expressions
-        ):
-            arguments = function.expressions
-            values = [_identifier_value(value) for value in arguments[:_CLUSTER_REQUIRED_ARGS]]
-            if len(values) != _CLUSTER_REQUIRED_ARGS or any(value is None for value in values):
-                msg = "Outage policies require static cluster, database and table arguments."
-                raise ClickHouseClusterTopologyError(msg)
-            names.append(cast("str", values[0]))
-    return list(dict.fromkeys(names))
 
 
 class OutageClient:
@@ -143,7 +143,7 @@ class OutageClient:
             if self._config.cluster_routing is None:
                 return session.native_table_exists(table_name, table)
             target = (table.db or self._config.database, table.name)
-            if state.resources.get(("ch_owned_local", self._config.connection_key, target)):
+            if owned_local(session, target):
                 cluster = None
             if cluster is None:
                 result = self._client.query(f"EXISTS TABLE {table_name}")
@@ -180,49 +180,31 @@ class OutageClient:
                 only_shard=only_shard,
             )
 
+    def outage_inspect_existing_layout(self, table_name: str) -> Any:
+        with backend_operation() as state:
+            return inspect_outage_layout(self._get_session(state), table_name)
+
+    def outage_certify_logical_storage(self, cluster: str, database: str, table: str) -> None:
+        """Certify complete physical coverage and shared replica identity before preservation."""
+        with backend_operation() as state:
+            scope = self._get_session(state).scope(cluster)
+            objects = scope.objects(database, table)
+            if not objects or not objects[0].engine.casefold().startswith(("replicated", "shared")):
+                message = "Logical storage certification requires verified replicated storage."
+                raise ClickHouseClusterTopologyError(message)
+            selected = scope.usable(
+                objects,
+                f"{database}.{table}",
+                identity=(database, table),
+                coverage_intent="logical_shards",
+            )
+            scope.require_all(selected, "Replicated upsert preservation")
+
     def sql_preflight_statements(self, sqls: Any) -> None:
         """Validate every required DDL host before a batch's local or remote mutation."""
-        with backend_operation() as state:
-            session = self._get_session(state)
-            parsed = []
-            clusters: list[str] = []
-            for sql in sqls:
-                modeled = modeled_statement(session, sql, parse_one)
-                if modeled is None:
-                    continue
-                statement, special = modeled
-                parsed.append(statement)
-                clusters.extend(special[1] if special else _cluster_names(statement))
-                engine = (
-                    statement.find(exp.EngineProperty)
-                    if isinstance(statement, exp.Create)
-                    else None
-                )
-                function = engine.this if engine is not None else None
-                if isinstance(function, exp.Anonymous) and function.name.lower() == "distributed":
-                    cluster = _identifier_value(function.expressions[0])
-                    if not cluster:
-                        msg = "Cannot verify the Distributed routing cluster before creation."
-                        raise ClickHouseClusterTopologyError(msg)
-                    clusters.append(cluster)
-            configured = self._config.cluster_routing
-            if not clusters and configured is not None and not _LOCAL_SQL_EXECUTION.get():
-                clusters.append(configured.cluster)
-            clusters = list(dict.fromkeys(clusters))
-            destructive = [item for item in parsed if _destructive(item)]
-            for cluster in clusters:
-                scope = session.scope(cluster)
-                requires_full = any(
-                    not (target is not None and self._owned_private(session, target))
-                    for item in destructive
-                    for target in [_named_target(item, self._config.database)]
-                )
-                if session.policy == "stop" or requires_full:
-                    self._require_execution_hosts(session, scope, "Operation execution hosts")
-                for statement in destructive:
-                    self._preflight_destructive_tables(session, statement, cluster)
-            for statement in destructive:
-                self._check_destructive(session, _named_target(statement, self._config.database))
+        from .outage_preflight import preflight_statements  # noqa: PLC0415 -- client cycle.
+
+        preflight_statements(self, sqls)
 
     def query(self, sql: str, **kwargs: Any) -> Any:
         return self._run("query", sql, kwargs)
@@ -268,10 +250,9 @@ class OutageClient:
                 if not is_private:
                     state.live_submitted = True
                 return getattr(delegate, method)(table, data, column_names=columns, **kwargs)
-            except BaseException as exc:
+            except BaseException:
                 if state.live_submitted:
                     state.preserve_recovery = True
-                    exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
                 raise
             finally:
                 WRITING.reset(token)
@@ -284,8 +265,25 @@ class OutageClient:
             sql = apply_query_label(sql, current_backend_query_label())
             modeled = modeled_statement(session, sql, parse_one)
             if modeled is None:
-                return getattr(self._client, method)(sql, **kwargs)
+                from .coordinator_database import (  # noqa: PLC0415
+                    changes_current_database,
+                    invalidate_current_database,
+                )
+
+                namespace_change = changes_current_database(sql)
+                result = getattr(self._client, method)(sql, **kwargs)
+                if namespace_change:
+                    invalidate_current_database(self._client)
+                return result
             statement, special = modeled
+            from .coordinator_database import resolve_current_database  # noqa: PLC0415
+
+            if canonicalize_cluster_functions(
+                statement,
+                self._config.database,
+                database_resolver=lambda: resolve_current_database(self._client),
+            ):
+                sql = statement.sql(dialect=_RoutingClickHouse)
             return self._execute_statement(
                 method,
                 sql,
@@ -309,6 +307,7 @@ class OutageClient:
     ) -> Any:
         writing = isinstance(statement, exp.Insert)
         destructive = _destructive(statement) or special is not None
+        certified_partition = certified_partition_rebuild_alter(self, statement)
         token = WRITING.set(writing)
         key_token = INSERT_KEY.set(None)
         target = _named_target(statement, self._config.database)
@@ -320,7 +319,7 @@ class OutageClient:
             source = statement.args.get("expression")
             if isinstance(source, exp.Query) and (writing or isinstance(statement, exp.Create)):
                 source_token = WRITING.set(False)
-                source_local_token = _LOCAL_SQL_EXECUTION.set(False)
+                source_local_token = _LOCAL_SQL_EXECUTION.set(PRESERVE_SOURCE_SCOPE.get())
                 try:
                     source_routing = session.infer_routing(source)
                     explicit_sources = _cluster_names(source)
@@ -329,30 +328,41 @@ class OutageClient:
                     source_delegate = self._delegate(session, source_routing)
                     if isinstance(source_delegate, ClusterRoutingClient):
                         source = parse_one(
-                            source_delegate.route(source.sql(dialect="clickhouse")),
+                            source_delegate.route(
+                                source.sql(dialect=_RoutingClickHouse), upsert_connection=self
+                            ),
                             read=_RoutingClickHouse,
                         )
                         statement.set("expression", source)
-                        sql = statement.sql(dialect="clickhouse")
+                        sql = statement.sql(dialect=_RoutingClickHouse)
                 finally:
                     _LOCAL_SQL_EXECUTION.reset(source_local_token)
                     WRITING.reset(source_token)
             function_target = self._function_target(statement) if writing else None
+            function_intent = (
+                insert_coverage_intent(
+                    cast("exp.Expression", statement),
+                    automatic_routing=self._config.cluster_routing is not None,
+                )
+                if writing
+                else None
+            )
             if function_target is not None:
                 cluster, db, name, function_key = function_target
                 INSERT_KEY.set(function_key)
                 target = (db, name)
-                if self._config.cluster_routing is not None:
+                if self._config.cluster_routing is not None and not _LOCAL_SQL_EXECUTION.get():
                     replacement = exp.Table(this=exp.to_identifier(name), db=exp.to_identifier(db))
                     if isinstance(statement.this, exp.Schema):
                         statement.this.set("this", replacement)
                     else:
                         statement.set("this", replacement)
                     statement.set("is_function", value=False)
-                    sql = statement.sql(dialect="clickhouse")
+                    sql = statement.sql(dialect=_RoutingClickHouse)
                 routing = ChClusterRouting(cluster, sharding_key=function_key)
             else:
                 routing = None if _LOCAL_SQL_EXECUTION.get() else session.infer_routing(statement)
+            routing, target = upsert_write_scope(self, statement, routing, target)
             mutation = writing or destructive or isinstance(statement, exp.Create)
             clusters = (
                 special[1]
@@ -367,12 +377,25 @@ class OutageClient:
                 clusters = [routing.cluster]
             for cluster in clusters:
                 scope = session.scope(cluster)
-                if (isinstance(statement, exp.Create) or destructive) and session.policy == "stop":
+                if isinstance(statement, exp.Create) and session.policy == "stop":
+                    if is_facade_create(statement):
+                        scope.require_available(scope.reachable, "DDL preflight")
+                    else:
+                        scope.require_all(scope.reachable, "Physical DDL preflight")
+                elif destructive and session.policy == "stop":
                     scope.require_all(scope.reachable, "DDL preflight")
             if (
                 isinstance(statement, exp.Create)
                 and clusters
-                and session.policy == "healthy_shards"
+                and (
+                    session.policy == "healthy_shards"
+                    or (
+                        is_facade_create(statement)
+                        and session.scope(clusters[0]).availability_optional
+                        and len(session.scope(clusters[0]).reachable)
+                        != len(session.scope(clusters[0]).hosts)
+                    )
+                )
             ):
                 statement, populate = self._expand_create(statement)
                 created = create_on_healthy_hosts(session.scope(clusters[0]), statement)
@@ -382,12 +405,10 @@ class OutageClient:
                     table_sql = exp.Table(
                         this=exp.to_identifier(name, quoted=True),
                         db=exp.to_identifier(db, quoted=True),
-                    ).sql(dialect="clickhouse")
+                    ).sql(dialect=_RoutingClickHouse)
                     self.command(f"INSERT INTO {table_sql} {populate}")
                 return None
             if isinstance(statement, exp.Create) and target is not None:
-                # Suppress the toolkit's local fallback after a healthy-only
-                # cluster create; it must not expand the selected DDL scope.
                 key = ("ch_create", self._config.connection_key)
                 if session.policy == "healthy_shards" and any(
                     resource[:2] == key and resource[-1] == f"{target[0]}.{target[1]}"
@@ -396,13 +417,17 @@ class OutageClient:
                 ):
                     return None
             if destructive:
+                controlled_cutover = preflight_cutover(self, statement, clusters)
                 configured = self._config.cluster_routing
                 preflight_clusters = clusters or (
                     [configured.cluster]
                     if configured is not None
-                    and not state.resources.get(
-                        ("ch_owned_local", self._config.connection_key, target)
+                    and not controlled_cutover
+                    and not (
+                        _LOCAL_SQL_EXECUTION.get()
+                        and verified_local_partition_alter(self, statement)
                     )
+                    and not (target is not None and owned_local(session, target))
                     else []
                 )
                 for cluster in preflight_clusters:
@@ -412,7 +437,7 @@ class OutageClient:
                         self._require_execution_hosts(session, scope, "Destructive execution hosts")
                 for cluster in preflight_clusters:
                     self._preflight_destructive_tables(session, statement, cluster)
-                self._check_destructive(session, target)
+                self._check_destructive(session, target, certified_partition=certified_partition)
                 if (
                     session.policy == "healthy_shards"
                     and clusters
@@ -424,7 +449,13 @@ class OutageClient:
                     for cluster in clusters:
                         scope = session.scope(cluster)
                         for host in scope.reachable:
-                            _execute_local(scope, host, local_statement.sql(dialect="clickhouse"))
+                            _execute_local(
+                                scope, host, local_statement.sql(dialect=_RoutingClickHouse)
+                            )
+                            if isinstance(statement, exp.Drop):
+                                retire_host_drop(
+                                    session, target, scope.observed_instances[host.position]
+                                )
                         if isinstance(statement, exp.Drop):
                             state.resources.pop(
                                 (
@@ -451,16 +482,22 @@ class OutageClient:
                 raise ClickHouseClusterTopologyError(msg)  # noqa: TRY301 - preserve relay artifacts
             delegate = self._delegate(session, routing)
             execution_sql = (
-                delegate.route(sql)
+                delegate.route(sql, upsert_connection=self)
                 if isinstance(delegate, ClusterRoutingClient) and special is None
                 else sql
             )
             execution_sql = self._metadata_scope_sql(session, statement, execution_sql)
             if writing:
                 if routing is not None and target is not None:
-                    session.resolve(cluster=routing.cluster, database=target[0], table=target[1])
+                    session.resolve(
+                        cluster=routing.cluster,
+                        database=target[0],
+                        table=target[1],
+                        coverage_intent=function_intent,
+                    )
                 if function_target is not None:
                     session.insert_key = function_target[3]
+                apply_upsert_write_key(self, session, target)
                 settings = session.insertion_settings()
                 self._settings(session, kwargs, settings)
                 self._check_inline_settings(statement, settings)
@@ -477,7 +514,9 @@ class OutageClient:
                     if item["alias"] == self._config.connection_key
                 )
                 settings = {
-                    "skip_unavailable_shards": int(session.policy == "healthy_shards" and partial)
+                    "skip_unavailable_shards": int(
+                        LOGICAL_STATISTICS.get() or (session.policy == "healthy_shards" and partial)
+                    )
                 }
             if (destructive or isinstance(statement, exp.Create)) and clusters:
                 settings.update(
@@ -489,8 +528,6 @@ class OutageClient:
             self._settings(session, kwargs, settings)
             self._check_inline_settings(statement, settings)
             if not writing and not destructive and clusters and routing is None:
-                # Readiness probes deliberately bypass SQL rewriting, but
-                # still use policy-controlled availability settings.
                 for cluster in clusters:
                     scope = session.scope(cluster)
                     if session.policy == "stop":
@@ -500,13 +537,26 @@ class OutageClient:
             state.require_source_snapshot(self._config.connection_key)
             if (writing or destructive or _creates_data(statement)) and not private:
                 state.live_submitted = True
+            drop_identity = None
+            if isinstance(statement, exp.Drop) and private and not clusters:
+                from .drop_layout import coordinator_identity  # noqa: PLC0415 - native ACK cycle.
+
+                drop_identity = coordinator_identity(self._client)
             submitted = True
-            return getattr(self._client, method)(execution_sql, **kwargs)
+            mark_cutover_submitted(self, statement, clusters)
+            result = getattr(self._client, method)(execution_sql, **kwargs)
         except BaseException as exc:
             if state.live_submitted:
                 state.preserve_recovery = True
-                exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
-                if destructive and submitted and isinstance(exc, Exception):
+                structural = (
+                    destructive
+                    and not isinstance(statement, (exp.Delete, exp.Update))
+                    and not certified_partition
+                )
+                if structural and submitted:
+                    state.structural_replay_blocked = True
+                    exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
+                if structural and submitted and isinstance(exc, Exception):
                     msg = (
                         "ClickHouse destructive DDL may be partially applied; "
                         "no replay or blind rollback "
@@ -514,33 +564,17 @@ class OutageClient:
                     )
                     raise AmbiguousSqlReplaceError(msg) from exc
             raise
+        else:
+            if drop_identity is not None and target is not None:
+                retire_host_drop(session, target, drop_identity)
+            return result
         finally:
             WRITING.reset(token)
             INSERT_KEY.reset(key_token)
 
     @staticmethod
     def _function_target(statement: exp.Expr) -> tuple[str, str, str, str] | None:
-        target = statement.this.this if isinstance(statement.this, exp.Schema) else statement.this
-        function = target.this if isinstance(target, exp.Table) else target
-        if not isinstance(function, exp.Anonymous):
-            return None
-        arguments = function.expressions
-        if (
-            function.name.lower() not in {"cluster", "clusterallreplicas"}
-            or len(arguments) < _CLUSTER_REQUIRED_ARGS
-        ):
-            msg = "Outage policies require a named or cluster-function insertion target."
-            raise ClickHouseClusterTopologyError(msg)
-        values = [_identifier_value(item) for item in arguments[:_CLUSTER_REQUIRED_ARGS]]
-        if any(value is None for value in values):
-            msg = "Cluster insertion arguments must be static identifiers."
-            raise ClickHouseClusterTopologyError(msg)
-        key = (
-            arguments[3].sql(dialect="clickhouse")
-            if len(arguments) > _CLUSTER_REQUIRED_ARGS
-            else "rand()"
-        )
-        return cast("str", values[0]), cast("str", values[1]), cast("str", values[2]), key
+        return function_insert_target(statement)
 
     def _expand_create(self, statement: exp.Create) -> tuple[exp.Create, str | None]:
         query = statement.args.get("expression")
@@ -582,7 +616,7 @@ class OutageClient:
             columns.append(
                 exp.ColumnDef(
                     this=exp.to_identifier(name, quoted=True),
-                    kind=exp.DataType.build(type_name, dialect="clickhouse"),
+                    kind=exp.DataType.build(type_name, dialect=_RoutingClickHouse),
                 )
             )
         converted = statement.copy()
@@ -600,7 +634,7 @@ class OutageClient:
                     if not isinstance(item, exp.EmptyProperty)
                 ],
             )
-        return converted, None if empty else query.sql(dialect="clickhouse")
+        return converted, None if empty else query.sql(dialect=_RoutingClickHouse)
 
     def _relay_insert(self, statement: exp.Insert, state: Any) -> None:
         """Keep partial source reads separate from loss-intolerant destination delivery."""
@@ -608,7 +642,7 @@ class OutageClient:
         if not isinstance(target, exp.Table) or not isinstance(target.this, exp.Identifier):
             msg = "Ad hoc INSERT SELECT requires a named destination."
             raise ClickHouseClusterTopologyError(msg)
-        table_sql = target.sql(dialect="clickhouse")
+        table_sql = target.sql(dialect=_RoutingClickHouse)
         if isinstance(statement.this, exp.Schema):
             columns = [item.name for item in statement.this.expressions]
         else:
@@ -628,7 +662,9 @@ class OutageClient:
         try:
             writer = OutageClient(delivery_connection, self._config)
             writer._connection_policy = self._get_session(state).policy
-            with self.query_df_stream(statement.expression.sql(dialect="clickhouse")) as frames:
+            with self.query_df_stream(
+                statement.expression.sql(dialect=_RoutingClickHouse)
+            ) as frames:
                 for frame in frames:
                     if len(frame.columns) != len(columns):
                         msg = "INSERT SELECT column counts do not match."
@@ -640,7 +676,6 @@ class OutageClient:
             error = exc
             if state.live_submitted:
                 state.preserve_recovery = True
-                exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
             raise
         finally:
             cleanup_preserving_error(delivery_connection.close, error=error, phase="close_delivery")
@@ -684,7 +719,7 @@ class OutageClient:
                     parsed = parse_one(objects[0].create_sql, read=_RoutingClickHouse)
                     actual = {
                         column.name: _normalize_ch_type_for_comparison(
-                            column.args["kind"].sql(dialect="clickhouse")
+                            column.args["kind"].sql(dialect=_RoutingClickHouse)
                         )
                         for column in parsed.this.expressions
                         if isinstance(column, exp.ColumnDef)
@@ -698,22 +733,19 @@ class OutageClient:
             return True
 
     def _register_owned(self, session: OutageSession, statement: exp.Create, *, new: bool) -> None:
-        # IF NOT EXISTS on a pre-existing table never establishes cleanup ownership.
-        target = _named_target(statement, self._config.database)
-        if new and target is not None and private_table(target[1]):
-            session.state.resources[("ch_owned", self._config.connection_key, target)] = True
+        # Actual host ACK capture publishes generation-bound receipts separately.
+        del session, statement, new
 
     def _owned_private(self, session: OutageSession, target: tuple[str, str]) -> bool:
-        return private_table(target[1]) and bool(
-            session.state.resources.get(("ch_owned", self._config.connection_key, target))
-        )
+        return owned_private(session, target)
 
     def _require_execution_hosts(self, session: OutageSession, scope: Any, reason: str) -> None:
+        status = scope.record(scope.reachable, coverage_intent="execution_hosts")
         if session.policy == "healthy_shards" and len(scope.reachable) != len(scope.hosts):
             warn_degraded(
                 session.state,
                 self._config,
-                scope.record(scope.reachable),
+                status,
                 "blocked destructive operation",
             )
         scope.require_all(scope.reachable, reason)
@@ -721,6 +753,8 @@ class OutageClient:
     def _preflight_destructive_tables(
         self, session: OutageSession, statement: exp.Expr, cluster: str
     ) -> None:
+        if preflight_cutover(self, statement, [cluster]):
+            return
         scope = session.scope(cluster)
         for table in statement.find_all(exp.Table):
             if not isinstance(table.this, exp.Identifier):
@@ -749,8 +783,15 @@ class OutageClient:
                 finally:
                     WRITING.reset(token)
 
-    def _check_destructive(self, session: OutageSession, target: tuple[str, str] | None) -> None:
-        if session.state.preserve_recovery:
+    def _check_destructive(
+        self,
+        session: OutageSession,
+        target: tuple[str, str] | None,
+        *,
+        certified_partition: bool = False,
+    ) -> None:
+        del certified_partition
+        if session.state.structural_replay_blocked:
             msg = "Recovery artifacts must be retained after an uncertain mutation."
             raise ClickHouseClusterUnavailableError(msg)
         owned = target is not None and self._owned_private(session, target)
@@ -814,80 +855,12 @@ class OutageClient:
                 msg = f"SQL setting {name!r} contradicts the outage policy."
                 raise ClickHouseClusterTopologyError(msg)
 
-    def _metadata_scope_sql(self, session: OutageSession, statement: exp.Expr, sql: str) -> str:  # noqa: C901, PLR0912 - metadata statements share one selected scope
-        if not _LOCAL_SQL_EXECUTION.get():
-            return sql
-        routing = self._config.cluster_routing
-        default = routing.cluster if routing is not None else None
-        target = _named_target(statement, self._config.database)
-        if (
-            default
-            and isinstance(statement, exp.Describe)
-            and target
-            and not session.state.resources.get(
-                ("ch_owned_local", self._config.connection_key, target)
-            )
-        ):
-            route = session.resolve(cluster=default, database=target[0], table=target[1])
-            return (
-                f"DESCRIBE TABLE cluster({sql_string_literal(session.scope(default).cluster)}, "
-                f"{sql_string_literal(route.database)}, {sql_string_literal(route.table)})"
-            )
-        if not isinstance(statement, exp.Select):
-            return sql
-        for table in statement.find_all(exp.Table):
-            if (
-                table.db == "system"
-                and table.name == "clusters"
-                and session.policy == "healthy_shards"
-            ):
-                where = statement.args.get("where")
-                if where is None:
-                    continue
-                for equality in where.find_all(exp.EQ):
-                    if equality.left.name == "cluster" and isinstance(equality.right, exp.Literal):
-                        scope = session.scope(str(equality.right.this))
-                        positions = ", ".join(
-                            f"({host.shard}, {host.replica})" for host in scope.reachable
-                        )
-                        statement.where(
-                            f"(shard_num, replica_num) IN ({positions})", append=True, copy=False
-                        )
-                        return statement.sql(dialect="clickhouse")
-            if table.db == "system" and table.name in {"tables", "columns"} and default:
-                where = statement.args.get("where")
-                if where is None:
-                    continue
-                values = {
-                    equality.left.name: str(equality.right.this)
-                    for equality in where.find_all(exp.EQ)
-                    if isinstance(equality.right, exp.Literal)
-                }
-                name = values.get("table") or values.get("name")
-                database = values.get("database") or self._config.database
-                if not name or not database:
-                    continue
-                if session.state.resources.get(
-                    ("ch_owned_local", self._config.connection_key, (database, name))
-                ):
-                    continue
-                scope = session.scope(default)
-                objects = scope.objects(database, name)
-                if not objects:
-                    continue
-                session.resolve(cluster=default, database=database, table=name)
-                replacement = parse_one(
-                    f"SELECT * FROM cluster({sql_string_literal(scope.cluster)}, "  # noqa: S608 - escaped literals or parsed SQL identifiers
-                    f"system, {table.name})",
-                    read=_RoutingClickHouse,
-                ).find(exp.Table)
-                if replacement is None:
-                    msg = "Cannot resolve metadata table function."
-                    raise ClickHouseClusterTopologyError(msg)
-                table.replace(replacement.copy())
-                statement.where(f"_shard_num = {objects[0].host.shard}", append=True, copy=False)
-                return statement.sql(dialect="clickhouse")
-        return sql
+    def _metadata_scope_sql(self, session: OutageSession, statement: exp.Expr, sql: str) -> str:
+        from .outage_metadata import metadata_scope_sql  # noqa: PLC0415
+
+        return metadata_scope_sql(
+            self._config, session, statement, sql, _named_target(statement, self._config.database)
+        )
 
     def close(self) -> None:
         self._client.close()

@@ -5,7 +5,11 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.client_validation import supports_client_validation
+from analytics_toolkit.sql.core.type_resolution import native_candidates
 from analytics_toolkit.sql.ddl.api import _build_create_table_sqls, _gp_partition_plan_option
+from analytics_toolkit.sql.ddl.drop_planning import apply_pending_creation_drop
+from analytics_toolkit.sql.dml.query_native_assignment import requires_query_assignment
 from analytics_toolkit.sql.execution.plan_steps import (
     add_create_table_placeholder_step,
     add_create_table_steps,
@@ -41,6 +45,7 @@ def _build_create_table_from_sql_plan(  # noqa: PLR0913
     query_label: str | None,
     ddl_properties: dict[str, Any] | None,
     ch_creation_policy: Any,
+    ch_replace_table: bool = False,
 ) -> SqlPlan:
     plan = SqlPlan(
         operation="create_table_from_sql",
@@ -51,7 +56,25 @@ def _build_create_table_from_sql_plan(  # noqa: PLR0913
         target_table=target_table,
         options={
             "insert_data": insert_data,
+            "pending_input_validation": insert_data,
+            "client_write_validation_pending": (
+                insert_data and supports_client_validation(target_backend)
+            ),
+            "client_write_validation_condition": "python_value_replay",
+            "native_assignment_validation_pending": (
+                insert_data
+                and table_schema is not None
+                and requires_query_assignment(table_schema, target_backend)
+            ),
+            "type_resolution_pending": insert_data and table_schema is None,
+            "type_resolution": {
+                "status": "pending" if insert_data else "metadata_only",
+                "native_candidates": native_candidates(target_backend),
+                "dry_run_profiles_input": False,
+            },
+            "pending_source_overlap_check": insert_data and drop_target_if_exists,
             "drop_target_if_exists": drop_target_if_exists,
+            "ch_replace_table": ch_replace_table,
             "table_schema": table_schema,
             "gp_distributed_by_key": gp_distributed_by_key,
             "gp_partitions": _gp_partition_plan_option(gp_partitions),
@@ -87,6 +110,7 @@ def _build_create_table_from_sql_plan(  # noqa: PLR0913
             backend=target_backend,
             table_name=target_table,
             query_label=query_label,
+            replace_table=ch_replace_table,
         )
     else:
         create_kwargs = get_backend_adapter(
@@ -103,6 +127,8 @@ def _build_create_table_from_sql_plan(  # noqa: PLR0913
             drop_target_if_exists=drop_target_if_exists,
             target_exists_before_drop=False,
         )
+        create_kwargs["ch_replace_table"] = ch_replace_table
+        create_kwargs["if_not_exists"] = False
         add_create_table_steps(
             plan,
             _build_create_table_sqls(
@@ -129,4 +155,9 @@ def _build_create_table_from_sql_plan(  # noqa: PLR0913
             phase="insert_data",
             query_label=query_label,
         )
+    apply_pending_creation_drop(
+        plan,
+        get_backend_adapter(target_backend),
+        requested=drop_target_if_exists or ch_replace_table,
+    )
     return plan

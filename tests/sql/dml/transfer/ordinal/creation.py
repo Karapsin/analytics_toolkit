@@ -13,14 +13,16 @@ from tests.sql._support.transfer_ordinal import (
 
 
 def test_stage_creation_race_reallocates_and_hashed_prefix_is_stable(monkeypatch: Any) -> None:
-    existence = iter([False, True, False])
+    existence = iter([False, False])
     creates = 0
 
     def create(*_args: Any, **_kwargs: Any) -> None:
         nonlocal creates
         creates += 1
         if creates == 1:
-            raise RuntimeError("duplicate table")
+            error = RuntimeError("duplicate table")
+            error.error_name = "TABLE_ALREADY_EXISTS"
+            raise error
 
     monkeypatch.setattr(load_stage, "table_exists", lambda *_args, **_kwargs: next(existence))
     monkeypatch.setattr(load_stage, "_create_sql_table_with_connection", create)
@@ -86,7 +88,8 @@ def test_worker_stage_creation_drops_ambiguous_candidate_after_success(
         state,
         worker_count=1,
     ) == ["stage.worker_0"]
-    assert dropped == ["stage.ambiguous"]
+    assert dropped == []
+    assert "stage.ambiguous" in state.stage_table_candidates
     assert state.stage_table == "stage.worker_0"
     assert state.stage_tables == ["stage.worker_0"]
 
@@ -95,7 +98,7 @@ def test_worker_stage_creation_drops_ambiguous_candidate_after_success(
     ("ambiguous_candidate", "expected_registered"),
     [
         (None, ["stage.worker_0"]),
-        ("stage.ambiguous_worker_1", ["stage.worker_0", "stage.ambiguous_worker_1"]),
+        ("stage.ambiguous_worker_1", ["stage.worker_0"]),
     ],
 )
 def test_worker_stage_creation_registers_partial_and_ambiguous_candidates(

@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping
 
+from analytics_toolkit.sql.dml.table.upsert_checkpoint import UpsertCheckpoint
+
 if TYPE_CHECKING:
+    import pandas as pd
+
+    from analytics_toolkit.sql.backends.gp.native_assignment import NativeAssignmentCertificate
+    from analytics_toolkit.sql.ddl.creation_resources import CreatedTableResource
     from analytics_toolkit.sql.dml.empty_source import EmptySourcePolicy
 
 
@@ -14,6 +20,7 @@ class LoadOptions:
     destination_table: str
     destination_hash: str | None = None
     table_schema: dict[str, str] | None = None
+    destination_context: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
     append: bool = False
     write_mode: str = "replace"
     empty_source_policy: EmptySourcePolicy | None = None
@@ -56,3 +63,23 @@ class LoadState:
     final_upsert_stage_table: str | None = None
     stage_external_location: str | None = None
     target_column_types: dict[str, str] | None = None
+    upsert_checkpoint: UpsertCheckpoint = field(default_factory=UpsertCheckpoint)
+    owned_stage_resources: list[tuple[str, str, Any]] = field(default_factory=list)
+    stage_candidates: list[str] = field(default_factory=list)
+    prepared_json_dataframe: pd.DataFrame | None = field(default=None, repr=False, compare=False)
+    client_validated_dataframe: pd.DataFrame | None = field(default=None, repr=False, compare=False)
+    client_type_resolutions: list[dict[str, Any]] = field(default_factory=list, repr=False)
+    native_assignment_checkpoint: NativeAssignmentCertificate | None = field(
+        default=None, repr=False
+    )
+    native_assignment_target_prepared: bool = False
+    native_assignment_source_checkpoint: NativeAssignmentCertificate | None = field(
+        default=None, repr=False
+    )
+    owned_stage_scoped_resources: list[CreatedTableResource] = field(default_factory=list)
+    owned_target_scoped_resources: list[CreatedTableResource] = field(default_factory=list)
+    owned_target_resources: list[str] = field(default_factory=list)
+    uncertain_stage_resources: list[tuple[str, str | None]] = field(default_factory=list)
+    retained_resource_messages: list[str] = field(default_factory=list)
+    scoped_stage_ownership_requested: bool = False
+    scoped_target_ownership_requested: bool = False

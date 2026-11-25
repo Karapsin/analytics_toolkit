@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from analytics_toolkit.general import time_print
+
 from ....backends import get_backend_adapter
 from ....backends.transfer_stage import _TRANSFER_STAGE_SUFFIX_PATTERN
 from ....execution.query_timing import run_timed_query
-from ...load.stage import cleanup_stage_table
+from ...load.stage import cleanup_stage_table  # noqa: F401 -- retain the historical internal import.
 from ..runtime.models import TransferOptions
 from .stage_identity import TransferInternalColumns
 
@@ -34,7 +36,7 @@ def cleanup_superseded_transfer_stages(
     internal_columns: TransferInternalColumns,
     include_current_transfer_id: bool = False,
 ) -> list[str]:
-    """Clean transfer stages identified by the reserved collision-safe name."""
+    """Report matching old candidates; reserved names cannot establish ownership."""
     del internal_columns
     if staging_schema is None or options.destination_hash is None:
         return []
@@ -90,21 +92,8 @@ def _drop_superseded_stage(
             table_name,
         )
     )
-    cleanup_stage_table(
-        context.backend,
-        context.connection,
-        qualified,
-        query_label=options.query_label,
-        ch_creation_policy=(
-            options.staging_ch_policy
-            if context.backend == options.to_db_backend
-            and context.connection_key == options.to_db_key
-            else (
-                getattr(options, "source_staging_ch_policy", None)
-                if context.backend == options.from_db_backend
-                and context.connection_key == options.from_db_key
-                else None
-            )
-        ),
+    time_print(
+        f"Retaining superseded transfer stage candidate {qualified}; "
+        "no acknowledged creation identity establishes ownership."
     )
-    return qualified
+    return None

@@ -58,6 +58,7 @@ def _templates(connection: Any, engine: Any) -> tuple[str, str]:
                 connection,
                 "SELECT name, value FROM system.server_settings "
                 "WHERE name IN ('default_replica_path', 'default_replica_name')",
+                text_columns=(0, 1),
             )
         )
         return str(defaults["default_replica_path"]), str(defaults["default_replica_name"])
@@ -98,7 +99,7 @@ def validate_replica_creation(
             macros = {
                 str(name): str(value)
                 for name, value in query_rows(
-                    connection, "SELECT macro, substitution FROM system.macros"
+                    connection, "SELECT macro, substitution FROM system.macros", text_columns=(0, 1)
                 )
             }
         # ClickHouse lets explicit server macros override database/table built-ins.
@@ -130,6 +131,7 @@ def validate_replica_creation(
             f"WHERE database = {sql_string_literal(database)} "
             f"AND table = {sql_string_literal(table)}",
             settings=scope.probe_settings,
+            text_columns=(1, 2),
         )
         observed = {int(row[0]): (str(row[1]), str(row[2])) for row in rows}
         if any(

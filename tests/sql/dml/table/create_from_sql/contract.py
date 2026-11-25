@@ -1,17 +1,35 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import engine_name
+from analytics_toolkit.sql.backends.models import SourceColumn
+
 from tests.sql._support.create_from_sql import (
     SOURCE_DESCRIPTION,
     FakeClickHouseClient,
-    FakeDbapiConnection,
     SimpleNamespace,
     _candidate_create_options,
+    acknowledged_create,
     ch_fast_path_module,
     create_module,
     importlib,
+    observe_selected_query_target,
     pytest,
     sql_module,
 )
+from tests.sql._support.create_from_sql_protocol import (
+    CatalogClickHouseClient,
+    install_fake_type_registration,
+)
+from tests.sql._support.create_from_sql_protocol import (
+    CatalogConnection as FakeDbapiConnection,
+)
+
+
+@pytest.fixture(autouse=True)
+def _fake_native_driver_boundary(monkeypatch):
+    install_fake_type_registration(monkeypatch)
 
 
 def test_clickhouse_fast_path_applies_only_to_same_alias(
@@ -127,7 +145,7 @@ def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
     monkeypatch.setattr(
         create_module,
         "inspect_source_query_schema",
-        lambda *_a, **_k: [SimpleNamespace(name="id")],
+        lambda *_a, **_k: [SourceColumn("id", "BIGINT")],
     )
     monkeypatch.setattr(
         create_module,
@@ -135,7 +153,11 @@ def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
         lambda *_a, **_k: {"id": "BIGINT"},
     )
     monkeypatch.setattr(create_module, "table_exists", lambda *_a, **_k: False)
-    monkeypatch.setattr(create_module, "_create_sql_table_with_connection", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        create_module,
+        "_create_sql_table_with_connection",
+        acknowledged_create(lambda *_a, **_k: None),
+    )
     monkeypatch.setattr(create_module, "insert_from_query", lambda *_a, **_k: 3)
 
     no_insert = create_module._execute_generic_create_table_from_sql_attempt(
@@ -162,8 +184,8 @@ def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
     )
     delegated = create_module._execute_generic_create_table_from_sql_attempt(
         options=_candidate_create_options(
-            source_key="gp_source",
-            target_key="trino_target",
+            source_key="gp",
+            target_key="trino",
             target_backend="trino",
             table_schema={"id": "BIGINT"},
             query_label="candidate-9",
@@ -177,6 +199,7 @@ def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
     assert transfer_calls[0]["query_label"] == "candidate-9"
     assert transfer_calls[0]["table_schema"] == {"id": "BIGINT"}
     assert transfer_calls[0]["return_metadata"] is True
+    assert transfer_calls[0]["ch_only_shard"] is True
     assert all(connection.close_calls == 1 for connection in connections)
 
 
@@ -195,6 +218,8 @@ def test_create_table_from_sql_inserts_by_default(monkeypatch) -> None:
         "gp",
         "sandbox.target_table",
         "select id, amount from source_table",
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 4
@@ -209,8 +234,9 @@ def test_create_table_from_sql_is_not_public() -> None:
 def test_create_table_from_sql_passes_only_shard_to_cross_backend_transfer(
     monkeypatch,
 ) -> None:
-    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
-    target = FakeClickHouseClient()
+    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION, insert_rowcount=5)
+    source.source_rows = [(index, Decimal("1.25")) for index in range(5)]
+    target = CatalogClickHouseClient()
     transfer_calls: list[dict[str, object]] = []
 
     def fake_get_sql_connection(connection_key: str) -> object:
@@ -235,30 +261,39 @@ def test_create_table_from_sql_passes_only_shard_to_cross_backend_transfer(
         insert_data=True,
         ch_only_shard=True,
         order_by=["id"],
+        ch_ddl_ready_timeout_seconds=0.01,
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 5
-    assert transfer_calls[0]["ch_only_shard"] is True
-    assert any(
-        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events\n")
-        and "ENGINE = ReplicatedMergeTree" in command
-        for command in target.commands
+    # Complete profiling now replays its certified input directly; the
+    # delegated branch above separately retains the only-shard forwarding ABI.
+    assert not transfer_calls
+    assert any(command.startswith("CREATE TABLE analytics.events") for command in target.commands)
+    assert engine_name(target.state.host_tables[target.host]["analytics.events"].create) == (
+        "ReplicatedMergeTree"
     )
     assert not any(
-        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
-        for command in target.commands
+        command.startswith("CREATE TABLE analytics.events_shard") for command in target.commands
     )
     assert not any("ENGINE = Distributed(" in command for command in target.commands)
+    assert target.state.rows(target.host, "analytics.events") == source.source_rows
+    assert source.source_rows == [(index, Decimal("1.25")) for index in range(5)]
+    assert source.close_calls == target.close_calls == 1
 
 
-def test_create_table_from_sql_passes_table_schema_to_cross_backend_transfer(
+def test_create_table_from_sql_profiles_explicit_cross_backend_schema_before_creation(
     monkeypatch,
 ) -> None:
-    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
-    target = FakeClickHouseClient()
+    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION, insert_rowcount=5)
+    source.source_rows = [(index, Decimal("1.25")) for index in range(5)]
+    target = CatalogClickHouseClient()
     transfer_calls: list[dict[str, object]] = []
+    opened: list[str] = []
 
     def fake_get_sql_connection(connection_key: str) -> object:
+        opened.append(connection_key)
         if connection_key == "gp":
             return source
         if connection_key == "ch":
@@ -271,6 +306,7 @@ def test_create_table_from_sql_passes_table_schema_to_cross_backend_transfer(
 
     monkeypatch.setattr(create_module, "get_sql_connection", fake_get_sql_connection)
     monkeypatch.setattr(create_module, "transfer_table", fake_transfer_table)
+    observe_selected_query_target(monkeypatch, source, target)
 
     inserted_rows = create_module.create_table_from_sql(
         "gp",
@@ -279,19 +315,30 @@ def test_create_table_from_sql_passes_table_schema_to_cross_backend_transfer(
         table_db="ch",
         insert_data=True,
         table_schema={"id": "String", "amount": "Float64"},
+        ch_ddl_ready_timeout_seconds=0.01,
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 5
-    assert transfer_calls[0]["table_schema"] == {
+    assert opened == ["gp", "ch"]
+    assert source.close_calls == target.close_calls == 1
+    assert not transfer_calls
+    assert target.data_inserts == [
+        (
+            "analytics.events",
+            ["id", "amount"],
+            [(str(index).encode("utf-8"), 1.25) for index in range(5)],
+        )
+    ]
+    assert source.source_rows == [(index, Decimal("1.25")) for index in range(5)]
+    assert any(
+        command.startswith("CREATE TABLE analytics.events_shard") for command in target.commands
+    )
+    assert target.state.host_tables[target.state.remote]["analytics.events_shard"].schema == {
         "id": "String",
         "amount": "Float64",
     }
-    assert any(
-        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
-        and "`id` String" in command
-        and "`amount` Float64" in command
-        for command in target.commands
-    )
 
 
 def test_create_table_from_sql_same_clickhouse_delegates_to_adapter_fast_path(
@@ -327,6 +374,13 @@ def test_create_table_from_sql_same_clickhouse_delegates_to_adapter_fast_path(
 
     assert result == "delegated"
     assert probe_connection.close_calls == 1
+    policy = calls[0].pop("ch_creation_policy")
+    assert calls[0].pop("ch_replace_table") is False
+    resolution = calls[0].pop("input_resolution")
+    assert resolution["retry_cnt"] == 5
+    assert resolution["transfer_input_resolution"]["configuration_digest"]
+    assert policy.create_distributed_pair is True
+    assert policy.shard_on_cluster == "{cluster}"
     assert calls == [
         {
             "source_backend": "ch",
@@ -371,6 +425,8 @@ def test_create_table_from_sql_table_schema_overrides_source_types(
         "select id, amount from source_table",
         insert_data=True,
         table_schema={"id": "TEXT", "amount": "DOUBLE PRECISION"},
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 3
@@ -382,9 +438,7 @@ def test_create_table_from_sql_table_schema_overrides_source_types(
     )
     assert connection.executed[-1] == (
         'INSERT INTO sandbox.target_table ("id", "amount") '
-        'SELECT CAST("id" AS TEXT) AS "id", '
-        'CAST("amount" AS DOUBLE PRECISION) AS "amount" '
-        "FROM (select id, amount from source_table) AS source_query"
+        "VALUES (NULL,NULL),(NULL,NULL),(NULL,NULL)"
     )
 
 
@@ -406,13 +460,15 @@ def test_insert_data_same_backend_emits_typed_insert_and_returns_rowcount(
         "sandbox.target_table",
         "select id, amount from source_table",
         insert_data=True,
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 7
     assert connection.executed[-1] == (
         'INSERT INTO sandbox.target_table ("id", "amount") '
-        'SELECT CAST("id" AS INTEGER) AS "id", '
-        'CAST("amount" AS NUMERIC(12, 2)) AS "amount" '
+        'SELECT CAST("id" AS integer) AS "id", '
+        'CAST("amount" AS numeric(12,2)) AS "amount" '
         "FROM (select id, amount from source_table) AS source_query"
     )
 
@@ -437,6 +493,8 @@ def test_insert_data_same_trino_preserves_array_types(monkeypatch) -> None:
         "iceberg.sandbox.target_table",
         "select campaign_codes, po_bonus_pk, pers_offers_pk from source_table",
         insert_data=True,
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 1

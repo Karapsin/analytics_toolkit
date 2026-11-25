@@ -19,7 +19,7 @@ execute_create(db_key: 'str', table_name: 'str | list[str]', query: 'str | list[
 - `concurrency` - requested workers for list input; defaults to `1` and has no effect on string input
 - `soft_concurrency_cap` - optional lower ceiling on requested list workers
 - `hard_concurrency_cap` - safety ceiling for effective list workers; defaults to `5` and rejects higher effective concurrency
-- `drop_if_exists` - whether to drop the target before setup and creation
+- `drop_if_exists` - whether to drop the target before creation
 - `if_not_exists` - whether to skip the whole operation when the target already exists
 - `partition_by` - partitioning columns or expression passed to regular target DDL defaults
 - `order_by` - ordering or sorting columns or expression passed to regular target DDL defaults
@@ -75,6 +75,20 @@ The default uses plain `CREATE TABLE` and fails if the target exists.
 `drop_if_exists=True` replaces it. `if_not_exists=True` checks the target before
 setup and skips the whole operation when it exists; the two flags are mutually
 exclusive.
+
+For ClickHouse, the skip check uses the selected facade or plain physical
+placement, including a remote-only target, before any setup statement runs.
+Existing coordinator targets remain recognized when the requested creation
+placement differs. Ordinary existence checks respect the configured
+`stop`/`healthy_shards` policy; destructive replacement retains its full-scope
+verification.
+
+ClickHouse replacement verifies the existing table's actual layout before
+removing it. Facade and storage drops use their separately verified scopes;
+same-named resources elsewhere are retained. Desired creation policy controls
+the new table and does not establish ownership of existing companions.
+Offline plans leave existing-resource ownership and drop scopes pending rather
+than presenting guessed destructive SQL as executable.
 
 Greenplum partition options trigger schema inspection followed by a normal
 partitioned create and positional insert. ClickHouse distributed-pair defaults

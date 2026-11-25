@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
 
+from analytics_toolkit.sql.backends.stage_ownership import single_resource_policy
+
 from ...._log_context import sql_log_context
 from ....backends import get_backend_adapter
 from ....backends.transfer_stage import collision_stage_suffix
@@ -17,8 +19,12 @@ from ....execution.retry_cleanup import cleanup_preserving_error, mark_sql_error
 from ...load.load_sql_table import insert_rows_batch
 from ...load.stage import build_stage_table_name, cleanup_stage_table, create_stage_table
 from ...table._basic_ops import table_exists
-from ..runtime.models import RowBatch
-from ..runtime.retry import replace_connection, rollback_quietly, run_with_retry
+from ..runtime.models import RowBatch  # noqa: TC001 - preserve the compatibility helper import.
+from ..runtime.retry import (
+    replace_connection,
+    rollback_quietly,
+    run_with_retry,
+)
 from .range_scheduler import OrdinalRange
 from .row_counts import best_effort_transfer_target_count
 from .source_snapshot import (
@@ -26,8 +32,10 @@ from .source_snapshot import (
     build_snapshot_select_sql,
     execute_source_snapshot_materialization,
 )
+from .stage_ownership import stage_creation_callbacks
 from .stage_validation import validate_transfer_stage_slice
 from .staged_keyed_logging import slice_tag
+from .staged_source_read import exact_staged_source_connection, normalize_staged_source_result
 from .staged_target import prepare_shared_parquet_stage, write_source_staged_batch
 
 if TYPE_CHECKING:
@@ -161,6 +169,7 @@ def materialize_source_key(
             snapshot_select_sql=select_sql,
             internal_columns=metadata.internal_columns,
             source_staging_ch_policy=getattr(options, "source_staging_ch_policy", None),
+            on_resource_created=source_ref.get("on_source_resource_created"),
         )
         return count_source_slice(
             options,
@@ -227,10 +236,13 @@ def read_key_batch(
             if attempt > 1:
                 _replace_keyed_source_for_retry(options, source_ref)
             connection = ensure_connection_ref(options.from_db_key, source_ref)
+            read_connection = exact_staged_source_connection(
+                options, connection, dict(metadata.source_column_types)
+            )
             with sql_log_context(f"{task.tag} ", suppress_sql=True):
                 result = _read_backend(
                     options.from_db_backend,
-                    connection,
+                    read_connection,
                     sql,
                     print_queries=False,
                     output_type="dict",
@@ -251,36 +263,14 @@ def read_key_batch(
             error=None,
             phase="rollback after staged source read",
         )
-        result_row_count = len(result.columns[0]) if result.columns else 0
-        if any(len(column) != result_row_count for column in result.columns):
-            message = f"{task.tag} Source batch columns have unequal lengths."
-            raise RuntimeError(message)
-        if result_row_count > row_limit:
-            message = (
-                f"{task.tag} Source batch returned {result_row_count} row(s); "
-                f"scheduled limit is {row_limit}."
-            )
-            raise RuntimeError(message)
-        batch = RowBatch(
-            columns=list(result.column_names),
-            rows=list(zip(*result.columns)),
+        return normalize_staged_source_result(
+            options,
+            connection,
+            result,
+            dict(metadata.source_column_types),
+            row_limit=row_limit,
+            log_prefix=f"{task.tag} ",
         )
-        normalized = cast(
-            "RowBatch",
-            get_backend_adapter(
-                options.from_db_backend,
-            ).normalize_transfer_source_batch(
-                batch,
-                dict(metadata.source_column_types),
-            ),
-        )
-        if normalized.row_count > row_limit:
-            message = (
-                f"{task.tag} Normalized source batch returned "
-                f"{normalized.row_count} row(s); scheduled limit is {row_limit}."
-            )
-            raise RuntimeError(message)
-        return normalized
 
     return cast(
         "RowBatch",
@@ -312,8 +302,24 @@ def create_target_writer_stage(
     writer_index: int,
     *,
     on_stage_candidate: Callable[[str], None] | None = None,
+    ownership_state: Any = None,
     log_prefix: str = "",
 ) -> str:
+
+    callbacks = (
+        stage_creation_callbacks(ownership_state, options.to_db_backend)
+        if ownership_state is not None
+        else {}
+    )
+    original_candidate = callbacks.get("on_stage_candidate")
+
+    def register_candidate(name: str) -> None:
+        if original_candidate is not None:
+            original_candidate(name)
+        if on_stage_candidate is not None:
+            on_stage_candidate(name)
+
+    callbacks["on_stage_candidate"] = register_candidate
     columns = list(metadata.source_columns)
     with sql_log_context(log_prefix, suppress_sql=True):
         return create_stage_table(
@@ -329,7 +335,7 @@ def create_target_writer_stage(
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=f"{options.transfer_id}__w{writer_index:05d}",
             destination_hash=options.destination_hash,
-            on_stage_candidate=on_stage_candidate,
+            **callbacks,
             log_prefix=log_prefix,
             ddl_properties=options.staging_ddl_properties,
             ch_creation_policy=options.staging_ch_policy,
@@ -416,7 +422,9 @@ def drop_source_stage(
                 connection,
                 task.source_stage,
                 query_label=options.query_label,
-                ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
+                ch_creation_policy=single_resource_policy(
+                    getattr(options, "source_staging_ch_policy", None)
+                ),
             )
         except Exception as exc:
             mark_sql_error(exc, options.from_db_backend)
@@ -460,7 +468,9 @@ def cleanup_source_stages(
                 source_ref["connection"],
                 stage_table,
                 query_label=options.query_label,
-                ch_creation_policy=getattr(options, "source_staging_ch_policy", None),
+                ch_creation_policy=single_resource_policy(
+                    getattr(options, "source_staging_ch_policy", None)
+                ),
             )
         except Exception as exc:  # noqa: BLE001, PERF203
             first_error = first_error or exc

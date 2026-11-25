@@ -147,6 +147,7 @@ def test_reviewer_argv_satisfies_every_capability_and_shares_the_schema(
 ) -> None:
     args, schema = _reviewer_args(runtime, tmp_path)
     assert agent_runtimes.policy_violations(runtime, args) == []
+    assert agent_runtimes.with_source_review_effort(runtime, args) == args
     if runtime == "claude":
         assert args[args.index("--json-schema") + 1].encode() == schema.read_bytes()
         config = json.loads(Path(args[args.index("--mcp-config") + 1]).read_text())
@@ -156,6 +157,7 @@ def test_reviewer_argv_satisfies_every_capability_and_shares_the_schema(
         assert "--resume" not in args
         assert "--continue" not in args
     else:
+        assert args[-3:] == ["-c", 'model_reasoning_effort="high"', "-"]
         assert args[args.index("--output-schema") + 1] == str(schema)
         assert "resume" not in args
     weakened = [flag for flag in args if flag not in {"--restricted", "--ephemeral"}]
@@ -181,6 +183,28 @@ def test_built_in_codex_reviewer_is_identical_to_the_adapter(
     assert built_in == adapter
 
 
+@pytest.mark.parametrize("runtime", ["codex", "claude"])
+@pytest.mark.parametrize("stdin", [False, True])
+def test_source_review_effort_preserves_other_flags_and_is_idempotent(
+    runtime: str, stdin: bool
+) -> None:
+    command = [runtime, "exec", "-c", 'model_reasoning_effort="low"', "--json"]
+    if stdin:
+        command.append("-")
+    original = list(command)
+    result = agent_runtimes.with_source_review_effort(runtime, command)
+    assert command == original
+    assert agent_runtimes.with_source_review_effort(runtime, result) == result
+    if runtime == "claude":
+        assert result == original
+    else:
+        expected = original[:-1] if stdin else original
+        expected = [*expected, "-c", 'model_reasoning_effort="high"']
+        if stdin:
+            expected.append("-")
+        assert result == expected
+
+
 def test_shared_reviewer_contract_is_byte_identical() -> None:
     assert local_review.REVIEW_PROMPT == agent_runtimes.REVIEW_PROMPT
     assert local_review.REVIEW_TIMEOUT == agent_runtimes.REVIEW_TIMEOUT
@@ -195,6 +219,50 @@ def test_shared_reviewer_contract_is_byte_identical() -> None:
         "LC_ALL": "C",
     }
     assert "GITHUB_TOKEN" not in agent_runtimes.RUNTIMES["codex"].reviewer_env(environ)
+
+
+def test_shared_reviewer_prompt_retires_zero_new_scopes_without_repeat_clean_reviews() -> None:
+    prompt = agent_runtimes.REVIEW_PROMPT
+    required = (
+        "one worker in a bounded parallel review wave",
+        "exhaustively reviews its assigned bounded scope in the frozen wave",
+        "Read EVERY assigned read_diff page, including deletions",
+        "interacting immutable source and tests needed to assess that scope",
+        "report ALL novel issues, not just the first issue or an initial sample",
+        "explicitly exclude open issues from the current frozen discovery batch",
+        "Only the current batch's open issue exclusions may be supplied",
+        "validated aggregate inventory must cover the entire candidate",
+        "The plan, head, base and task stay frozen for the wave",
+        "Bound worker concurrency and resource cost",
+        "retain completed signed scope results so interrupted cycles can resume",
+        "Collect ALL active workers before any batch decision",
+        "One clean chunk never constitutes whole-candidate approval",
+        "Failed, incomplete or uncertain chunks remain active",
+        "Retire every completed ZERO-NEW scope for the same frozen head, base, tree and assignment",
+        "Later cycles schedule ONLY scopes whose latest result found new issues",
+        "Never revisit a retired scope because another component or integration check found issues",
+        "Preserve each reused result's original signed origin",
+        "no author fixes or tests between discovery cycles",
+        "Discovery closes when ALL scopes are retired",
+        "Only then may the author batch ALL known current issues and tests",
+        "A changed head, tree or base resets ALL scope clearances and starts EMPTY finding history",
+        "Every scope receives its first pass on the new candidate",
+        "no historical fixed findings, fix summaries or prior review conclusions supplied",
+        "complete private audit is retained internally, not forwarded as review hints",
+        "Incomplete inspection, tool errors or uncertainty never count as zero additional issues",
+        "current open issues block final approval",
+        "There is no second clean look or two-clean-wave minimum",
+        "one complete clean signed result for EVERY component and integration scope",
+        "exact current task, source and plan",
+        "explicit nonapproving policy-19-to-20 migration may retain old clean reports",
+        "clean validation for the exact reviewed head",
+        "visual checks start only after final aggregate source approval",
+    )
+    assert all(requirement in prompt for requirement in required)
+    assert "Independently verify previous candidate fixes" not in prompt
+    assert "checks previous fixes" not in prompt
+    assert "read EVERY read_diff page for EVERY path" not in prompt
+    assert "requires at least two" not in prompt
 
 
 def test_interactive_sessions_share_effort_and_clone() -> None:

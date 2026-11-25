@@ -1,0 +1,11 @@
+{
+  "package": "trino",
+  "version": "0.320.0",
+  "scope": "Unmodified official Cursor formatter code executed standalone; this is not the complete historical client transport stack.",
+  "artifact_url": "https://files.pythonhosted.org/packages/e7/8f/d7d8de3275c0d391c6dd8fe119988e1550911480b505a92bcce2d75aa367/trino-0.320.0-py3-none-any.whl",
+  "artifact_sha256": "3ebf2a8371f530fe286d03c27856a4bfbb314451a966e59148e0a2a7379a4539",
+  "source_member": "trino/dbapi.py",
+  "source_sha256": "a8398221b5d68f116f7cbfa91ede62746ea075fc5ba8e75b466b9f16c7eeff6f",
+  "license": "Apache-2.0",
+  "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+}

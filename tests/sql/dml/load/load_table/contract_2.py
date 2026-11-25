@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.backends import get_backend_adapter
+from sqlglot import exp, parse_one
+
 from tests.sql._support.load_table import (
     Any,
     FakeClickHouseClient,
@@ -46,110 +49,28 @@ def test_load_dataframe_passes_explicit_schema_to_direct_insert(
     assert insert_kwargs[0]["target_column_types"] == column_types
 
 
-def test_load_df_clickhouse_upsert_existing_target_uses_target_types_and_df_columns(
-    monkeypatch,
-) -> None:
-    client = FakeClickHouseClient()
-
-    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: client)
-    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
+@pytest.mark.parametrize("backend", ["gp", "ch"])
+def test_load_df_upsert_rejects_missing_existing_writable_columns(monkeypatch, backend) -> None:
+    client = FakeClickHouseClient() if backend == "ch" else FakeDbapiConnection()
+    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda _key: client)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *_a, **_k: True)
     monkeypatch.setattr(
-        load_df_module,
-        "get_table_column_types",
-        lambda *args, **kwargs: {
-            "score": "Int64",
-            "id": "UInt64",
-            "extra_col": "String",
-        },
+        get_backend_adapter(backend),
+        "get_writable_table_column_types",
+        lambda *_a, **_k: {"score": "INTEGER", "id": "BIGINT", "extra_col": "TEXT"},
     )
-    monkeypatch.setattr(
-        load_df_module,
-        "_create_sql_table_with_connection",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "create_stage_table",
-        lambda **kwargs: "analytics.target__stage__upsert",
-    )
-    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
-    monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
-    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None
-    )
-
-    result = load_df_module.load_df(
-        "ch",
-        "analytics.target",
-        pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
-        write_mode="upsert",
-        key_columns=["id"],
-        upsert_partition_column="id",
-        retry_cnt=1,
-        timeout_increment=0,
-    )
-
-    assert result == 2
-    assert any(
-        "INSERT INTO analytics.target__stage__upsert (`id`, `score`) "
-        "SELECT CAST(`id` AS UInt64) AS `id`, CAST(`score` AS Int64) AS `score` "
-        "FROM analytics.target__stage__upsert" in sql
-        for sql in client.commands
-    )
-
-
-def test_load_df_gp_upsert_existing_target_uses_target_types_and_df_columns(
-    monkeypatch,
-) -> None:
-    connection = FakeDbapiConnection()
-
-    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
-    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
-    monkeypatch.setattr(
-        load_df_module,
-        "get_table_column_types",
-        lambda *args, **kwargs: {
-            "score": "INTEGER",
-            "id": "BIGINT",
-            "extra_col": "TEXT",
-        },
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "_create_sql_table_with_connection",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "create_stage_table",
-        lambda **kwargs: "sandbox.target__stage__upsert",
-    )
-    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
-    monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
-    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        load_df_module, "cleanup_stage_table_with_retry", lambda *args, **kwargs: None
-    )
-
-    result = load_df_module.load_df(
-        "gp",
-        "sandbox.target",
-        pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
-        write_mode="upsert",
-        key_columns=["id"],
-        retry_cnt=1,
-        timeout_increment=0,
-    )
-
-    assert result == 2
-    assert any(
-        'INSERT INTO sandbox.target ("id", "score") '
-        'SELECT CAST("id" AS BIGINT) AS "id", '
-        'CAST("score" AS INTEGER) AS "score" '
-        "FROM sandbox.target__stage__upsert" in sql
-        for sql in connection.executed
-    )
+    with pytest.raises(ValueError, match="missing writable columns: extra_col"):
+        load_df_module.load_df(
+            backend,
+            "sandbox.target",
+            pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
+            write_mode="upsert",
+            key_columns=["id"],
+            upsert_partition_column="id",
+            retry_cnt=1,
+            timeout_increment=0,
+        )
+    assert not (client.commands if backend == "ch" else client.executed)
 
 
 def test_load_df_parquet_runtime_passes_only_parquet_properties(
@@ -327,10 +248,16 @@ def test_load_df_trino_parquet_stage_routes_through_external_table(
         and "WITH (format = 'PARQUET', external_location = 's3://bucket/tmp/" in sql
         for sql in connection.executed
     )
-    assert any(
-        sql.startswith("DROP TABLE IF EXISTS hive.pa_core_stage.daf6958bfec1c9f7__")
-        for sql in connection.executed
-    )
+    dropped = [
+        table
+        for statement in connection.executed
+        if isinstance((tree := parse_one(statement, read="trino")), exp.Drop)
+        for table in tree.find_all(exp.Table)
+    ]
+    assert len(dropped) == 1
+    assert dropped[0].catalog == "hive"
+    assert dropped[0].db == "pa_core_stage"
+    assert dropped[0].name.startswith("daf6958bfec1c9f7__")
 
 
 def test_load_df_trino_parquet_upsert_uses_merge_from_stage(
@@ -354,8 +281,8 @@ def test_load_df_trino_parquet_upsert_uses_merge_from_stage(
         ),
     )
     monkeypatch.setattr(
-        load_df_module,
-        "get_table_column_types",
+        load_df_module.get_backend_adapter("trino"),
+        "get_writable_table_column_types",
         lambda *args, **kwargs: {"id": "BIGINT", "score": "INTEGER"},
     )
     monkeypatch.setattr(
@@ -503,10 +430,21 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
         lambda **kwargs: stage_kwargs.append(kwargs) or "scratch.stage",
     )
     monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *_a, **_k: 1)
-    monkeypatch.setattr(load_df_module, "validate_stage_target_key_overlap", lambda **_k: None)
+    append_key_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        load_df_module,
+        "validate_stage_append_keys",
+        lambda **kwargs: append_key_calls.append(kwargs),
+    )
+    assert callable(load_df_module.validate_stage_target_key_overlap)
     monkeypatch.setattr(load_df_module, "insert_from_table", lambda *_a, **_k: None)
     assert load_df_module._load_dataframe(options, state, pd.DataFrame({"id": [1]})) == 1
     assert stage_kwargs[0]["table_schema"] == {"id": "BIGINT"}
+    assert len(append_key_calls) == 1
+    assert append_key_calls[0]["connection_type"] == "trino"
+    assert append_key_calls[0]["stage_table"] == "scratch.stage"
+    assert append_key_calls[0]["target_table"] == "iceberg.sandbox.target"
+    assert append_key_calls[0]["key_columns"] == ["id"]
 
     monkeypatch.setattr(
         load_df_module,
@@ -530,12 +468,6 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
             df=pd.DataFrame({"id": [1]}),
         )
 
-    overlap_calls: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        load_df_module,
-        "validate_stage_target_key_overlap",
-        lambda **kwargs: overlap_calls.append(kwargs),
-    )
     staged = load_df_module.LoadState(
         True,
         True,
@@ -547,7 +479,10 @@ def test_load_lifecycle_stage_schema_parquet_guards_and_finalization(
         connection=object(),
         df=pd.DataFrame({"id": [1]}),
     )
-    assert overlap_calls[0]["stage_table"] == "scratch.stage"
+    assert len(append_key_calls) == 2
+    assert append_key_calls[1]["stage_table"] == "scratch.stage"
+    assert append_key_calls[1]["target_table"] == "iceberg.sandbox.target"
+    assert append_key_calls[1]["key_columns"] == ["id"]
 
 
 def test_existing_replace_uses_safe_stage_finalization_for_direct_and_parquet_loads(

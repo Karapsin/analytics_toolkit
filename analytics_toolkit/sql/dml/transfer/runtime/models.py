@@ -11,8 +11,11 @@ import pandas as pd
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from analytics_toolkit.sql.ddl.creation_resources import CreatedTableResource
     from analytics_toolkit.sql.dml.empty_source import EmptySourcePolicy
+    from analytics_toolkit.sql.dml.table.upsert_checkpoint import UpsertCheckpoint
 
+    from ..flow.keyed import WorkerStageState
     from ..flow.stage_identity import TransferInternalColumns
 
 TrinoTransferMode = Literal["parquet", "values"]
@@ -466,6 +469,8 @@ class TransferOptions:
     attempt_number: int = 1
     collect_final_target_count: bool = False
     final_target_rows: int | None = None
+    # One operation owns this mutable checkpoint across dataclass copies/retries.
+    input_resolution: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         default = TransferConcurrency(
@@ -501,9 +506,14 @@ class TransferStageState:
     source_column_types: dict[str, str | None] | None = None
     stage_column_types: dict[str, str] | None = None
     insert_column_types: dict[str, str] | None = None
+    input_types_resolved: bool = False
     stage_table: str | None = None
     stage_tables: list[str] | None = None
     stage_table_candidates: list[str] = field(default_factory=list)
+    owned_stage_resources: list[tuple[str, str]] = field(default_factory=list)
+    upsert_checkpoint: UpsertCheckpoint | None = None
+    transfer_slices: list[TransferSlice] | None = None
+    worker_stage_states: list[WorkerStageState] | None = None
     final_upsert_stage_table: str | None = None
     stage_external_location: str | None = None
     expected_source_rows: int | None = None
@@ -517,6 +527,12 @@ class TransferStageState:
     internal_columns: TransferInternalColumns | None = None
     transfer_id: str | None = None
     canonical_destination_identity: str | None = None
+    acknowledged_target_names: list[str] = field(default_factory=list)
+    owned_target_resources: list[CreatedTableResource] = field(default_factory=list)
+    owned_stage_scoped_resources: list[tuple[CreatedTableResource, str]] = field(
+        default_factory=list
+    )
+    scoped_stage_ownership_requested: bool = False
 
 
 @dataclass

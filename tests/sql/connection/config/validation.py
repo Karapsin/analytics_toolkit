@@ -69,6 +69,13 @@ def test_connection_backend_and_validation_connection_paths(
     closed: list[str] = []
 
     class Connection:
+        def cursor(self):
+            return types.SimpleNamespace(
+                execute=lambda _sql: None,
+                fetchall=lambda: [(1,)],
+                close=lambda: None,
+            )
+
         def close(self) -> None:
             closed.append("closed")
 

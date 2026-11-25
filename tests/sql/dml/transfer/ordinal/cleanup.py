@@ -14,7 +14,9 @@ from tests.sql._support.transfer_ordinal import (
 )
 
 
-def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatch: Any) -> None:
+def test_superseded_cleanup_preserves_unverifiable_and_current_stages(
+    monkeypatch: Any, capsys: Any
+) -> None:
     internal = resolve_internal_columns(["id"], "gp")
     options = _staged_options()
     assert (
@@ -84,29 +86,37 @@ def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatc
         "cleanup_stage_table",
         lambda _backend, _connection, table, **_kwargs: dropped.append(table),
     )
-    assert cleanup_superseded_transfer_stages(
-        options=options,
-        connection=object(),
-        backend="gp",
-        connection_key="source",
-        staging_schema="stage",
-        internal_columns=internal,
-        include_current_transfer_id=True,
-    ) == [f"stage.{current_empty}"]
-    assert dropped == [f"stage.{current_empty}"]
+    assert (
+        cleanup_superseded_transfer_stages(
+            options=options,
+            connection=object(),
+            backend="gp",
+            connection_key="source",
+            staging_schema="stage",
+            internal_columns=internal,
+            include_current_transfer_id=True,
+        )
+        == []
+    )
+    assert dropped == []
+    assert current_empty in capsys.readouterr().out
 
     stale_empty = f"{options.destination_hash}__target__stage__{'b' * 32}__s00000"
     adapter.query_transfer_stage_table_names = lambda *_args, **_kwargs: [stale_empty]
     dropped.clear()
-    assert cleanup_superseded_transfer_stages(
-        options=options,
-        connection=object(),
-        backend="gp",
-        connection_key="target",
-        staging_schema="stage",
-        internal_columns=internal,
-    ) == [f"stage.{stale_empty}"]
-    assert dropped == [f"stage.{stale_empty}"]
+    assert (
+        cleanup_superseded_transfer_stages(
+            options=options,
+            connection=object(),
+            backend="gp",
+            connection_key="target",
+            staging_schema="stage",
+            internal_columns=internal,
+        )
+        == []
+    )
+    assert dropped == []
+    assert stale_empty in capsys.readouterr().out
 
     adapter.query_transfer_stage_table_names = lambda *_args, **_kwargs: [current_empty]
     assert (
@@ -122,7 +132,9 @@ def test_superseded_cleanup_preserves_unverifiable_and_current_stages(monkeypatc
     )
 
 
-def test_superseded_cleanup_uses_reserved_stage_names(monkeypatch: Any) -> None:
+def test_superseded_cleanup_reports_reserved_names_without_claiming_ownership(
+    monkeypatch: Any, capsys: Any
+) -> None:
     dropped: list[str] = []
     adapter = SimpleNamespace(
         query_transfer_stage_table_names=lambda *_args, **_kwargs: [
@@ -152,7 +164,7 @@ def test_superseded_cleanup_uses_reserved_stage_names(monkeypatch: Any) -> None:
         destination_hash="0123456789abcdef",
     )
 
-    cleanup_superseded_transfer_stages(
+    dropped_names = cleanup_superseded_transfer_stages(
         options=options,
         connection=object(),
         backend="gp",
@@ -161,10 +173,12 @@ def test_superseded_cleanup_uses_reserved_stage_names(monkeypatch: Any) -> None:
         internal_columns=resolve_internal_columns(["id"], "gp"),
     )
 
-    assert dropped == [
-        "staging.0123456789abcdef__orders" + "a" * 32 + "__w00000",
-        "staging.0123456789abcdef__orders" + "b" * 32 + "__source",
-    ]
+    assert dropped_names == []
+    assert dropped == []
+    output = capsys.readouterr().out
+    assert "staging.0123456789abcdef__orders" + "a" * 32 + "__w00000" in output
+    assert "staging.0123456789abcdef__orders" + "b" * 32 + "__source" in output
+    assert "0123456789abcdef__orders" + "d" * 32 + "__other" not in output
 
 
 def test_unkeyed_base_exception_cleanup_does_not_mask_original(monkeypatch: Any) -> None:

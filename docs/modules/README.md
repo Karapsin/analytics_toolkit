@@ -5,7 +5,7 @@
 This folder contains one folder per public module:
 
 - [DataLens utilities](datalens_utils/index.md)
-- [SQL index](sql/index.md)
+- [SQL index](sql/index.md) — [correctness audit closure](sql/audit_closure.md)
 - [SQL explorer index](sql_explorer/index.md)
 - [SQL formatting index](sql_format/index.md)
 - [AB utilities index](ab_utils/index.md)

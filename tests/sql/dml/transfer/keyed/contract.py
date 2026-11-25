@@ -127,7 +127,7 @@ def test_prepare_attempt_reads_existing_target_insert_contract(
     monkeypatch.setattr(
         staged_keyed_pipeline,
         "inspect_source_query_schema",
-        lambda *_args: [SourceColumn("id", "bigint")],
+        lambda *_args: [SourceColumn("id", "integer")],
     )
     monkeypatch.setattr(
         staged_keyed_pipeline, "cleanup_superseded_transfer_stages", lambda **_kwargs: []
@@ -148,5 +148,7 @@ def test_prepare_attempt_reads_existing_target_insert_contract(
 
     staged_keyed_pipeline._prepare_attempt(options, refs, state)
 
-    assert insert_contracts == [{"id": "BIGINT"}]
+    # The existing INTEGER schema is authoritative before worker-stage DDL.
+    assert insert_contracts == [{"id": "integer"}]
+    assert state.stage_column_types == {"id": "INTEGER"}
     assert state.insert_column_types == {"id": "INTEGER"}

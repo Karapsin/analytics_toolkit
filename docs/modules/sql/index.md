@@ -56,5 +56,6 @@ coverage. Opt into `healthy_shards` for ad hoc partial work; see
 - [ClickHouse distributed tables](clickhouse-distributed-tables.md)
 - [Greenplum operations](greenplum-operations.md)
 - [Backend support matrix](support-matrix.md)
+- [Correctness audit closure](audit_closure.md)
 
 [All module docs](../README.md)

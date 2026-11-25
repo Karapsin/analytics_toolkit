@@ -4,12 +4,11 @@ import re
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.dialects.clickhouse import ClickHouse
 from sqlglot.errors import ErrorLevel, SqlglotError
 from sqlglot.optimizer.scope import traverse_scope
 
@@ -21,28 +20,17 @@ from analytics_toolkit.sql.connection.errors import (
 )
 from analytics_toolkit.sql.execution.backend_options import preflight_sql_statements
 
+from .cluster_functions import cluster_arguments
+from .dialect import ClickHouseDialect
 from .managed_routing import ManagedPairResolver, ManagedTableRoute
-from .outage_context import WRITING
+from .outage_context import LOGICAL_STATISTICS, WRITING
+from .source_binding import preserve_source_bindings
+from .upsert_storage import upsert_storage_resolver
 
-
-class _RoutingClickHouse(ClickHouse):
-    """Keep integer RAND distinct from SQLGlot's floating-point Rand expression."""
-
-    # SQLGlot exposes this parser dynamically across its module reorganizations.
-    Parser: Any = type(
-        "Parser",
-        (ClickHouse.parser_class,),
-        {
-            "FUNCTIONS": {
-                **ClickHouse.parser_class.FUNCTIONS,
-                "RAND": lambda args: exp.Anonymous(this="rand", expressions=args),
-            },
-        },
-    )
-
+_RoutingClickHouse = ClickHouseDialect
 
 DEFAULT_CLUSTER_SHARDING_KEY = "rand()"
-MIN_CLUSTER_TABLE_FUNCTION_ARGS = 3
+MIN_CLUSTER_TABLE_FUNCTION_ARGS = 2
 SHARDING_KEY_CLUSTER_TABLE_FUNCTION_ARGS = 4
 ON_CLUSTER_COMMAND_SETTINGS = {
     "distributed_ddl_task_timeout": 0,
@@ -131,6 +119,8 @@ def route_sql(
     cluster_override: str | None = None,
     managed_pair_resolver: ManagedPairResolver | None = None,
 ) -> str:
+    if LOGICAL_STATISTICS.get():
+        return sql
     try:
         parsed = sqlglot.parse(sql, read=_RoutingClickHouse, error_level=ErrorLevel.RAISE)
     except SqlglotError as exc:
@@ -176,7 +166,7 @@ def route_sql(
             ),
             has_explicit_cluster=explicit_cluster is not None,
         )
-        routed.append(statement.sql(dialect="clickhouse"))
+        routed.append(statement.sql(dialect=_RoutingClickHouse))
     return ";\n".join(routed)
 
 
@@ -235,7 +225,8 @@ def prepare_plan_sql(
         return sql
     routing = getattr(config, "cluster_routing", None)
     if (
-        routing is None
+        _LOCAL_SQL_EXECUTION.get()
+        or routing is None
         or _PLAN_PLACEHOLDER_RE.search(sql)
         or _is_local_create_fallback(sql, previous_sqls)
     ):
@@ -405,14 +396,18 @@ class ClusterRoutingClient:
     def close(self) -> None:
         self._client.close()
 
-    def route(self, sql: str) -> str:
+    def route(self, sql: str, *, upsert_connection: object | None = None) -> str:
         if _LOCAL_SQL_EXECUTION.get():
             return sql
         return route_sql(
             sql,
             routing=self._routing,
             database=self._database,
-            managed_pair_resolver=self._managed_pairs,
+            managed_pair_resolver=upsert_storage_resolver(
+                self if upsert_connection is None else upsert_connection,
+                self._managed_pairs,
+                self._routing.sharding_key,
+            ),
         )
 
     def _insert_route(self, table_name: str) -> _BinaryInsertRoute:
@@ -458,6 +453,9 @@ class ClusterRoutingClient:
         column_oriented: bool,
         **kwargs: Any,
     ) -> Any:
+        if column_oriented:
+            data = list(data.itertuples(index=False, name=None))
+            column_oriented = False
         context = self._client.create_insert_context(
             table=original_table,
             column_names=column_names,
@@ -526,6 +524,7 @@ def _rewrite_query_sources(
     *,
     managed_pair_resolver: ManagedPairResolver | None = None,
 ) -> None:
+    preserve_source_bindings(statement, database)
     _normalize_explicit_cluster_tables(
         statement,
         cluster,
@@ -553,8 +552,7 @@ def _normalize_explicit_cluster_tables(
     *,
     managed_pair_resolver: ManagedPairResolver | None,
 ) -> None:
-    if managed_pair_resolver is None:
-        return
+    del cluster  # The source function's explicit cluster is authoritative.
     for table in list(statement.find_all(exp.Table)):
         function = table.this
         if not isinstance(function, exp.Anonymous) or str(function.this).lower() not in {
@@ -562,14 +560,20 @@ def _normalize_explicit_cluster_tables(
             "clusterallreplicas",
         }:
             continue
-        arguments = list(function.expressions)
-        if len(arguments) < MIN_CLUSTER_TABLE_FUNCTION_ARGS:
+        explicit_function_cluster, database, relation, trailing = cluster_arguments(
+            function, default_database
+        )
+        function.set(
+            "expressions",
+            [
+                exp.Literal.string(explicit_function_cluster),
+                exp.Literal.string(database),
+                exp.Literal.string(relation),
+                *trailing,
+            ],
+        )
+        if managed_pair_resolver is None:
             continue
-        database = _identifier_value(arguments[1]) or default_database
-        relation = _identifier_value(arguments[2])
-        if database is None or relation is None:
-            continue
-        explicit_function_cluster = _identifier_value(arguments[0]) or cluster
         managed_route = _resolve_managed_route(
             managed_pair_resolver,
             cluster=explicit_function_cluster,
@@ -584,13 +588,9 @@ def _normalize_explicit_cluster_tables(
                 db=exp.to_identifier(database),
             )
         else:
-            sharding_key = (
-                arguments[3].sql(dialect="clickhouse")
-                if len(arguments) >= SHARDING_KEY_CLUSTER_TABLE_FUNCTION_ARGS
-                else None
-            )
+            sharding_key = trailing[0].sql(dialect=_RoutingClickHouse) if trailing else None
             replacement = _cluster_table(
-                explicit_function_cluster,
+                managed_route.cluster or explicit_function_cluster,
                 managed_route.database,
                 managed_route.table,
                 sharding_key=sharding_key,
@@ -600,6 +600,8 @@ def _normalize_explicit_cluster_tables(
                     managed_route.database,
                 ),
             )
+            if trailing:
+                replacement.this.set("expressions", [*replacement.this.expressions[:3], *trailing])
         _copy_table_decorations(table, replacement)
         table.replace(replacement)
 
@@ -621,6 +623,7 @@ def _replace_source_table(
     if managed_route is not None and managed_route.mode == "local":
         return
     if managed_route is not None:
+        cluster = managed_route.cluster or cluster
         database = managed_route.database
         relation = managed_route.table
     function_name = _route_function_name(managed_route, relation, database)
@@ -709,6 +712,7 @@ def _routed_table_from_table(
     if managed_route is not None and managed_route.mode == "local":
         return table.copy(), False
     if managed_route is not None:
+        route = replace(route, cluster=managed_route.cluster or route.cluster)
         database = managed_route.database
         relation = managed_route.table
     return (
@@ -716,7 +720,11 @@ def _routed_table_from_table(
             route.cluster,
             database,
             relation,
-            sharding_key=getattr(managed_route, "sharding_key", None) or route.sharding_key,
+            sharding_key=(
+                managed_route.sharding_key
+                if managed_route is not None and managed_route.cluster is not None
+                else getattr(managed_route, "sharding_key", None) or route.sharding_key
+            ),
             function_name=_route_function_name(managed_route, relation, database),
         ),
         True,
@@ -742,7 +750,7 @@ def _route_function_name(
 ) -> str:
     if route is not None and route.mode == "all_replicas":
         return "clusterAllReplicas"
-    if route is None and (database.lower() == "system" or is_transfer_stage_identifier(relation)):
+    if route is None and (database == "system" or is_transfer_stage_identifier(relation)):
         return "clusterAllReplicas"
     return "cluster"
 
@@ -757,7 +765,7 @@ def _table_name_with_route(table: exp.Table, route: ManagedTableRoute) -> str:
             quoted=bool(identifier.args.get("quoted")),
         ),
     )
-    return routed.sql(dialect="clickhouse")
+    return routed.sql(dialect=_RoutingClickHouse)
 
 
 def _changes_table_metadata(statement: exp.Expression) -> bool:
@@ -813,7 +821,7 @@ def _cluster_function_sql(
         table,
         sharding_key=sharding_key,
         function_name=function_name,
-    ).sql(dialect="clickhouse")
+    ).sql(dialect=_RoutingClickHouse)
 
 
 def _add_create_on_cluster(statement: exp.Create, cluster: str) -> None:
@@ -833,7 +841,7 @@ def _identifier_value(value: Any) -> str | None:
     if isinstance(value, exp.Column) and not value.table and not value.db:
         value = value.this
     if isinstance(value, (exp.Identifier, exp.Literal)):
-        normalized = str(value.this).strip()
+        normalized = str(value.this)
         return normalized or None
     return None
 
@@ -850,7 +858,7 @@ def _create_target(sql: str) -> tuple[str | None, bool]:
         target = target.this
     if not isinstance(target, exp.Table):
         return None, False
-    return target.sql(dialect="clickhouse"), statement.find(exp.OnCluster) is not None
+    return target.sql(dialect=_RoutingClickHouse), statement.find(exp.OnCluster) is not None
 
 
 def _parse_table_name(table_name: str) -> exp.Table:

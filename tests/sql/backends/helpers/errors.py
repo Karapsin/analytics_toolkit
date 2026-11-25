@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
+
 from tests.sql._support.backend_helpers import (
     Any,
     InvalidSqlInputError,
@@ -26,7 +28,7 @@ def test_clickhouse_shard_stats_handles_bad_rows_and_cluster_failures() -> None:
             raise RuntimeError(message)
         return pd.DataFrame(
             [
-                {"shard_database": 1, "shard_table": None},
+                {"shard_database": None, "shard_table": None},
                 {
                     "shard_database": "analytics",
                     "shard_table": "events_shard",
@@ -43,6 +45,19 @@ def test_clickhouse_shard_stats_handles_bad_rows_and_cluster_failures() -> None:
     )
     assert stats[good] == (7, 9)
     assert bad not in stats
+    assert stats.data_complete is False
+
+
+@pytest.mark.parametrize("field", ["shard_database", "shard_table"])
+def test_clickhouse_shard_stats_rejects_nontext_metadata_identity(field: str) -> None:
+    good = ch_metadata.ClickHouseShardTable("core", "analytics", "events_shard")
+    row: dict[str, object] = {"shard_database": "analytics", "shard_table": "events_shard"}
+    row[field] = 1
+
+    with pytest.raises(ClickHouseClusterTopologyError, match="text identity"):
+        ch_metadata.read_clickhouse_shard_stats(
+            "ch", {good}, read_sql=lambda _key, _query: pd.DataFrame([row])
+        )
 
 
 def test_clickhouse_wait_table_and_schema_timeout_errors(
@@ -172,7 +187,7 @@ def test_trino_operation_cursor_and_error_paths() -> None:
     cursor = RecordingCursor(rows=[("tmp_a",), (2,)])
     connection = RecordingConnection(cursor)
     assert trino_operations.query_transfer_stage_table_names(
-        object(),
+        SimpleNamespace(quote_identifier=lambda value: f'"{value}"'),
         connection,
         connection_key="trino",
         transfer_staging_schema="hive.stage",
@@ -188,7 +203,7 @@ def test_trino_operation_cursor_and_error_paths() -> None:
             "iceberg.integration_stage",
             numeric_stage,
         )
-        == f'iceberg.integration_stage."{numeric_stage}"'
+        == f'"iceberg"."integration_stage"."{numeric_stage}"'
     )
 
     with pytest.raises(ValueError, match="No DDL"):

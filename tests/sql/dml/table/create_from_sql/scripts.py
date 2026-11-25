@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from analytics_toolkit import sql
@@ -12,33 +13,23 @@ from analytics_toolkit.sql.dml.table import source_script
 
 from tests.sql._support.create_from_sql import (
     SOURCE_DESCRIPTION,
-    FakeClickHouseClient,
-    FakeDbapiConnection,
-    FakeDbapiCursor,
     create_module,
 )
+from tests.sql._support.create_from_sql_protocol import (
+    CatalogConnection as FakeDbapiConnection,
+)
+from tests.sql._support.create_from_sql_protocol import (
+    install_fake_type_registration,
+)
+from tests.sql._support.create_script_protocol import ScriptClickHouseClient, ScriptConnection
 
 ddl_api = importlib.import_module("analytics_toolkit.sql.ddl.api")
 SCRIPT = "CREATE TEMP TABLE prepared AS SELECT 7 AS id; SELECT id FROM prepared"
 
 
-class ScriptCursor(FakeDbapiCursor):
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        self.close()
-
-
-class ScriptConnection(FakeDbapiConnection):
-    def cursor(self):
-        cursor = ScriptCursor(self)
-        self.cursors.append(cursor)
-        return cursor
-
-
 @pytest.fixture
 def script_connections(monkeypatch):
+    install_fake_type_registration(monkeypatch)
     get_config = create_module.get_connection_config
 
     def configured(key):
@@ -46,14 +37,34 @@ def script_connections(monkeypatch):
 
     monkeypatch.setattr(create_module, "get_connection_config", configured)
     monkeypatch.setattr(source_script, "get_connection_config", configured)
+
+    def operation_config(key):
+        return create_module.get_connection_config(key)
+
+    for module_name in (
+        "analytics_toolkit.sql.dml.query_input",
+        "analytics_toolkit.sql.dml.transfer.flow.adaptive_input",
+    ):
+        monkeypatch.setattr(
+            importlib.import_module(module_name),
+            "get_connection_config",
+            operation_config,
+        )
     connections = []
+    states = {}
 
     def connect(key):
         connection = (
-            FakeClickHouseClient()
+            ScriptClickHouseClient(states.get(key))
             if key == "ch"
-            else ScriptConnection(description=SOURCE_DESCRIPTION, insert_rowcount=7)
+            else ScriptConnection(
+                description=SOURCE_DESCRIPTION,
+                insert_rowcount=7,
+                state=states.get(key),
+                alias=key,
+            )
         )
+        states[key] = connection.state if key == "ch" else connection.catalog_state
         connections.append((key, connection))
         return connection
 
@@ -167,11 +178,28 @@ def test_script_plans_are_ordered_and_open_no_connections(
     )
     phases = [statement.phase for statement in plan.statements]
     assert phases[0] == "setup"
-    assert phases.index("inspect_source_schema") < phases.index("drop_target")
+    if backend == "ch":
+        assert plan.options["pending_existing_layout_verification"] is True
+        assert plan.options["pending_resource_scope_resolution"] is True
+        assert plan.metadata.statement_count is None
+        assert "drop_target" not in phases
+        assert all(
+            "DROP TABLE" not in statement.sql
+            for statement in plan.statements
+            if statement.phase != "cleanup_source_stage"
+        )
+    else:
+        assert phases.index("inspect_source_schema") < phases.index("drop_target")
+    assert phases.index("inspect_source_schema") < phases.index("create_target")
+    assert phases.count("setup") == 1
+    assert phases.count("inspect_source_schema") == 1
+    assert phases.count("create_target") == 1
     if insert_data:
         assert phases[1] == "materialize_source"
         assert phases[-1] == "cleanup_source_stage"
         assert "insert_data" in phases
+        assert phases.count("insert_data") == 1
+        assert phases.index("create_target") < phases.index("insert_data")
         assert (
             sum("AS SELECT id FROM prepared" in statement.sql for statement in plan.statements) == 1
         )
@@ -215,9 +243,12 @@ def test_generated_string_rejects_scripts_before_connections(monkeypatch):
 
 
 def test_existing_target_skips_script(monkeypatch):
-    monkeypatch.setattr(ddl_api, "_handle_existing_create_target", lambda **_kw: None)
-    monkeypatch.setattr(create_module, "get_sql_connection", lambda *_: pytest.fail("ran setup"))
+    connection = FakeDbapiConnection()
+    monkeypatch.setattr(create_module, "get_sql_connection", lambda *_: connection)
+    monkeypatch.setattr(create_module, "table_exists", lambda *_: True)
     assert sql.create_table("gp", "sandbox.created", sql=SCRIPT, if_not_exists=True) is None
+    assert connection.executed == []
+    assert connection.close_calls == 1
 
 
 @pytest.mark.parametrize("failure_phase", ["setup", "materialize", "inspect", "insert"])
@@ -265,8 +296,11 @@ def test_script_failure_retries_whole_attempt_and_cleans_stages(
         command.split()[2] for command in commands if "AS SELECT id FROM prepared" in command
     ]
     assert len(set(created_stages)) == len(created_stages)
-    for stage in created_stages:
-        assert f"DROP TABLE IF EXISTS {stage}" in commands
+    for index, stage in enumerate(created_stages):
+        if failure_phase == "materialize" and index == 0:
+            assert f"DROP TABLE IF EXISTS {stage}" not in commands
+        else:
+            assert f"DROP TABLE IF EXISTS {stage}" in commands
     assert all(connection.close_calls == 1 for _, connection in script_connections)
 
 
@@ -420,7 +454,8 @@ def test_preparation_failure_cleanup_preserves_error(
     failure = KeyboardInterrupt() if interrupt else RuntimeError("source materialization failed")
     cleaned = []
 
-    def fail_materialize(*_args):
+    def fail_materialize(_options, _connection, stage, _sql, **kwargs):
+        kwargs["on_resource_created"](stage)
         raise failure
 
     def cleanup(_options, stage, _attempt):
@@ -429,7 +464,7 @@ def test_preparation_failure_cleanup_preserves_error(
             message = "source stage cleanup failed"
             raise RuntimeError(message)
 
-    monkeypatch.setattr(source_script, "execute_transfer_materialization", fail_materialize)
+    monkeypatch.setattr(source_script, "_materialize_source", fail_materialize)
     monkeypatch.setattr(source_script, "_cleanup_stage", cleanup)
     with pytest.raises(KeyboardInterrupt if interrupt else RuntimeError) as caught:
         sql.create_table(
@@ -443,7 +478,212 @@ def test_preparation_failure_cleanup_preserves_error(
     assert len(cleaned) == 1
     assert script_connections[0][1].rollback_calls == 1
     assert script_connections[0][1].close_calls == 1
-    if cleanup_fails and not interrupt:
-        assert caught.value.__cause__ is failure
-    else:
-        assert caught.value is failure
+    assert caught.value is failure
+
+
+@pytest.mark.parametrize("lost_ack", [False, True])
+def test_source_create_without_ack_never_drops_candidate(monkeypatch, script_connections, lost_ack):
+    failure = RuntimeError("lost source acknowledgement" if lost_ack else "source collision")
+    original = source_script.execute_transfer_materialization
+
+    def materialize(*args, **kwargs):
+        if lost_ack:
+            original(*args, **kwargs)
+        raise failure
+
+    monkeypatch.setattr(source_script, "execute_transfer_materialization", materialize)
+    monkeypatch.setattr(
+        source_script, "_cleanup_stage", lambda *_: pytest.fail("unowned candidate cleanup")
+    )
+    with pytest.raises(RuntimeError) as raised:
+        sql.create_table("gp", "sandbox.created", sql=SCRIPT, insert_data=True, retry_cnt=1)
+    assert raised.value is failure
+    assert failure.analytics_toolkit_sql_unacknowledged_source_stage.startswith("sandbox.")
+    assert all(connection.close_calls == 1 for _, connection in script_connections)
+
+
+def test_unsafe_target_outcome_retains_owned_source_checkpoint(monkeypatch, script_connections):
+    failure = RuntimeError("target acknowledgement lost")
+
+    def unsafe(**kwargs):
+        kwargs["source_connection"].close()
+        return create_module._UnsafeAttemptFailure(failure, kwargs["attempt"])
+
+    monkeypatch.setattr(create_module, "_execute_generic_create_table_from_sql_attempt", unsafe)
+    monkeypatch.setattr(
+        source_script, "_cleanup_stage", lambda *_: pytest.fail("required checkpoint deleted")
+    )
+    with pytest.raises(RuntimeError) as raised:
+        sql.create_table(
+            "gp", "sandbox.created", sql=SCRIPT, insert_data=True, retry_cnt=3, timeout_increment=0
+        )
+    assert raised.value is failure
+    assert failure.analytics_toolkit_sql_retained_source_stage.startswith("sandbox.")
+    assert len(script_connections) == 1
+
+
+def test_source_cleanup_failure_preserves_primary_error(monkeypatch, script_connections):
+    failure = RuntimeError("source inspection failed")
+
+    def inspect(*_args):
+        raise failure
+
+    def cleanup(*_args):
+        message = "cleanup disconnected"
+        raise OSError(message)
+
+    monkeypatch.setattr(create_module, "inspect_source_query_schema", inspect)
+    monkeypatch.setattr(source_script, "_cleanup_stage", cleanup)
+    with pytest.raises(RuntimeError) as raised:
+        sql.create_table(
+            "gp", "sandbox.created", sql=SCRIPT, insert_data=True, retry_cnt=3, timeout_increment=0
+        )
+    assert raised.value is failure
+    assert failure.analytics_toolkit_sql_cleanup_error == "cleanup disconnected"
+    assert len(script_connections) == 1
+
+
+def test_source_ack_before_readiness_allows_only_owned_stage_cleanup(
+    monkeypatch, script_connections
+):
+    config = replace(
+        source_script.get_connection_config("ch"),
+        cluster_routing=ChClusterRouting("core", "rand()"),
+    )
+    original_config = create_module.get_connection_config
+    monkeypatch.setattr(
+        create_module,
+        "get_connection_config",
+        lambda key: config if key == "ch" else original_config(key),
+    )
+    monkeypatch.setattr(source_script, "get_connection_config", create_module.get_connection_config)
+    failure = RuntimeError("source readiness unavailable")
+    cleanups = []
+
+    def ready(*_args, **_kwargs):
+        raise failure
+
+    def cleanup(_backend, _connection, stage, **kwargs):
+        cleanups.append(stage)
+        assert kwargs["ch_creation_policy"].create_distributed_pair is False
+
+    monkeypatch.setattr(type(get_backend_adapter("ch")), "after_create_table", ready)
+    monkeypatch.setattr(source_script, "cleanup_stage_table", cleanup)
+    with pytest.raises(RuntimeError) as raised:
+        sql.create_table(
+            "trino",
+            "sandbox.created",
+            source_db="ch",
+            sql="SET max_threads = 2; SELECT id FROM sandbox.prepared",
+            insert_data=True,
+            retry_cnt=1,
+        )
+    assert raised.value is failure
+    assert len(cleanups) == 1
+    assert "__source" in cleanups[0]
+    assert not any(
+        command.startswith("INSERT INTO ") for command in script_connections[0][1].commands
+    )
+
+
+def test_certified_script_retry_reuses_payload_without_source_setup(
+    monkeypatch, script_connections
+):
+    calls = []
+
+    def execute(**kwargs):
+        options = kwargs["options"]
+        calls.append(options.source_sql)
+        if len(calls) == 1:
+            kwargs["source_connection"].close()
+            options.input_resolution["prepared_query_input"] = SimpleNamespace(
+                frozen=True,
+                mutation_started=False,
+                publication_succeeded=False,
+                options=SimpleNamespace(
+                    source_sql=options.source_sql,
+                    input_resolution=options.input_resolution["transfer_input_resolution"],
+                ),
+            )
+            message = "safe target failure after source certification"
+            raise RuntimeError(message)
+        assert kwargs.get("source_connection") is None
+        assert options.setup_sqls == ()
+        options.input_resolution.pop("prepared_query_input")
+        return 7
+
+    monkeypatch.setattr(create_module, "_execute_generic_create_table_from_sql_attempt", execute)
+    assert (
+        sql.create_table(
+            "gp", "sandbox.created", sql=SCRIPT, insert_data=True, retry_cnt=2, timeout_increment=0
+        )
+        == 7
+    )
+    assert calls[0] == calls[1]
+    commands = [command for _, connection in script_connections for command in connection.executed]
+    assert sum("CREATE TEMP TABLE prepared" in command for command in commands) == 1
+    assert sum("AS SELECT id FROM prepared" in command for command in commands) == 1
+
+
+def test_existing_script_target_skip_preserves_metadata_return(monkeypatch, script_connections):
+    monkeypatch.setattr(create_module, "table_exists", lambda *_: True)
+    result = sql.create_table(
+        "gp",
+        "sandbox.created",
+        sql=SCRIPT,
+        if_not_exists=True,
+        return_metadata=True,
+    )
+    assert result.rows is None
+    assert result.metadata.statement_count == 0
+    assert result.metadata.retry_attempts == 1
+    assert script_connections[0][1].executed == []
+
+
+def test_schema_only_unsafe_target_outcome_has_no_generated_source_checkpoint(
+    monkeypatch, script_connections
+):
+    message = "schema target acknowledgement lost"
+    failure = RuntimeError(message)
+
+    def unsafe(**kwargs):
+        kwargs["source_connection"].close()
+        return create_module._UnsafeAttemptFailure(failure, kwargs["attempt"])
+
+    monkeypatch.setattr(create_module, "_execute_generic_create_table_from_sql_attempt", unsafe)
+    with pytest.raises(RuntimeError) as raised:
+        sql.create_table("gp", "sandbox.created", sql=SCRIPT, retry_cnt=1)
+    assert raised.value is failure
+    assert not hasattr(failure, "analytics_toolkit_sql_retained_source_stage")
+
+
+def test_source_materialization_keeps_optional_ack_callback_compatible():
+    connection = ScriptConnection(description=SOURCE_DESCRIPTION)
+    options = create_module.CreateTableFromSqlOptions(
+        "gp", "gp", "gp", "gp", "sandbox.created", "SELECT 7 AS id"
+    )
+    source_script._materialize_source(options, connection, "sandbox.source_stage", "SELECT 7 AS id")
+    assert any("CREATE TABLE sandbox.source_stage" in command for command in connection.executed)
+    assert connection.commit_calls == 1
+
+
+def test_if_not_exists_with_absent_target_executes_schema_script(monkeypatch, script_connections):
+    monkeypatch.setattr(
+        create_module,
+        "inspect_source_query_schema",
+        lambda *_args: [SourceColumn(name="id", native_type="INTEGER")],
+    )
+    assert sql.create_table("gp", "sandbox.created", sql=SCRIPT, if_not_exists=True) is None
+    assert script_connections[0][1].executed == []
+    assert any(
+        "CREATE TEMP TABLE prepared" in command for command in script_connections[1][1].executed
+    )
+    assert all(connection.close_calls == 1 for _, connection in script_connections)
+
+
+def test_query_replace_flag_rejects_non_clickhouse_before_connections(monkeypatch):
+    monkeypatch.setattr(
+        create_module, "get_sql_connection", lambda *_a: pytest.fail("opened connection")
+    )
+    with pytest.raises(ValueError, match="requires a ClickHouse target"):
+        sql.create_table("gp", "sandbox.created", sql="SELECT 1 AS id", ch_replace_table=True)

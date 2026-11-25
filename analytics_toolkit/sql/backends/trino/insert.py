@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-import json
-import re
-from collections.abc import Callable, Iterator, Sequence
-from datetime import datetime
 from itertools import islice
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-import pandas as pd
+from sqlparse import lexer, tokens
 
 from analytics_toolkit.sql._log_context import prefix_sql_log_message
+from analytics_toolkit.sql.backends.base import _apply_query_label
+
+from . import parameters as _parameters
+from .bindings import parameterized_values
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator, Sequence
+
+    import pandas as pd
 from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 DEFAULT_TRINO_INSERT_CHUNK_SIZE = 1000
@@ -62,18 +67,10 @@ def insert_rows(
     with cursor_scope(connection) as cursor:
         row_iterator = iter_row_values(columns, rows, target_column_types)
         for row_chunk in _chunk_rows(row_iterator, chunk_size):
-            params = [value for row in row_chunk for value in row]
-            sql = adapter.build_dataframe_batch_insert_sql(
-                table_name,
-                columns,
-                row_count=len(row_chunk),
-                query_label=query_label,
-            )
-            sql = cast_parameter_placeholders(
-                sql,
-                columns,
-                target_column_types,
-                row_count=len(row_chunk),
+            values, params = parameterized_values(columns, row_chunk, target_column_types)
+            sql = _apply_query_label(
+                f"INSERT INTO {table_name} ({adapter.column_list_sql(columns)}) VALUES {values}",  # noqa: S608 -- identifier SQL; values remain bound.
+                query_label,
             )
             time_print(
                 prefix_sql_log_message(f"Writing {len(row_chunk)} row(s) to table {table_name}"),
@@ -119,7 +116,20 @@ def cast_parameter_placeholders(
         for _ in range(row_count)
         for column in columns
     ]
-    return re.sub(r"\?", lambda _match: casts.pop(0), sql)
+    fragments: list[str] = []
+    tokenize = cast("Callable[[str], Iterator[tuple[Any, str]]]", lexer.tokenize)
+    for token_type, value in tokenize(sql):
+        if token_type in tokens.Name.Placeholder and value == "?":
+            if not casts:
+                message = "Too many executable parameter placeholders."
+                raise ValueError(message)
+            fragments.append(casts.pop(0))
+        else:
+            fragments.append(value)
+    if casts:
+        message = "Missing executable parameter placeholders."
+        raise ValueError(message)
+    return "".join(fragments)
 
 
 def iter_dataframe_rows(
@@ -146,25 +156,7 @@ def iter_row_values(
         yield tuple(normalized_values)
 
 
-def normalize_value(value: Any, target_type: str | None) -> Any:
-    if _is_null_like(value):
-        return None
-
-    normalized_target_type = (target_type or "").lower()
-    if normalized_target_type.startswith(("varchar", "char", "string")):
-        if isinstance(value, (dict, list)):
-            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        return str(value)
-    if normalized_target_type == "bigint":
-        return int(value)
-    if isinstance(value, datetime) and normalized_target_type.startswith("timestamp"):
-        match = re.match(r"timestamp\s*\(\s*(\d+)\s*\)", normalized_target_type)
-        if match is not None:
-            precision = int(match.group(1))
-            if precision < DATETIME_MICROSECOND_PRECISION:
-                factor = 10 ** (DATETIME_MICROSECOND_PRECISION - precision)
-                return value.replace(microsecond=(value.microsecond // factor) * factor)
-    return value
+normalize_value = _parameters.normalize_value
 
 
 def build_values_tuple(
@@ -187,30 +179,7 @@ def validate_row_width(columns: Sequence[str], row: Sequence[Any]) -> None:
         raise ValueError("Column and row value counts must match.")
 
 
-def literal(value: Any, target_type: str | None) -> str:
-    if _is_null_like(value):
-        return "NULL"
-
-    normalized_target_type = (target_type or "").lower()
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    if isinstance(value, pd.Timestamp):
-        timestamp_value = value.to_pydatetime()
-        if normalized_target_type == "date":
-            return f"DATE '{timestamp_value.strftime('%Y-%m-%d')}'"
-        return f"TIMESTAMP '{timestamp_value.strftime('%Y-%m-%d %H:%M:%S.%f')}'"
-    if hasattr(value, "isoformat") and normalized_target_type == "date":
-        return f"DATE '{value.isoformat()}'"
-    if isinstance(value, str):
-        escaped = value.replace("'", "''")
-        return f"'{escaped}'"
-    if isinstance(value, (int, float)):
-        return str(value)
-
-    escaped = str(value).replace("'", "''")
-    if normalized_target_type:
-        return f"CAST('{escaped}' AS {target_type})"
-    return f"'{escaped}'"
+literal = _parameters.literal
 
 
 def _chunk_rows(
@@ -224,10 +193,26 @@ def _chunk_rows(
         yield chunk
 
 
-def _is_null_like(value: Any) -> bool:
-    if value is None:
-        return True
-    try:
-        return bool(pd.isna(value))
-    except (TypeError, ValueError):
-        return False
+_is_null_like = _parameters.is_null
+
+
+def build_typed_insert_sql(  # noqa: PLR0913 -- mirrors insert batch contract.
+    adapter: Any,
+    table_name: str,
+    columns: Sequence[str],
+    target_column_types: dict[str, str] | None,
+    *,
+    row_count: int,
+    query_label: str | None = None,
+) -> str:
+    if row_count <= 0:
+        message = "row_count must be a positive integer."
+        raise ValueError(message)
+    types = target_column_types or {}
+    parameters = [f"CAST(? AS {types[name]})" if name in types else "?" for name in columns]
+    row = "(" + ", ".join(parameters) + ")"
+    values = ", ".join(row for _ in range(row_count))
+    return _apply_query_label(
+        f"INSERT INTO {table_name} ({adapter.column_list_sql(columns)}) VALUES {values}",  # noqa: S608 -- identifier SQL; values remain bound.
+        query_label,
+    )

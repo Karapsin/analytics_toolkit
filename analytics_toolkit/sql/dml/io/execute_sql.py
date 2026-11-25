@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# ruff: noqa: BLE001, C901, PLR0912, TRY300
+# ruff: noqa: BLE001, C901, PLR0912
 import contextvars
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Iterator
@@ -10,6 +10,8 @@ from tqdm import tqdm
 
 from analytics_toolkit._sql_statements import split_statements
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.execution_outcome import ExecutionOutcome
+from analytics_toolkit.sql.backends.utils import extract_row_count_or_none
 from analytics_toolkit.sql.dml.io.execute_safety import (
     AmbiguousSqlMutationError,
     SqlBatchExecutionError,
@@ -32,7 +34,7 @@ from ...connection.errors import (
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
-from ...execution.labels import apply_query_label
+from ...execution.labels import apply_query_label, apply_statement_labels
 from ...execution.operation_runner import (
     timed_public_sql_function,
     tracked_sql_operation,
@@ -130,6 +132,7 @@ def _execute_sql_options(options: ExecuteSqlOptions) -> Any:
         ):
             try:
                 connection = get_sql_connection(options.connection_key)
+                metadata.write_submission_state = "submitted"
                 result = _execute_backend(
                     options.backend,
                     connection,
@@ -139,8 +142,14 @@ def _execute_sql_options(options: ExecuteSqlOptions) -> Any:
                     gp_commit_each_statement=options.gp_commit_each_statement,
                     progress=options.progress,
                 )
-                metadata.affected_rows = None
-                return result
+                metadata.affected_rows = (
+                    result.affected_rows
+                    if isinstance(result, ExecutionOutcome)
+                    else extract_row_count_or_none(result)
+                )
+                metadata.data_write_replay_possible = attempt > 1
+                metadata.write_submission_state = "acknowledged"
+                return result.public_result if isinstance(result, ExecutionOutcome) else result
             except Exception as exc:
                 current_context = context(attempt)
                 annotate_sql_exception(exc, current_context)
@@ -430,7 +439,7 @@ def _build_execute_sql_options(
         raise InvalidSqlInputError("Query string must not be empty.")
     validate_retry_options(retry_cnt, timeout_increment)
     _validate_progress(progress)
-    sql = apply_query_label(sql, query_label)
+    sql = apply_statement_labels(sql, query_label)
     sql = get_backend_adapter(backend).prepare_sql(config, sql)
     return ExecuteSqlOptions(
         connection_key=connection_key,

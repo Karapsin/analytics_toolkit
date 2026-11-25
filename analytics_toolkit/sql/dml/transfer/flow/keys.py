@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 # ruff: noqa: PLR0913
-
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
-from decimal import Decimal
 from itertools import product
-from typing import Any
+from typing import Any, cast
 
 import sqlparse
 
-from ..runtime.models import TransferSlice
-
+from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.dml.transfer.runtime.models import TransferSlice
+from .placeholders import replace_predicate_placeholders
 
 _INVALID_SIMPLE_KEY_MESSAGE = (
     "transfer_keys string/list entries must be simple placeholder names such as 'event_date'."
@@ -30,6 +27,7 @@ def normalize_transfer_slices(
     *,
     source_sql: str,
     source_table: str | None = None,
+    source_backend: str = "gp",
     transfer_keys: str | Sequence[str] | Mapping[str, str] | None,
     transfer_key_values: Sequence[Any] | Mapping[str, Sequence[Any]] | None,
     concurrency: int | None,
@@ -72,6 +70,7 @@ def normalize_transfer_slices(
             index=index,
             source_sql=stripped_source_sql,
             source_table=source_table,
+            source_backend=source_backend,
             transfer_keys=keys,
             values=values,
         )
@@ -202,15 +201,17 @@ def build_transfer_slice(
     index: int,
     source_sql: str,
     source_table: str | None = None,
+    source_backend: str = "gp",
     transfer_keys: list[TransferKey],
     values: tuple[Any, ...],
 ) -> TransferSlice:
-    predicate_sql = build_transfer_slice_predicate(transfer_keys, values)
+    predicate_sql = build_transfer_slice_predicate(transfer_keys, values, source_backend)
     if source_table is None:
         source_sql = render_transfer_slice_source_sql(
             source_sql,
             transfer_keys=transfer_keys,
             values=values,
+            source_backend=source_backend,
         )
     else:
         source_sql = render_transfer_table_slice_source_sql(
@@ -230,6 +231,7 @@ def build_transfer_slice(
 def build_transfer_slice_predicate(
     keys: list[TransferKey],
     values: tuple[Any, ...],
+    source_backend: str = "gp",
 ) -> str:
     if len(keys) != len(values):
         raise ValueError("transfer key and value counts must match.")
@@ -238,7 +240,9 @@ def build_transfer_slice_predicate(
         if value is None:
             predicates.append(f"({key.expression}) IS NULL")
         else:
-            predicates.append(f"({key.expression}) = {render_transfer_literal(value)}")
+            predicates.append(
+                f"({key.expression}) = {render_transfer_literal(value, source_backend)}"
+            )
     return "\n  AND ".join(predicates)
 
 
@@ -255,57 +259,19 @@ def render_transfer_slice_source_sql(
     *,
     transfer_keys: list[TransferKey],
     values: tuple[Any, ...],
+    source_backend: str = "gp",
 ) -> str:
     if len(transfer_keys) != len(values):
         raise ValueError("transfer key and value counts must match.")
-    for key in transfer_keys:
-        token = "{" + key.name + "}"
-        count = source_sql.count(token)
-        if count == 0:
-            raise ValueError(
-                "transfer_keys requires one predicate placeholder per key in from_sql.\n"
-                f"Missing placeholder: {token}\n\n"
-                "Add it where the source backend should filter rows, for example:\n"
-                f"  ... WHERE ... AND {token}\n\n"
-                f"If from_sql is an f-string, escape braces as {{{{{key.name}}}}}.\n"
-                f'The placeholder is replaced with "({key.expression}) = <value>" '
-                f'or "({key.expression}) IS NULL".'
-            )
-    rendered_sql = source_sql
-    for key, value in zip(transfer_keys, values):
-        token = "{" + key.name + "}"
-        rendered_sql = rendered_sql.replace(
-            token,
-            build_transfer_slice_predicate([key], (value,)),
-        )
-    return rendered_sql
+    replacements = {
+        key.name: build_transfer_slice_predicate([key], (value,), source_backend)
+        for key, value in zip(transfer_keys, values)
+    }
+    return replace_predicate_placeholders(source_sql, replacements)
 
 
-def render_transfer_literal(value: Any) -> str:
-    if value is None:
-        return "NULL"
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    if isinstance(value, datetime):
-        return f"TIMESTAMP '{value.isoformat(sep=' ')}'"
-    if isinstance(value, date):
-        return f"DATE '{value.isoformat()}'"
-    if isinstance(value, str):
-        return "'" + value.replace("'", "''") + "'"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError("transfer_key_values float values must be finite.")
-        return repr(value)
-    if isinstance(value, Decimal):
-        if not value.is_finite():
-            raise ValueError("transfer_key_values Decimal values must be finite.")
-        return format(value, "f")
-    raise ValueError(
-        "transfer_key_values supports only None, str, date, datetime, int, "
-        "float, bool, and Decimal values."
-    )
+def render_transfer_literal(value: Any, source_backend: str = "gp") -> str:
+    return cast("str", get_backend_adapter(source_backend).render_transfer_literal(value))
 
 
 def strip_one_trailing_semicolon(source_sql: str) -> str:

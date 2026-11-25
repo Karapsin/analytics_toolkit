@@ -18,8 +18,8 @@ from ...table.table_validation import (
 )
 from ..io.source import iter_source_batches
 from ..runtime.models import RowBatch, TransferConnectionRefs, TransferOptions, TransferStageState
-from ..runtime.retry import run_with_fresh_connection
 from ....backends.source_estimate import estimate_source_rows
+from .adaptive_input import estimated_input_rows, run_target_operation
 from .logging import ProgressTracker, format_transfer_key_log_fragment
 from .parquet_stage import (
     create_parquet_stage_table,
@@ -53,12 +53,7 @@ def load_parquet_stage_batches(
     total_rows = 0
     file_index = 0
     row_group_size = row_group_size_fn(options)  # type: ignore[operator]
-    estimated_total_rows = None
-    if options.progress and options.estimate_total_rows:
-        estimated_total_rows = estimate_rows(  # type: ignore[operator]
-            options,
-            connection_refs.source["connection"],
-        )
+    estimated_total_rows = estimated_input_rows(options, connection_refs.source, estimate_rows)
     progress_bar = progress_bar_factory(  # type: ignore[operator]
         options,
         total=estimated_total_rows,
@@ -95,8 +90,8 @@ def load_parquet_stage_batches(
                     table_schema_names=(options.table_schema or {}).keys(),
                 )
             if stage_state.first_non_empty_batch is None:
-                run_with_fresh_connection(
-                    options.to_db_key,
+                run_target_operation(
+                    options,
                     "create_stage",
                     lambda target_ref: initialize_stage(  # type: ignore[operator]
                         options,
@@ -123,6 +118,7 @@ def load_parquet_stage_batches(
                 row_group_size=row_group_size,
                 transfer_id=options.transfer_id,
                 storage_options=options.parquet_storage_options,
+                column_types=stage_state.stage_column_types,
             )
             file_index += 1
             progress_tracker.update(inserted_rows)

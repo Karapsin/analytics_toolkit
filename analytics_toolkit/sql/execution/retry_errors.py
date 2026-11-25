@@ -14,7 +14,7 @@ from analytics_toolkit.sql.connection.errors import (
     UnsupportedConnectionTypeError,
 )
 
-from .backend_options import preserve_recovery_artifacts
+from .backend_options import current_backend_operation, preserve_recovery_artifacts
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,11 @@ class RetryDecision:
 
 def classify_sql_error(exc: BaseException, *, backend: str | None = None) -> RetryDecision:
     """Recognize terminal failures while retaining the legacy unmatched retry policy."""
-    if preserve_recovery_artifacts(failed=True):
+    # A replayable data write still retains its certified recovery checkpoint.
+    # Only an uncertain structural cutover blocks whole-operation replay.
+    preserve_recovery_artifacts(failed=True)
+    state = current_backend_operation()
+    if state is not None and state.structural_replay_blocked:
         return RetryDecision(retryable=False, reason="recovery_artifacts_preserved")
     nodes = tuple(_exception_chain(exc, backend=backend))
     marked_terminal = False
@@ -108,6 +112,7 @@ def _common_terminal_reason(exc: BaseException) -> str | None:
     reasons: tuple[tuple[tuple[type[BaseException], ...], str], ...] = (
         ((SqlConfigError, UnsupportedConnectionTypeError), "invalid_connection_configuration"),
         ((InvalidSqlInputError,), "invalid_sql_input"),
+        ((PermissionError,), "permission_denied"),
         ((ImportError,), "missing_driver_or_dependency"),
         ((ssl.SSLCertVerificationError,), "certificate_verification_failed"),
     )
@@ -171,9 +176,11 @@ _LEGACY_TERMINAL_NAMES = frozenset(
         "INSUFFICIENT_PRIVILEGE",
         "SCHEMA_NOT_FOUND",
         "SYNTAX_ERROR",
+        "TABLE_ALREADY_EXISTS",
         "TABLE_NOT_FOUND",
         "TYPE_MISMATCH",
         "UNKNOWN_IDENTIFIER",
+        "UNKNOWN_DATABASE",
         "UNKNOWN_TABLE",
     }
 )

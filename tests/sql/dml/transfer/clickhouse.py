@@ -2,15 +2,27 @@ from __future__ import annotations
 
 from tests.sql._support.assertions import strip_query_label as _strip_query_label
 
-# ruff: noqa: C901, I001
+# ruff: noqa: I001
 
 import importlib
+from copy import deepcopy
 from datetime import date
-from typing import Any, TYPE_CHECKING
+from typing import Any
 
+import pytest
+from analytics_toolkit.sql.backends.ch.metadata import extract_clickhouse_distributed_shard_table
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import engine_name, engine_sql
+from sqlglot import exp
 
-if TYPE_CHECKING:
-    import pandas as pd
+from tests.conftest import DEFAULT_SQL_CONNECTIONS
+
+from tests.sql._support.transfer_clickhouse_protocol import (
+    TransferClickHouseClient,
+    column_types,
+    command_trees,
+    install_legacy_transfer_connections,
+)
+from tests.sql._support.transfer_driver_boundary import install_fake_gp_cursor_boundary
 
 
 transfer_api_module = importlib.import_module("analytics_toolkit.sql.dml.transfer.flow.api")
@@ -84,180 +96,26 @@ class FakeSourceConnection:
         self.close_calls += 1
 
 
-class FakeClickHouseClient:
-    def __init__(self) -> None:
-        self.commands: list[str] = []
-        self.command_settings: list[dict[str, object] | None] = []
-        self.queries: list[str] = []
-        self.inserts: list[dict[str, object]] = []
-        self.created_tables: set[str] = set()
-        self.close_calls = 0
-
-    def command(
-        self,
-        sql: str,
-        settings: dict[str, object] | None = None,
-    ) -> None:
-        self.commands.append(sql)
-        self.command_settings.append(settings)
-        self._track_table_ddl(sql)
-
-    def query(self, sql: str, column_oriented: bool = False) -> FakeResult:
-        del column_oriented
-        self.queries.append(sql)
-        sql = _strip_query_label(sql)
-        if "__analytics_toolkit_" in sql and "GROUP BY" in sql:
-            row = next(
-                (insert["data"][0] for insert in self.inserts if insert.get("data")),
-                None,
-            )
-            if row is None:
-                return FakeResult([])
-            if "__analytics_toolkit_row_ordinal" in sql and "MIN(" in sql:
-                rows = [item for insert in self.inserts for item in insert.get("data", [])]
-                return FakeResult([(int(row[-2]), 1, len(rows), len(rows), len(rows))])
-            return FakeResult([(row[-4], row[-3])])
-        if sql.startswith("SELECT count() FROM "):
-            table_name = sql[len("SELECT count() FROM ") :].strip()
-            return FakeResult([(self._inserted_rows(table_name),)])
-        if sql.startswith("SELECT count(*) FROM cluster("):
-            relation_name = sql.rsplit(", ", 1)[1].rstrip(")").strip("'")
-            return FakeResult([(self._cluster_inserted_rows(relation_name),)])
-        if sql.startswith("SELECT getMacro("):
-            return FakeResult([("core",)])
-        if "clusterAllReplicas" in sql and "system, one" in sql:
-            return FakeResult([(1,)])
-        if "FROM system.clusters" in sql:
-            return FakeResult([(1,)])
-        if "clusterAllReplicas" in sql and "system, tables" in sql:
-            return FakeResult([(self._cluster_table_count(sql),)])
-        if "clusterAllReplicas" in sql and "system, columns" in sql:
-            return FakeResult([(sql.count("name = ") or 1,)])
-        if "clusterAllReplicas" in sql:
-            return FakeResult([(len(self.created_tables),)])
-        if sql.startswith("EXISTS TABLE "):
-            table_name = sql[len("EXISTS TABLE ") :].strip()
-            return FakeResult([(int(table_name in self.created_tables),)])
-        return FakeResult([])
-
-    def insert_df(
-        self,
-        table: str,
-        df: pd.DataFrame,
-        column_names: list[str],
-    ) -> None:
-        self.inserts.append(
-            {
-                "table": table,
-                "df": df.copy(),
-                "column_names": list(column_names),
-            }
-        )
-
-    def insert(
-        self,
-        table: str,
-        data: list[tuple[Any, ...]],
-        column_names: list[str],
-        column_type_names: list[str] | None = None,
-    ) -> None:
-        self.inserts.append(
-            {
-                "table": table,
-                "data": list(data),
-                "column_names": list(column_names),
-                "column_type_names": (
-                    list(column_type_names) if column_type_names is not None else None
-                ),
-            }
-        )
-
-    def close(self) -> None:
-        self.close_calls += 1
-
-    def _track_table_ddl(self, sql: str) -> None:
-        body = _strip_query_label(sql)
-        if body.startswith("CREATE TABLE IF NOT EXISTS "):
-            table_name = body[len("CREATE TABLE IF NOT EXISTS ") :].split()[0]
-            self.created_tables.add(table_name)
-            return
-        if body.startswith("CREATE TABLE "):
-            table_name = body[len("CREATE TABLE ") :].split()[0]
-            self.created_tables.add(table_name)
-            return
-        if body.startswith("DROP TABLE IF EXISTS "):
-            table_name = body[len("DROP TABLE IF EXISTS ") :].split()[0]
-            self.created_tables.discard(table_name)
-
-    def _cluster_table_count(self, sql: str) -> int:
-        marker = "AND name = '"
-        if marker not in sql:
-            return len(self.created_tables)
-        relation_name = sql.split(marker, 1)[1].split("'", 1)[0]
-        return sum(
-            1
-            for table_name in self.created_tables
-            if table_name.rsplit(".", 1)[-1] == relation_name
-        )
-
-    def _inserted_rows(self, table_name: str) -> int:
-        total = 0
-        for insert in self.inserts:
-            if insert["table"] != table_name:
-                continue
-            if "data" in insert:
-                total += len(insert["data"])
-            elif "df" in insert:
-                total += len(insert["df"])
-        if total == 0:
-            for command in reversed(self.commands):
-                body = _strip_query_label(command)
-                if body.startswith(f"INSERT INTO {table_name} ") and " FROM " in body:
-                    source_table = body.rsplit(" FROM ", 1)[1].split()[0]
-                    return self._inserted_rows(source_table)
-        return total
-
-    def _cluster_inserted_rows(self, relation_name: str) -> int:
-        matching_tables = [
-            table_name
-            for table_name in self.created_tables
-            if table_name.rsplit(".", 1)[-1] == relation_name
-        ]
-        total = sum(self._inserted_rows(table_name) for table_name in matching_tables)
-        if total or not relation_name.endswith("_shard"):
-            return total
-        distributed_relation = relation_name[: -len("_shard")]
-        return sum(
-            self._inserted_rows(table_name)
-            for table_name in self.created_tables
-            if table_name.rsplit(".", 1)[-1] == distributed_relation
-        )
+@pytest.fixture(autouse=True)
+def _offline_gp_driver(monkeypatch, write_sql_connections):
+    install_fake_gp_cursor_boundary(monkeypatch, FakeSourceCursor)
+    connections = deepcopy(DEFAULT_SQL_CONNECTIONS)
+    connections["ch"]["database"] = "analytics"
+    write_sql_connections(connections)
 
 
+FakeClickHouseClient = TransferClickHouseClient
+
+
+@pytest.mark.parametrize("users", [10, None])
 def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     monkeypatch,
+    users,
 ) -> None:
-    source = FakeSourceConnection(rows=[(date(2024, 2, 1), 10)])
+    source = FakeSourceConnection(rows=[(date(2024, 2, 1), users)])
     target = FakeClickHouseClient()
 
-    def fake_get_sql_connection(connection_key: str) -> object:
-        if connection_key == "gp":
-            return source
-        if connection_key == "ch":
-            return target
-        message = f"Unexpected connection key: {connection_key}"
-        raise AssertionError(message)
-
-    monkeypatch.setattr(
-        transfer_attempt_module,
-        "get_sql_connection",
-        fake_get_sql_connection,
-    )
-    monkeypatch.setattr(
-        transfer_finalize_module,
-        "get_sql_connection",
-        fake_get_sql_connection,
-    )
+    install_legacy_transfer_connections(monkeypatch, source, target)
 
     transferred_rows = transfer_api_module.transfer_table(
         from_db="gp",
@@ -267,6 +125,7 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
         write_mode="replace",
         retry_cnt=1,
         timeout_increment=0,
+        ch_ddl_ready_timeout_seconds=0.01,
         full_retry_cnt=1,
         full_timeout_increment=0,
         partition_by=["month_date"],
@@ -282,38 +141,37 @@ def test_transfer_table_clickhouse_target_creates_distributed_table_on_cluster(
     assert stage_identifier.endswith("__w00000")
     assert len(stage_identifier.encode()) <= 63
     staged_row = target.inserts[0]["data"][0]
-    assert staged_row == (date(2024, 2, 1), 10)
+    assert staged_row == (date(2024, 2, 1), users)
     assert target.inserts[0]["column_names"] == ["month_date", "users"]
-    assert target.inserts[0]["column_type_names"] == ["Date", "Int64"]
+    # GP metadata leaves nullability unknown. The certified native integer
+    # representation retains that domain even when this selection has no NULL.
+    assert target.inserts[0]["column_type_names"] == ["Date", "Nullable(Int64)"]
     assert "df" not in target.inserts[0]
 
-    cluster_distributed_creates = [
-        command
-        for command in map(_strip_query_label, target.commands)
-        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}\n")
-        and "ON CLUSTER '{cluster}'" in command
-    ]
+    creates = command_trees(target, "CREATE", TARGET_TABLE)
+    cluster_distributed_creates = [tree for tree in creates if tree.find(exp.OnCluster)]
     assert len(cluster_distributed_creates) == 1
-    assert "ENGINE = Distributed(" in cluster_distributed_creates[0]
-    assert "`month_date` Date" in cluster_distributed_creates[0]
-    assert "`users` Int64" in cluster_distributed_creates[0]
-    assert "    '{cluster}'," in cluster_distributed_creates[0]
-    assert f"    '{TARGET_SHARD_TABLE}'," in cluster_distributed_creates[0]
+    facade = cluster_distributed_creates[0]
+    assert facade.args.get("exists") is False
+    assert engine_name(facade) == "Distributed"
+    assert column_types(facade) == {"month_date": "Date", "users": "Nullable(Int64)"}
+    route = extract_clickhouse_distributed_shard_table(engine_sql(facade), "analytics")
+    assert route.cluster == "{cluster}"
+    assert route.table == TARGET_SHARD_TABLE
+    assert "cityHash64(month_date)" in engine_sql(facade).replace('"', "").replace("`", "")
     local_shard_creates = [
-        command
-        for command in map(_strip_query_label, target.commands)
-        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_SHARD_TABLE}\n")
-        and "ON CLUSTER" not in command
+        tree
+        for tree in command_trees(target, "CREATE", TARGET_SHARD_TABLE)
+        if tree.find(exp.OnCluster) is None
     ]
     assert len(local_shard_creates) == 1
-    assert "UUID '" in local_shard_creates[0]
-    assert any(
-        "INSERT INTO test_transfer_target (`month_date`, `users`) SELECT CAST(`month_date` AS Date)"
-        in command
-        and "FROM analytics_toolkit_transfer." in command
-        and stage_identifier in command
-        for command in map(_strip_query_label, target.commands)
-    )
+    assert local_shard_creates[0].find(exp.UuidProperty) is not None
+    live_inserts = command_trees(target, "INSERT", TARGET_TABLE)
+    assert len(live_inserts) == 1
+    assert [item.name for item in live_inserts[0].this.expressions] == ["month_date", "users"]
+    assert live_inserts[0].expression.expressions[0].unalias().args["to"].sql() == "DATE"
+    assert live_inserts[0].expression.find(exp.Table).name == stage_identifier
+    assert live_inserts[0].expression.find(exp.Table).db == "analytics_toolkit_transfer"
 
     assert f"DROP TABLE IF EXISTS {TARGET_TABLE} ON CLUSTER '{{cluster}}'" not in map(
         _strip_query_label, target.commands
@@ -334,15 +192,7 @@ def test_transfer_table_preserves_greenplum_bytea_as_clickhouse_string(monkeypat
     )
     target = FakeClickHouseClient()
 
-    def fake_get_sql_connection(connection_key: str) -> object:
-        if connection_key == "gp":
-            return source
-        if connection_key == "ch":
-            return target
-        raise AssertionError(f"Unexpected connection key: {connection_key}")
-
-    monkeypatch.setattr(transfer_attempt_module, "get_sql_connection", fake_get_sql_connection)
-    monkeypatch.setattr(transfer_finalize_module, "get_sql_connection", fake_get_sql_connection)
+    install_legacy_transfer_connections(monkeypatch, source, target)
 
     transferred_rows = transfer_api_module.transfer_table(
         from_db="gp",
@@ -352,6 +202,7 @@ def test_transfer_table_preserves_greenplum_bytea_as_clickhouse_string(monkeypat
         write_mode="replace",
         retry_cnt=1,
         timeout_increment=0,
+        ch_ddl_ready_timeout_seconds=0.01,
         full_retry_cnt=1,
         full_timeout_increment=0,
         table_schema={"id": "Int64", "cheque_pk": "String", "name": "String"},
@@ -360,17 +211,15 @@ def test_transfer_table_preserves_greenplum_bytea_as_clickhouse_string(monkeypat
     )
 
     assert transferred_rows == 1
-    assert target.inserts[0]["data"] == [(1, b"\x00\xff\x80", "Кириллица")]
+    assert target.inserts[0]["data"] == [(1, b"\x00\xff\x80", "Кириллица".encode())]
+    assert bytes(source._rows[0][1]) == b"\x00\xff\x80"
+    assert source._rows[0][2] == "Кириллица"
     assert target.inserts[0]["column_type_names"] == ["Int64", "String", "String"]
-    target_creates = [
-        command
-        for command in map(_strip_query_label, target.commands)
-        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
-    ]
+    target_creates = command_trees(target, "CREATE", TARGET_TABLE)
     assert target_creates
-    assert all("`id` Int64" in command for command in target_creates)
-    assert all("ORDER BY `id`" in command for command in target_creates)
-    assert all("Nullable(Int64)" not in command for command in target_creates)
+    for tree in target_creates:
+        assert column_types(tree) == {"id": "Int64", "cheque_pk": "String", "name": "String"}
+        assert [column.name for column in tree.find(exp.Order).find_all(exp.Column)] == ["id"]
 
 
 def test_transfer_table_clickhouse_only_shard_creates_local_target(
@@ -379,23 +228,7 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
     source = FakeSourceConnection(rows=[(date(2024, 2, 1), 10)])
     target = FakeClickHouseClient()
 
-    def fake_get_sql_connection(connection_key: str) -> object:
-        if connection_key == "gp":
-            return source
-        if connection_key == "ch":
-            return target
-        raise AssertionError(f"Unexpected connection key: {connection_key}")
-
-    monkeypatch.setattr(
-        transfer_attempt_module,
-        "get_sql_connection",
-        fake_get_sql_connection,
-    )
-    monkeypatch.setattr(
-        transfer_finalize_module,
-        "get_sql_connection",
-        fake_get_sql_connection,
-    )
+    install_legacy_transfer_connections(monkeypatch, source, target)
 
     transferred_rows = transfer_api_module.transfer_table(
         from_db="gp",
@@ -405,6 +238,7 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
         write_mode="replace",
         retry_cnt=1,
         timeout_increment=0,
+        ch_ddl_ready_timeout_seconds=0.01,
         full_retry_cnt=1,
         full_timeout_increment=0,
         ch_only_shard=True,
@@ -417,30 +251,26 @@ def test_transfer_table_clickhouse_only_shard_creates_local_target(
         _strip_query_label,
         target.commands,
     )
-    assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
-        and "ON CLUSTER '{cluster}'" in command
-        for command in map(_strip_query_label, target.commands)
-    )
+    target_creates = command_trees(target, "CREATE", TARGET_TABLE)
+    assert any(tree.find(exp.OnCluster) is not None for tree in target_creates)
     assert all(
         "ENGINE = Distributed(" not in command
         for command in map(_strip_query_label, target.commands)
     )
     assert all(TARGET_SHARD_TABLE not in command for command in target.commands)
-    target_creates = [
-        command
-        for command in map(_strip_query_label, target.commands)
-        if command.startswith(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE}")
-    ]
     assert len(target_creates) == 2
-    assert "ENGINE = ReplicatedMergeTree" in target_creates[0]
-    assert "PARTITION BY `month_date`" in target_creates[0]
-    assert "ORDER BY `month_date`" in target_creates[0]
+    assert engine_name(target_creates[0]) == "ReplicatedMergeTree"
+    assert [
+        column.name
+        for column in target_creates[0].find(exp.PartitionedByProperty).find_all(exp.Column)
+    ] == ["month_date"]
+    assert [column.name for column in target_creates[0].find(exp.Order).find_all(exp.Column)] == [
+        "month_date"
+    ]
     assert any("clusterAllReplicas" in query for query in target.queries)
-    assert any(
-        command.startswith(f"INSERT INTO {TARGET_TABLE} (`month_date`, `users`) ")
-        for command in map(_strip_query_label, target.commands)
-    )
+    live_inserts = command_trees(target, "INSERT", TARGET_TABLE)
+    assert len(live_inserts) == 1
+    assert [item.name for item in live_inserts[0].this.expressions] == ["month_date", "users"]
 
 
 def test_transfer_table_clickhouse_empty_missing_target_creates_empty_target(
@@ -449,23 +279,7 @@ def test_transfer_table_clickhouse_empty_missing_target_creates_empty_target(
     source = FakeSourceConnection(rows=[])
     target = FakeClickHouseClient()
 
-    def fake_get_sql_connection(connection_key: str) -> object:
-        if connection_key == "gp":
-            return source
-        if connection_key == "ch":
-            return target
-        raise AssertionError(f"Unexpected connection key: {connection_key}")
-
-    monkeypatch.setattr(
-        transfer_attempt_module,
-        "get_sql_connection",
-        fake_get_sql_connection,
-    )
-    monkeypatch.setattr(
-        transfer_finalize_module,
-        "get_sql_connection",
-        fake_get_sql_connection,
-    )
+    install_legacy_transfer_connections(monkeypatch, source, target)
 
     transferred_rows = transfer_api_module.transfer_table(
         from_db="gp",
@@ -474,6 +288,7 @@ def test_transfer_table_clickhouse_empty_missing_target_creates_empty_target(
         to_table=TARGET_TABLE,
         retry_cnt=1,
         timeout_increment=0,
+        ch_ddl_ready_timeout_seconds=0.01,
         full_retry_cnt=3,
         full_timeout_increment=0,
         partition_by=["month_date"],
@@ -486,6 +301,6 @@ def test_transfer_table_clickhouse_empty_missing_target_creates_empty_target(
         for command in map(_strip_query_label, target.commands)
     )
     assert target.inserts == []
-    assert TARGET_TABLE in target.created_tables
+    assert f"analytics.{TARGET_TABLE}" in target.state.host_tables[target.host]
     assert source.close_calls == 1
     assert target.close_calls >= 1

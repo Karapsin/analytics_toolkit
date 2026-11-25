@@ -14,6 +14,10 @@ def _build_column_definitions(
     batch: pd.DataFrame,
     column_types: Mapping[str, str] | None,
 ) -> str:
+    from analytics_toolkit.sql.backends.native_values import (  # noqa: PLC0415 -- backend registry must finish before validating resolved types.
+        validate_backend_declaration,
+    )
+
     column_defs = []
     for column_name in batch.columns:
         db_type = (
@@ -21,6 +25,7 @@ def _build_column_definitions(
             if column_types is not None
             else _infer_backend_type(backend, batch[column_name])
         )
+        validate_backend_declaration(db_type, backend)
         column_defs.append(f"{quote_identifier(column_name, backend)} {db_type}")
     return ", ".join(column_defs)
 

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -11,11 +14,15 @@ from analytics_toolkit.sql.execution.cancellation import (
     register_connection_alias,
 )
 from analytics_toolkit.sql.execution.observation import observed_connection
-from analytics_toolkit.sql.execution.operation_runner import timed_public_sql_function
+from analytics_toolkit.sql.execution.operation_runner import (
+    _close_connection,  # noqa: F401 -- historical helper import.
+    timed_public_sql_function,
+)
 from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
 from .airflow_compat import variable_getter
 from .config import ChConfig, get_connection_config, get_connections_file_path
+from .configuration_guards import check_connection_configuration
 from .errors import SqlConfigError, UnsupportedConnectionTypeError
 
 
@@ -24,6 +31,7 @@ def get_sql_connection(db_key: str) -> Any:
     config = get_connection_config(db_key)
     register_connection_alias(config.connection_key)
     raise_if_cancelled()
+    check_connection_configuration(config)
     time_print(
         "Opening connection",
         connection=config.connection_key,
@@ -52,11 +60,14 @@ def get_ch_connection_for_host(connection_key: str, host: str, *, port: int | No
         raise UnsupportedConnectionTypeError(
             f"SQL connection '{config.connection_key}' is not a ClickHouse connection."
         )
+    discovered_port = getattr(host, "tcp_port", None) if config.driver == "native" else None
+    effective_port = port if port is not None else discovered_port
     host_name = str(host).strip()
     if not host_name:
         raise ValueError("host must not be empty.")
     register_connection_alias(config.connection_key)
     raise_if_cancelled()
+    check_connection_configuration(config)
     time_print(
         f"Opening connection to {host_name}",
         connection=config.connection_key,
@@ -64,7 +75,9 @@ def get_ch_connection_for_host(connection_key: str, host: str, *, port: int | No
         phase="connect",
     )
     connection = get_backend("ch").open_connection(
-        replace(config, host=host_name, port=config.port if port is None else port),
+        replace(
+            config, host=host_name, port=config.port if effective_port is None else effective_port
+        ),
         parse_verify_value=_parse_verify_value,
         resolve_ca_certs=_resolve_ca_certs,
         resolve_single_cert_path=_resolve_single_cert_path_by_name,
@@ -133,12 +146,22 @@ def _resolve_ca_certs(connection_key: str, ca_certs: list[str]) -> str | None:
     connections_dir = get_connections_file_path().parent
     bundle_dir = connections_dir / ".certs" / ".generated"
     bundle_dir.mkdir(parents=True, exist_ok=True)
-    bundle_path = bundle_dir / f"{_safe_file_key(connection_key)}-ca-bundle.pem"
-    bundle_contents = (
-        "\n".join(path.read_text(encoding="utf-8").strip() for path in resolved_paths) + "\n"
+    contents = [path.read_bytes() for path in resolved_paths]
+    bundle_contents = b"".join(
+        value if value.endswith(b"\n") else value + b"\n" for value in contents
     )
-    if not bundle_path.exists() or bundle_path.read_text(encoding="utf-8") != bundle_contents:
-        bundle_path.write_text(bundle_contents, encoding="utf-8")
+    digest = hashlib.sha256(bundle_contents).hexdigest()
+    bundle_path = bundle_dir / f"{_safe_file_key(connection_key)}-ca-bundle-{digest}.pem"
+    if not bundle_path.exists():
+        descriptor, temporary_name = tempfile.mkstemp(prefix=".ca-bundle-", dir=bundle_dir)
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(bundle_contents)
+                stream.flush()
+                os.fsync(stream.fileno())
+            Path(temporary_name).replace(bundle_path)
+        finally:
+            Path(temporary_name).unlink(missing_ok=True)
     return str(bundle_path)
 
 

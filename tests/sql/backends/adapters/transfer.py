@@ -263,6 +263,14 @@ def test_backend_transfer_and_load_policies_are_adapter_owned() -> None:
             source_key="source_gp",
             target_key="target_gp",
         )
+        is False
+    )
+    assert (
+        gp_adapter.should_insert_create_table_from_sql_directly(
+            source_backend="gp",
+            source_key="same_gp",
+            target_key="same_gp",
+        )
         is True
     )
     assert (

@@ -6,12 +6,17 @@ from dataclasses import dataclass
 from threading import RLock
 from typing import Any, Literal
 
+from sqlglot import exp, parse_one
+from sqlglot.errors import SqlglotError
+
 from analytics_toolkit.sql.backends.ch.metadata import (
     extract_clickhouse_distributed_shard_table,
 )
 from analytics_toolkit.sql.backends.transfer_stage import is_transfer_stage_identifier
-from analytics_toolkit.sql.backends.utils import sql_string_literal
 from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
+
+from .dialect import ClickHouseDialect, sql_string_literal
+from .metadata_values import decode_metadata_rows
 
 FACADE_METADATA_COLUMN_COUNT = 3
 CLUSTER_TABLE_METADATA_COLUMN_COUNT = 5
@@ -29,6 +34,7 @@ class ManagedTableRoute:
     mode: RouteMode
     engine: str | None = None
     sharding_key: str | None = None
+    cluster: str | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +71,17 @@ class ManagedPairResolver:
             self._cache[key] = route
             return route
 
+    def resolve_physical(self, *, cluster: str, database: str, table: str) -> ManagedTableRoute:
+        """Validate explicitly verified storage without interpreting a coordinator facade."""
+        objects, replicas = self._read_consistent_cluster_object(
+            cluster=cluster, database=database, table=table, allow_incomplete=False
+        )
+        engine = objects[0].engine
+        if not engine.lower().endswith("mergetree"):
+            message = "Verified upsert storage must retain its MergeTree engine."
+            raise ClickHouseClusterTopologyError(message)
+        return ManagedTableRoute(database, table, self._route_mode(engine, replicas), engine)
+
     def _inspect_route(
         self,
         *,
@@ -72,7 +89,7 @@ class ManagedPairResolver:
         database: str,
         table: str,
     ) -> ManagedTableRoute:
-        if database.lower() == "system" or is_transfer_stage_identifier(table):
+        if database == "system" or is_transfer_stage_identifier(table):
             self._validate_cluster_reachable(cluster)
             return ManagedTableRoute(database, table, "all_replicas")
 
@@ -138,7 +155,7 @@ class ManagedPairResolver:
             "LIMIT 1"
         )
         try:
-            rows = _query_rows(self._client, sql)
+            rows = _query_rows(self._client, sql, text_columns=(0, 1, 2))
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
                 f"Could not inspect ClickHouse relation {database}.{table}."
@@ -175,7 +192,7 @@ class ManagedPairResolver:
             f"  AND name = {sql_string_literal(table)}"
         )
         try:
-            rows = _query_rows(self._client, sql)
+            rows = _query_rows(self._client, sql, text_columns=(0, 1, 2, 3, 4))
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
                 f"Could not inspect {database}.{table} on every host of cluster {cluster_name!r}."
@@ -219,7 +236,7 @@ class ManagedPairResolver:
             f"WHERE cluster = {sql_string_literal(cluster_name)}"
         )
         try:
-            rows = _query_rows(self._client, sql)
+            rows = _query_rows(self._client, sql, text_columns=(2,))
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
                 f"Could not inspect ClickHouse cluster {cluster_name!r}."
@@ -248,6 +265,7 @@ class ManagedPairResolver:
                 self._client,
                 "SELECT hostName() FROM clusterAllReplicas("
                 f"{sql_string_literal(cluster_name)}, system, one)",
+                text_columns=(0,),
             )
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
@@ -278,7 +296,7 @@ class ManagedPairResolver:
             f"  AND table = {sql_string_literal(table)}"
         )
         try:
-            rows = _query_rows(self._client, sql)
+            rows = _query_rows(self._client, sql, text_columns=(0, 1, 2))
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
                 f"Could not validate replicas for {database}.{table}."
@@ -339,16 +357,26 @@ def _cluster_object(row: tuple[Any, ...], database: str, table: str) -> _Cluster
 
 
 def _normalized_definition(item: _ClusterObject) -> str:
-    definition = " ".join((item.create_table_query or item.engine_full).split())
-    definition = re.sub(r"\s+UUID\s+'[^']+'", "", definition, flags=re.IGNORECASE)
+    definition = item.create_table_query or item.engine_full
+    try:
+        parsed = parse_one(definition, read=ClickHouseDialect)
+    except SqlglotError as exc:
+        message = "Cannot compare ClickHouse DDL safely."
+        raise ClickHouseClusterTopologyError(message) from exc
+    if parsed is None or isinstance(parsed, exp.Command):
+        message = "Cannot compare ClickHouse DDL safely."
+        raise ClickHouseClusterTopologyError(message)
+    for uuid in list(parsed.find_all(exp.UuidProperty)):
+        uuid.pop()
     if _is_replicated_engine(item.engine):
-        definition = re.sub(
-            r"(Replicated[A-Za-z]*MergeTree\s*\(\s*'[^']*'\s*,\s*)'[^']*'",
-            r"\1'<replica>'",
-            definition,
-            flags=re.IGNORECASE,
-        )
-    return definition
+        engine_property = parsed.find(exp.EngineProperty)
+        engine = engine_property.this if engine_property is not None else parsed
+        if isinstance(engine, exp.Anonymous) and len(engine.expressions) >= SQL_QUOTE_PAIR_LENGTH:
+            arguments = list(engine.expressions)
+            if isinstance(arguments[1], exp.Literal) and arguments[1].is_string:
+                arguments[1] = exp.Literal.string("<replica>")
+                engine.set("expressions", arguments)
+    return parsed.sql(dialect=ClickHouseDialect)
 
 
 def _is_replicated_engine(engine: str) -> bool:
@@ -361,7 +389,9 @@ def _resolve_cluster_name(client: Any, cluster: str) -> str:
     match = re.fullmatch(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", normalized)
     if match is None:
         return normalized
-    rows = _query_rows(client, f"SELECT getMacro({sql_string_literal(match.group(1))})")
+    rows = _query_rows(
+        client, f"SELECT getMacro({sql_string_literal(match.group(1))})", text_columns=(0,)
+    )
     if not rows or not rows[0] or rows[0][0] is None:
         raise ClickHouseClusterTopologyError(
             f"Could not resolve ClickHouse cluster macro {normalized!r}."
@@ -394,9 +424,11 @@ def _query_count(client: Any, sql: str) -> int:
     return int(rows[0][0])
 
 
-def _query_rows(client: Any, sql: str) -> list[tuple[Any, ...]]:
+def _query_rows(
+    client: Any, sql: str, *, text_columns: tuple[int, ...] = ()
+) -> list[tuple[Any, ...]]:
     result = client.query(sql)
-    return list(getattr(result, "result_rows", None) or [])
+    return decode_metadata_rows(list(getattr(result, "result_rows", None) or []), text_columns)
 
 
 __all__ = ["ManagedPairResolver", "ManagedTableRoute", "RouteMode"]

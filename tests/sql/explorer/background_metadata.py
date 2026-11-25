@@ -260,7 +260,7 @@ def test_pool_configuration_failure_keeps_interactive_completion_available(tmp_p
         _wait_for(lambda: pool.is_stopped)
 
 
-def test_unqualified_snapshots_preserve_case_insensitive_deduplication(tmp_path: Path) -> None:
+def test_unqualified_snapshots_preserve_exact_case_sensitive_identities(tmp_path: Path) -> None:
     store = MetadataStore(tmp_path, "gp")
     store.save(
         {
@@ -270,7 +270,7 @@ def test_unqualified_snapshots_preserve_case_insensitive_deduplication(tmp_path:
         }
     )
     discovery = BackgroundMetadata("gp", "gp", Provider(), store, on_error=lambda exc: None)
-    assert discovery.cached("table") == ("Alpha", "Orders", "zebra")
+    assert discovery.cached("table") == ("Alpha", "Orders", "orders", "zebra")
 
 
 def test_connection_fingerprint_changes_and_does_not_store_credentials(

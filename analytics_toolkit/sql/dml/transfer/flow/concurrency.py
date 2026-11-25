@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 # ruff: noqa: EM102, TID252, TRY003
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..runtime.models import TransferConcurrency
+
+if TYPE_CHECKING:
+    import contextvars
 
 CONCURRENCY_CONFLICT_ERROR = (
     "concurrency cannot be combined with read_concurrency or write_concurrency; "
@@ -112,3 +115,11 @@ def resolve_transfer_concurrency(  # noqa: PLR0913 -- preserve the internal comp
         soft_limited_read=soft_limited_read,
         soft_limited_write=soft_limited_write,
     )
+
+
+def run_in_context(
+    context: contextvars.Context,
+    function: Any,
+    **kwargs: Any,
+) -> Any:
+    return context.run(function, **kwargs)

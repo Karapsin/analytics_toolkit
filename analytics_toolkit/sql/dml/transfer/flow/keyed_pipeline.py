@@ -30,6 +30,7 @@ from ..runtime.retry import (
     rollback_quietly,
     run_with_retry,
 )
+from .frozen_retry import frozen_input_retry
 from .logging import (
     format_transfer_slice_log_label,
     pipeline_phase_message,
@@ -466,7 +467,7 @@ def _stage_batch(
         stage_table,
         item.batch.columns,
         item.batch.rows,
-        retry_fn=run_with_retry,
+        retry_fn=frozen_input_retry(options, run_with_retry),
         retry_cnt=insert_retry_cnt,
         timeout_increment=options.timeout_increment,
         target_column_types=stage_state.stage_column_types,

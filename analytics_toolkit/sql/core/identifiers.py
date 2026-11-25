@@ -52,8 +52,7 @@ class TableIdentifier:
 
     def render_quoted(self, connection_type: str) -> str:
         return ".".join(
-            quote_identifier_part(part, connection_type, quoted=True)
-            for part in self.parts
+            quote_identifier_part(part, connection_type, quoted=True) for part in self.parts
         )
 
 

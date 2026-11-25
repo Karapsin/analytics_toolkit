@@ -283,7 +283,16 @@ def _close_connection(
         backend=backend,
         phase="close",
     )
-    connection_ref["connection"].close()
+    try:
+        connection_ref["connection"].close()
+    except Exception as exc:  # noqa: BLE001 - close must preserve the established outcome
+        time_print(
+            f"Connection close failed after SQL outcome was established: {type(exc).__name__}",
+            level="warning",
+            connection=connection_key,
+            backend=backend,
+            phase="close",
+        )
 
 
 def _log_connection_cleanup_failure(

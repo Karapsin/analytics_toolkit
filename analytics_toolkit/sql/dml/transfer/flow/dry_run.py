@@ -9,7 +9,9 @@ from sqlglot import exp, parse_one
 from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 
 from ....backends import get_backend_adapter
+from ....backends.native_values import supports_native_assignment
 from ....core.identifiers import sqlglot_dialect
+from ....core.type_resolution import native_candidates
 from ....ddl.api import _build_create_table_sqls
 from ....execution.plan_steps import (
     add_analyze_step,
@@ -28,7 +30,10 @@ from ...table.write_modes import (
     build_upsert_stage_sqls,
 )
 from ..runtime.models import TransferOptions
+from .client_validation import client_validation_plan_options
+from .native_assignment import native_assignment_plan_options
 from .parquet_stage import build_create_parquet_stage_table_sql, build_stage_external_location
+from .stage_planning import planned_stage_table_name
 
 
 def dry_run_transfer_options(
@@ -43,6 +48,10 @@ def dry_run_transfer_options(
     lazy_keyed_staging = slices is not None and source_staged
     return {
         "write_mode": options.write_mode,
+        "pending_existing_layout_verification": (
+            options.write_mode == "upsert"
+            and get_backend_adapter(options.to_db_backend).supports_distributed_table_targets()
+        ),
         "empty_source_policy": options.empty_source_policy,
         "transfer_id": options.transfer_id,
         "canonical_destination_identity": options.canonical_destination_identity,
@@ -157,6 +166,19 @@ def dry_run_transfer_options(
         "stage_tables": stage_tables,
         "aggregate_stage_table": stage_tables[0],
         "table_schema": options.table_schema,
+        "type_resolution_pending": options.table_schema is None,
+        **native_assignment_plan_options(options, supports_native_assignment),
+        **client_validation_plan_options(options),
+        "target_constraints_validation_pending": True,
+        "target_constraint_validation": "complete_owned_stage_before_live_publication",
+        "type_resolution": {
+            "precedence": ["explicit_schema", "existing_target", "inferred_schema"],
+            "profiling": "complete_selected_input_when_declared_domain_does_not_fit",
+            "native_candidates": native_candidates(options.to_db_backend),
+            "adaptive_input": "certified_native_snapshot_or_local_exact_replay_spool",
+            "adaptive_key_barrier": options.transfer_slices is not None,
+            "dry_run_profiles_input": False,
+        },
         "partition_by": options.partition_by,
         "order_by": options.order_by,
         "ch_engine": options.ch_engine,
@@ -210,6 +232,14 @@ def build_transfer_table_plan(options: TransferOptions) -> SqlPlan:
         _add_lazy_key_lifecycle_steps(plan, options)
     else:
         _add_static_source_steps(plan, options)
+        if options.table_schema is None:
+            plan.add(
+                "RESOLVE DESTINATION TYPES FROM SOURCE METADATA; IF NEEDED, PROFILE AND "
+                "CERTIFY THE COMPLETE SELECTED INPUT BEFORE CREATING DESTINATION TABLES",
+                alias=options.to_db_key,
+                backend=options.to_db_backend,
+                phase="resolve_types",
+            )
         _add_target_stage_templates(
             plan,
             options,
@@ -622,21 +652,9 @@ def dry_run_stage_table_name(
     *,
     worker_index: int | None = None,
 ) -> str:
-    runtime_id = options.transfer_id or "<runtime-transfer-id>"
-    suffix = (
-        f"{runtime_id}__w00000" if worker_index is None else f"{runtime_id}__w{worker_index:05d}"
+    return planned_stage_table_name(
+        options, worker_index=worker_index, build_stage_table_name=build_stage_table_name
     )
-    try:
-        return build_stage_table_name(
-            options.to_db_backend,
-            options.target_table,
-            transfer_staging_schema=(options.s3_transfer_staging_schema),
-            transfer_staging_username=options.transfer_staging_username,
-            random_suffix=suffix,
-            destination_hash=options.destination_hash,
-        )
-    except Exception:
-        return f"{options.target_table}__stage__{suffix}"
 
 
 def dry_run_final_upsert_stage_table_name(options: TransferOptions) -> str:

@@ -30,12 +30,20 @@ table and expected schema exist on every host used by the effective
 `Distributed(...)` routing cluster. A routing/scope mismatch fails immediately
 with host-count diagnostics and guidance to correct `distributed.cluster`.
 
-Every ClickHouse table-creation API accepts `ch_ddl_wait_policy`. Use
-`wait_all` (default) for both physical and Distributed relations,
-`wait_shard` for physical relations only, `wait_distr` for Distributed facades
-only, or `wait_none` to skip post-create readiness polling. The explicit
-argument overrides `.connections`; skipped checks do not alter DDL execution,
-cutover, rollback, or cleanup behavior.
+Every ClickHouse table-creation API accepts `ch_ddl_wait_policy`. When a
+physical/shard cluster is specified, the default is `wait_shard`: require the
+physical deployment and warn about unavailable hosts in other facade deployment
+clusters. Facades are created only on verified reachable hosts; an entirely
+unavailable optional facade cluster is skipped, without queuing DDL for its
+excluded hosts. When no shard cluster is specified, the default remains
+`wait_all` and all participating deployment clusters are required.
+
+An explicit argument overrides `.connections`. Use `wait_all` to require both
+physical and Distributed relations, `wait_shard` for physical relations only,
+`wait_distr` for Distributed facades only, or `wait_none` to skip post-create
+readiness polling. Explicit `wait_all` and `wait_distr` retain their facade
+availability requirement. These choices do not relax cutover, rollback, cleanup,
+or actual source-data coverage checks.
 
 The helper preserves configured `Distributed` sharding expressions exactly.
 In particular, `rand()` remains the integer-valued ClickHouse function rather
@@ -78,7 +86,7 @@ For a toolkit-standard managed pair, routing verifies that the local
 Distributed facade points to the same-database `<table>_shard` relation. If
 that shard exists at every expected routing-cluster position, named reads and
 all insert paths route the physical shard directly. The availability policy
-below runs before submission: `stop` rejects incomplete physical coverage, while
+below runs before submission: `stop` rejects incomplete effective coverage, while
 `healthy_shards` explicitly selects the usable subset. Inserts use foreground
 Distributed delivery so success means acknowledged delivery. Metadata errors
 remain errors under either policy.
@@ -86,17 +94,44 @@ remain errors under either policy.
 Replicated and shared engines use `cluster(...)`, which selects one replica per
 shard. Consistent non-replicated tables on a multi-replica cluster use
 `clusterAllReplicas(...)` because each host is assumed to own distinct data.
-Single-replica non-replicated tables use `cluster(...)`. Views and non-standard
-Distributed facades stay local; a view's own SQL remains responsible for its
-sources. Toolkit stages and `system` tables use all replicas. Exact explicit
+Single-replica non-replicated tables use `cluster(...)`. Views retain their native
+SQL and remain responsible for their sources. Automatic reads through a
+non-standard Distributed facade include every independent replica host after
+the physical destination and ordered column/default projection are verified.
+DDL ownership stays bound to the separately verified layout. Native facade
+routing is preserved where it provides the required read coverage. Toolkit-owned
+stages and the lowercase `system` database use all replicas. Exact explicit
 `cluster(...)`/`clusterAllReplicas(...)` wrappers around a named table are
-normalized to the same engine-dependent choice; unrelated table functions are
-left unchanged.
+normalized to the same engine-dependent choice when automatic routing is enabled.
+Without automatic routing, an explicit `clusterAllReplicas(...)` request retains
+physical-host coverage, even for replicated tables. Both three-argument
+`cluster('core', 'db', 'events')` and static two-argument
+`cluster('core', 'db.events')` forms are supported; quote individual identifier
+components inside the latter when names contain dots. Dynamic identities fail
+before submission. Extra supported function arguments are retained. Bound
+qualified columns, qualified stars, aliases, CTEs and correlated references keep
+their source identity when a named table becomes a cluster function. Unrelated
+table functions are left unchanged.
+
+An unqualified table in a native two-argument function uses the selected
+session's current database at execution, including an acknowledged `USE`
+statement. Fully qualified forms retain their explicit database. SQL-only
+planning continues to require an explicit or configured namespace. The
+two-argument identity must contain only identifier components: aliases,
+modifiers, comments outside quoted names and extra statements are rejected.
+
+Sources retain their complete database/table identity within each query scope.
+A join between `a.events` and `b.events` keeps both sources distinct, so their
+database-qualified columns and stars still resolve after routing. Implicit
+sources receive distinct generated aliases; explicit aliases remain
+authoritative. Bare qualifiers that do not identify one source remain
+ambiguous rather than being assigned to another database's table.
 
 Consequently, `wait_shard` is compatible with routing when the physical shard
-has full routing-cluster coverage and consistent metadata. The confirmed
-incomplete-pair fallback requires the local facade to be ready because it is
-intentionally not rewritten. An explicit
+has full routing-cluster coverage and consistent metadata. A verified route
+that uses a local facade requires that facade to be ready. Failed topology
+probes and missing required coverage stop the operation; `wait_shard` does not
+turn them into a local fallback. An explicit
 `ON CLUSTER` value from SQL, `ddl_defaults`, or a helper policy has precedence
 over the connection default, so a macro such as `'{cluster}'` is preserved and
 used by that statement. See
@@ -125,6 +160,38 @@ a facade deployed on one cluster scope to route to shards on another. When a
 shard is remote from the connected host, its DDL is inspected through the live
 Distributed routing cluster. Use `to_defaults=True` to converge the managed
 topology to the connection's regular `ddl_defaults` policy.
+
+Converting a coordinator-local table to a managed pair keeps source reads,
+renames, rollback and backup cleanup local. Desired physical and facade
+placement do not establish ownership of same-named remote tables. Existing
+facade destinations outside the verified source ownership are rejected before DDL.
+
+Before a physical change, reconfiguration verifies that every configured source
+endpoint contains the table with matching DDL. No-op and facade-only changes skip
+this additional endpoint-wide source scan. Metadata identity preserves literal
+backslashes and quoted function names; recognized unquoted zero-argument aliases
+for the current database resolve to the operation's captured namespace.
+
+Independent data on multiple replicas of non-replicated engines is copied per
+verified endpoint when source and replacement retain the same endpoint/instance
+bijection and the replacement remains non-replicated. Engine-family, sorting,
+partition and settings changes remain supported within that boundary. Relocation
+or pair conversion without that bijection, and conversion of such data to
+replicated storage, reject before DDL with guidance to migrate each host
+explicitly. This restriction does not exclude otherwise supported replicated or
+single-endpoint relocations and conversions.
+
+Validation counts replicated/shared data once per shard and independent data
+once per host. For physical rebuilds, `validate_row_count=False` skips data counts,
+while metadata, ownership and copy-safety checks remain mandatory. Dry plans
+inspect metadata only and mark endpoint-scoped copy SQL in their options; those statements belong
+to their recorded endpoints and are not a bulk script for the coordinator.
+
+Rebuilt Distributed facades retain permitted column defaults and comments.
+They exclude MergeTree storage clauses, including TTL clauses on the table and
+its columns. Physical replacement storage retains those TTL declarations.
+When verifying a facade/storage pair, column TTL differences alone are permitted;
+column types, defaults, comments and other identity checks remain active.
 
 Structural changes create and validate a replacement before cutover. Writers
 must be paused during that window. Atomic and Shared databases use an atomic
@@ -172,8 +239,13 @@ The configured entry server must be reachable; this policy does not select an
 alternate entry server when the initial connection fails.
 
 Existence and schema checks for existing replicated data also use replica
-failover. `stop` still requires all participating hosts for cluster DDL, including
-creation and removal of transfer stages. A transfer using local staging can
+failover. With a specified shard-table cluster, default creation requires its
+physical hosts and warns about unavailable hosts in other facade deployment
+clusters. Missing optional facades do not make verified physical data incomplete.
+Without a shard cluster, or with an explicit policy requiring facade readiness,
+all participating creation scopes remain required. Destructive DDL, cutover,
+and removal of transfer stages still require their complete execution scope.
+A transfer using local staging can
 append to an existing replicated target through a surviving replica without
 cluster DDL; a transfer configured to create stages `ON CLUSTER` must wait for
 all DDL hosts.
@@ -182,7 +254,7 @@ After every execution host recovers, `sql.drop_tables(..., if_exists=True)`
 and explicit `DROP TABLE IF EXISTS ... ON CLUSTER` can remove a partially
 created table pair under either policy. They do not create schema on the
 recovered shard first. Every execution host must be reachable, and cleanup is
-still refused after an uncertain live mutation. Plain DROP without `IF EXISTS`
+still refused after an uncertain structural mutation. Plain DROP without `IF EXISTS`
 retains its table-readiness checks.
 
 Ad hoc operations emit a prominent stderr banner, bold red on terminals that
@@ -210,16 +282,17 @@ preserving the row count.
 Coverage and topology rejections stop the current operation immediately;
 the SQL retry parameters do not poll until a shard recovers. Production
 schedulers can retry the whole job after recovery. Ordinary transient
-connection failures before a live write retain the normal retry behavior.
-Once a live write has been submitted, a later failure conservatively stops
-automatic retries for the entire operation, including a multi-statement batch,
-and retains recovery artifacts. This prevents replaying an earlier successful
-mutation while retrying a later failed statement.
-New toolkit-private stages are disposable under both policies, including stages
-created with `IF NOT EXISTS`: the toolkit checks absence in the actual creation
-scope before claiming ownership. A transient failure while populating an owned
-stage can be cleaned up and retried with fresh connections. A pre-existing table
-with a stage-like name is never claimed merely because `IF NOT EXISTS` succeeds.
+connection and data-write failures retain bounded retries, including after
+submission or a lost acknowledgement. Replays may repeat already committed
+effects. Uncertain toolkit-managed structural cutovers stop structural replay
+and retain recovery artifacts.
+Toolkit-created resources are disposable only after a plain CREATE is acknowledged
+and its submitted generation is verified in the actual execution scope. Candidate
+names, absence checks and successful `IF NOT EXISTS` commands do not establish
+ownership. Cleanup rechecks the native instance and table identity; an unproved or
+replaced generation is retained and reported. A transient failure while populating
+a verified owned stage can be cleaned up and retried with fresh connections.
+Each acknowledged DROP retires only its matching scope and generation receipt.
 
 Coverage enforcement adds metadata round trips: table definitions, cluster
 membership and reachability, and, where applicable, settings and replica health.
@@ -227,6 +300,15 @@ These observations are reused within the operation but refreshed on the next
 operation, so small queries can incur noticeable latency. Plain local-table
 operations without a cluster scope do not fan out to other hosts, but still
 inspect local metadata to distinguish local and Distributed tables.
+
+Before counting reachable ReplicatedMergeTree replicas as copies of one shard,
+the toolkit verifies their actual server identities and shared live Keeper
+leases. Equal path strings alone do not prove shared storage. These read-only
+checks require access to each peer's actual namespace through
+`system.zookeeper`; auxiliary Keeper names may differ between peers. Missing
+permissions or unverifiable active identities stop certification before data
+is read. Metadata estimates use the same replication identity check before
+declaring their logical totals complete.
 
 ### How healthy-only table creation works
 
@@ -242,6 +324,15 @@ pair, not a new target: reconcile it before loading. Healthy-only `IF NOT EXISTS
 creation checks the complete definition, including engine, keys, indexes and
 settings; conflicting definitions are rejected. Appends to verified existing
 targets use their established definitions instead of recreating them from defaults.
+Existing-target upserts bind target preservation reads, partition mutation, final
+inserts and prepared-payload replay to the same verified physical storage scope. A facade referencing storage on cluster
+`B` therefore mutates that storage even when caller creation settings name `A`.
+A scope verified through a cluster retains that cluster; coordinator-local or
+fallback storage keeps every target-storage operation local, without inheriting
+DDL defaults or automatic routing. Stage creation and stage-source routing retain
+their independent policies. Offline upsert plans set `pending_existing_layout_verification=True`;
+their provisional SQL uses the requested policy and does not inspect the existing
+layout until execution.
 Replace-style loads also prove absence in the resolved per-call creation scopes,
 so an orphan physical table on another healthy host cannot contribute stale rows
 when the alias has no automatic routing or cluster defaults.
@@ -313,8 +404,12 @@ identity is cleared. Recreating it populates the observed source again before
 counting and delivery. Finalization inserts into an empty target created by the
 same operation; it does not require a replacement of that newly created target.
 
-Degraded writes require the effective sharding key to be exactly `rand()`.
-Deterministic keys, parameterized random expressions, unknown dependencies, and
+Writes with degraded logical destination coverage require the effective sharding
+key to be exactly `rand()`. A surviving usable replica in every logical shard
+preserves coverage and permits the normal deterministic key. Independent host
+data and explicit all-replica requests require physical host coverage.
+Deterministic keys under degraded logical coverage, parameterized random
+expressions, unknown dependencies, and
 nonstandard managed pairs are rejected when safe routing cannot be established.
 Cross-cluster facade/data routing remains supported in strict mode; ad hoc
 routing requires their routing clusters to agree. Batch selection uses original
@@ -324,15 +419,51 @@ skipping is kept separate: ad hoc `INSERT SELECT` uses a client dataframe stream
 and therefore has additional network and memory cost per batch.
 
 A successful acknowledgement cannot make an operation atomic across shards.
-If a connection fails after submission, some rows or DDL may already have been
-accepted. Such mutations are not automatically replayed, including driver
-`TypeError` failures after submission. Stages and backups are retained when the
-outcome is uncertain. Destructive DDL uncertainty raises
-`AmbiguousSqlReplaceError`; inspect the retained state before manual recovery.
+Transient data-write failures retry the whole operation with fresh connections,
+including native `INSERT FORMAT` and lost acknowledgements. A partial chunk or
+an accepted write may therefore be submitted again and duplicate rows. This is
+at-least-once delivery; set `retry_cnt=1` when replay is unacceptable. Deterministic
+SQL, configuration and topology errors remain non-retryable.
+
+After an upsert has certified its complete partition-rebuild stage, retries
+reuse that stage and the same partition mutations. They do not recompute
+preserved rows from an already modified target. This permission applies only
+to the prepared upsert's exact partition drops and does not permit replaying
+unrelated structural changes.
+
+Toolkit-managed structural cutovers follow a separate recovery journal.
+Uncertain rename/exchange submission or rollback raises `AmbiguousSqlReplaceError`
+and retains stages, replacements and backups for reconciliation. Those structural
+steps are never blindly restarted. Inspect the retained state before recovery.
 Raw settings that contradict the selected policy are rejected. Neither mode
 turns authentication, schema, or query errors into an empty successful result.
 
 ## Replace and Drop
+
+Before staged replacement of an existing managed pair, the toolkit verifies
+actual storage and facade endpoint ownership. For same-topology pair-to-pair
+replacement, desired physical and routing scopes must identify the verified
+existing native instances; cluster aliases require the same proof. When the
+original facade execution scope is known, the desired facade scope must also
+have verified equivalent complete endpoint membership and shard and replica
+grouping. Narrowing that scope to the coordinator or a subset is a placement
+migration, not a staged replacement. Unsupported placement changes stop before
+replacement DDL. Perform a supported storage or facade placement migration first
+with [sql.ch_reconfigure_table](functions/ch_reconfigure_table.md).
+
+Replicated offside storage is checked independently of endpoint placement.
+Before its CREATE, every prospective path is expanded from actual destination
+macros, database, table and submitted UUID and compared with the source paths
+reported by `system.replicas`. An overlapping or unresolvable path stops before
+CREATE; a different replica name or Keeper alias does not make shared storage
+safe. Distinct fixed paths are supported. UUID paths receive a verified explicit
+Atomic generation that is also used by the submitted CREATE.
+
+Supported conversions between a managed pair and a plain table still use guarded
+automatic reconfiguration before offside replacement. The acknowledged
+destination layout is then verified, and replacement writes and row counts use
+that actual scope, whether remote or coordinator-local. Appends and upserts
+continue to use the verified existing layout.
 
 Replace flows build and populate offside physical and Distributed tables,
 validate row counts and a destination fingerprint, then exchange names in an
@@ -356,6 +487,25 @@ without turning other tables into cluster-function reads. In `stop`, native
 commands and syntax outside SQLGlot's dialect pass through after known declared
 cluster scopes are checked; unmodeled query scopes are not inferred.
 
-[sql.drop_tables](functions/drop_tables.md) removes managed table pairs.
+[sql.drop_tables](functions/drop_tables.md) verifies the existing relationship and
+the complete selected endpoint scopes before its first DROP. Existing endpoint
+resources require verified native UUIDs and complete definitions. Ordinary
+databases retain zero table UUIDs and bind ownership to their verified database
+engine, exact name, definition and server/endpoint scope. A zero UUID cannot
+distinguish recreation with the same definition. Unverifiable metadata stops
+before DDL. The facade and physical storage keep
+their separate verified placements: a facade on `A` that
+references storage on `B` does not authorize dropping an unrelated `A` companion
+or a same-named logical table on `B`. Role flags select the facade, physical
+storage or both; they do not infer ownership from names or desired DDL defaults.
+Absence waits and per-host recovery use those same resources and discovered
+native endpoint identities; recovery rechecks their verified table and server
+identities. Unavailable selected endpoints stop the drop, even with
+`if_exists=True`; that flag permits verified table absence, not incomplete
+endpoint coverage. `ch_cluster=None`
+restricts the operation to verified coordinator-local resources and rejects a
+selected remote or multi-host role.
+Offline plans defer resource and layout resolution without opening connections;
+their provisional execution requirements are not certified DROP statements.
 
 [SQL module index](index.md)

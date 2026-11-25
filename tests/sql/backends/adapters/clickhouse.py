@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from analytics_toolkit import sql as toolkit_sql
+from analytics_toolkit.sql.backends.ch import operations as ch_operations
+from analytics_toolkit.sql.backends.ch import truncate_layout as ch_truncate_layout
+from analytics_toolkit.sql.backends.ch.layout import ExistingClickHouseLayout
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import parse_create_table
+
 from tests.sql._support.adapters import (
     Any,
     Decimal,
-    FakeClickHouseResult,
     RecordingClickHouseClient,
     SimpleNamespace,
     StageFinalizationRequest,
@@ -20,6 +25,8 @@ from tests.sql._support.adapters import (
     pd,
     pytest,
 )
+from tests.sql._support.assertions import strip_query_label
+from tests.sql._support.ch_drop_scope import install_drop_scope
 
 
 def test_clickhouse_adapter_execute_and_read_failures_report_last_sql(
@@ -197,12 +204,19 @@ def test_clickhouse_adapter_stage_finalization_and_existing_metadata(
         query_label=None,
         connection_key="ch",
     )
-    assert create_calls[0]["table_schema"] == {"stored_id": "UInt32"}
+    assert create_calls == []  # Existing storage never provisions a policy-derived companion.
 
 
 def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    connection = SimpleNamespace(
+        query=lambda text: SimpleNamespace(
+            result_rows=[
+                ("CREATE TABLE events (id UInt64, month String) ENGINE = MergeTree ORDER BY id",)
+            ]
+        )
+    )
     adapter = get_backend_adapter("ch")
     monkeypatch.setattr(adapter, "ensure_distributed_target_pair", lambda *args, **kwargs: None)
     monkeypatch.setattr(
@@ -215,7 +229,7 @@ def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
     monkeypatch.setattr(adapter, "execute_command", lambda _connection, sql: commands.append(sql))
     adapter.finalize_stage_table(
         StageFinalizationRequest(
-            connection=object(),
+            connection=connection,
             stage_table="events_stage",
             target_table="events",
             replace_target_table=False,
@@ -230,7 +244,7 @@ def test_clickhouse_adapter_upsert_partition_and_identifier_helpers(
     with pytest.raises(ValueError, match="upsert_partition_column is required"):
         adapter.finalize_stage_table(
             StageFinalizationRequest(
-                connection=object(),
+                connection=connection,
                 stage_table="stage",
                 target_table="events",
                 replace_target_table=False,
@@ -270,21 +284,45 @@ def test_clickhouse_adapter_write_mode_matrix(
     write_mode, target_exists, only_shard, drop_missing, expected = case
     adapter = get_backend_adapter("ch")
     events: list[str] = []
+    layout = ExistingClickHouseLayout(
+        logical_table="analytics.events",
+        physical_table="analytics.events" if only_shard else "analytics.events_shard",
+        create_distributed_pair=not only_shard,
+        shard_on_cluster=None if only_shard else "core",
+        distributed_on_cluster=None if only_shard else "core",
+        distributed_cluster=None if only_shard else "core",
+        ddl="verified logical table",
+        physical_ddl="verified physical table",
+    )
+    connection = SimpleNamespace(outage_inspect_existing_layout=lambda _table: layout)
     monkeypatch.setattr(adapter, "clear_table", lambda *args, **kwargs: events.append("clear"))
-    monkeypatch.setattr(adapter, "drop_table", lambda *args, **kwargs: events.append("drop"))
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "truncate_ch_distributed_table_pair",
-        lambda *args, **kwargs: events.append("truncate_pair"),
-    )
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "drop_ch_distributed_table_pair",
-        lambda *args, **kwargs: events.append("drop_pair"),
-    )
+
+    def truncate_verified(received_connection, received_layout, **options):
+        assert received_connection is connection
+        assert received_layout is layout
+        assert options == {"connection_key": "ch", "query_label": None}
+        events.append("truncate_pair")
+
+    monkeypatch.setattr(ch_truncate_layout, "truncate_existing_layout", truncate_verified)
+
+    def drop_verified(received_adapter, received_connection, table, **options):
+        assert received_adapter is adapter
+        assert received_connection is connection
+        assert table == "analytics.events"
+        assert options == {
+            "connection_key": "ch",
+            "ch_cluster": "{cluster}",
+            "ch_wait_for_absence": True,
+            "ch_retry_per_host_drops": True,
+            "if_exists": True,
+            "query_label": None,
+        }
+        events.append("drop_pair" if layout.create_distributed_pair else "drop")
+
+    monkeypatch.setattr(ch_operations, "drop_table_with_options", drop_verified)
     result = adapter.apply_target_write_mode(
         TargetWriteModeRequest(
-            connection=object(),
+            connection=connection,
             table_name="analytics.events",
             write_mode=write_mode,
             target_exists=target_exists,
@@ -296,7 +334,9 @@ def test_clickhouse_adapter_write_mode_matrix(
     assert result is expected
     if write_mode == "replace" and target_exists:
         assert events == (["drop"] if only_shard else ["drop_pair"])
-    elif write_mode == "replace":
+    elif write_mode == "truncate_insert" and target_exists:
+        assert events == (["clear"] if only_shard else ["truncate_pair"])
+    else:
         assert events == []
 
 
@@ -346,17 +386,11 @@ def test_clickhouse_ddl_expression_cluster_and_uuid_edges(
 
 
 def test_clickhouse_insert_legacy_collections_types_and_null_edges() -> None:
-    class LegacyFrame:
-        def applymap(self, function: Any) -> pd.DataFrame:
-            return pd.DataFrame({"value": [function(Decimal("1.25")), function(None)]})
-
-    normalized = ch_insert_backend_module.normalize_batch(
-        LegacyFrame()  # type: ignore[arg-type]
-    )
-    assert normalized.to_dict("records") == [{"value": 1.25}, {"value": None}]
-    assert ch_insert_backend_module.normalize_scalar(
-        [Decimal("1.5"), (Decimal("2.5"),), {Decimal("3.5"): Decimal("4.5")}]
-    ) == [1.5, (2.5,), {3.5: 4.5}]
+    batch = pd.DataFrame({"value": pd.Series([Decimal("1.25"), None], dtype=object)})
+    normalized = ch_insert_backend_module.normalize_batch(batch)
+    assert normalized.to_dict("records") == [{"value": Decimal("1.25")}, {"value": None}]
+    nested = [Decimal("1.5"), (Decimal("2.5"),), {Decimal("3.5"): Decimal("4.5")}]
+    assert ch_insert_backend_module.normalize_scalar(nested) == nested
     assert ch_insert_backend_module.column_type_names(["a"], None) is None
     assert ch_insert_backend_module.column_type_names(
         ["a", "b"], {"a": "UInt8", "b": "String"}
@@ -368,7 +402,11 @@ def test_clickhouse_insert_legacy_collections_types_and_null_edges() -> None:
         ["id", "amount", "payload"],
         [1.0, 1.25, {"x": "я"}],
         {"id": "Nullable(Int64)", "amount": "Decimal(10,2)", "payload": "String"},
-    ) == (1, Decimal("1.25"), '{"x":"я"}')
+    ) == (
+        1,
+        Decimal("1.25"),
+        '{"v":1,"backend":"","type":"","value":["map",[[["str","x"],["str","я"]]]]}',
+    )
     assert ch_insert_backend_module.normalize_typed_row(
         ["raw", "mutable"],
         [memoryview(b"\x00\xff"), bytearray(b"\x01\x80")],
@@ -498,67 +536,91 @@ def test_clickhouse_lifecycle_concurrent_host_errors(
         )
 
 
-def test_clickhouse_lifecycle_drop_leftovers_mentions_per_host_retry() -> None:
-    class LeftoverClient(RecordingClickHouseClient):
-        def query(self, sql: str) -> FakeClickHouseResult:
-            self.queries.append(sql)
-            if sql.startswith("SELECT getMacro("):
-                return FakeClickHouseResult([("core",)])
-            if "clusterAllReplicas" in sql and "system, one" in sql:
-                return FakeClickHouseResult([(1,)])
-            if "FROM system.clusters" in sql:
-                return FakeClickHouseResult([(1,)])
-            if "clusterAllReplicas" in sql and "system, tables" in sql:
-                return FakeClickHouseResult(
-                    [("host-a", "db", "target_shard", "ReplicatedMergeTree")]
-                )
-            return FakeClickHouseResult([])
-
-    with pytest.raises(TimeoutError) as exc_info:
-        ch_lifecycle_module.drop_ch_distributed_table_pair(
-            LeftoverClient(),
-            "db.target",
-            ch_cluster="{cluster}",
-            wait_for_absence=True,
-            wait_timeout_seconds=0,
-            wait_poll_interval_seconds=0,
-        )
+def test_clickhouse_lifecycle_drop_leftovers_mentions_per_host_retry(
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections
+) -> None:
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    state.delay_cluster_drops.add(("storage", "analytics.events_shard"))
+    connection = toolkit_sql.get_sql_connection("ch")
+    before = state.snapshot()
+    try:
+        with pytest.raises(TimeoutError) as exc_info:
+            ch_lifecycle_module.drop_ch_distributed_table_pair(
+                connection,
+                "analytics.events",
+                ch_cluster="storage",
+                wait_for_absence=True,
+                wait_timeout_seconds=0,
+                wait_poll_interval_seconds=0,
+                ch_retry_per_host_drops=False,
+            )
+    finally:
+        connection.close()
 
     message = str(exc_info.value)
-    assert "host-a: db.target_shard (ReplicatedMergeTree)" in message
+    assert state.host_endpoints[state.remote][1] in message
+    assert "analytics.events_shard (MergeTree)" in message
     assert "ch_retry_per_host_drops=True" in message
+    assert (
+        state.snapshot()[state.coordinator]["analytics.events_shard"]
+        == (before[state.coordinator]["analytics.events_shard"])
+    )
+    assert state.rows(state.remote, "analytics.events_shard") == [(11,), (12,), (13,)]
+    assert all(client.close_calls == 1 for client in state.opened)
 
 
 def test_clickhouse_lifecycle_drop_modes_and_wait_routing(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections
 ) -> None:
     assert len(ch_lifecycle_backend_module.build_drop_ch_table_sqls("db.t", None)) == 1
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    for host, table in [
+        (state.coordinator, "analytics.local_events"),
+        (state.remote, "analytics.clustered_events"),
+    ]:
+        state._create(
+            host,
+            parse_create_table(
+                f"CREATE TABLE {table} (id UInt64) ENGINE=MergeTree ORDER BY id", table
+            ),
+            [(7,), (8,)],
+        )
+    connection = toolkit_sql.get_sql_connection("ch")
+    try:
+        ch_lifecycle_backend_module.drop_ch_table(
+            connection, "analytics.local_events", ch_cluster=None, wait_for_absence=True
+        )
+        ch_lifecycle_backend_module.drop_ch_table(
+            connection,
+            "analytics.clustered_events",
+            ch_cluster="storage",
+            wait_for_absence=True,
+        )
+    finally:
+        connection.close()
+    assert state.commands == [
+        "DROP TABLE IF EXISTS analytics.local_events",
+        "DROP TABLE IF EXISTS analytics.clustered_events ON CLUSTER storage",
+    ]
+    assert "analytics.local_events" not in state.host_tables[state.coordinator]
+    assert "analytics.clustered_events" not in state.host_tables[state.remote]
+    assert any(
+        completed == 1 and strip_query_label(statement) == "EXISTS TABLE analytics.local_events"
+        for _host, completed, statement in state.query_events
+    )
+    assert any(
+        completed == 2
+        and "clusterAllReplicas('storage', system, tables)" in statement
+        and "name = 'clustered_events'" in statement
+        for _host, completed, statement in state.query_events
+    )
+    assert all(client.close_calls == 1 for client in state.opened)
     executed: list[str] = []
     monkeypatch.setattr(
         ch_lifecycle_backend_module,
         "_execute_ch_sqls",
         lambda _connection, sqls: executed.extend(sqls),
     )
-    local_waits: list[str] = []
-    cluster_waits: list[str] = []
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "_wait_for_ch_table_absence",
-        lambda _connection, table, **_kwargs: local_waits.append(table),
-    )
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "_wait_for_ch_table_absence_on_cluster",
-        lambda _connection, table, **_kwargs: cluster_waits.append(table),
-    )
-    ch_lifecycle_backend_module.drop_ch_table(
-        object(), "db.local", ch_cluster=None, wait_for_absence=True
-    )
-    ch_lifecycle_backend_module.drop_ch_table(
-        object(), "db.clustered", ch_cluster="core", wait_for_absence=True
-    )
-    assert local_waits == ["db.local"]
-    assert cluster_waits == ["db.clustered"]
     ch_lifecycle_backend_module.truncate_ch_distributed_table_pair(object(), "db.t")
     ch_lifecycle_backend_module.create_ch_distributed_table_pair(
         object(), table_name="db.t", joined_columns="id UInt64", wait_for_table=False
@@ -575,20 +637,33 @@ def test_clickhouse_lifecycle_drop_modes_and_wait_routing(
     assert waited == ["db.t"]
 
 
-def test_clickhouse_lifecycle_executes_on_cluster_settings() -> None:
-    client = RecordingClickHouseClient()
+def test_clickhouse_lifecycle_executes_on_cluster_settings(
+    monkeypatch: pytest.MonkeyPatch, write_sql_connections
+) -> None:
+    state = install_drop_scope(monkeypatch, write_sql_connections)
+    owner = toolkit_sql.get_sql_connection("ch")
+    connection = state.opened[-1]
+    before = state.snapshot()
+    try:
+        ch_lifecycle_module.drop_ch_distributed_table_pair(
+            connection, "analytics.events", ch_cluster="storage"
+        )
+    finally:
+        owner.close()
 
-    ch_lifecycle_module.drop_ch_distributed_table_pair(
-        client,
-        "db.target",
-        ch_cluster="{cluster}",
+    assert list(zip(state.commands, state.command_settings)) == [
+        ("DROP TABLE IF EXISTS analytics.events", None),
+        (
+            'DROP TABLE IF EXISTS "analytics"."events_shard" ON CLUSTER storage',
+            {
+                "distributed_ddl_task_timeout": 0,
+                "distributed_ddl_output_mode": "none",
+            },
+        ),
+    ]
+    assert state.queries
+    assert (
+        state.snapshot()[state.coordinator]["analytics.events_shard"]
+        == (before[state.coordinator]["analytics.events_shard"])
     )
-
-    assert client.commands[2] == (
-        "DROP TABLE IF EXISTS db.target ON CLUSTER '{cluster}'",
-        {
-            "distributed_ddl_task_timeout": 0,
-            "distributed_ddl_output_mode": "none",
-        },
-    )
-    assert client.queries == []
+    assert all(client.close_calls == 1 for client in state.opened)

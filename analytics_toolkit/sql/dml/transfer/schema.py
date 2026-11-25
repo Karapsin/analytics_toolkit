@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from analytics_toolkit.sql.dml.table._basic_ops import get_table_column_types
+
 from ...backends import get_backend_adapter
 from ...backends.models import SourceColumn
-from ..table._basic_ops import get_table_column_types
+from ...backends.source_schema import map_source_column
 
 
 def inspect_source_query_schema(
@@ -25,14 +27,8 @@ def map_source_schema_to_target(
     *,
     source_backend: str | None = None,
 ) -> dict[str, str]:
-    target_adapter = get_backend_adapter(target_backend)
-    same_backend = source_backend == target_backend
     return {
-        column.name: (
-            target_adapter.map_same_backend_source_type_to_target(column)
-            if same_backend
-            else target_adapter.map_source_type_to_target(column)
-        )
+        column.name: map_source_column(column, target_backend, source_backend)
         for column in source_schema
     }
 
@@ -68,16 +64,8 @@ def get_existing_target_insert_types(
         connection_key=connection_key,
     )
     missing_columns = [
-        column_name
-        for column_name in stage_column_types
-        if column_name not in target_column_types
+        column_name for column_name in stage_column_types if column_name not in target_column_types
     ]
     if missing_columns:
-        raise ValueError(
-            "Target table is missing staged column(s): "
-            + ", ".join(missing_columns)
-        )
-    return {
-        column_name: target_column_types[column_name]
-        for column_name in stage_column_types
-    }
+        raise ValueError("Target table is missing staged column(s): " + ", ".join(missing_columns))
+    return {column_name: target_column_types[column_name] for column_name in stage_column_types}

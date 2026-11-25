@@ -195,6 +195,7 @@ def test_switch_command_selects_new_source_and_rejects_arguments(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(ConnectionsPickerScreen, "_scan", lambda self: None)
+    replacement = tmp_path / "replacement" / ".connections"
 
     async def scenario() -> None:
         app = SqlExplorerApp(FakeSession())
@@ -208,9 +209,9 @@ def test_switch_command_selects_new_source_and_rejects_arguments(
             await pilot.pause()
             app._command_connections([])
             assert len(app.screen_stack) == 2
-            app.screen.dismiss(tmp_path / ".connections")
+            app.screen.dismiss(replacement)
             await pilot.pause()
-            assert requested == [ConnectionsRestart(tmp_path / ".connections")]
+            assert requested == [ConnectionsRestart(replacement)]
 
     asyncio.run(scenario())
 

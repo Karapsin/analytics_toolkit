@@ -70,6 +70,11 @@ remain reviewed edits.
 - Everyday `tests.yml` fast checks run on Python 3.14 only.
 - After every merge, `compatibility.yml` reads the policy and runs the full test
   suite on every runtime-validated minor plus the minimum-dependency profile.
+- Coverage, compatibility and minimum-dependency test profiles install the
+  `clickhouse-native` extra so real native codec regressions run alongside HTTP
+  codec tests. Minimum constraints pin every conditional runtime dependency
+  branch separately; environment markers select the applicable pin at install
+  time, and validation checks each branch's declared lower bound.
 - While an extra lags the newest minor, that minor's environment omits the extra.
   `ATK_WITHOUT_EXTRAS` then skips every test module that imports the extra's
   dependencies (directly or through test support modules), and the SQL Explorer

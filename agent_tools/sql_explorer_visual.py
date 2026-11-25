@@ -185,6 +185,44 @@ def visual_review_required(paths: list[str]) -> bool:
     return any(any(path.startswith(prefix) for prefix in VISUAL_PATH_PREFIXES) for path in paths)
 
 
+def _source_approval(root: Path) -> dict[str, str] | None:
+    """Bind source-first captures to the final signed, converged source approval."""
+    from agent_tools import (  # noqa: PLC0415 - reviewer imports visual helpers.
+        local_review,
+        sessions,
+    )
+
+    if not sessions.load(root):
+        return None
+    try:
+        if local_review.visual_review_order(root) is None:
+            return None
+        sessions.clean(root)
+        head = sessions.run(root, "git", "rev-parse", "HEAD")
+        receipt = local_review.verified(root, head)
+        if sessions.run(root, "git", "rev-parse", "HEAD") != head:
+            raise VisualReviewError("Source changed while verifying final source approval")
+        payload = receipt["payload"]
+        return {
+            **{key: str(payload[key]) for key in ("head", "base", "tree", "task_digest")},
+            "receipt_sha256": local_review.protocol(root).digest(receipt),
+        }
+    except (OSError, RuntimeError, ValueError, KeyError) as exc:
+        raise VisualReviewError(
+            "Final source approval is required before source-first visuals: " + str(exc)
+        ) from exc
+
+
+def _check_source_approval(root: Path, record: dict[str, Any]) -> dict[str, str] | None:
+    approval = _source_approval(root)
+    if approval is not None and record.get("source_approval") != approval:
+        raise VisualReviewError(
+            "Source-first visuals must be captured after the current final source approval; "
+            "start a new review"
+        )
+    return approval
+
+
 def verify_visual_receipt(
     root: Path,
     *,
@@ -203,9 +241,15 @@ def verify_visual_receipt(
         }
     try:
         receipt = _read_json(receipt_path)
+        approval = _check_source_approval(root, receipt)
+        if approval is not None:
+            from agent_tools import local_review  # noqa: PLC0415 - reviewer imports visual helpers.
+
+            local_review._completed_visual_receipt(root, receipt)  # noqa: SLF001 - shared producer verification.
+            _check_source_approval(root, _load_session(root, receipt["review_id"]))
         fingerprint = content_fingerprint(root)
         manifest_hash = _sha256(root / MANIFEST)
-    except (OSError, json.JSONDecodeError, VisualReviewError) as exc:
+    except (OSError, ValueError, RuntimeError, KeyError) as exc:
         return {"ok": False, "required": True, "message": f"Visual receipt is unreadable: {exc}"}
     if receipt.get("capture_mode") != CAPTURE_MODE:
         return {
@@ -263,6 +307,7 @@ def _load_session(root: Path, review_id: str) -> dict[str, Any]:
 
 
 def start_review(root: Path, review_id: str | None = None) -> dict[str, Any]:
+    approval = _source_approval(root)
     manifest = _manifest(root)
     selected_id = review_id or f"review-{uuid4().hex[:12]}"
     path = session_path(root, selected_id)
@@ -291,6 +336,8 @@ def start_review(root: Path, review_id: str | None = None) -> dict[str, Any]:
             for scene in manifest["scenes"]
         },
     }
+    if approval is not None:
+        session["source_approval"] = approval
     _write_json(path, session)
     return session
 
@@ -345,6 +392,7 @@ def record_review(
 
 def complete_review(root: Path, review_id: str) -> dict[str, Any]:
     session = _load_session(root, review_id)
+    approval = _check_source_approval(root, session)
     if session["content_fingerprint"] != content_fingerprint(root):
         raise VisualReviewError("SQL Explorer visual review is stale for the current content")
     incomplete = [
@@ -379,6 +427,8 @@ def complete_review(root: Path, review_id: str) -> dict[str, Any]:
             for scene_id, scene in session["scenes"].items()
         },
     }
+    if approval is not None:
+        receipt["source_approval"] = approval
     _write_json(root / RECEIPT, receipt)
     return verify_visual_receipt(root, paths=["analytics_toolkit/sql_explorer/app.py"])
 
@@ -435,6 +485,7 @@ def _host_python(root: Path) -> str:
 
 def capture_review(root: Path, review_id: str) -> dict[str, Any]:
     session = _load_session(root, review_id)
+    _check_source_approval(root, session)
     if session["content_fingerprint"] != content_fingerprint(root):
         raise VisualReviewError("visual-review content changed after the session started")
     if session.get("capture_mode") != CAPTURE_MODE:
@@ -490,6 +541,7 @@ def capture_review(root: Path, review_id: str) -> dict[str, Any]:
                 )
                 session["updated_at_epoch"] = int(time.time())
                 _write_json(session_path(root, review_id), session)
+        _check_source_approval(root, session)
         session["capture"]["status"] = "pass"
     except Exception as exc:
         session["capture"]["status"] = "failed"

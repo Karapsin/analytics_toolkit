@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import pandas as pd
 
+import analytics_toolkit.general as general_utils
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.creation_policy import (
@@ -19,6 +20,8 @@ from analytics_toolkit.sql.backends.ch.reconfigure_support import (
     count_rows_on_cluster,
     resolve_optional_cluster,
 )
+from analytics_toolkit.sql.backends.creation_resources import supports_created_resource_identity
+from analytics_toolkit.sql.backends.finalization_outcome import capture_finalization_outcome
 from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.dml.empty_source import (
     EmptySourceError,
@@ -49,9 +52,22 @@ from analytics_toolkit.sql.dml.transfer.runtime.retry import (
     run_with_retry,
 )
 from analytics_toolkit.sql.dml.transfer.schema import get_existing_target_insert_types
-from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
+from analytics_toolkit.sql.execution.backend_options import (
+    clear_data_replay_retention,
+    preserve_recovery_artifacts,
+)
 
+from .native_assignment import assignment_replacement_schema, native_cleanup_arguments
+from .parquet_cleanup import cleanup_transfer_parquet_files
 from .parquet_stage import cleanup_parquet_stage_location
+from .stage import ensure_transfer_target_table
+from .stage_ownership import cleanup_acknowledged_stages, stage_creation_callbacks
+from .target_ownership import cleanup_failed_transfer_target, cleanup_owned_transfer_target
+from .upsert_finalization import (
+    finalize_partition_upsert,
+    partition_upsert_enabled,
+    retry_certified_finalization,
+)
 
 
 class FreshTargetFinalizationRowCountMismatchError(ValueError):
@@ -138,6 +154,8 @@ def finalize_loaded_stage(  # noqa: PLR0913
         stage_state.insert_column_types = source_stage_column_types
         target_column_types = source_stage_column_types
 
+    target_column_types = assignment_replacement_schema(options, target_column_types)
+
     _ensure_final_upsert_stage_table(
         options,
         stage_state,
@@ -172,23 +190,26 @@ def finalize_loaded_stage(  # noqa: PLR0913
                     target_connection_runner=target_connection_runner,
                 )
             _analyze_final_target(options, target_connection_runner=target_connection_runner)
-        except Exception:
+        except Exception as failure:
             if fresh_clickhouse_target:
-                _drop_incomplete_fresh_target(
+                cleanup_failed_transfer_target(
                     options,
-                    target_connection_runner=target_connection_runner,
+                    stage_state,
+                    lambda operation: _run_target_operation(
+                        options,
+                        "cleanup_incomplete_target",
+                        operation,
+                        target_connection_runner=target_connection_runner,
+                    ),
+                    failure,
                 )
             raise
 
-    if fresh_clickhouse_target:
-        run_with_retry(
-            operation_name=f"finalizing fresh ClickHouse target {options.target_table}",
-            retry_cnt=options.retry_cnt,
-            timeout_increment=options.timeout_increment,
-            operation=finalize_operation,
-        )
+    if fresh_clickhouse_target or partition_upsert_enabled(options, stage_state):
+        retry_certified_finalization(options, stage_state, finalize_operation, run_with_retry)
     else:
         finalize_operation(1)
+    clear_data_replay_retention()
 
 
 def _creates_fresh_clickhouse_target(
@@ -214,54 +235,78 @@ def _finalize_target_once(  # noqa: PLR0913
     fresh_clickhouse_target: bool,
     target_connection_runner: Any | None,
 ) -> None:
+    # A previous completed finalizer cannot certify the next target mutation.
+    object.__setattr__(options, "final_target_rows", None)
+    if partition_upsert_enabled(options, stage_state):
+        _run_target_operation(
+            options,
+            "finalize_target",
+            lambda ref: finalize_partition_upsert(options, stage_state, ref["connection"]),
+            target_connection_runner=target_connection_runner,
+        )
+        return
     creation_policy = options.regular_ch_policy
     if fresh_clickhouse_target and creation_policy is not None:
         creation_policy = replace_dataclass(
             creation_policy,
             ddl_ready_timeout_increment_seconds=float(options.timeout_increment),
         )
-    if fresh_clickhouse_target and stage_state.target_existed_at_start is False:
-        stage_state.target_created_by_operation = True
+
+    def finalize_target(target_ref: dict[str, Any]) -> None:
+        if fresh_clickhouse_target:
+            ensure_transfer_target_table(
+                replace_dataclass(options, regular_ch_policy=creation_policy),
+                TransferConnectionRefs(target=target_ref),
+                stage_state,
+                stage_state.source_columns,
+                allow_deferred_creation=True,
+            )
+        with capture_finalization_outcome() as outcome:
+            finalize_stage_table(
+                options.to_db_backend,
+                target_ref["connection"],
+                stage_table=stage_table,
+                target_table=options.target_table,
+                replace_target_table=(
+                    options.replace_target_table
+                    and not target_precleared
+                    and not _should_drop_created_target(stage_state)
+                ),
+                target_exists=stage_state.target_exists
+                and (not target_precleared or _should_drop_created_target(stage_state)),
+                sample_batch=stage_state.first_non_empty_batch,
+                target_column_types=target_column_types,
+                insert_column_types=stage_state.insert_column_types,
+                write_mode=options.write_mode,
+                key_columns=options.key_columns,
+                gp_distributed_by_key=options.gp_distributed_by_key,
+                gp_partitions=options.gp_partitions,
+                partition_by=options.partition_by,
+                order_by=options.order_by,
+                ch_engine=options.ch_engine,
+                ch_cluster=options.ch_cluster,
+                ch_sharding_key=options.ch_sharding_key,
+                ch_only_shard=options.ch_only_shard,
+                query_label=options.query_label,
+                connection_key=options.to_db_key,
+                ch_retry_per_host_drops=options.ch_retry_per_host_drops,
+                upsert_partition_column=options.upsert_partition_column,
+                final_upsert_stage_table=stage_state.final_upsert_stage_table,
+                incoming_stage_tables=(
+                    stage_state.stage_tables if options.write_mode == "upsert" else None
+                ),
+                trino_upsert_partition_drop_sql_template=(
+                    options.trino_upsert_partition_drop_sql_template
+                ),
+                ch_creation_policy=creation_policy,
+            )
+        if outcome.final_target_rows is not None:
+            object.__setattr__(options, "final_target_rows", outcome.final_target_rows)
+
     _run_target_operation(
         options,
         "finalize_target",
-        lambda target_ref: finalize_stage_table(
-            options.to_db_backend,
-            target_ref["connection"],
-            stage_table=stage_table,
-            target_table=options.target_table,
-            replace_target_table=(
-                options.replace_target_table
-                and not target_precleared
-                and not _should_drop_created_target(stage_state)
-            ),
-            target_exists=stage_state.target_exists and not target_precleared,
-            sample_batch=stage_state.first_non_empty_batch,
-            target_column_types=target_column_types,
-            insert_column_types=stage_state.insert_column_types,
-            write_mode=options.write_mode,
-            key_columns=options.key_columns,
-            gp_distributed_by_key=options.gp_distributed_by_key,
-            gp_partitions=options.gp_partitions,
-            partition_by=options.partition_by,
-            order_by=options.order_by,
-            ch_engine=options.ch_engine,
-            ch_cluster=options.ch_cluster,
-            ch_sharding_key=options.ch_sharding_key,
-            ch_only_shard=options.ch_only_shard,
-            query_label=options.query_label,
-            connection_key=options.to_db_key,
-            ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-            upsert_partition_column=options.upsert_partition_column,
-            final_upsert_stage_table=stage_state.final_upsert_stage_table,
-            incoming_stage_tables=(
-                stage_state.stage_tables if options.write_mode == "upsert" else None
-            ),
-            trino_upsert_partition_drop_sql_template=(
-                options.trino_upsert_partition_drop_sql_template
-            ),
-            ch_creation_policy=creation_policy,
-        ),
+        finalize_target,
         target_connection_runner=target_connection_runner,
     )
 
@@ -411,28 +456,19 @@ def _drop_incomplete_fresh_target(
     options: TransferOptions,
     *,
     target_connection_runner: Any | None,
+    stage_state: TransferStageState | None = None,
 ) -> None:
-    _run_target_operation(
+    if stage_state is None:
+        return
+    cleanup_owned_transfer_target(
         options,
-        "cleanup_incomplete_target",
-        lambda target_ref: cleanup_stage_table_with_retry(
-            options.to_db_backend,
-            options.to_db_key,
-            target_ref,
-            options.target_table,
-            retry_fn=run_with_retry,
-            retry_cnt=1,
-            timeout_increment=0,
-            rollback_fn=rollback_quietly,
-            replace_connection_fn=target_ref.get(
-                "bounded_replace_connection",
-                replace_connection,
-            ),
-            query_label=options.query_label,
-            ch_creation_policy=options.regular_ch_policy,
-            operation_label="incomplete fresh target table",
+        stage_state,
+        lambda operation: _run_target_operation(
+            options,
+            "cleanup_incomplete_target",
+            operation,
+            target_connection_runner=target_connection_runner,
         ),
-        target_connection_runner=target_connection_runner,
     )
 
 
@@ -577,6 +613,7 @@ def finalize_empty_transfer(
                 destination_hash=options.destination_hash,
                 ddl_properties=options.staging_ddl_properties,
                 ch_creation_policy=options.staging_ch_policy,
+                **stage_creation_callbacks(stage_state, options.to_db_backend),
             ),
             target_connection_runner=target_connection_runner,
         )
@@ -635,11 +672,6 @@ def _ensure_final_upsert_stage_table(
 
     create_schema = stage_state.insert_column_types or stage_state.stage_column_types
 
-    def register_candidate(table_name: str) -> None:
-        if table_name not in stage_state.stage_table_candidates:
-            stage_state.stage_table_candidates.append(table_name)
-        stage_state.final_upsert_stage_table = table_name
-
     stage_state.final_upsert_stage_table = _run_target_operation(
         options,
         "create_final_upsert_stage",
@@ -660,7 +692,7 @@ def _ensure_final_upsert_stage_table(
             destination_hash=options.destination_hash,
             ddl_properties=options.staging_ddl_properties,
             ch_creation_policy=options.staging_ch_policy,
-            on_stage_candidate=register_candidate,
+            **stage_creation_callbacks(stage_state, options.to_db_backend),
         ),
         target_connection_runner=target_connection_runner,
     )
@@ -691,6 +723,8 @@ def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
     safe_exception_logging: bool = False,
 ) -> None:
 
+    if not drop_created_target:
+        clear_data_replay_retention()
     if preserve_recovery_artifacts():
         time_print("Preserving transfer recovery stages after an uncertain mutation.")
         return
@@ -698,8 +732,35 @@ def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
     remote_cleanup_error: Exception | None = None
     target_cleanup_error: Exception | None = None
 
-    if stage_state.stage_table_created:
+    if (
+        stage_state.upsert_checkpoint is not None
+        and stage_state.upsert_checkpoint.prepared
+        and drop_created_target
+    ):
+        time_print("Retaining certified partition rebuild payload after failed finalization.")
+        return
+    registered_stages = {stage for _resource, stage in stage_state.owned_stage_resources}
+    if stage_state.owned_stage_resources or stage_state.owned_stage_scoped_resources:
+        try:
+            cleanup_acknowledged_stages(
+                options,
+                stage_state,
+                lambda operation: _run_target_operation(
+                    options,
+                    "cleanup_stage",
+                    operation,
+                    target_connection_runner=target_connection_runner,
+                ),
+                **native_cleanup_arguments(options, failed=drop_created_target),
+            )
+        except Exception as exc:  # noqa: BLE001 -- retain primary cleanup error after all owned drops.
+            stage_cleanup_error = exc
+    if stage_state.stage_table_created and not supports_created_resource_identity(
+        get_backend_adapter(options.to_db_backend)
+    ):
         for stage_table in _stage_tables_to_cleanup(stage_state):
+            if stage_table in registered_stages:
+                continue
             try:
                 _run_target_operation(
                     options,
@@ -725,73 +786,44 @@ def cleanup_stage(  # noqa: C901, PLR0912, PLR0913
                     ),
                     target_connection_runner=target_connection_runner,
                 )
-            except Exception as exc:  # noqa: PERF203
+            except Exception as exc:
                 stage_cleanup_error = stage_cleanup_error or exc
 
-    if stage_state.stage_external_location is not None:
-        try:
-            if options.parquet_storage_options is None:
-                cleanup_parquet_stage_location(stage_state.stage_external_location)
-            else:
-                cleanup_parquet_stage_location(
-                    stage_state.stage_external_location,
-                    storage_options=options.parquet_storage_options,
-                )
-        except Exception as exc:
-            remote_cleanup_error = exc
+    remote_cleanup_error = cleanup_transfer_parquet_files(
+        options, stage_state, stage_cleanup_error, cleanup_parquet_stage_location, time_print
+    )
 
     if drop_created_target and _should_drop_created_target(stage_state):
         try:
-            _run_target_operation(
+            cleanup_owned_transfer_target(
                 options,
-                "cleanup_target",
-                lambda target_ref: cleanup_stage_table_with_retry(
-                    options.to_db_backend,
-                    options.to_db_key,
-                    target_ref,
-                    options.target_table,
-                    retry_fn=lambda **kwargs: run_with_retry(
-                        **kwargs,
-                        safe_exception_logging=safe_exception_logging,
-                    ),
-                    retry_cnt=read_retry_cnt,
-                    timeout_increment=options.timeout_increment,
-                    rollback_fn=rollback_quietly,
-                    replace_connection_fn=target_ref.get(
-                        "bounded_replace_connection",
-                        replace_connection,
-                    ),
-                    query_label=options.query_label,
-                    ch_creation_policy=options.regular_ch_policy,
-                    operation_label="created target table",
+                stage_state,
+                lambda operation: _run_target_operation(
+                    options,
+                    "cleanup_target",
+                    operation,
+                    target_connection_runner=target_connection_runner,
                 ),
-                target_connection_runner=target_connection_runner,
             )
         except Exception as exc:
             target_cleanup_error = exc
 
     if stage_cleanup_error is not None:
         if remote_cleanup_error is not None:
-            from analytics_toolkit.general import time_print
-
-            time_print(
+            general_utils.time_print(
                 "Remote Parquet stage cleanup failed while handling stage table "
                 "cleanup error: "
                 f"{_cleanup_error_label(remote_cleanup_error, safe=safe_exception_logging)}"
             )
         if target_cleanup_error is not None:
-            from analytics_toolkit.general import time_print
-
-            time_print(
+            general_utils.time_print(
                 "Target cleanup failed while handling stage table cleanup error: "
                 f"{_cleanup_error_label(target_cleanup_error, safe=safe_exception_logging)}"
             )
         raise stage_cleanup_error.with_traceback(stage_cleanup_error.__traceback__)
     if remote_cleanup_error is not None:
         if target_cleanup_error is not None:
-            from analytics_toolkit.general import time_print
-
-            time_print(
+            general_utils.time_print(
                 "Target cleanup failed while handling remote Parquet cleanup error: "
                 f"{_cleanup_error_label(target_cleanup_error, safe=safe_exception_logging)}"
             )
@@ -804,9 +836,8 @@ def _stage_tables_to_cleanup(stage_state: TransferStageState) -> list[str]:
     stage_tables: list[str] = []
     if stage_state.stage_tables is not None:
         stage_tables.extend(stage_state.stage_tables)
-    elif stage_state.stage_table is not None:
+    if stage_state.stage_table is not None:
         stage_tables.append(stage_state.stage_table)
-    stage_tables.extend(stage_state.stage_table_candidates)
     if stage_state.final_upsert_stage_table is not None:
         stage_tables.append(stage_state.final_upsert_stage_table)
     return list(dict.fromkeys(stage_tables))

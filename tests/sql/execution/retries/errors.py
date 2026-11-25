@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from analytics_toolkit.sql.ddl.ownership import execute_owned_create_sqls
+from sqlglot import exp
+from sqlparse import parse
+
+from tests.sql._support.create_from_sql_protocol import CatalogConnection, CatalogCursor
 from tests.sql._support.retries import (
     AmbiguousColumn,
     CloseFailureConnection,
@@ -192,71 +199,92 @@ def test_execute_sql_retries_whole_flow_with_fresh_connection(monkeypatch) -> No
 
 
 def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
-    connections: list[FakeConnection] = []
-    events: list[tuple[str, str]] = []
+    connections = []
+    events = []
     call_count = {"insert": 0}
     df = pd.DataFrame({"id": [1], "value": ["x"]})
+    original = df.copy(deep=True)
+    catalog = SimpleNamespace(tables={}, next_relation_oid=10000, namespace_oids={})
 
-    def fake_get_sql_connection(_connection_type: str) -> FakeConnection:
-        connection = FakeConnection(f"conn-{len(connections)}")
+    class Cursor(CatalogCursor):
+        def execute(self, statement, params=None):
+            super().execute(statement, params)
+            text = statement.decode("utf-8") if isinstance(statement, bytes) else statement
+            if parse(text)[0].get_type() == "DROP":
+                events.append(("drop", self.connection.name))
+
+    class Connection(CatalogConnection):
+        def __init__(self, name):
+            super().__init__(state=catalog)
+            self.name = name
+
+        def cursor(self):
+            cursor = Cursor(self)
+            self.cursors.append(cursor)
+            return cursor
+
+    def fake_get_sql_connection(_connection_type):
+        connection = Connection(f"conn-{len(connections)}")
         connections.append(connection)
         return connection
 
-    monkeypatch.setattr(
-        load_df_module,
-        "get_sql_connection",
-        fake_get_sql_connection,
-    )
-    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(load_df_module, "get_sql_connection", fake_get_sql_connection)
+    monkeypatch.setattr(load_df_module, "table_exists", lambda *_a, **_k: False)
 
     def fake_create_sql_table(
-        connection_type: str,
-        connection: FakeConnection,
-        table_name: str,
-        df: pd.DataFrame,
+        connection_type,
+        connection,
+        table_name,
+        frame,
         *,
-        connection_key: str | None = None,
-        gp_distributed_by_key: list[str] | None = None,
-    ) -> None:
-        del connection_type, table_name, df, connection_key, gp_distributed_by_key
+        connection_key=None,
+        gp_distributed_by_key=None,
+        table_schema=None,
+        on_resource_created=None,
+        on_scoped_resource_created=None,
+    ):
+        del gp_distributed_by_key
         events.append(("create", connection.name))
+        adapter = load_df_module.get_backend_adapter(connection_type)
+        native_types = table_schema or {
+            str(name): adapter.infer_dataframe_column_type(frame[name]) for name in frame.columns
+        }
+        columns = [
+            exp.ColumnDef(
+                this=exp.to_identifier(name),
+                kind=exp.DataType.build(native, dialect="postgres"),
+            )
+            for name, native in native_types.items()
+        ]
+        statement = exp.Create(
+            this=exp.Schema(this=exp.to_table(table_name), expressions=columns), kind="TABLE"
+        ).sql(dialect="postgres")
+        execute_owned_create_sqls(
+            adapter,
+            connection,
+            [statement],
+            on_resource_created,
+            on_scoped_resource_created=on_scoped_resource_created,
+            connection_key=connection_key,
+        )
 
-    def fake_insert_table_batch(*args, **kwargs) -> int:
-        connection_ref = args[1]
-        connection = connection_ref["connection"]
+    def fake_insert_table_batch(*args, **_kwargs):
+        connection = args[1]["connection"]
         events.append(("insert", connection.name))
         call_count["insert"] += 1
         if call_count["insert"] == 1:
             message = "temporary failure"
             raise RuntimeError(message)
+        connection.tables["schema", "target_table"].rows.extend(df.to_dict(orient="records"))
         return len(df)
 
-    def fake_analyze_table(
-        connection_type: str, connection: FakeConnection, table_name: str
-    ) -> None:
+    def fake_analyze_table(connection_type, connection, table_name):
+        del connection_type, table_name
         events.append(("analyze", connection.name))
 
-    def fake_drop_table_with_retry(
-        _connection_backend: str,
-        _connection_key: str,
-        connection_ref: dict[str, FakeConnection],
-        _table_name: str,
-        **_kwargs: object,
-    ) -> None:
-        events.append(("drop", connection_ref["connection"].name))
-
-    monkeypatch.setattr(
-        load_df_module,
-        "_create_sql_table_with_connection",
-        fake_create_sql_table,
-    )
+    monkeypatch.setattr(load_df_module, "_create_sql_table_with_connection", fake_create_sql_table)
     monkeypatch.setattr(load_df_module, "insert_table_batch", fake_insert_table_batch)
     monkeypatch.setattr(load_df_module, "analyze_table", fake_analyze_table)
-    monkeypatch.setattr(
-        load_df_module,
-        "drop_table_with_retry",
-        fake_drop_table_with_retry,
-    )
 
     inserted_rows = load_df_module.load_df(
         "gp",
@@ -277,6 +305,8 @@ def test_load_df_retries_whole_flow_from_start(monkeypatch) -> None:
     ]
     assert [connection.close_calls for connection in connections] == [1] * 8
     assert [connection.rollback_calls for connection in connections] == [0] * 8
+    assert catalog.tables["schema", "target_table"].rows == [{"id": 1, "value": "x"}]
+    pd.testing.assert_frame_equal(df, original)
 
 
 def test_operation_runner_does_not_rollback_non_gp_backends() -> None:

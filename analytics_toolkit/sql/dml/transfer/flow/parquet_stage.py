@@ -1,28 +1,38 @@
 from __future__ import annotations
 
 import gc
-import re
 import shutil
 import tempfile
 import uuid
-from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from ....backends import get_backend_adapter
 from analytics_toolkit.general import time_print
-from ...load.stage import (
+from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.transfer_stage import collision_stage_suffix
+from analytics_toolkit.sql.backends.trino.arrow_types import (
+    arrow_type_for_trino_stage,
+    parquet_scalar,
+    require_supported_stage_type,
+)
+from analytics_toolkit.sql.dml.load.stage import (
     STAGE_TABLE_NAME_MAX_ATTEMPTS,
+    _is_confirmed_create_collision,
     build_stage_table_name,
 )
-from ...table._basic_ops import table_exists
-from ..runtime.models import (
+from analytics_toolkit.sql.dml.table._basic_ops import table_exists
+from analytics_toolkit.sql.dml.transfer.runtime.models import (
     RowBatch,
     TransferConnectionRefs,
     TransferOptions,
     TransferStageState,
 )
+
+from .stage_ownership import stage_creation_callbacks
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 PARQUET_STAGING_IMPORT_ERROR = (
     "Parquet object-storage staging requires pyarrow, fsspec, and s3fs. "
@@ -40,14 +50,17 @@ def create_parquet_stage_table(
 ) -> None:
     parquet_schema = options.s3_transfer_staging_schema
     if not parquet_schema:
-        raise ValueError("s3_transfer_staging_schema is required for Parquet staging.")
+        msg = "s3_transfer_staging_schema is required for Parquet staging."
+        raise ValueError(msg)
     if not options.s3_transfer_staging_location:
-        raise ValueError("s3_transfer_staging_location is required for Parquet staging.")
+        msg = "s3_transfer_staging_location is required for Parquet staging."
+        raise ValueError(msg)
     if stage_state.stage_column_types is None:
-        raise ValueError(
+        msg = (
             "Could not resolve source schema before creating a Parquet stage table. "
             "Pass table_schema or use a source query with inspectable column types."
         )
+        raise ValueError(msg)
 
     for attempt in range(1, STAGE_TABLE_NAME_MAX_ATTEMPTS + 1):
         preferred_suffix = (
@@ -56,7 +69,9 @@ def create_parquet_stage_table(
             else uuid.uuid4().hex
         )
         suffix = (
-            preferred_suffix if attempt == 1 else f"{preferred_suffix}__c_{uuid.uuid4().hex[:8]}"
+            preferred_suffix
+            if attempt == 1
+            else collision_stage_suffix("trino", preferred_suffix, uuid.uuid4().hex)
         )
         stage_table = build_stage_table_name(
             "trino",
@@ -90,19 +105,43 @@ def create_parquet_stage_table(
             query_label=options.query_label,
             ddl_properties=options.parquet_ddl_properties,
         )
-        adapter.execute_command(
-            connection_refs.target["connection"],
-            create_sql,
-        )
         stage_state.stage_table = stage_table
         stage_state.stage_external_location = stage_external_location
+        stage_state.stage_table_created = False
+        callbacks = stage_creation_callbacks(stage_state)
+        callbacks["on_stage_candidate"](stage_table)
+        try:
+            adapter.execute_command(connection_refs.target["connection"], create_sql)
+        except BaseException as exc:
+            if isinstance(exc, Exception) and _is_confirmed_create_collision(exc):
+                stage_state.stage_table = None
+                stage_state.stage_external_location = None
+                time_print(
+                    f"Stage table creation raced for {stage_table}; retrying with "
+                    f"a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
+                )
+                continue
+            exc.__dict__["analytics_toolkit_sql_stage_candidate"] = stage_table
+            exc.__dict__["analytics_toolkit_sql_stage_external_location"] = stage_external_location
+            exc.__dict__["analytics_toolkit_sql_acknowledged_resources"] = ()
+            time_print(
+                f"Retaining unacknowledged Parquet stage {stage_table} "
+                f"at {stage_external_location}",
+                level="warning",
+                connection=options.to_db_key,
+                backend=options.to_db_backend,
+                phase="create_stage",
+            )
+            raise
+        callbacks["on_resource_created"](stage_table)
         stage_state.stage_table_created = True
         return
 
-    raise RuntimeError(
+    msg = (
         "Could not generate a unique stage table name after "
         f"{STAGE_TABLE_NAME_MAX_ATTEMPTS} attempts."
     )
+    raise RuntimeError(msg)
 
 
 def build_create_parquet_stage_table_sql(
@@ -128,7 +167,8 @@ def build_stage_external_location(
     stage_suffix: str | None = None,
 ) -> str:
     if not options.s3_transfer_staging_location:
-        raise ValueError("s3_transfer_staging_location is required.")
+        msg = "s3_transfer_staging_location is required."
+        raise ValueError(msg)
     base_location = options.s3_transfer_staging_location.rstrip("/")
     target_base = get_backend_adapter("trino").parquet_stage_target_table_base(
         _stage_target_table_name(options)
@@ -232,6 +272,7 @@ def write_dataframe_to_parquet_stage(
     row_group_size: int,
     on_progress: Any | None = None,
     storage_options: Mapping[str, Any] | None = None,
+    column_types: Mapping[str, str] | None = None,
 ) -> int:
     if len(df) == 0:
         return 0
@@ -245,7 +286,18 @@ def write_dataframe_to_parquet_stage(
             max_size=PARQUET_STAGE_MAX_SPOOL_BYTES,
         )
         try:
-            arrow_table = pa.Table.from_pandas(chunk, preserve_index=False)
+            arrow_table = (
+                pa.Table.from_pandas(chunk, preserve_index=False)
+                if column_types is None
+                else row_batch_to_arrow_table(
+                    pa,
+                    RowBatch(
+                        columns=list(chunk.columns),
+                        rows=list(chunk.itertuples(index=False, name=None)),
+                    ),
+                    column_types=column_types,
+                )
+            )
             write_arrow_table_to_parquet(
                 pq,
                 arrow_table,
@@ -282,6 +334,12 @@ def row_batch_to_arrow_table(
     *,
     column_types: Mapping[str, str] | None = None,
 ) -> Any:
+    if column_types is not None:
+        for column_name in batch.columns:
+            if column_name not in column_types:
+                message = "Every Parquet stage column requires a resolved native type."
+                raise ValueError(message)
+            require_supported_stage_type(column_types[column_name])
     column_values = {
         column_name: [
             _parquet_scalar(
@@ -294,8 +352,6 @@ def row_batch_to_arrow_table(
     }
     try:
         for column_name, values in column_values.items():
-            if not values or any(value is not None for value in values):
-                continue
             arrow_type = _arrow_type_for_trino_stage(
                 pa,
                 None if column_types is None else column_types.get(column_name),
@@ -308,43 +364,11 @@ def row_batch_to_arrow_table(
 
 
 def _parquet_scalar(value: Any, column_type: str | None = None) -> Any:
-    if isinstance(value, uuid.UUID):
-        return str(value)
-    if column_type is not None and "with time zone" in column_type.lower():
-        return value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
-    return value
+    return parquet_scalar(value, column_type)
 
 
 def _arrow_type_for_trino_stage(pa: Any, column_type: str | None) -> Any | None:
-    if column_type is None:
-        return None
-    normalized = " ".join(column_type.lower().split())
-    if normalized.startswith("timestamp"):
-        return pa.string() if "with time zone" in normalized else pa.timestamp("us")
-    decimal_match = re.fullmatch(r"decimal\(\s*(\d+)\s*,\s*(\d+)\s*\)", normalized)
-    if decimal_match is not None:
-        return pa.decimal128(int(decimal_match.group(1)), int(decimal_match.group(2)))
-
-    arrow_factory_name = {
-        "varchar": "string",
-        "char": "string",
-        "uuid": "string",
-        "json": "string",
-        "varbinary": "binary",
-        "boolean": "bool_",
-        "tinyint": "int64",
-        "smallint": "int64",
-        "integer": "int64",
-        "bigint": "int64",
-        "real": "float64",
-        "double": "float64",
-        "date": "date32",
-    }.get(normalized)
-    if arrow_factory_name is not None:
-        return getattr(pa, arrow_factory_name)()
-    if normalized.startswith(("varchar(", "char(")):
-        return pa.string()
-    return None
+    return arrow_type_for_trino_stage(pa, column_type)
 
 
 def write_arrow_table_to_parquet(
@@ -406,7 +430,8 @@ def _stage_target_table_name(options: Any) -> str:
     destination_table = getattr(options, "destination_table", None)
     if destination_table is not None:
         return destination_table
-    raise ValueError("Parquet staging options must include a target table name.")
+    msg = "Parquet staging options must include a target table name."
+    raise ValueError(msg)
 
 
 def _spooled_file_rolled_to_disk(spooled_file: Any) -> bool:

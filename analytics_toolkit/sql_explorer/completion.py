@@ -4,27 +4,17 @@ from __future__ import annotations
 
 import re
 from collections import deque
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass, field
 from threading import Event, Lock, Thread
 from time import monotonic
-from typing import TYPE_CHECKING, Final, Literal, Protocol
+from typing import TYPE_CHECKING, Final, Literal, Protocol, cast
 from uuid import uuid4
 
 from analytics_toolkit import sql
-from analytics_toolkit.sql.backends.metadata import (
-    CH_CURRENT_DATABASE_QUERY,
-    GP_PARTITION_CAPABILITIES_QUERY,
-    TRINO_CURRENT_NAMESPACE_QUERY,
-    build_ch_completion_query,
-    build_gp_completion_query,
-    build_gp_reference_query,
-    build_gp_search_path_query,
-    build_trino_completion_query,
-)
 from analytics_toolkit.sql.backends.utils import sql_literal
 from analytics_toolkit.sql.connection.config import get_connection_config
-from analytics_toolkit.sql.ddl.identifiers import quote_identifier
+from analytics_toolkit.sql.execution.backend_options import backend_operation
 from analytics_toolkit.sql.execution.cancellation import (
     AsyncSqlCancelled,
     SqlCancellationScope,
@@ -32,23 +22,43 @@ from analytics_toolkit.sql.execution.cancellation import (
     cancel_scope_queries,
     raise_if_cancelled,
 )
+from analytics_toolkit.sql.execution.plans import SqlOperationResult
 from analytics_toolkit.sql.metadata.column_names import table_column_names
 
 from .background_metadata import BackgroundMetadata, persistent_discovery
-from .column_completion import column_fragment, projection_context, projection_suggestions
-from .completion_scope import relation_position
+from .column_completion import projection_suggestions
+from .completion_context import parse_completion_context
+from .completion_pool import CompletionCoordinatorPool, _CoordinatorPoolEntry
+from .identifier_completion import column_completion_matches
 from .journal_workers import JournalMetadataProvider, cancel_metadata
+from .metadata_context import journal_context
+from .metadata_listing import (
+    IncompleteMetadataError,
+    MetadataListing,
+    listing_failure,
+    listing_result,
+)
+from .metadata_providers import (
+    ClickHouseCompletionProvider,
+    GreenplumCompletionProvider,
+    TrinoCompletionProvider,
+    provider_for_backend,
+)
 from .metadata_usage import column_in_scopes
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
-    from pathlib import Path
 
     import pandas as pd
 
     from .journal import QueryJournal
 
 CompletionKind = Literal["keyword", "table", "catalog", "schema", "column"]
+
+
+class _StoppedCoordinatorError(RuntimeError):
+    """A stopped owner cannot accept another background bootstrap request."""
+
 
 KEYWORDS: Final[tuple[str, ...]] = (
     "select",
@@ -163,6 +173,7 @@ class CompletionContext:
     normalized_prefix: str
     namespace: bool = False
     local_relations: tuple[str, ...] = ()
+    rendered_relations: bool = False
 
     @property
     def table_context(self) -> bool:
@@ -209,17 +220,17 @@ def normalize_completion_values(values: Iterable[object]) -> tuple[str, ...]:
     seen: set[str] = set()
     normalized: list[str] = []
     for value in values:
-        candidate = str(value).strip()
-        identity = candidate.casefold()
+        candidate = str(value)
+        identity = candidate
         if not candidate or identity in seen:
             continue
         seen.add(identity)
         normalized.append(candidate)
-    return tuple(sorted(normalized, key=str.casefold))
+    return tuple(sorted(normalized, key=lambda name: (name.casefold(), name)))
 
 
 def filter_suggestions(values: Sequence[str], prefix: str) -> tuple[str, ...]:
-    normalized = normalize_identifier_prefix(prefix).casefold()
+    normalized = prefix.casefold()
     return tuple(value for value in values if value.casefold().startswith(normalized))
 
 
@@ -240,182 +251,33 @@ def keyword_suggestions(prefix: str) -> tuple[str, ...]:
 
 
 def _metadata_frame(connection_key: str, query: str) -> pd.DataFrame:
-    return sql.read(
+    result = sql.read(
         connection_key,
         query,
         retry_cnt=1,
         timeout_increment=0,
         query_label=f"sql_explorer metadata={uuid4().hex}",
+        return_metadata=True,
     )
+    if isinstance(result, SqlOperationResult):
+        frame = cast("pd.DataFrame", result.data)
+        frame.attrs["sql_explorer_metadata"] = result.metadata
+        return frame
+    return result
 
 
 def _first_column_values(frame: pd.DataFrame) -> tuple[str, ...]:
-    if frame.empty:
-        return ()
-    return normalize_completion_values(frame[frame.columns[0]].tolist())
+    metadata = frame.attrs.get("sql_explorer_metadata")
+    names = () if frame.empty else normalize_completion_values(frame.iloc[:, 0].tolist())
+    return MetadataListing(
+        names,
+        complete=getattr(metadata, "data_complete", None) is not False,
+        cluster_status=getattr(metadata, "ch_cluster_status", None) or (),
+    )
 
 
 def _table_condition(prefix: str) -> str:
     return f"lower(table_name) LIKE lower({sql_literal(prefix + '%')})"
-
-
-class GreenplumCompletionProvider:
-    def __init__(self) -> None:
-        self._partition_catalog: str | None = None
-
-    def resolve_reference(
-        self,
-        connection_key: str,
-        name: str,
-        *,
-        search_path: list[str] | None = None,
-        candidates: list[tuple[str, str]] | None = None,
-    ) -> tuple[str, str] | None:
-        if candidates:
-            frame = _metadata_frame(connection_key, build_gp_search_path_query(search_path))
-            # Search-path order is semantic; completion normalization sorts names.
-            path = tuple(str(row[0]) for row in frame.itertuples(index=False, name=None))
-            return next((("", schema) for schema in path if ("", schema) in candidates), None)
-        values = _first_column_values(
-            _metadata_frame(connection_key, build_gp_reference_query(name, search_path))
-        )
-        return ("", values[0]) if values else None
-
-    def list_tables(
-        self,
-        *,
-        connection_key: str,
-        prefix: str,
-        schema: str | None = None,
-        catalog: str | None = None,
-    ) -> tuple[str, ...]:
-        del catalog
-        if self._partition_catalog is None:
-            values = _first_column_values(
-                _metadata_frame(connection_key, GP_PARTITION_CAPABILITIES_QUERY)
-            )
-            self._partition_catalog = values[0] if values else "none"
-        return _first_column_values(
-            _metadata_frame(
-                connection_key, build_gp_completion_query(schema, prefix, self._partition_catalog)
-            )
-        )
-
-    def list_catalogs(self, *, connection_key: str) -> tuple[str, ...]:
-        del connection_key
-        return ()
-
-    def list_schemas(
-        self,
-        *,
-        connection_key: str,
-        catalog: str | None = None,
-    ) -> tuple[str, ...]:
-        del catalog
-        return _first_column_values(
-            _metadata_frame(
-                connection_key,
-                "SELECT schema_name FROM information_schema.schemata ORDER BY schema_name",
-            )
-        )
-
-
-class ClickHouseCompletionProvider:
-    def resolve_reference(
-        self,
-        connection_key: str,
-        name: str,
-        *,
-        search_path: list[str] | None = None,
-        candidates: list[tuple[str, str]] | None = None,
-    ) -> tuple[str, str] | None:
-        del name, search_path, candidates
-        values = _first_column_values(_metadata_frame(connection_key, CH_CURRENT_DATABASE_QUERY))
-        return ("", values[0]) if values else None
-
-    def list_tables(
-        self,
-        *,
-        connection_key: str,
-        prefix: str,
-        schema: str | None = None,
-        catalog: str | None = None,
-    ) -> tuple[str, ...]:
-        del catalog
-        return _first_column_values(
-            _metadata_frame(connection_key, build_ch_completion_query(schema, prefix))
-        )
-
-    def list_catalogs(self, *, connection_key: str) -> tuple[str, ...]:
-        del connection_key
-        return ()
-
-    def list_schemas(
-        self,
-        *,
-        connection_key: str,
-        catalog: str | None = None,
-    ) -> tuple[str, ...]:
-        del catalog
-        return _first_column_values(_metadata_frame(connection_key, "SHOW DATABASES"))
-
-
-class TrinoCompletionProvider:
-    def resolve_reference(
-        self,
-        connection_key: str,
-        name: str,
-        *,
-        search_path: list[str] | None = None,
-        candidates: list[tuple[str, str]] | None = None,
-    ) -> tuple[str, str] | None:
-        del name, search_path, candidates
-        frame = _metadata_frame(connection_key, TRINO_CURRENT_NAMESPACE_QUERY)
-        if frame.empty or frame.iloc[0].isna().any():
-            return None
-        return str(frame.iloc[0, 0]), str(frame.iloc[0, 1])
-
-    def list_tables(
-        self,
-        *,
-        connection_key: str,
-        prefix: str,
-        schema: str | None = None,
-        catalog: str | None = None,
-    ) -> tuple[str, ...]:
-        catalog = catalog or getattr(get_connection_config(connection_key), "catalog", None)
-        if not catalog:
-            message = "Trino table completion requires a catalog."
-            raise ValueError(message)
-        return _first_column_values(
-            _metadata_frame(
-                connection_key,
-                build_trino_completion_query(quote_identifier(catalog, "trino"), schema, prefix),
-            )
-        )
-
-    def list_catalogs(self, *, connection_key: str) -> tuple[str, ...]:
-        return _first_column_values(_metadata_frame(connection_key, "SHOW CATALOGS"))
-
-    def list_schemas(
-        self,
-        *,
-        connection_key: str,
-        catalog: str | None = None,
-    ) -> tuple[str, ...]:
-        query = "SHOW SCHEMAS"
-        if catalog is not None:
-            query += f" FROM {quote_identifier(catalog, 'trino')}"
-        return _first_column_values(_metadata_frame(connection_key, query))
-
-
-def provider_for_backend(backend: str) -> MetadataProvider:
-    normalized = backend.casefold()
-    if normalized == "trino":
-        return TrinoCompletionProvider()
-    if normalized in {"ch", "clickhouse"}:
-        return ClickHouseCompletionProvider()
-    return GreenplumCompletionProvider()
 
 
 @dataclass
@@ -432,6 +294,10 @@ class CompletionCoordinator:
     _cache: dict[tuple[object, ...], CompletionCacheEntry] = field(
         default_factory=dict,
         init=False,
+    )
+    _incomplete_scopes: set[tuple[object, ...]] = field(default_factory=set, init=False)
+    _incomplete_requests: dict[tuple[object, ...], CompletionRequest] = field(
+        default_factory=dict, init=False
     )
     _catalogs: tuple[str, ...] | None = field(default=None, init=False)
     _table_columns: dict[str, tuple[str, ...]] = field(default_factory=dict, init=False)
@@ -457,8 +323,28 @@ class CompletionCoordinator:
     def __post_init__(self) -> None:
         self.backend = self.backend.casefold()
         self.provider = self.provider or provider_for_backend(self.backend)
+        self.bind_discovery()
         self._thread = Thread(target=self._worker, name="sql-explorer-metadata", daemon=True)
         self._thread.start()
+
+    def bind_discovery(self) -> None:
+        if self.discovery is not None:
+            self.discovery.on_snapshot = self._recover_background
+
+    def _recover_background(self) -> None:
+        discovery = self.discovery
+        if discovery is None:
+            return
+        with self._lock:
+            recovered = [
+                scope
+                for scope, request in self._incomplete_requests.items()
+                if request.kind != "column"
+                and not discovery.scope_incomplete(request.kind, request.catalog, request.schema)
+            ]
+            for scope in recovered:
+                self._incomplete_scopes.discard(scope)
+                self._incomplete_requests.pop(scope, None)
 
     def start_bootstrap(
         self,
@@ -515,6 +401,10 @@ class CompletionCoordinator:
         on_success = on_success or (lambda _result: None)
         on_error = on_error or (lambda _result, _exc: None)
         request_id = self._next_id()
+        with self._lock:
+            if self._stopping:
+                message = "Metadata coordinator is stopped; reacquire the connection."
+                raise _StoppedCoordinatorError(message)
         if request.kind == "keyword":
             on_success(CompletionResult(request, request_id, keyword_suggestions(request.prefix)))
             return request_id
@@ -550,6 +440,9 @@ class CompletionCoordinator:
         return request_id
 
     def cached(self, request: CompletionRequest) -> tuple[str, ...] | None:
+        with self._lock:
+            if self._stopping:
+                return None
         if self.discovery is not None and request.kind != "column":
             values = self.discovery.cached(request.kind, request.catalog, request.schema)
             if values is not None:
@@ -570,12 +463,10 @@ class CompletionCoordinator:
         if entry is None or monotonic() - entry.created_at >= METADATA_CACHE_SECONDS:
             return None
         if request.kind == "column":
-            prefix = normalize_identifier_prefix(request.prefix).casefold()
             return tuple(
                 value
                 for value in entry.values  # noqa: PD011 -- dataclass tuple, not a dataframe.
-                if value.strip('"`').casefold().startswith(prefix)
-                or value.rsplit(".", 1)[-1].strip('"`').casefold().startswith(prefix)
+                if column_completion_matches(value, request.prefix, request.backend)
             )
         return filter_suggestions(entry.values, request.prefix)
 
@@ -583,6 +474,8 @@ class CompletionCoordinator:
         """Discard table discovery and column snapshots after user DDL."""
         with self._lock:
             self._cache.clear()
+            self._incomplete_scopes.clear()
+            self._incomplete_requests.clear()
             self._table_columns.clear()
             self._columns_cached_at.clear()
             self._cache_generation += 1
@@ -613,7 +506,7 @@ class CompletionCoordinator:
             )
             generation = self._cache_generation
         if cached is None:
-            with (
+            context = (
                 self.journal.action(
                     self.connection_key,
                     self.backend,
@@ -622,8 +515,12 @@ class CompletionCoordinator:
                 )
                 if self.journal
                 else nullcontext()
-            ):
+            )
+            with context, backend_operation() as operation:
                 cached = table_column_names(self.connection_key, table)
+                if operation.partial:
+                    message = "Column metadata is incomplete; retaining the last complete names."
+                    raise IncompleteMetadataError(message)
             raise_if_cancelled()
             with self._lock:
                 if generation == self._cache_generation:
@@ -721,6 +618,12 @@ class CompletionCoordinator:
             self._cancellation_threads.append(thread)
             thread.start()
 
+    @property
+    def metadata_incomplete(self) -> bool:
+        with self._lock:
+            partial = bool(self._incomplete_scopes)
+        return partial or bool(self.discovery is not None and self.discovery.incomplete)
+
     def snapshot(self) -> tuple[int, int, bool]:
         with self._lock:
             return len(self._cache), len(self._queue), self._in_flight is not None
@@ -745,6 +648,7 @@ class CompletionCoordinator:
                     raise_if_cancelled()
                     raw_values = self._run(task.request)
                     raise_if_cancelled()
+                listing = listing_result(raw_values)
                 values = (
                     tuple(sorted(set(raw_values), key=str.casefold))
                     if task.request.kind == "column"
@@ -753,17 +657,14 @@ class CompletionCoordinator:
             except AsyncSqlCancelled:
                 continue
             except Exception as exc:  # noqa: BLE001 -- isolated metadata notice.
-                with self._lock:
-                    subscribers = tuple(task.subscribers)
-                for subscriber in subscribers:
-                    subscriber.on_error(
-                        CompletionResult(subscriber.request, subscriber.request_id, ()),
-                        exc,
-                    )
+                self._publish_error(task, generation, exc)
             else:
                 with self._lock:
                     if generation != self._cache_generation or task.cancellation.cancelled:
                         continue
+                if not listing.complete:
+                    self._publish_partial(task, generation)
+                    continue
                 self._publish_result(task, values, generation)
             finally:
                 with self._lock:
@@ -774,19 +675,85 @@ class CompletionCoordinator:
                 if has_more:
                     self._wake.set()
 
+    def _publish_error(self, task: _CompletionTask, generation: int, exc: Exception) -> None:
+        if isinstance(exc, IncompleteMetadataError):
+            self._publish_partial(task, generation)
+            return
+        with self._lock:
+            if (
+                generation != self._cache_generation
+                or task.cancellation.cancelled
+                or self._stopping
+            ):
+                return
+            self._incomplete_scopes.add(task.request.metadata_scope)
+            self._incomplete_requests[task.request.metadata_scope] = task.request
+            subscribers = tuple(task.subscribers)
+            self._schedule_recovery(task.request)
+        for subscriber in subscribers:
+            subscriber.on_error(
+                CompletionResult(subscriber.request, subscriber.request_id, ()),
+                listing_failure(exc),
+            )
+
+    def _publish_partial(self, task: _CompletionTask, generation: int) -> None:
+        with self._lock:
+            if (
+                generation != self._cache_generation
+                or task.cancellation.cancelled
+                or self._stopping
+            ):
+                return
+            self._incomplete_scopes.add(task.request.metadata_scope)
+            self._incomplete_requests[task.request.metadata_scope] = task.request
+            # Keep certified names for a bounded retry window.
+            for key, entry in tuple(self._cache.items()):
+                if key[:-1] == task.request.metadata_scope:
+                    self._cache[key] = CompletionCacheEntry(entry.kind, entry.values)
+            subscribers = tuple(task.subscribers)
+            self._schedule_recovery(task.request)
+        for subscriber in subscribers:
+            previous = self.cached(subscriber.request)
+            if previous is not None:
+                subscriber.on_success(
+                    CompletionResult(subscriber.request, subscriber.request_id, previous)
+                )
+            message = "Metadata is incomplete; retaining the last complete names."
+            subscriber.on_error(
+                CompletionResult(subscriber.request, subscriber.request_id, ()),
+                listing_failure(IncompleteMetadataError(message)),
+            )
+
+    def _schedule_recovery(self, request: CompletionRequest) -> None:
+        if self.discovery is not None and request.kind != "column":
+            # The listing failure remains primary; discovery retains pending retry state.
+            with suppress(Exception):
+                self.discovery.note_incomplete(request.kind, request.catalog, request.schema)
+
     def _publish_result(
         self, task: _CompletionTask, values: tuple[str, ...], generation: int
     ) -> None:
-        self._store_result(task.request, values, generation=generation)
         with self._lock:
+            if (
+                generation != self._cache_generation
+                or task.cancellation.cancelled
+                or self._stopping
+            ):
+                return
+            self._store_result_locked(task.request, values)
+            self._incomplete_scopes.discard(task.request.metadata_scope)
+            self._incomplete_requests.pop(task.request.metadata_scope, None)
             subscribers = tuple(task.subscribers)
         for subscriber in subscribers:
             subscriber.on_success(
                 CompletionResult(subscriber.request, subscriber.request_id, values)
             )
         if task.bootstrap and task.request.kind == "catalog":
-            for catalog in values:
-                self.enqueue_schemas(catalog=catalog, on_error=self._bootstrap_error)
+            try:
+                for catalog in values:
+                    self.enqueue_schemas(catalog=catalog, on_error=self._bootstrap_error)
+            except _StoppedCoordinatorError:
+                return
 
     def _take_task(self) -> _CompletionTask | None:
         with self._lock:
@@ -810,11 +777,14 @@ class CompletionCoordinator:
         with self._lock:
             if generation is not None and generation != self._cache_generation:
                 return
-            self._cache[request.cache_key] = CompletionCacheEntry(request.kind, values)
-            if request.kind == "catalog":
-                self._catalogs = values
-            elif request.kind == "schema":
-                self._schemas[request.catalog] = values
+            self._store_result_locked(request, values)
+
+    def _store_result_locked(self, request: CompletionRequest, values: tuple[str, ...]) -> None:
+        self._cache[request.cache_key] = CompletionCacheEntry(request.kind, values)
+        if request.kind == "catalog":
+            self._catalogs = values
+        elif request.kind == "schema":
+            self._schemas[request.catalog] = values
 
     def _run(self, request: CompletionRequest) -> tuple[str, ...]:
         if request.kind == "column":
@@ -840,225 +810,10 @@ class CompletionCoordinator:
         return keyword_suggestions(request.prefix)
 
 
-@dataclass
-class _CoordinatorPoolEntry:
-    coordinator: CompletionCoordinator
-    owners: set[str] = field(default_factory=set)
-
-
-class CompletionCoordinatorPool:
-    """Share one serialized metadata coordinator for each connection key."""
-
-    def __init__(
-        self, *, state_directory: Path | None = None, journal: QueryJournal | None = None
-    ) -> None:
-        self._state_directory = state_directory
-        self.journal = journal
-        self._entries: dict[str, _CoordinatorPoolEntry] = {}
-        self._retired: list[CompletionCoordinator] = []
-
-    def acquire(
-        self,
-        connection_key: str,
-        backend: str,
-        owner_id: str,
-        *,
-        on_error: Callable[[CompletionResult, Exception], None] | None = None,
-    ) -> CompletionCoordinator:
-        normalized_key = connection_key.casefold()
-        entry = self._entries.get(normalized_key)
-        if entry is None:
-            provider = provider_for_backend(backend)
-            if self.journal is not None:
-                provider = JournalMetadataProvider(provider, self.journal, backend, "metadata")
-            coordinator = CompletionCoordinator(
-                connection_key, backend, provider=provider, journal=self.journal
-            )
-            if self._state_directory is None:
-                coordinator.start_bootstrap(on_error=on_error)
-            else:
-
-                def report(exc: Exception) -> None:
-                    if on_error is not None:
-                        on_error(
-                            CompletionResult(
-                                CompletionRequest(connection_key, backend, "catalog", ""), 0, ()
-                            ),
-                            exc,
-                        )
-
-                try:
-                    coordinator.discovery = persistent_discovery(
-                        self._state_directory,
-                        connection_key,
-                        backend,
-                        (
-                            JournalMetadataProvider(
-                                provider_for_backend(backend), self.journal, backend, "background"
-                            )
-                            if self.journal
-                            else provider_for_backend(backend)
-                        ),
-                        report,
-                        journal=self.journal,
-                    )
-                    coordinator.discovery.on_ddl = coordinator.invalidate_scopes
-                    coordinator.discovery.start()
-                except Exception as exc:  # noqa: BLE001 -- interactive discovery remains available.
-                    report(exc)
-            entry = _CoordinatorPoolEntry(coordinator)
-            self._entries[normalized_key] = entry
-        entry.owners.add(owner_id)
-        return entry.coordinator
-
-    def release(self, owner_id: str, connection_key: str | None = None) -> None:
-        keys = (connection_key.casefold(),) if connection_key is not None else tuple(self._entries)
-        for key in keys:
-            entry = self._entries.get(key)
-            if entry is None or owner_id not in entry.owners:
-                continue
-            entry.coordinator.remove_owner(owner_id)
-            entry.owners.discard(owner_id)
-            if not entry.owners:
-                entry.coordinator.stop()
-                self._retired.append(entry.coordinator)
-                self._entries.pop(key, None)
-
-    def stop(self) -> None:
-        for entry in self._entries.values():
-            entry.coordinator.stop()
-            self._retired.append(entry.coordinator)
-        self._entries.clear()
-
-    @property
-    def is_stopped(self) -> bool:
-        self._retired = [coordinator for coordinator in self._retired if not coordinator.is_stopped]
-        return not self._entries and not self._retired
-
-    def coordinator_for(self, connection_key: str) -> CompletionCoordinator | None:
-        entry = self._entries.get(connection_key.casefold())
-        return entry.coordinator if entry is not None else None
-
-    def snapshot(self) -> dict[str, tuple[int, int, bool]]:
-        return {key: entry.coordinator.snapshot() for key, entry in self._entries.items()}
-
-
-_TOKEN_RE: Final = re.compile(r'([A-Za-z0-9_."]+)$')
-
-
-def parse_completion_context(  # noqa: PLR0913 -- explicit cursor, backend and completion-mode inputs.
-    text: str,
-    cursor_offset: int,
-    *,
-    backend: str,
-    connection_key: str = "",
-    trino_catalogs: tuple[str, ...] | None = None,
-    allow_empty_column_prefix: bool = False,
-) -> CompletionContext:
-    """Return completion scope and the final identifier fragment to replace."""
-    cursor_offset = max(0, min(cursor_offset, len(text)))
-    before = text[:cursor_offset]
-    line_start = before.rfind("\n") + 1
-    line = before[line_start:]
-    token_match = _TOKEN_RE.search(line)
-    raw_token = token_match.group(1) if token_match else ""
-    final_prefix = raw_token.rsplit(".", 1)[-1]
-    replacement_end = cursor_offset
-    replacement_start = cursor_offset - len(final_prefix)
-    normalized_backend = backend.casefold()
-
-    column_start, column_end = column_fragment(text, cursor_offset, normalized_backend) or (
-        replacement_start,
-        replacement_end,
-    )
-    column_prefix = text[column_start:cursor_offset].strip('"`')
-    projection = (
-        projection_context(text, column_start, column_end, normalized_backend)
-        if (
-            (allow_empty_column_prefix and not column_prefix)
-            or (not column_prefix and before.endswith("."))
-            or (
-                column_prefix
-                and column_prefix.casefold() not in _COLUMN_KEYWORDS
-                and cursor_offset > 0
-                and not text[cursor_offset - 1].isspace()
-            )
-        )
-        and (cursor_offset == len(text) or text[cursor_offset].isspace())
-        else None
-    )
-    if projection is not None:
-        final_prefix = text[column_start:cursor_offset].strip('"`')
-        request = CompletionRequest(
-            connection_key,
-            normalized_backend,
-            "column",
-            normalize_identifier_prefix(final_prefix),
-            context=projection,
-        )
-        return CompletionContext(request, column_start, column_end, final_prefix, request.prefix)
-
-    relation = relation_position(text, cursor_offset, normalized_backend)
-    if relation is None:
-        request = CompletionRequest(
-            connection_key,
-            normalized_backend,
-            "keyword",
-            normalize_identifier_prefix(final_prefix),
-            context=f"keyword:{line_start}",
-        )
-        return CompletionContext(
-            request,
-            replacement_start,
-            replacement_end,
-            final_prefix,
-            request.prefix,
-        )
-
-    parts = relation.parts
-    replacement_start = relation.start
-    final_prefix = text[replacement_start:cursor_offset]
-    catalog: str | None = None
-    schema: str | None = None
-    database: str | None = None
-
-    if normalized_backend == "trino":
-        if len(parts) >= _CATALOG_SCHEMA_TABLE_PARTS:
-            catalog, schema = parts[0], parts[1]
-        elif len(parts) == _SCHEMA_TABLE_PARTS:
-            if trino_catalogs and parts[0] in trino_catalogs:
-                catalog = parts[0]
-            else:
-                schema = parts[0]
-    elif len(parts) >= _SCHEMA_TABLE_PARTS:
-        schema = parts[-2]
-        if normalized_backend in {"ch", "clickhouse"}:
-            database = schema
-
-    prefix = normalize_identifier_prefix(parts[-1])
-    request = CompletionRequest(
-        connection_key,
-        normalized_backend,
-        "table",
-        prefix,
-        schema=schema,
-        catalog=catalog,
-        database=database,
-        context=relation.context,
-    )
-    return CompletionContext(
-        request,
-        replacement_start,
-        replacement_end,
-        final_prefix,
-        prefix,
-        local_relations=relation.ctes,
-    )
-
-
 __all__ = [
     "KEYWORDS",
     "MIN_TABLE_PREFIX_LENGTH",
+    "BackgroundMetadata",
     "ClickHouseCompletionProvider",
     "CompletionCacheEntry",
     "CompletionContext",
@@ -1067,12 +822,17 @@ __all__ = [
     "CompletionRequest",
     "CompletionResult",
     "GreenplumCompletionProvider",
+    "JournalMetadataProvider",
     "MetadataProvider",
     "TrinoCompletionProvider",
+    "_CoordinatorPoolEntry",
     "filter_suggestions",
+    "get_connection_config",
+    "journal_context",
     "keyword_suggestions",
     "normalize_completion_values",
     "normalize_identifier_prefix",
     "parse_completion_context",
+    "persistent_discovery",
     "provider_for_backend",
 ]

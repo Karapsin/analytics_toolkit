@@ -44,7 +44,7 @@ def test_cleanup_failure_is_returned_as_metadata(
 
 
 def test_failed_rollback_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = CountingReconfigureClient([3, 3, 3])
+    client = CountingReconfigureClient([3, 3, 3, 99])
     adapter = get_backend_adapter("ch")
     reconfiguration = plan_ch_table_reconfiguration(
         adapter,
@@ -52,31 +52,33 @@ def test_failed_rollback_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
         _options(ch_engine="MergeTree"),
     )
     monkeypatch.setattr(reconfigure_backend, "_wait_for_created_replacement", lambda *_: None)
+    original_command = client.command
+    cutover_calls = 0
 
-    def execute_phase(_adapter: object, _connection: object, _plan: object, phase: str) -> None:
-        if phase == "cutover":
-            message = "cutover failed"
-            raise RuntimeError(message)
+    def command(sql_text: str, settings: object = None) -> None:
+        nonlocal cutover_calls
+        if sql_text.startswith("EXCHANGE TABLES"):
+            cutover_calls += 1
+            if cutover_calls == 2:
+                message = "rollback failed"
+                raise RuntimeError(message)
+        original_command(sql_text, settings)
 
-    monkeypatch.setattr(reconfigure_backend, "_execute_phase", execute_phase)
-    monkeypatch.setattr(
-        reconfigure_backend,
-        "_execute_sqls",
-        lambda *_: (_ for _ in ()).throw(RuntimeError("rollback failed")),
-    )
-
-    with pytest.raises(RuntimeError, match="rollback also failed"):
+    client.command = command
+    with pytest.raises(RuntimeError, match="rollback also failed") as caught:
         reconfigure_backend.execute_ch_table_reconfiguration(
             adapter,
             client,
             reconfiguration,
             validate_row_count=True,
         )
+    assert "row count changed during cutover" in str(caught.value.__cause__)
+    assert reconfiguration.cleanup_complete is False
 
 
 def test_public_failure_builds_operation_context(monkeypatch: pytest.MonkeyPatch) -> None:
     class FailingClient(ReconfigureClient):
-        def query(self, query: str) -> FakeClickHouseResult:
+        def query(self, query: str, settings: object = None) -> FakeClickHouseResult:
             message = f"failed query: {query}"
             raise RuntimeError(message)
 

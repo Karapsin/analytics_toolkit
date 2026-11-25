@@ -12,7 +12,7 @@ COLLISION_STAGE_RANDOM_SUFFIX_LENGTH = 4
 _TRANSFER_STAGE_SUFFIX_PATTERN = re.compile(
     r"(?P<transfer_id>[0-9a-f]{32})__"
     r"(?:source|s[0-9]{5}|w[0-9]{5}|upsert)"
-    r"(?:__c_[0-9a-f]{8}|[0-9a-f]{5})?$"
+    rf"(?:__c_[0-9a-f]{{8}}|[0-9a-f]{{{COLLISION_STAGE_RANDOM_SUFFIX_LENGTH}}}|[0-9a-f]{{5}})?$"
 )
 
 

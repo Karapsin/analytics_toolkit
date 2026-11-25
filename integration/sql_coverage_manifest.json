@@ -5272,8 +5272,8 @@
             {
               "state": "true",
               "status": "covered",
-              "tests": [
-                "tests/sql/architecture/misc_contracts.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              "scenarios": [
+                "audit.metadata.clickhouse.logical_totals"
               ]
             }
           ]
@@ -10499,6 +10499,1042 @@
         "ch"
       ],
       "node_id": "tests/sql/integration/fault/clickhouse_outage.py::test_clickhouse_native_new_target_during_shard_outage"
+    },
+    "audit.exact_values.http": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_exact_values_roundtrip[audit.exact_values.http]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/exact_transport.py::test_binary_temporal_ticks_remain_exact_for_both_transports",
+        "tests/sql/backends/ch/exact_transport.py::test_http_stream_uses_column_blocks_and_preserves_duplicate_names"
+      ]
+    },
+    "audit.exact_values.native": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_exact_values_roundtrip[audit.exact_values.native]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/exact_transport.py::test_native_stream_header_is_consumed_once_and_tuple_cells_are_rows",
+        "tests/sql/backends/ch/exact_transport.py::test_full_binary_native_block_uses_exact_column_factory"
+      ]
+    },
+    "audit.upsert.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_complete_reordered_upserts_use_partition_scoped_keys[audit.upsert.gp]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped",
+        "tests/sql/dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage"
+      ]
+    },
+    "audit.upsert.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_complete_reordered_upserts_use_partition_scoped_keys[audit.upsert.trino]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped",
+        "tests/sql/dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage"
+      ]
+    },
+    "audit.upsert.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_complete_reordered_upserts_use_partition_scoped_keys[audit.upsert.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/upsert_rows.py::test_reordered_complete_upsert_is_canonical_and_partition_scoped",
+        "tests/sql/dml/load/upsert_rows.py::test_existing_upsert_rejects_missing_default_or_extra_before_stage",
+        "tests/sql/dml/load/upsert_storage_scope.py::test_load_df_upsert_mutates_only_verified_existing_storage_scope"
+      ]
+    },
+    "audit.upsert.trino_string_partitions": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_literal_values.py::test_trino_upsert_treats_marker_shaped_partitions_as_stored_strings",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_partition_literals.py::test_load_df_upsert_quotes_actual_partition_strings"
+      ]
+    },
+    "audit.transfer.gp_aware_key": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_literal_values.py::test_greenplum_keyed_transfer_selects_the_aware_instant_in_a_utc_session",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/row_batches/gp_key_literals.py::test_keyed_transfer_selects_timestamp_row_by_emitted_literal_semantics"
+      ]
+    },
+    "audit.transfer.encoded_varchar.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_encoded_values.py::test_complete_structured_encoding_is_validated_before_creating_a_bounded_target[audit.transfer.encoded_varchar.gp]",
+      "backends": [
+        "ch",
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/schema/text_width.py::test_new_bounded_target_rejects_metadata_expanded_structured_text_before_creation",
+        "tests/sql/dml/transfer/schema/text_width.py::test_exact_structured_text_width_is_accepted_without_changing_schema"
+      ]
+    },
+    "audit.transfer.encoded_varchar.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_encoded_values.py::test_complete_structured_encoding_is_validated_before_creating_a_bounded_target[audit.transfer.encoded_varchar.trino]",
+      "backends": [
+        "ch",
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/schema/text_width.py::test_new_bounded_target_rejects_metadata_expanded_structured_text_before_creation",
+        "tests/sql/dml/transfer/schema/text_width.py::test_exact_structured_text_width_is_accepted_without_changing_schema"
+      ]
+    },
+    "audit.load.unknown_columns.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_dataframe_columns.py::test_unknown_dataframe_columns_are_rejected_before_truncating_existing_rows[audit.load.unknown_columns.gp]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/incoming_columns.py::test_unknown_existing_target_columns_fail_before_destructive_load",
+        "tests/sql/dml/load/incoming_columns.py::test_known_subset_and_reordered_append_preserve_existing_rows"
+      ]
+    },
+    "audit.load.unknown_columns.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_dataframe_columns.py::test_unknown_dataframe_columns_are_rejected_before_truncating_existing_rows[audit.load.unknown_columns.trino]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/incoming_columns.py::test_unknown_existing_target_columns_fail_before_destructive_load",
+        "tests/sql/dml/load/incoming_columns.py::test_known_subset_and_reordered_append_preserve_existing_rows"
+      ]
+    },
+    "audit.load.unknown_columns.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_dataframe_columns.py::test_unknown_dataframe_columns_are_rejected_before_truncating_existing_rows[audit.load.unknown_columns.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/incoming_columns.py::test_unknown_existing_target_columns_fail_before_destructive_load",
+        "tests/sql/dml/load/incoming_columns.py::test_known_subset_and_reordered_append_preserve_existing_rows"
+      ]
+    },
+    "audit.load.computed_columns.materialized": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_generated_columns.py::test_noninsertable_computed_columns_are_rejected_before_clearing_rows[audit.load.computed_columns.materialized]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/noninsertable_columns.py::test_noninsertable_existing_columns_reject_before_clearing_seed_rows",
+        "tests/sql/backends/ch/insertable_columns.py::test_clickhouse_explicit_insertability_respects_transport_and_effective_setting",
+        "tests/sql/backends/ch/insertable_columns.py::test_clickhouse_ephemeral_and_default_inputs_remain_insertable"
+      ]
+    },
+    "audit.load.computed_columns.alias": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_generated_columns.py::test_noninsertable_computed_columns_are_rejected_before_clearing_rows[audit.load.computed_columns.alias]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/noninsertable_columns.py::test_noninsertable_existing_columns_reject_before_clearing_seed_rows",
+        "tests/sql/backends/ch/insertable_columns.py::test_clickhouse_explicit_insertability_respects_transport_and_effective_setting",
+        "tests/sql/backends/ch/insertable_columns.py::test_clickhouse_ephemeral_and_default_inputs_remain_insertable"
+      ]
+    },
+    "audit.load.enum_values.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_enum_values.py::test_ordinary_enum_cells_load_as_exact_native_values_after_truncation[audit.load.enum_values.gp]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/enum_values.py::test_numeric_enum_values_reach_real_gp_adaptation_as_exact_primitives",
+        "tests/sql/dml/load/enum_values.py::test_scalar_enum_values_publish_exact_native_values",
+        "tests/sql/dml/load/enum_values.py::test_nested_array_enums_publish_native_integer_and_sql_null_leaves"
+      ]
+    },
+    "audit.load.enum_values.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_enum_values.py::test_ordinary_enum_cells_load_as_exact_native_values_after_truncation[audit.load.enum_values.trino]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/enum_values.py::test_numeric_enum_values_reach_real_gp_adaptation_as_exact_primitives",
+        "tests/sql/dml/load/enum_values.py::test_scalar_enum_values_publish_exact_native_values",
+        "tests/sql/dml/load/enum_values.py::test_nested_array_enums_publish_native_integer_and_sql_null_leaves"
+      ]
+    },
+    "audit.load.enum_values.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_enum_values.py::test_ordinary_enum_cells_load_as_exact_native_values_after_truncation[audit.load.enum_values.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/enum_values.py::test_numeric_enum_values_reach_real_gp_adaptation_as_exact_primitives",
+        "tests/sql/dml/load/enum_values.py::test_scalar_enum_values_publish_exact_native_values",
+        "tests/sql/dml/load/enum_values.py::test_nested_array_enums_publish_native_integer_and_sql_null_leaves"
+      ]
+    },
+    "audit.load.numpy_booleans.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_boolean_scalars.py::test_object_numpy_booleans_load_as_native_zero_one_or_boolean_values[audit.load.numpy_booleans.gp]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/numpy_scalars.py::test_numpy_boolean_integer_load_reaches_real_gp_adaptation_as_zero_and_one",
+        "tests/sql/dml/load/numpy_scalars.py::test_nested_numpy_boolean_array_leaves_publish_integer_zero_one_and_null",
+        "tests/sql/dml/load/numpy_scalars.py::test_accepted_scalar_families_publish_exact_transport_values"
+      ]
+    },
+    "audit.load.numpy_booleans.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_boolean_scalars.py::test_object_numpy_booleans_load_as_native_zero_one_or_boolean_values[audit.load.numpy_booleans.trino]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/numpy_scalars.py::test_numpy_boolean_integer_load_reaches_real_gp_adaptation_as_zero_and_one",
+        "tests/sql/dml/load/numpy_scalars.py::test_nested_numpy_boolean_array_leaves_publish_integer_zero_one_and_null",
+        "tests/sql/dml/load/numpy_scalars.py::test_accepted_scalar_families_publish_exact_transport_values"
+      ]
+    },
+    "audit.load.numpy_booleans.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_boolean_scalars.py::test_object_numpy_booleans_load_as_native_zero_one_or_boolean_values[audit.load.numpy_booleans.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/numpy_scalars.py::test_numpy_boolean_integer_load_reaches_real_gp_adaptation_as_zero_and_one",
+        "tests/sql/dml/load/numpy_scalars.py::test_nested_numpy_boolean_array_leaves_publish_integer_zero_one_and_null",
+        "tests/sql/dml/load/numpy_scalars.py::test_accepted_scalar_families_publish_exact_transport_values"
+      ]
+    },
+    "audit.load.not_null.gp": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_not_null.py::test_existing_not_null_constraints_reject_invalid_rows_before_truncation[audit.load.not_null.gp]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/not_null_columns.py::test_existing_not_null_column_rejects_null_before_clearing_seed_rows",
+        "tests/sql/dml/load/not_null_columns.py::test_omitted_required_not_null_column_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.load.not_null.trino": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_not_null.py::test_existing_not_null_constraints_reject_invalid_rows_before_truncation[audit.load.not_null.trino]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/not_null_columns.py::test_existing_not_null_column_rejects_null_before_clearing_seed_rows",
+        "tests/sql/dml/load/not_null_columns.py::test_omitted_required_not_null_column_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.transfer.not_null.gp.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_transfer_constraints.py::test_transfer_not_null_validation_precedes_live_target_mutation[audit.transfer.not_null.gp.truncate_insert]",
+      "backends": [
+        "ch",
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/not_null_targets.py::test_existing_not_null_transfer_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.transfer.not_null.trino.truncate_insert": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_transfer_constraints.py::test_transfer_not_null_validation_precedes_live_target_mutation[audit.transfer.not_null.trino.truncate_insert]",
+      "backends": [
+        "ch",
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/not_null_targets.py::test_existing_not_null_transfer_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.transfer.not_null.trino.upsert": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_transfer_constraints.py::test_transfer_not_null_validation_precedes_live_target_mutation[audit.transfer.not_null.trino.upsert]",
+      "backends": [
+        "ch",
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/not_null_targets.py::test_partition_upsert_null_rejects_before_any_partition_mutation"
+      ]
+    },
+    "audit.load.gp_json.json": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_json.py::test_greenplum_json_existing_and_explicit_loads_preserve_native_values[audit.load.gp_json.json]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_json.py::test_native_json_containers_load_through_real_gp_execute_values",
+        "tests/sql/dml/load/gp_json.py::test_invalid_json_serialization_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.load.gp_json.jsonb": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_json.py::test_greenplum_json_existing_and_explicit_loads_preserve_native_values[audit.load.gp_json.jsonb]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_json.py::test_native_json_containers_load_through_real_gp_execute_values",
+        "tests/sql/dml/load/gp_json.py::test_invalid_json_serialization_rejects_before_clearing_seed_rows",
+        "tests/sql/dml/load/gp_json.py::test_public_native_json_arrays_keep_sql_array_rank_and_json_element_values"
+      ]
+    },
+    "audit.load.gp_temporal.time": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_temporal_values.py::test_greenplum_native_time_and_interval_existing_and_explicit_loads[audit.load.gp_temporal.time]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_temporal_values.py::test_native_time_and_interval_load_through_real_gp_execute_values",
+        "tests/sql/dml/load/gp_temporal_values.py::test_full_precision_native_temporals_preserve_null_positions_and_exact_values",
+        "tests/sql/dml/load/gp_temporal_values.py::test_incompatible_native_temporal_value_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.load.gp_temporal.interval": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_temporal_values.py::test_greenplum_native_time_and_interval_existing_and_explicit_loads[audit.load.gp_temporal.interval]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_temporal_values.py::test_native_time_and_interval_load_through_real_gp_execute_values",
+        "tests/sql/dml/load/gp_temporal_values.py::test_full_precision_native_temporals_preserve_null_positions_and_exact_values",
+        "tests/sql/dml/load/gp_temporal_values.py::test_incompatible_native_temporal_value_rejects_before_clearing_seed_rows"
+      ]
+    },
+    "audit.load.trino_time": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_time_values.py::test_trino_time_values_preserve_precision_and_stage_only_incoming_columns",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_time_values.py::test_native_time_uses_real_trino_adapter_and_sdk_formatter",
+        "tests/sql/dml/load/trino_time_values.py::test_explicit_time_precision_uses_native_rounding_and_midnight_wrap",
+        "tests/sql/dml/load/trino_time_values.py::test_explicit_precision_conversion_preserves_existing_time6_destination",
+        "tests/sql/dml/load/trino_time_values.py::test_unsupported_parquet_time_stage_rejects_before_clearing_target",
+        "tests/sql/dml/load/trino_time_values.py::test_parquet_append_omitting_nullable_time_stages_only_incoming_columns"
+      ]
+    },
+    "audit.load.trino_time_map_keys": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_time_values.py::test_trino_time_map_keys_are_certified_before_clearing_existing_rows",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_time_map_keys.py::test_trino_time_map_cast_collision_cannot_clear_existing_rows",
+        "tests/sql/dml/load/trino_time_map_keys.py::test_trino_time_map_rounding_keeps_distinct_native_wall_clocks"
+      ]
+    },
+    "audit.load.trino_timestamp_map_keys": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_timestamp_map_keys.py::test_trino_timestamp_map_identity_rejects_equivalent_exact_keys_before_clear",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_timestamp_map_keys.py::test_trino_timestamp_map_equal_instants_cannot_clear_existing_rows",
+        "tests/sql/dml/load/trino_timestamp_map_keys.py::test_trino_timestamp_map_nanosecond_distinctions_reach_native_p12"
+      ]
+    },
+    "audit.read.trino_exact_temporal": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_exact_reads.py::test_trino_engine_reads_preserve_exact_temporals_and_nanosecond_map_keys",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_public_scalar_keeps_raw_nanosecond_timestamp",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_public_map_preserves_nanosecond_distinct_keys",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_nested_array_row_and_map_keep_original_temporal_values",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_zoned_timestamp_keeps_precise_instant",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_all_supported_timestamp_precisions_keep_raw_negative_ticks",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_public_date_free_clock_preserves_all_native_ticks",
+        "tests/sql/backends/trino/exact_reads.py::test_exact_reads_public_aligned_high_precision_clock_remains_native_time",
+        "tests/sql/backends/trino/exact_temporal_reads.py::test_date_free_clock_retains_all_native_fractional_ticks",
+        "tests/sql/backends/trino/exact_temporal_reads.py::test_picosecond_clock_bounds_keep_wall_ticks_without_an_invented_date",
+        "tests/sql/backends/trino/exact_temporal_reads.py::test_microsecond_aligned_high_precision_clock_keeps_native_time"
+      ]
+    },
+    "audit.load.trino_clock_parameters": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_clock_parameters.py::test_trino_clock_parameters_cast_scalars_and_mixed_arrays_on_native_engine",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_clock_parameters.py::test_trino_clock_parameters_aware_time_keeps_native_cast_semantics",
+        "tests/sql/dml/load/trino_clock_parameters.py::test_trino_clock_parameters_nested_casts_keep_offsets_and_plain_wall_fields",
+        "tests/sql/dml/load/trino_clock_parameters.py::test_trino_clock_parameters_mixed_array_has_one_native_cast_input_family"
+      ]
+    },
+    "audit.load.trino_json_parameters": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_json_parameters.py::test_trino_json_parameters_keep_native_cast_semantics_on_engine",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_json_casts.py::test_trino_json_casts_accept_arbitrary_varchar_without_parsing_document_text",
+        "tests/sql/dml/load/trino_json_casts.py::test_trino_json_casts_sql_null_remains_distinct_from_json_string_null",
+        "tests/sql/dml/load/trino_json_casts.py::test_trino_json_casts_supported_native_values_keep_original_cast_semantics"
+      ]
+    },
+    "audit.load.trino_ipaddress_parameters": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_ipaddress_parameters.py::test_trino_ipaddress_parameters_keep_native_canonical_and_binary_identity",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_ipaddress_casts.py::test_trino_ipaddress_casts_valid_ipv4_reaches_native_target",
+        "tests/sql/dml/load/trino_ipaddress_casts.py::test_trino_ipaddress_casts_native_addresses_keep_exact_cast_identity",
+        "tests/sql/dml/load/trino_ipaddress_casts.py::test_trino_ipaddress_casts_native_key_aliases_fail_before_stage"
+      ]
+    },
+    "audit.engine.trino_composite_ip_char_map_keys": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_ipaddress_parameters.py::test_trino_engine_composes_ipaddress_and_char_identity_inside_row_map_keys",
+      "backends": [
+        "trino"
+      ],
+      "description": "Engine-only SELECT verifies composed ROW(IPADDRESS, CHAR(2)) equality, duplicate MAP-key rejection, and distinct controls. The configured Iceberg and Hive catalogs cannot persist IPADDRESS; existing-destination row preservation is covered by the paired public fake-client load regressions, not by this scenario.",
+      "regression_tests": [
+        "tests/sql/dml/load/trino_composite_map_keys.py::test_trino_composite_native_map_keys_reject_before_truncate",
+        "tests/sql/dml/load/trino_composite_map_keys.py::test_trino_composite_native_map_keys_keep_distinct_rows_and_bare_return"
+      ]
+    },
+    "audit.load.gp_inet_parameters": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_inet_parameters.py::test_greenplum_inet_parameters_preserve_native_hosts_and_masks",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_inet_casts.py::test_gp_inet_casts_valid_string_reaches_native_execute_values"
+      ]
+    },
+    "audit.load.gp_native_assignment": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_assignment_preflight.py::test_greenplum_native_assignment_certifies_cidr_and_scalar_domain_before_clear",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_cidr_casts.py::test_gp_cidr_casts_valid_string_reaches_native_execute_values",
+        "tests/sql/dml/load/gp_cidr_casts.py::test_gp_cidr_casts_domain_assignment_rejects_before_live_create_or_clear",
+        "tests/sql/dml/load/gp_cidr_casts.py::test_gp_cidr_casts_unknown_array_leaves_use_native_assignment_before_clear",
+        "tests/sql/dml/load/gp_cidr_casts.py::test_gp_cidr_casts_domain_array_last_element_cannot_truncate_before_assignment"
+      ]
+    },
+    "audit.load.clickhouse_ip_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_ip_values.py::test_clickhouse_ip_columns_keep_native_values_before_authoritative_mutation",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_network_addresses.py::test_ch_network_addresses_reach_real_driver_column_encoding",
+        "tests/sql/dml/load/ch_network_addresses.py::test_ch_network_addresses_invalid_last_value_rejects_before_live_clear_or_new_ddl"
+      ]
+    },
+    "audit.load.clickhouse_storage_aliases": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_storage_aliases.py::test_clickhouse_storage_aliases_preserve_native_rows_and_unflattened_metadata",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_native_aliases.py::test_ch_native_aliases_keep_public_schema_values_and_real_driver_bytes",
+        "tests/sql/dml/load/ch_native_aliases.py::test_ch_native_aliases_invalid_last_value_preserves_live_rows_before_encoding"
+      ]
+    },
+    "audit.clickhouse.local_creation": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_query_creation_respects_local_layout_and_existing_target",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/structural_safety.py::test_local_layout_never_owns_a_suffix_companion",
+        "tests/sql/backends/ch/reconfigure/structural_safety.py::test_local_to_pair_rejects_a_preexisting_companion_before_ddl"
+      ]
+    },
+    "audit.clickhouse.column_ttl_reconfigure": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_local_to_pair_keeps_column_ttl_only_on_physical_storage",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/structural_safety.py::test_local_to_pair_reconfiguration_removes_only_facade_column_ttl",
+        "tests/sql/backends/ch/reconfigure/structural_safety.py::test_managed_pair_identity_excludes_only_physical_column_ttl"
+      ]
+    },
+    "audit.clickhouse.cross_database_reconfigure_ownership": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_cross_database_facade_never_adopts_a_populated_local_suffix",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/ownership.py::test_public_reconfiguration_rejects_cross_database_storage_before_any_ddl",
+        "tests/sql/backends/ch/reconfigure/ownership.py::test_public_reconfiguration_keeps_same_database_managed_storage_identity"
+      ]
+    },
+    "audit.clickhouse.same_physical_routing_reconfigure": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_same_physical_rebuild_rejects_a_disjoint_facade_route",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/copy_routing.py::test_same_physical_rebuild_rejects_wrong_copy_route_before_any_ddl",
+        "tests/sql/backends/ch/reconfigure/copy_routing.py::test_same_physical_rebuild_accepts_verified_endpoint_aliases_and_macros"
+      ]
+    },
+    "audit.clickhouse.local_to_pair_facade_collision": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_local_to_pair_rejects_a_facade_scope_that_contains_independent_originals",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/conversion_facade.py::test_local_to_pair_rejects_unowned_facade_destination_before_ddl",
+        "tests/sql/backends/ch/reconfigure/conversion_scope.py::test_conversion_scope_rejects_foreign_remote_facade_destination_before_any_ddl"
+      ]
+    },
+    "audit.clickhouse.local_to_pair_scope_preservation": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_reconfiguration.py::test_local_to_pair_preserves_independent_remote_originals_during_cutover_and_cleanup",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/conversion_scope.py::test_conversion_scope_preserves_distinct_remote_original_through_successful_public_cutover",
+        "tests/sql/backends/ch/reconfigure/conversion_scope.py::test_conversion_scope_rolls_back_only_the_local_original_after_real_target_count_drift"
+      ]
+    },
+    "audit.clickhouse.pair_to_local_wrong_facade_scope": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_pair_to_local_defaults_reject_a_scope_that_excludes_the_source_facade",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/pair_scope.py::test_pair_scope_defaults_cannot_adopt_remote_logical_storage_under_real_outage_guard"
+      ]
+    },
+    "audit.clickhouse.pair_to_local_occupied_destination": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_pair_to_local_defaults_reject_foreign_physical_destination_before_source_rename",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/pair_scope.py::test_pair_scope_occupied_physical_destination_is_rejected_before_any_source_rename"
+      ]
+    },
+    "audit.clickhouse.pair_to_local_preserves_unrelated_storage": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_pair_to_local_defaults_preserve_the_unrelated_coordinator_suffix_table",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/reconfigure/pair_scope.py::test_pair_scope_defaults_allow_all_actual_managed_facades_with_real_outage_guard"
+      ]
+    },
+    "audit.transfer.clickhouse.replacement_physical_scope": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_rejects_a_different_physical_scope_before_replacement_ddl",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_replacement_rejects_unowned_physical_scope_before_cutover"
+      ]
+    },
+    "audit.transfer.clickhouse.pair_to_remote_local": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_finishes_pair_to_remote_local_replacement",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_replacement_finishes_pair_to_remote_local_conversion",
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_memory_stage_uses_only_supported_storage_clauses"
+      ]
+    },
+    "audit.transfer.clickhouse.pair_to_coordinator_local": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_finishes_pair_to_coordinator_local_replacement",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_replacement_finishes_pair_to_remote_local_conversion",
+        "tests/sql/dml/transfer/replacement_scope.py::test_public_transfer_memory_stage_uses_only_supported_storage_clauses"
+      ]
+    },
+    "audit.transfer.clickhouse.routed_facade_scope_preservation": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_rejects_a_local_facade_over_existing_full_routed_scope",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/facade_scope.py::test_public_transfer_rejects_replacement_that_leaves_an_original_peer_facade"
+      ]
+    },
+    "audit.transfer.clickhouse.routed_insert_function_columns": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_pair_scope.py::test_staged_transfer_replaces_every_facade_and_preserves_routed_insert_columns",
+      "backends": [
+        "trino",
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/facade_scope.py::test_public_transfer_accepts_an_equivalent_complete_facade_scope_alias"
+      ]
+    },
+    "audit.drop.clickhouse.managed_pair_scopes": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_keeps_owned_roles_in_their_verified_execution_scopes[audit.drop.clickhouse.managed_pair_scopes]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_scope.py::test_public_drop_keeps_foreign_resources_outside_each_verified_pair_role"
+      ]
+    },
+    "audit.drop.clickhouse.physical_role_only": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_keeps_owned_roles_in_their_verified_execution_scopes[audit.drop.clickhouse.physical_role_only]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_scope.py::test_public_drop_keeps_foreign_resources_outside_each_verified_pair_role"
+      ]
+    },
+    "audit.drop.clickhouse.facade_role_only": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_keeps_owned_roles_in_their_verified_execution_scopes[audit.drop.clickhouse.facade_role_only]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_scope.py::test_public_drop_keeps_foreign_resources_outside_each_verified_pair_role"
+      ]
+    },
+    "audit.clickhouse.routing_metadata": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_contracts.py::test_clickhouse_routing_bindings_and_current_database_metadata",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/routing_contract.py::test_routing_preserves_bound_qualified_columns_and_stars",
+        "tests/sql/backends/ch/source_bindings.py::test_same_scope_database_qualified_sources_remain_distinct",
+        "tests/sql/backends/ch/source_bindings.py::test_same_scope_explicit_aliases_remain_authoritative",
+        "tests/sql/explorer/metadata_identity.py::test_persisted_unqualified_clickhouse_completion_uses_current_database"
+      ]
+    },
+    "audit.load.clickhouse_integer_timestamps": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_integer_timestamps.py::test_integer_timestamps_keep_native_units_for_explicit_and_existing_schemas",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_integer_timestamp_values_reach_public_native_writes",
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_integer_timestamp_out_of_range_rejects_before_clear",
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_integer_datetime64_calendar_overflow_rejects_before_clear",
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_integer_datetime64_calendar_boundary_ticks_keep_native_units"
+      ]
+    },
+    "audit.create.clickhouse.execute_query_drop_scope": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_execute_create_replaces_only_verified_existing_pair_resources",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_pair_replace_preserves_foreign_local_physical_table",
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_pair_replace_same_placement_creates_and_populates_once"
+      ]
+    },
+    "audit.drop.clickhouse.overlapping_facade_first": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_executes_overlapping_requested_scopes_once[audit.drop.clickhouse.overlapping_facade_first]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_overlap.py::test_public_drop_executes_the_verified_union_of_overlapping_requested_scopes"
+      ]
+    },
+    "audit.drop.clickhouse.overlapping_physical_first": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_drop_tables_executes_overlapping_requested_scopes_once[audit.drop.clickhouse.overlapping_physical_first]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/table/drop_overlap.py::test_public_drop_executes_the_verified_union_of_overlapping_requested_scopes"
+      ]
+    },
+    "audit.transfer.clickhouse_adaptive_snapshot_scope": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_adaptive_snapshot_scope.py::test_changed_keyed_native_source_scope_cannot_publish_a_certified_checkpoint",
+      "backends": [
+        "ch",
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/adaptive_snapshot_scope.py::test_public_adaptive_keyed_snapshot_rejects_scope_drift_before_target_mutation",
+        "tests/sql/dml/transfer/adaptive_snapshot_scope.py::test_public_adaptive_keyed_snapshot_accepts_stable_partial_source_scope"
+      ]
+    },
+    "audit.create.clickhouse.remote_plain_skip": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_drop_scope.py::test_execute_create_skips_existing_remote_plain_target_before_setup",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_if_not_exists_resolves_plain_target_scope_before_setup",
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_if_not_exists_retains_existing_coordinator_target_before_setup",
+        "tests/sql/dml/io/execute_create_scope.py::test_execute_create_default_rejects_existing_coordinator_target_before_remote_ddl"
+      ]
+    },
+    "audit.load.clickhouse_timestamp_native_keys": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_integer_timestamps.py::test_timestamp_effective_keys_use_native_ticks_before_upsert_mutation",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_reject_equivalent_native_partition_keys_before_create",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_keep_distinct_native_partitions_and_bare_count",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_existing_metadata_append_stages_authoritative_timestamp_columns",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_nested_tuple_ticks_reject_before_target_creation",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_distinct_dst_folds_survive_upfront_python_key_validation"
+      ]
+    },
+    "audit.load.gp_finite_numeric_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_numeric_text_values.py::test_finite_numeric_text_loads_preserve_exact_values_and_reject_invalid_last_rows[audit.load.gp_finite_numeric_text]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_numeric_text.py::test_gp_numeric_text_native_assignment_keeps_exact_values_and_physical_schema",
+        "tests/sql/dml/load/gp_numeric_text.py::test_gp_numeric_text_native_signed_zero_preserves_exact_physical_ieee_bits",
+        "tests/sql/dml/load/gp_numeric_text.py::test_gp_numeric_text_invalid_late_value_keeps_live_rows_and_never_creates_stage",
+        "tests/sql/dml/load/gp_numeric_text.py::test_gp_numeric_text_range_scale_and_nonfinite_reject_before_clear"
+      ]
+    },
+    "audit.load.trino_finite_numeric_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_numeric_text_values.py::test_finite_numeric_text_loads_preserve_exact_values_and_reject_invalid_last_rows[audit.load.trino_finite_numeric_text]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_numeric_text.py::test_trino_numeric_text_public_native_parameters_preserve_finite_values_exactly",
+        "tests/sql/dml/load/trino_numeric_text.py::test_trino_numeric_text_invalid_last_value_never_clears_or_inserts"
+      ]
+    },
+    "audit.load.clickhouse_finite_numeric_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_numeric_text_values.py::test_finite_numeric_text_loads_preserve_exact_values_and_reject_invalid_last_rows[audit.load.clickhouse_finite_numeric_text]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_numeric_text.py::test_ch_numeric_text_public_write_retains_exact_native_values_and_bytes",
+        "tests/sql/dml/load/ch_numeric_text.py::test_ch_numeric_text_invalid_last_value_rejects_before_any_native_write"
+      ]
+    },
+    "audit.load.gp_smallint_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.gp_smallint_text]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_load_preserves_exact_native_values_and_width",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_invalid_late_value_rejects_before_target_clear",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_width_overflow_rejects_before_target_clear"
+      ]
+    },
+    "audit.load.gp_integer_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.gp_integer_text]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_load_preserves_exact_native_values_and_width",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_invalid_late_value_rejects_before_target_clear",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_width_overflow_rejects_before_target_clear"
+      ]
+    },
+    "audit.load.gp_bigint_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.gp_bigint_text]",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_load_preserves_exact_native_values_and_width",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_invalid_late_value_rejects_before_target_clear",
+        "tests/sql/dml/load/gp_integers.py::test_gp_integer_text_width_overflow_rejects_before_target_clear"
+      ]
+    },
+    "audit.load.trino_tinyint_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.trino_tinyint_text]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_public_casts_preserve_native_grammar_and_width_bounds",
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_invalid_late_cast_preserves_target_before_mutation"
+      ]
+    },
+    "audit.load.trino_smallint_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.trino_smallint_text]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_public_casts_preserve_native_grammar_and_width_bounds",
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_invalid_late_cast_preserves_target_before_mutation"
+      ]
+    },
+    "audit.load.trino_integer_text": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_integer_text_values.py::test_integer_text_loads_preserve_authoritative_width_and_reject_invalid_values[audit.load.trino_integer_text]",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_public_casts_preserve_native_grammar_and_width_bounds",
+        "tests/sql/dml/load/trino_integer_text.py::test_trino_integer_text_invalid_late_cast_preserves_target_before_mutation"
+      ]
+    },
+    "audit.load.trino_bigint_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_bigint_values.py::test_trino_bigint_loads_preserve_integer_strings_and_reject_invalid_last_values",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_bigints.py::test_trino_bigints_public_load_keeps_explicit_int_assignment_and_signed_bounds",
+        "tests/sql/dml/load/trino_bigints.py::test_trino_bigints_invalid_late_assignment_preserves_target_before_clear_or_insert"
+      ]
+    },
+    "audit.load.clickhouse_boolean_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_boolean_values.py::test_clickhouse_boolean_integer_loads_preserve_native_values_and_reject_invalid_input",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_booleans.py::test_ch_booleans_public_integer_zero_one_reaches_exact_native_bytes",
+        "tests/sql/dml/load/ch_booleans.py::test_ch_booleans_public_numeric_nonzero_matches_actual_default_encoders"
+      ]
+    },
+    "audit.load.gp_boolean_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_gp_boolean_values.py::test_gp_boolean_text_loads_preserve_native_false_and_reject_invalid_values",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_booleans.py::test_gp_boolean_load_preserves_false_values_through_real_psycopg_formatter",
+        "tests/sql/dml/load/gp_booleans.py::test_gp_invalid_late_boolean_rejects_before_target_clear"
+      ]
+    },
+    "audit.load.trino_boolean_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_trino_boolean_values.py::test_trino_boolean_integer_loads_preserve_native_casts_and_reject_invalid_values",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_public_load_keeps_supported_native_casts_and_nulls",
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_invalid_late_input_preserves_the_existing_target",
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_public_ascii_string_casts_preserve_native_false_and_true",
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_padded_string_cast_rejects_before_target_mutation",
+        "tests/sql/dml/load/trino_booleans.py::test_trino_booleans_finite_numeric_casts_preserve_zero_and_exact_nonzero_values"
+      ]
+    },
+    "audit.load.gp_date_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_date_domain_preflight.py::test_gp_date_dataframe_loads_preserve_native_server_assignment_and_reject_invalid_values",
+      "backends": [
+        "gp"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/gp_dates.py::test_gp_date_load_keeps_native_assignment_and_real_psycopg_formatter",
+        "tests/sql/dml/load/gp_dates.py::test_gp_invalid_late_date_rejects_before_target_clear",
+        "tests/sql/backends/gp/date_values.py::test_gp_date_aware_parameters_retain_the_native_offset_and_actual_psycopg_wire"
+      ]
+    },
+    "audit.load.trino_date_values": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_date_domain_preflight.py::test_trino_date_dataframe_loads_preserve_local_calendar_and_reject_invalid_values",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/trino_dates.py::test_trino_dates_public_load_preserves_native_calendar_and_null_values",
+        "tests/sql/dml/load/trino_dates.py::test_trino_dates_invalid_last_value_preserves_existing_rows_before_mutation",
+        "tests/sql/dml/load/trino_dates.py::test_trino_dates_equal_native_keys_reject_before_append_stage_or_target_mutation"
+      ]
+    },
+    "audit.transfer.trino_date_domain_preflight": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_date_domain_preflight.py::test_invalid_text_stage_cannot_clear_existing_date_rows",
+      "backends": [
+        "trino"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/transfer/schema/date_authority.py::test_varchar_stage_cannot_clear_existing_date_target_before_date_validation",
+        "tests/sql/dml/transfer/schema/date_authority.py::test_existing_date_target_keeps_typed_rows_and_single_source_scan",
+        "tests/sql/dml/transfer/schema/date_authority.py::test_valid_iso_date_text_stage_keeps_existing_date_cast_semantics"
+      ]
+    },
+    "audit.load.clickhouse_authoritative_tuple_arrays": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/audit_ch_integer_timestamps.py::test_authoritative_array_columns_keep_tuple_sequence_values",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_authoritative_timestamp_array_accepts_tuple_sequences",
+        "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_hashable_array_payloads_reject_equal_native_keys_before_create"
+      ]
+    },
+    "audit.metadata.clickhouse.logical_totals": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/logical_metadata.py::test_native_clickhouse_logical_statistics_and_replica_identity",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/logical_statistics.py::test_logical_statistics_counts_replicated_shards_and_independent_hosts",
+        "tests/sql/backends/ch/logical_statistics.py::test_routed_show_tables_deduplicates_exact_identity_and_keeps_case"
+      ]
+    },
+    "audit.clickhouse.replication_storage_isolation.replace.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/replication_storage_isolation.py::test_replicated_rebuild_never_joins_the_live_source_storage[audit.clickhouse.replication_storage_isolation.replace.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/replication_isolation.py::test_public_staged_replace_rejects_shared_live_replication_path_before_create",
+        "tests/sql/backends/ch/replication_isolation.py::test_public_cross_cluster_reconfigure_rejects_same_expanded_table_replication_path"
+      ]
+    },
+    "audit.clickhouse.replication_storage_isolation.replace.ch_native": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/replication_storage_isolation.py::test_replicated_rebuild_never_joins_the_live_source_storage[audit.clickhouse.replication_storage_isolation.replace.ch_native]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/replication_isolation.py::test_public_staged_replace_rejects_shared_live_replication_path_before_create",
+        "tests/sql/backends/ch/replication_isolation.py::test_public_cross_cluster_reconfigure_rejects_same_expanded_table_replication_path"
+      ]
+    },
+    "audit.clickhouse.replication_storage_isolation.relocate.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/replication_storage_isolation.py::test_replicated_rebuild_never_joins_the_live_source_storage[audit.clickhouse.replication_storage_isolation.relocate.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/replication_isolation.py::test_public_staged_replace_rejects_shared_live_replication_path_before_create",
+        "tests/sql/backends/ch/replication_isolation.py::test_public_cross_cluster_reconfigure_rejects_same_expanded_table_replication_path"
+      ]
+    },
+    "audit.clickhouse.replication_storage_isolation.relocate.ch_native": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/replication_storage_isolation.py::test_replicated_rebuild_never_joins_the_live_source_storage[audit.clickhouse.replication_storage_isolation.relocate.ch_native]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/replication_isolation.py::test_public_staged_replace_rejects_shared_live_replication_path_before_create",
+        "tests/sql/backends/ch/replication_isolation.py::test_public_cross_cluster_reconfigure_rejects_same_expanded_table_replication_path"
+      ]
+    },
+    "fault.clickhouse.optional_facade.ch": {
+      "profile": "fault",
+      "backends": [
+        "ch"
+      ],
+      "node_id": "tests/sql/integration/fault/clickhouse_facade_availability.py::test_healthy_physical_cluster_survives_optional_facade_outage[fault.clickhouse.optional_facade.ch]",
+      "regression_tests": [
+        "tests/sql/backends/ch/availability.py::test_default_creation_requires_shards_and_warns_for_optional_facade",
+        "tests/sql/backends/ch/availability.py::test_missing_required_shard_stops_before_optional_facade_creation",
+        "tests/sql/backends/ch/availability.py::test_no_shard_cluster_preserves_full_participating_cluster_requirement",
+        "tests/sql/backends/ch/availability_writes.py::test_public_writes_finish_with_only_acknowledged_optional_facade_resources"
+      ]
+    },
+    "fault.clickhouse.optional_facade.ch_native": {
+      "profile": "fault",
+      "backends": [
+        "ch"
+      ],
+      "node_id": "tests/sql/integration/fault/clickhouse_facade_availability.py::test_healthy_physical_cluster_survives_optional_facade_outage[fault.clickhouse.optional_facade.ch_native]",
+      "regression_tests": [
+        "tests/sql/backends/ch/availability.py::test_default_creation_requires_shards_and_warns_for_optional_facade",
+        "tests/sql/backends/ch/availability.py::test_missing_required_shard_stops_before_optional_facade_creation",
+        "tests/sql/backends/ch/availability.py::test_no_shard_cluster_preserves_full_participating_cluster_requirement",
+        "tests/sql/backends/ch/availability_writes.py::test_public_writes_finish_with_only_acknowledged_optional_facade_resources"
+      ]
     }
   },
   "unsupported_authentication": {

@@ -12,6 +12,7 @@ from sqlglot.optimizer.normalize_identifiers import normalize_identifiers
 from sqlglot.optimizer.scope import Scope, traverse_scope
 
 from .completion_scope import DIALECTS, marked_statement
+from .identifier_completion import identifier_tokens, quote_completion_name
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -25,7 +26,10 @@ def column_fragment(text: str, cursor: int, backend: str) -> tuple[int, int] | N
     try:
         tokens = sqlglot.tokenize(text, read=_DIALECTS.get(backend, backend))
     except SqlglotError:
-        return None
+        try:
+            tokens = identifier_tokens(text[:cursor], _DIALECTS.get(backend, backend))
+        except SqlglotError:
+            return None
     return next(
         (
             (token.start, token.end + 1)
@@ -88,8 +92,7 @@ def projection_suggestions(
     marker = next(c for c in target.columns if c.name == _MARKER)
 
     def quoted(name: str) -> str:
-        needs_quotes = not name.isidentifier() or name != name.lower()
-        return exp.to_identifier(name, quoted=needs_quotes).sql(dialect=dialect)
+        return quote_completion_name(name, backend)
 
     available = {
         alias: _source_columns(source, frozenset(), dialect, columns_for_table)

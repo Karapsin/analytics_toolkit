@@ -184,7 +184,7 @@ def _read_source_value(
                 f"'{connection_key}' field '{field_name}' is not set in {secret_path}."
             )
             raise SqlConfigError(message) from exc
-        if not value:
+        if not value and field_name != "password":
             message = (
                 f"Secret '{source_key}' referenced by SQL connection "
                 f"'{connection_key}' field '{field_name}' is empty in {secret_path}."

@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 import pandas as pd
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.source_codecs import execute_exact_source_query
+from analytics_toolkit.sql.connection.errors import sql_preview
+from analytics_toolkit.sql.dml.transfer.runtime.models import RowBatch
+from analytics_toolkit.sql.dml.transfer.runtime.retry import replace_connection, run_with_retry
+from analytics_toolkit.sql.execution.labels import apply_query_label
 from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error, mark_sql_error
-
-from ....backends import get_backend_adapter
-from ....connection.errors import sql_preview
-from ....execution.labels import apply_query_label
-from ..runtime.models import RowBatch
-from ..runtime.retry import replace_connection, run_with_retry
 
 
 class TransferSourceStreamReadError(RuntimeError):
@@ -65,6 +65,22 @@ class TransferSourceStreamReadError(RuntimeError):
             ]
         )
         return "; ".join(parts)
+
+
+def normalize_source_batch(
+    options: Any, connection: Any, batch: RowBatch, column_types: dict[str, str | None]
+) -> RowBatch:
+    """Bind source transport semantics before profiling, spooling or target encoding."""
+    if options.input_resolution.get("spool") is not None:
+        return batch
+    adapter = get_backend_adapter(options.from_db_backend)
+    batch = adapter.normalize_transfer_source_batch(batch, column_types)
+    return cast(
+        "RowBatch",
+        adapter.normalize_source_temporal_batch(
+            connection, batch, column_types, options.input_resolution
+        ),
+    )
 
 
 def iter_source_batches(
@@ -209,7 +225,14 @@ def _start_dbapi_query_with_retry(
             if attempt > 1:
                 replace_connection(connection_key, connection_ref)
             cursor = connection_ref["connection"].cursor()
-            cursor.execute(query)
+            cursor = execute_exact_source_query(
+                connection_backend,
+                connection_ref["connection"],
+                cursor,
+                query,
+                source_columns=connection_ref.get("exact_source_columns"),
+                source_description=connection_ref.get("exact_source_description"),
+            )
             columns = [column[0] for column in cursor.description or []]
             return cursor, columns
         except Exception as exc:
@@ -247,6 +270,9 @@ def _start_clickhouse_stream_with_retry(
             if attempt > 1:
                 replace_connection(connection_key, connection_ref)
             connection = connection_ref["connection"]
+            exact_source = getattr(connection, "enable_exact_source_values", None)
+            if callable(exact_source):
+                exact_source()
             original_query_limit = getattr(connection, "query_limit", None)
             should_restore_query_limit = (
                 disable_query_limit and hasattr(connection, "query_limit") and original_query_limit
@@ -255,19 +281,10 @@ def _start_clickhouse_stream_with_retry(
                 connection.query_limit = 0
             try:
                 context_manager = connection.query_df_stream(query)
+                return _first_clickhouse_stream_block(context_manager)
             finally:
                 if should_restore_query_limit:
                     connection.query_limit = original_query_limit
-            stream = context_manager.__enter__()
-            iterator = iter(stream)
-            while True:
-                try:
-                    block = next(iterator)
-                except StopIteration:
-                    return context_manager, iterator, None
-                if block.empty:
-                    continue
-                return context_manager, iterator, block
         except Exception as exc:
             mark_sql_error(exc, "ch")
             if context_manager is not None:
@@ -285,6 +302,16 @@ def _start_clickhouse_stream_with_retry(
         timeout_increment=timeout_increment,
         operation=operation,
     )
+
+
+def _first_clickhouse_stream_block(
+    context_manager: Any,
+) -> tuple[Any, Iterator[pd.DataFrame], pd.DataFrame | None]:
+    iterator: Iterator[pd.DataFrame] = iter(context_manager.__enter__())
+    for block in iterator:
+        if not block.empty:
+            return context_manager, iterator, block
+    return context_manager, iterator, None
 
 
 def _rows_as_tuples(rows: list[Any]) -> list[tuple[Any, ...]]:

@@ -9,6 +9,7 @@ from release_routines.lib import python_support
 
 from tests._support import extras
 from tests._support.paths import REPO_ROOT
+from tests.release_routines._support.install_targets import editable_extras
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -96,7 +97,10 @@ def test_compatibility_matrix_omits_lagging_tui_tests_and_renderer_steps() -> No
         for row in python_support.compatibility_matrix(lagging_policy)["include"]
     }
     assert rows["py315-latest"]["without_extras"] == "tui"
-    assert rows["py315-latest"]["install_target"] == ".[datalens]"
+    assert editable_extras(rows["py315-latest"]["install_target"]) == {
+        "datalens",
+        "clickhouse-native",
+    }
     assert rows["py314-latest"]["without_extras"] == ""
     workflow = (REPO_ROOT / ".github/workflows/compatibility.yml").read_text(encoding="utf-8")
     tests_job = workflow.split("\n  tests:\n", 1)[1].split("\n  sdk-conformance:\n", 1)[0]

@@ -133,7 +133,9 @@ def test_clickhouse_readiness_extensions_exhaust_with_context(
 @pytest.mark.parametrize(
     ("explicit", "configured", "expected"),
     [
-        (None, None, "wait_all"),
+        (None, None, "wait_shard"),
+        (None, "wait_all", "wait_all"),
+        ("wait_all", None, "wait_all"),
         (None, "wait_shard", "wait_shard"),
         ("wait_distr", "wait_shard", "wait_distr"),
         ("wait_none", None, "wait_none"),

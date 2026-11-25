@@ -14,6 +14,7 @@ from .ddl import (
     build_ch_distributed_create_table_sqls,
     build_ch_shard_table_name,
 )
+from .recovery_endpoints import RecoveryEndpoint, endpoint_identity
 from .routing import local_sql, query_local
 from .wait import (
     _normalize_non_empty_string,
@@ -21,9 +22,9 @@ from .wait import (
     _resolve_ch_cluster_name_for_wait,
     _sql_string_literal,
     _wait_for_ch_distributed_table_pair,
-    _wait_for_ch_distributed_table_pair_absence,
-    _wait_for_ch_table_absence,
-    _wait_for_ch_table_absence_on_cluster,
+    _wait_for_ch_distributed_table_pair_absence,  # noqa: F401 - compatibility re-export
+    _wait_for_ch_table_absence,  # noqa: F401 - compatibility re-export
+    _wait_for_ch_table_absence_on_cluster,  # noqa: F401 - compatibility re-export
 )
 
 _DEFAULT_CH_PER_HOST_DROP_WORKERS = 5
@@ -95,29 +96,26 @@ def build_drop_ch_creation_policy_table_sqls(
 ) -> list[str]:
     """Build exact local/cluster cleanup for a policy-created table resource."""
     resources = [(table_name, creation_policy.shard_on_cluster)]
-    if creation_policy.create_distributed_pair:
+    if creation_policy.create_distributed_pair and getattr(creation_policy, "owns_physical", True):
         resources = [
             (table_name, creation_policy.distributed_on_cluster),
-            (build_ch_shard_table_name(table_name), creation_policy.shard_on_cluster),
+            (
+                getattr(creation_policy, "physical_table", build_ch_shard_table_name(table_name)),
+                creation_policy.shard_on_cluster,
+            ),
         ]
+    elif creation_policy.create_distributed_pair:
+        resources = [(table_name, creation_policy.distributed_on_cluster)]
     sqls: list[str] = []
     for resource, cluster in resources:
         sqls.append(
             _build_drop_ch_table_sql(
                 resource,
+                ch_cluster=cluster,
                 query_label=query_label,
                 if_exists=if_exists,
             )
         )
-        if cluster is not None:
-            sqls.append(
-                _build_drop_ch_table_sql(
-                    resource,
-                    ch_cluster=cluster,
-                    query_label=query_label,
-                    if_exists=if_exists,
-                )
-            )
     return sqls
 
 
@@ -129,14 +127,32 @@ def drop_ch_creation_policy_tables(
     query_label: str | None = None,
     if_exists: bool = True,
 ) -> None:
-    _execute_ch_sqls(
+    from .drop_execution import (  # noqa: PLC0415 - adapter/lifecycle initialization cycle.
+        DropExecutionOptions,
+        execute_verified_drop,
+    )
+    from .layout import inspect_existing_layout  # noqa: PLC0415 - adapter initialization cycle.
+    from .policy_drop import certify_drop_statements  # noqa: PLC0415 - lifecycle import cycle.
+    from .replacement_scope import (  # noqa: PLC0415 - adapter/lifecycle initialization cycle.
+        certify_replacement_scope,
+    )
+
+    key = getattr(getattr(connection, "_config", None), "connection_key", "ch")
+    if creation_policy.create_distributed_pair and getattr(creation_policy, "owns_physical", True):
+        layout = inspect_existing_layout(
+            connection, table_name, distributed_on_cluster=creation_policy.distributed_on_cluster
+        )
+        certify_replacement_scope(connection, layout, creation_policy, staged_exchange=True)
+    plan = certify_drop_statements(
         connection,
-        build_drop_ch_creation_policy_table_sqls(
-            table_name,
-            creation_policy,
-            query_label=query_label,
-            if_exists=if_exists,
-        ),
+        build_drop_ch_creation_policy_table_sqls(table_name, creation_policy, if_exists=if_exists),
+        target_key=key,
+    )
+    execute_verified_drop(
+        get_backend_adapter("ch"),
+        connection,
+        plan,
+        DropExecutionOptions(if_exists=if_exists, query_label=query_label),
     )
 
 
@@ -180,55 +196,35 @@ def drop_ch_distributed_table_pair(
     ch_retry_per_host_drops: bool = True,
     per_host_connection_factory: Callable[[str], Any] | None = None,
 ) -> None:
-    pair = ch_distributed_table_pair(table_name, shard_table)
-    _execute_ch_sqls(
-        connection,
-        build_drop_ch_distributed_table_pair_sqls(
-            pair.distributed_table,
-            ch_cluster=ch_cluster,
-            shard_table=pair.shard_table,
-            query_label=query_label,
-            if_exists=if_exists,
-        ),
+    from .drop_execution import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
+        DropExecutionOptions,
+        execute_verified_drop,
     )
-    if wait_for_absence:
-        try:
-            _wait_for_ch_distributed_table_pair_absence(
-                connection,
-                pair.distributed_table,
-                ch_cluster=ch_cluster,
-                timeout_seconds=wait_timeout_seconds,
-                poll_interval_seconds=wait_poll_interval_seconds,
-            )
-            return
-        except TimeoutError as exc:
-            if not ch_retry_per_host_drops:
-                raise
-            if ch_cluster is None:
-                raise TimeoutError(
-                    f"{exc} ch_retry_per_host_drops=True requires a non-null ch_cluster."
-                ) from exc
-            if per_host_connection_factory is None:
-                raise TimeoutError(
-                    f"{exc} ch_retry_per_host_drops=True requires a per-host "
-                    "ClickHouse connection factory."
-                ) from exc
+    from .drop_layout import (  # noqa: PLC0415 - adapter/lifecycle initialization cycle.
+        DropIntent,
+        certify_existing_drop,
+    )
 
-        _drop_ch_distributed_table_pair_on_cluster_hosts(
-            connection,
-            pair,
-            ch_cluster=ch_cluster,
-            query_label=query_label,
-            per_host_drop_workers=_DEFAULT_CH_PER_HOST_DROP_WORKERS,
-            per_host_connection_factory=per_host_connection_factory,
-        )
-        _wait_for_ch_distributed_table_pair_absence(
-            connection,
-            pair.distributed_table,
-            ch_cluster=ch_cluster,
+    key = getattr(getattr(connection, "_config", None), "connection_key", "ch")
+    plan = certify_existing_drop(
+        connection,
+        table_name,
+        DropIntent(key, ch_cluster, if_exists=if_exists, physical_table=shard_table),
+    )
+    execute_verified_drop(
+        get_backend_adapter("ch"),
+        connection,
+        plan,
+        DropExecutionOptions(
+            if_exists=if_exists,
+            wait_for_absence=wait_for_absence,
             timeout_seconds=wait_timeout_seconds,
             poll_interval_seconds=wait_poll_interval_seconds,
-        )
+            retry_per_host_drops=ch_retry_per_host_drops,
+            query_label=query_label,
+            per_host_connection_factory=per_host_connection_factory,
+        ),
+    )
 
 
 def drop_ch_distributed_table_pair_bounded(
@@ -237,57 +233,34 @@ def drop_ch_distributed_table_pair_bounded(
     **options: Any,
 ) -> None:
     """Drop a pair without opening coordinator or host connections outside a runner."""
-    pair = ch_distributed_table_pair(table_name)
-    query_label = options["query_label"]
-    retry_per_host_drops = bool(options["ch_retry_per_host_drops"])
-    connection_runner = options["connection_runner"]
-    host_connection_runner = options["host_connection_runner"]
-    per_host_drop_workers = int(
-        options.get("per_host_drop_workers", _DEFAULT_CH_PER_HOST_DROP_WORKERS)
+    from .drop_bounded import (  # noqa: PLC0415 - adapter/lifecycle initialization cycle.
+        execute_bounded_verified_drop,
+    )
+    from .drop_execution import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
+        DropExecutionOptions,
+    )
+    from .drop_layout import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
+        DropIntent,
+        VerifiedDropLayout,
+        certify_existing_drop,
     )
 
-    def initial_drop(connection: Any) -> None:
-        _execute_ch_sqls(
-            connection,
-            build_drop_ch_distributed_table_pair_sqls(
-                pair.distributed_table,
-                ch_cluster=ch_cluster,
-                shard_table=pair.shard_table,
-                query_label=query_label,
+    def certify(connection: Any) -> VerifiedDropLayout:
+        key = getattr(getattr(connection, "_config", None), "connection_key", "ch")
+        return certify_existing_drop(connection, table_name, DropIntent(key, ch_cluster))
+
+    execute_bounded_verified_drop(
+        get_backend_adapter("ch"),
+        options["connection_runner"],
+        certify,
+        DropExecutionOptions(
+            wait_for_absence=True,
+            retry_per_host_drops=bool(options["ch_retry_per_host_drops"]),
+            query_label=options["query_label"],
+            host_connection_runner=options["host_connection_runner"],
+            per_host_drop_workers=int(
+                options.get("per_host_drop_workers", _DEFAULT_CH_PER_HOST_DROP_WORKERS)
             ),
-        )
-        _wait_for_ch_distributed_table_pair_absence(
-            connection,
-            pair.distributed_table,
-            ch_cluster=ch_cluster,
-        )
-
-    try:
-        connection_runner("drop_target_pair", initial_drop)
-    except TimeoutError as exc:
-        if not retry_per_host_drops:
-            raise
-        if ch_cluster is None:
-            message = f"{exc} ch_retry_per_host_drops=True requires a non-null ch_cluster."
-            raise TimeoutError(message) from exc
-    else:
-        return
-
-    hosts = _resolve_bounded_drop_hosts(connection_runner, pair, ch_cluster)
-    _drop_pair_on_bounded_hosts(
-        hosts,
-        pair,
-        query_label,
-        host_connection_runner,
-        per_host_drop_workers,
-    )
-
-    connection_runner(
-        "validate_target_pair_drop",
-        lambda connection: _wait_for_ch_distributed_table_pair_absence(
-            connection,
-            pair.distributed_table,
-            ch_cluster=ch_cluster,
         ),
     )
 
@@ -326,6 +299,32 @@ def _drop_pair_on_bounded_hosts(
     host_connection_runner: Callable[[str, Callable[[Any], Any]], Any],
     per_host_drop_workers: int,
 ) -> None:
+    names = [str(host) for host in hosts]
+    ambiguous = {name for name in names if names.count(name) > 1}
+    for host in hosts:
+        if str(host) not in ambiguous:
+            continue
+        native = host_connection_runner(
+            host, lambda connection: bool(getattr(connection, "is_native_transport", False))
+        )
+        if not native:
+            from analytics_toolkit.sql.execution.backend_options import (  # noqa: PLC0415
+                current_backend_operation,
+            )
+
+            state = current_backend_operation()
+            if state is not None:
+                state.preserve_recovery = True
+            endpoints = ", ".join(endpoint_identity(endpoint) for endpoint in hosts)
+            message = (
+                "HTTP recovery cannot distinguish multiple native instances on the same hostname; "
+                "cleanup is incomplete and recovery artifacts are retained. "
+                f"Tables: {pair.distributed_table} / {pair.shard_table}; endpoints: {endpoints}."
+            )
+            error = TimeoutError(message)
+            cast("Any", error).analytics_toolkit_sql_retry_safe = False
+            raise error
+
     def drop_on_host(host: str) -> None:
         host_connection_runner(
             host,
@@ -351,11 +350,16 @@ def _drop_pair_on_bounded_hosts(
         future_to_host = {executor.submit(drop_on_host, host): host for host in hosts}
         for future in as_completed(future_to_host):
             host = future_to_host[future]
-            error = future.exception()
-            if error is not None:
-                error_by_host[host] = f"{host}: {error!r}"
+            future_error = future.exception()
+            if future_error is not None:
+                identity = endpoint_identity(host)
+                error_by_host[identity] = f"{identity}: {future_error!r}"
     if error_by_host:
-        errors = [error_by_host[host] for host in hosts if host in error_by_host]
+        errors = [
+            error_by_host[endpoint_identity(host)]
+            for host in hosts
+            if endpoint_identity(host) in error_by_host
+        ]
         message = (
             "ch_retry_per_host_drops=True failed to locally drop ClickHouse "
             f"table pair {pair.distributed_table} / {pair.shard_table} on "
@@ -375,33 +379,33 @@ def drop_ch_table(
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
 ) -> None:
-    _execute_ch_sqls(
-        connection,
-        build_drop_ch_table_sqls(
-            table_name,
-            ch_cluster=ch_cluster,
-            query_label=query_label,
-            if_exists=if_exists,
-        ),
+    from .drop_execution import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
+        DropExecutionOptions,
+        execute_verified_drop,
     )
-    if not wait_for_absence:
-        return
+    from .drop_layout import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
+        certify_explicit_drop,
+    )
 
-    if ch_cluster is None:
-        _wait_for_ch_table_absence(
-            connection,
-            table_name,
-            timeout_seconds=wait_timeout_seconds,
-            poll_interval_seconds=wait_poll_interval_seconds,
-        )
-        return
-
-    _wait_for_ch_table_absence_on_cluster(
+    key = getattr(getattr(connection, "_config", None), "connection_key", "ch")
+    plan = certify_explicit_drop(
         connection,
         table_name,
-        ch_cluster=ch_cluster,
-        timeout_seconds=wait_timeout_seconds,
-        poll_interval_seconds=wait_poll_interval_seconds,
+        ch_cluster,
+        connection_key=key,
+        if_exists=if_exists,
+    )
+    execute_verified_drop(
+        get_backend_adapter("ch"),
+        connection,
+        plan,
+        DropExecutionOptions(
+            if_exists=if_exists,
+            wait_for_absence=wait_for_absence,
+            timeout_seconds=wait_timeout_seconds,
+            poll_interval_seconds=wait_poll_interval_seconds,
+            query_label=query_label,
+        ),
     )
 
 
@@ -562,6 +566,21 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
             f"ClickHouse hosts for cluster {ch_cluster!r}."
         )
 
+    names = [str(host) for host in hosts]
+    if not getattr(connection, "is_native_transport", False) and len(set(names)) != len(names):
+        # Adapter and lifecycle certificate cycle.
+        from analytics_toolkit.sql.execution.backend_options import (  # noqa: PLC0415
+            current_backend_operation,
+        )
+
+        state = current_backend_operation()
+        if state is not None:
+            state.preserve_recovery = True
+        message = (
+            "HTTP recovery cannot distinguish multiple native instances on the same hostname; "
+            "cleanup is incomplete and recovery artifacts are retained."
+        )
+        raise TimeoutError(message)
     max_workers = min(per_host_drop_workers, len(hosts))
     error_by_host: dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -582,9 +601,13 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
             except Exception as exc:
                 error = f"{host}: {exc!r}"
             if error is not None:
-                error_by_host[host] = error
+                error_by_host[endpoint_identity(host)] = error
 
-    errors = [error_by_host[host] for host in hosts if host in error_by_host]
+    errors = [
+        error_by_host[endpoint_identity(host)]
+        for host in hosts
+        if endpoint_identity(host) in error_by_host
+    ]
     if errors:
         raise TimeoutError(
             "ch_retry_per_host_drops=True failed to locally drop ClickHouse "
@@ -606,20 +629,24 @@ def _drop_ch_distributed_table_pair_on_host(
         host_connection = per_host_connection_factory(host)
         _execute_ch_sqls(
             host_connection,
-            [
-                _build_drop_ch_table_sql(
-                    pair.distributed_table,
-                    query_label=query_label,
-                ),
-                _build_drop_ch_table_sql(
-                    pair.shard_table,
-                    query_label=query_label,
-                ),
-            ],
+            list(
+                dict.fromkeys(
+                    [
+                        _build_drop_ch_table_sql(
+                            pair.distributed_table,
+                            query_label=query_label,
+                        ),
+                        _build_drop_ch_table_sql(
+                            pair.shard_table,
+                            query_label=query_label,
+                        ),
+                    ]
+                )
+            ),
         )
     except Exception as exc:
         error = exc
-        return f"{host}: {exc!r}"
+        return f"{endpoint_identity(host)}: {exc!r}"
     finally:
         if host_connection is not None:
             close = getattr(host_connection, "close", None)
@@ -635,7 +662,7 @@ def _query_ch_configured_cluster_hosts(
     cluster_name = _normalize_non_empty_string(ch_cluster, "ch_cluster")
     cluster_name = _resolve_ch_cluster_name_for_wait(connection, cluster_name)
     sql = (
-        "SELECT DISTINCT host_name\n"
+        "SELECT DISTINCT host_name, port\n"
         "FROM system.clusters\n"
         f"WHERE cluster = {_sql_string_literal(cluster_name)}\n"
         "ORDER BY host_name"
@@ -648,7 +675,7 @@ def _query_ch_configured_cluster_hosts(
             continue
         host = str(row[0]).strip()
         if host:
-            hosts.append(host)
+            hosts.append(RecoveryEndpoint(host, int(row[1])) if len(row) > 1 else host)
     return hosts
 
 

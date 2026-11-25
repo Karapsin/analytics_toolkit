@@ -536,7 +536,11 @@ def test_stage_early_creation_schema_choices_and_existing_target(
         )
 
     state = models_module.TransferStageState(target_exists=False, target_existed_at_start=None)
-    monkeypatch.setattr(transfer_stage_module, "_ensure_stage_target_table", lambda **_k: None)
+    monkeypatch.setattr(
+        transfer_stage_module,
+        "_ensure_stage_target_table",
+        lambda **kwargs: kwargs["on_resource_created"](kwargs["target_table"]),
+    )
     transfer_stage_module.ensure_transfer_target_table(options, refs, state, ["id"])
     assert state.target_existed_at_start is False
     assert state.target_created_by_operation is True

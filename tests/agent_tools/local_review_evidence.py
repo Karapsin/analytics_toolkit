@@ -9,10 +9,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from agent_tools import local_review, sessions, sql_explorer_visual, task_context
-from tests.agent_tools._support.local_review import signed_receipt
+from tests.agent_tools._support.local_review import signed_receipt, signed_round
 from tests.agent_tools.handoff import no_network, submitted
 from tests.agent_tools.sessions import git
-from tests.agent_tools.sessions import source as source  # noqa: PLC0414
+from tests.agent_tools.sessions import (
+    source as source,  # noqa: PLC0414 - shared fixture or compatibility export.
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -69,8 +71,19 @@ def capture_review(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
 
     def execute(root: Path, job: Path, subject: dict[str, str], request: str) -> dict[str, Any]:
-        calls.append({"subject": subject, "request": json.loads(request)})
-        return {"payload": subject}
+        parsed = json.loads(request)
+        calls.append({"subject": subject, "request": parsed})
+        iteration = parsed["iteration"]
+        return signed_round(
+            root,
+            subject,
+            modern=True,
+            discovery_only=iteration["discovery_only"],
+            recorded_findings=iteration["recorded_findings"],
+            prior_findings=iteration["prior_findings"],
+            previous_rounds_sha256=iteration["previous_rounds_sha256"],
+            review_chunk=parsed["review_chunk"],
+        )
 
     monkeypatch.setattr(local_review, "_execute_review", execute)
     return calls
@@ -128,15 +141,39 @@ def test_review_diffs_against_merged_dev_and_supersedes_stale_receipt(
     head = merge_dev(candidate)
     stale = signed_receipt(candidate)  # Bound to the pre-merge base for this exact head.
     assert stale["payload"]["base"] != dev
-    local_review.review(candidate)
-    (call,) = calls
+    source_receipt = local_review.review(candidate)
+    assert local_review.review(candidate) == source_receipt
+    assert len(calls) == 1
+    call = calls[0]
     assert call["subject"]["base"] == dev
-    assert call["request"]["base_revalidations"][0]["after"] == dev
+    assert call["request"]["subject"]["base"] == dev
+    assert "base_revalidations" not in call["request"]
+    revalidation = sessions.load(candidate)["base_revalidations"][0]
+    assert revalidation["after"] == dev
+    assert "other-pr" in revalidation["changes"]
+    assert "other-pr" not in json.dumps(call["request"])
     changed = git(candidate, "diff", "--name-only", call["subject"]["base"], head)
     assert "other-pr" not in changed.split()
     reviews = local_review.directory(candidate)
-    assert not (reviews / (head + ".json")).exists()
+    assert local_review.verified(candidate, head)["payload"]["base"] == dev
     assert list(reviews.glob(head + ".superseded-*.json"))
+
+
+def test_valid_signature_cannot_make_an_obsolete_wave_proof_publication_eligible(candidate) -> None:
+    receipt = signed_receipt(candidate)
+    payload = json.loads(json.dumps(receipt["payload"]))
+    assert payload["review_iterations"]["version"] == 4
+    payload["review_iterations"]["version"] = 3
+    job = local_review.directory(candidate) / "obsolete-wave-proof"
+    job.mkdir()
+    obsolete = local_review._sign_payload(candidate, job, payload)
+    local_review.verify_signature(candidate, obsolete)
+    head = payload["head"]
+    (local_review.directory(candidate) / (head + ".json")).write_bytes(
+        local_review.protocol(candidate).canonical(obsolete)
+    )
+    with pytest.raises(ValueError, match="Compact review attestation"):
+        local_review.verified(candidate, head)
 
 
 def visual_candidate(root: Path) -> None:
@@ -185,10 +222,12 @@ def test_review_attaches_current_visual_receipt_bound_to_task(candidate, monkeyp
     spoof.write_text(
         json.dumps({"task_digest": digest, local_review.VISUAL_EVIDENCE_KEY: {"forged": True}})
     )
-    local_review.review(candidate)
-    (call,) = calls
+    source_receipt = local_review.review(candidate)
+    assert local_review.review(candidate) == source_receipt
+    assert len(calls) == 1
+    call = calls[0]
     evidence = call["request"]["evidence"]
-    assert evidence["task_digest"] == call["subject"]["task_digest"]
+    assert set(evidence) == {local_review.VISUAL_EVIDENCE_KEY}
     visual = evidence[local_review.VISUAL_EVIDENCE_KEY]
     assert visual["verified"] is True
     assert visual["receipt"] == receipt
@@ -226,18 +265,29 @@ def test_review_rejects_missing_stale_or_partial_visual_receipt(
 def test_non_visual_change_never_attaches_or_accepts_visual_evidence(
     candidate, monkeypatch
 ) -> None:
+    previous = git(candidate, "rev-parse", "HEAD")
+    head = commit(candidate, {"non_visual.py": "VALUE = 1\n"}, "Non-visual source change")
+    assert head != previous
     calls = capture_review(monkeypatch)
     spoof = sessions.state_path(candidate).with_name("atk-local-review-evidence.json")
-    digest = local_review.binding(candidate, git(candidate, "rev-parse", "HEAD"))["task_digest"]
+    digest = local_review.binding(candidate, head)["task_digest"]
     spoof.write_text(
         json.dumps(
             {"task_digest": digest, "scope": "Approved", local_review.VISUAL_EVIDENCE_KEY: {}}
         )
     )
-    (local_review.directory(candidate) / (git(candidate, "rev-parse", "HEAD") + ".json")).unlink()
-    local_review.review(candidate)
-    (call,) = calls
-    assert call["request"]["evidence"] == {"task_digest": digest, "scope": "Approved"}
+    source_receipt = local_review.review(candidate)
+    assert local_review.review(candidate) == source_receipt
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["subject"]["head"] == head
+    assert call["request"]["evidence"] == {}
+    assert local_review.VISUAL_EVIDENCE_KEY not in call["request"]["evidence"]
+    assert json.loads(spoof.read_text()) == {
+        "task_digest": digest,
+        "scope": "Approved",
+        local_review.VISUAL_EVIDENCE_KEY: {},
+    }
 
 
 def scene_without_geometry(receipt: dict[str, Any]) -> dict[str, Any]:

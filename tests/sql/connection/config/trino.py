@@ -6,6 +6,7 @@ from tests.sql._support.connection_config import (
     Path,
     SqlConfigError,
     _direct_trino_config,
+    _expected_trino_read_options,
     _install_fake_trino,
     _write_cert,
     builtins,
@@ -18,7 +19,6 @@ from tests.sql._support.connection_config import (
     pytest,
     sys,
     trino_config_module,
-    types,
 )
 
 
@@ -61,6 +61,8 @@ def test_direct_trino_connection_import_auth_and_kwargs(
     assert kwargs["request_timeout"] == 17
     assert kwargs["source"] == "coverage"
     assert kwargs["auth"].password == "secret"
+    for name, value in _expected_trino_read_options().items():
+        assert kwargs[name] == value
 
     trino_config_module.open_connection(
         _direct_trino_config(
@@ -179,6 +181,8 @@ def test_trino_ca_certs_resolves_bare_name_and_overrides_verify(
     assert config.verify_value == "false"
     assert config.ca_certs == ["trino-ca.pem"]
     assert connect_calls[0]["verify"] == str(ca_path.resolve())
+    for name, value in _expected_trino_read_options().items():
+        assert connect_calls[0][name] == value
 
 
 def test_trino_connection_uses_airflow_file_timeout_and_source_overrides(
@@ -220,21 +224,7 @@ def test_trino_connection_uses_airflow_file_timeout_and_source_overrides(
     )
     connect_calls: list[dict[str, object]] = []
 
-    class FakeBasicAuthentication:
-        def __init__(self, user: str, password: str | None) -> None:
-            self.user = user
-            self.password = password
-
-    fake_auth = types.ModuleType("trino.auth")
-    fake_auth.BasicAuthentication = FakeBasicAuthentication
-    fake_auth.OAuth2Authentication = lambda: object()
-    fake_trino = types.ModuleType("trino")
-    fake_trino.auth = fake_auth
-    fake_trino.dbapi = types.SimpleNamespace(
-        connect=lambda **kwargs: connect_calls.append(kwargs) or object()
-    )
-    monkeypatch.setitem(sys.modules, "trino", fake_trino)
-    monkeypatch.setitem(sys.modules, "trino.auth", fake_auth)
+    auth_type = _install_fake_trino(monkeypatch, connect_calls)
 
     connection_module.get_sql_connection("trino")
 
@@ -250,10 +240,11 @@ def test_trino_connection_uses_airflow_file_timeout_and_source_overrides(
             "schema": "sandbox",
             "request_timeout": 900,
             "source": "analytics_toolkit",
+            **_expected_trino_read_options(),
         }
     ]
     auth = connect_calls[0]["auth"]
-    assert isinstance(auth, FakeBasicAuthentication)
+    assert isinstance(auth, auth_type)
     assert auth.user == "trino-user"
     assert auth.password == "trino-password"
 

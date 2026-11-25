@@ -7,7 +7,9 @@ from analytics_toolkit.sql.execution.backend_options import preflight_sql_statem
 from .ddl import _format_ch_cluster_name
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
+
+    from analytics_toolkit.sql.execution.plans import SqlPlan
 
 
 SYNCHRONOUS_CLUSTER_COMMAND_SETTINGS = {
@@ -38,4 +40,18 @@ def execute_reconfiguration_sqls(
         )
 
 
-__all__ = ["cluster_clause", "execute_reconfiguration_sqls"]
+def execute_reconfiguration_phase(
+    adapter: Any,
+    connection: Any,
+    plan: SqlPlan,
+    phase: str,
+    execute_fn: Callable[[Any, Any, Sequence[str]], None],
+) -> None:
+    execute_fn(
+        adapter,
+        connection,
+        [statement.sql for statement in plan.statements if statement.phase == phase],
+    )
+
+
+__all__ = ["cluster_clause", "execute_reconfiguration_phase", "execute_reconfiguration_sqls"]

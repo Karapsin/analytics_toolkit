@@ -152,9 +152,9 @@ def test_failed_attempt_cleanup_drops_published_zero_row_source_stages(
         _LeaseManager(),  # type: ignore[arg-type]
     )
 
-    assert dropped == ["source.reserved", "source.zero"]
+    assert dropped == ["source.zero"]
     assert runtime.source_stage_tables == ["source.nonempty"]
-    assert runtime.source_stages_dropped == 2
+    assert runtime.source_stages_dropped == 1
 
 
 def test_keyed_io_opts_all_batch_retries_into_safe_exception_logging(
@@ -228,37 +228,61 @@ def test_keyed_io_opts_all_batch_retries_into_safe_exception_logging(
 def test_keyed_target_cleanup_retry_redacts_exception_details(monkeypatch: Any) -> None:
     messages: list[str] = []
     state = _state()
-    state.stage_table = "target_stage.writer_0"
+    state.stage_table = "iceberg.sandbox.writer_0"
     state.stage_table_created = True
+    primary = RuntimeError("secret row and SQL text")
+    commands = []
+    connections = []
 
-    def cleanup_with_retry(*_args: Any, **kwargs: Any) -> None:
-        def fail(_attempt: int) -> None:
-            raise RuntimeError("secret row and SQL text")
+    class Cursor:
+        def execute(self, statement):
+            commands.append(statement)
+            assert statement.startswith("DROP TABLE ")
+            raise primary
 
-        kwargs["retry_fn"](
-            operation_name="keyed cleanup",
-            retry_cnt=1,
-            timeout_increment=0,
-            operation=fail,
-        )
+        def close(self):
+            return
 
-    monkeypatch.setattr(finalize, "cleanup_stage_table_with_retry", cleanup_with_retry)
+    class Connection:
+        def __init__(self):
+            self.close_calls = 0
+            connections.append(self)
+
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            self.close_calls += 1
+
+    ref = {"connection": Connection()}
+
+    def replace_connection(_key, connection_ref):
+        connection_ref["connection"].close()
+        connection_ref["connection"] = Connection()
+
+    ref["bounded_replace_connection"] = replace_connection
+
     monkeypatch.setattr(
         transfer_retry,
         "time_print",
         lambda message, **_kwargs: messages.append(message),
     )
 
-    with pytest.raises(RuntimeError, match="secret row"):
+    with pytest.raises(RuntimeError, match="secret row") as caught:
         finalize.cleanup_stage(
-            _options(),
+            _options(to_db_backend="trino", to_db_key="trino"),
             TransferConnectionRefs(),
             state,
             1,
-            target_connection_runner=lambda _role, operation: operation({"connection": object()}),
+            target_connection_runner=lambda _role, operation: operation(ref),
             safe_exception_logging=True,
         )
 
+    assert caught.value is primary
+    assert len(commands) == 1
+    assert "writer_0" in commands[0]
+    ref["connection"].close()
+    assert all(connection.close_calls == 1 for connection in connections)
     assert messages
     assert all("secret row" not in message for message in messages)
     assert any("RuntimeError" in message for message in messages)

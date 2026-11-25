@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
-from typing import Any
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
 from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 from .models import SourceColumn
+
+_TRINO_MAX_DECIMAL_PRECISION = 38
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 
 def inspect_dbapi_source_schema(
@@ -84,6 +89,53 @@ def normalize_type_name(source_type: str | None) -> str:
         normalized = unwrapped
 
 
+def normalize_source_column(column: SourceColumn, source_backend: str | None) -> SourceColumn:
+    if source_backend != "gp" or not column.native_type:
+        return column
+    match = re.fullmatch(
+        r"(int2|int4|int8)((?:\[\])*)", column.native_type.strip(), flags=re.IGNORECASE
+    )
+    if match is None:
+        return column
+    scalar = {"int2": "SMALLINT", "int4": "INTEGER", "int8": "BIGINT"}[match.group(1).lower()]
+    return replace(column, native_type=scalar + match.group(2))
+
+
+def map_source_column(
+    column: SourceColumn, target_backend: str, source_backend: str | None = None
+) -> str:
+    from analytics_toolkit.sql.backends import (  # noqa: PLC0415 - backend recursive type policies
+        get_backend_adapter,
+    )
+
+    from .nested_types import (  # noqa: PLC0415 - nested native policy
+        map_declared_nested,
+        needs_timestamp_adaptation,
+    )
+
+    column = normalize_source_column(column, source_backend)
+    adapter = get_backend_adapter(target_backend)
+    if source_backend == target_backend and (
+        target_backend != "trino" or not needs_timestamp_adaptation(column.native_type or "")
+    ):
+        return str(adapter.map_same_backend_source_type_to_target(column))
+    if source_backend and column.native_type:
+        nested = map_declared_nested(column.native_type, target_backend, source_backend)
+        if nested is not None:
+            return nested
+    if (
+        source_backend == "ch"
+        and target_backend in {"gp", "trino"}
+        and classify_source_type(normalize_type_name(column.native_type)) == "timestamp"
+    ):
+        return ("TIMESTAMP(6)" if target_backend == "trino" else "TIMESTAMP") + " WITH TIME ZONE"
+    return str(
+        adapter.map_same_backend_source_type_to_target(column)
+        if source_backend == target_backend
+        else adapter.map_source_type_to_target(column)
+    )
+
+
 def unwrap_type(value: str, wrapper: str) -> str:
     prefix = f"{wrapper}("
     if value.startswith(prefix) and value.endswith(")"):
@@ -94,19 +146,28 @@ def unwrap_type(value: str, wrapper: str) -> str:
 def classify_source_type(source_type: str) -> str:
     if not source_type:
         return "string"
-    if source_type in {"binary", "bytea", "varbinary"}:
-        return "binary"
-    if source_type in {"boolean", "bool"}:
-        return "boolean"
-    if source_type in {"date", "date32"}:
-        return "date"
+    if source_type.split("(", 1)[0].strip() in {"array", "tuple", "map", "row", "nested"}:
+        return "string"
+    simple_types = {
+        "binary": "binary",
+        "bytea": "binary",
+        "varbinary": "binary",
+        "boolean": "boolean",
+        "bool": "boolean",
+        "date": "date",
+        "date32": "date",
+    }
+    if source_type in simple_types:
+        return simple_types[source_type]
     if "timestamp" in source_type or source_type.startswith("datetime"):
         return "timestamp"
     if source_type.startswith(("decimal", "numeric", "number")):
         return "decimal"
     if source_type.startswith(("float", "double", "real")):
         return "float"
-    if "int" in source_type and not source_type.startswith("interval"):
+    if re.fullmatch(
+        r"u?int(?:8|16|32|64|128|256)?|tinyint|smallint|bigint|integer|int[24]", source_type
+    ):
         return "integer"
     if any(
         token in source_type
@@ -122,6 +183,15 @@ def classify_source_type(source_type: str) -> str:
     ):
         return "uuid" if source_type == "uuid" else "string"
     return "string"
+
+
+def type_has_timezone(source_type: str) -> bool:
+    return bool(
+        "with time zone" in source_type
+        or "timestamptz" in source_type
+        or re.match(r"datetime64\s*\([^,]+,\s*['\"]", source_type)
+        or re.match(r"datetime\s*\(\s*['\"]", source_type)
+    )
 
 
 def type_precision_scale(
@@ -156,6 +226,10 @@ def decimal_type(
 def nullable_clickhouse_type(base_type: str) -> str:
     if base_type.startswith("Nullable("):
         return base_type
+    if base_type.startswith(("Array(", "Tuple(", "Map(", "Nested(")):
+        return base_type
+    if base_type.startswith("LowCardinality(") and base_type.endswith(")"):
+        return "LowCardinality(" + nullable_clickhouse_type(base_type[15:-1]) + ")"
     return f"Nullable({base_type})"
 
 
@@ -208,3 +282,22 @@ def optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def exact_integer_target(source_type: str, backend: str) -> str | None:
+    """Map integer domains structurally, including ClickHouse wide integers."""
+    match = re.fullmatch(r"(u?)int(8|16|32|64|128|256)", source_type)
+    if match is None:
+        return None
+    unsigned, bits_text = match.groups()
+    bits = int(bits_text)
+    # int8 spelling is a PostgreSQL alias only when supplied by that adapter;
+    # ClickHouse metadata uses its documented eight-bit domain.
+    needed_bits = bits + bool(unsigned)
+    for width, target in ((8, "TINYINT"), (16, "SMALLINT"), (32, "INTEGER"), (64, "BIGINT")):
+        if needed_bits <= width:
+            return "SMALLINT" if backend == "gp" and target == "TINYINT" else target
+    precision = len(str(2**bits - 1 if unsigned else 2 ** (bits - 1)))
+    if backend == "trino" and precision > _TRINO_MAX_DECIMAL_PRECISION:
+        return "VARCHAR"  # Pending complete-value adaptation, never certified DDL.
+    return f"{'NUMERIC' if backend == 'gp' else 'DECIMAL'}({precision}, 0)"

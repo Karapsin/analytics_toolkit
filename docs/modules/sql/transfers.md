@@ -7,8 +7,9 @@ right workflow when the source data is already in a database and Python should
 coordinate extraction, batching, type mapping, and target writes. The public
 entrypoint is [sql.transfer](functions/transfer.md).
 
-For a keyed source whose connection defines `transfer_staging_schema`, the
-staged-source flow is a pipeline rather than a sequence of global phases:
+For a keyed source whose connection defines `transfer_staging_schema`, metadata
+that proves the selected native representation fits permits this streaming
+pipeline:
 
 1. Generate one transfer ID, resolve the exact canonical destination, open
    bounded source and target pools, and inspect source/target metadata once for
@@ -24,8 +25,10 @@ staged-source flow is a pipeline rather than a sequence of global phases:
    and consolidate only the target stages that were created, then perform one
    final destination mutation.
 
-There is no all-keys materialization barrier: one key can be in CTAS, another in
-RAM batching, another in target insertion, and another in validation. Unkeyed
+This metadata-proven path has no all-keys materialization barrier: one key can
+be in CTAS, another in RAM batching, another in target insertion, and another in
+validation. Adaptive type resolution instead completes profiling across every
+selected key before creating or publishing the resolved destination. Unkeyed
 source staging retains one immutable slice-zero snapshot with bounded ordinal
 ranges.
 
@@ -36,6 +39,17 @@ external-table namespace, while the location is the physical prefix that Python
 writes and Trino reads. Without the complete pair, Trino transfers keep the
 row-batch `INSERT` staging behavior. `transfer_staging_schema` remains the
 separate namespace for non-Parquet SQL staging and source snapshots.
+
+Parquet files use the resolved Hive stage schema for every column, including
+all-null columns and nested `ARRAY`, `MAP`, and `ROW` values. UUIDs, timezone
+aware timestamps, and timestamps above precision 6 use exact strings recursively
+where the Hive stage declares `VARCHAR`. Finalization casts those transport
+values into the resolved native destination types without changing its connector
+or table format. Decimal values retain their declared precision and scale. Named row
+fields retain their exact identifiers. Positional rows receive stable field names
+inside the temporary stage and are cast back by position into the destination
+schema. Unsupported resolved stage types fail before stage DDL or file upload;
+the writer never guesses a replacement physical type from a sample.
 
 Use `write_mode` to choose finalization behavior:
 
@@ -102,6 +116,17 @@ key can be acknowledged. Aggregate validation runs again before finalization.
 For ClickHouse sources, row-count protection also prevents connection-level
 `query_limit` caps from silently truncating reads.
 
+Before publishing to an existing target, `append`, `truncate_insert` and
+`upsert` check `NOT NULL` and required-column constraints against the complete
+owned stage payload after all keys and writers finish. The check uses the actual
+SQL projection, including casts, before any live append, clear or partition
+mutation. Prepared partition payloads are checked before publication and replay.
+It reads captured stages without another source scan or replay spool; valid
+omissions and empty-input behavior are preserved.
+
+Plans set `target_constraints_validation_pending=True`; execution validates the
+captured payload. Dry runs do not perform this data validation.
+
 Each keyed source stage contains exactly one rendered key and is immutable after
 materialization. It consumes a live-stage credit until a reader drops it after target
 validation. The limit is `effective readers + effective writers`, which bounds
@@ -124,18 +149,17 @@ name rather than reusing an existing table.
 
 Only workers inside one `sql.transfer` invocation are supported concurrently.
 Independent simultaneous calls to the same destination are unsupported.
-Best-effort startup cleanup is not a lock or fencing mechanism, and the design
-creates no manifest, lease, heartbeat, owner marker, bookkeeping or coordination
+Best-effort startup cleanup is not a lock or fencing mechanism. Scheduling
+creates no SQL lease, heartbeat, owner marker, bookkeeping or coordination
 table, persistent work queue, coordination view, or sequence. Empty or ambiguous
 stage names created by the current attempt are tracked for exact cleanup. Objects
 whose ownership cannot be proved from exact runtime state or validated identity
 are never dropped automatically and remain for explicit cleanup.
 
-On a later invocation, an empty crash remnant can be cleaned without row
-identity only when its generated name has the exact destination hash and a
-different full transfer ID. Current-attempt and malformed names remain
-protected. This rule relies on the documented restriction that independent
-transfers to the same exact destination are unsupported.
+On a later invocation, recognized crash remnants are reported and retained
+unless a persisted creation identity proves ownership. An empty table, a
+destination hash or a different full transfer ID never authorizes deletion.
+Explicit cleanup requires reviewing the retained resource names and scopes.
 
 ## Lazy scheduling and resource bounds
 
@@ -255,11 +279,13 @@ key is rematerialized, including keys whose earlier source tables were already
 dropped. Per-key CTAS operations and full retries can observe different source
 moments, so no cross-attempt snapshot is promised.
 
-Checkpoints cannot survive process restart. Startup/crash cleanup may discover
-attempt-owned stages on the current aliases, but no manifest or coordination
-table is available for resume. Finalization never treats retained staging as
-proof that the destination mutation succeeded, and append is not retried after
-an ambiguous final append.
+The in-memory verified-key checkpoints and scheduler state do not survive
+process restart. Separately, a certified local replay checkpoint can be retained
+with its versioned manifest for recovery; reopening it verifies the complete
+payload before replay. Public operations do not automatically resume a prior
+process from those artifacts. Retained staging never proves that destination
+publication succeeded, and uncertain structural cutovers require recovery
+before further structural replay.
 
 ClickHouse finalization retries are narrower when the operation creates its
 target from scratch: append/upsert/replace when the target was absent. Each
@@ -285,6 +311,228 @@ the target column types. Use `table_schema` when the target type must be
 explicit and portable inference is not enough. Same-Trino transfers preserve
 the complete native source type signature, including arrays, maps, rows, and
 nested combinations; cross-backend transfers retain portable type mapping.
+Same-ClickHouse transfers retain native widths through 256 bits, Date32,
+DateTime64 precision and timezone, and nested native types. Inferred Trino
+timestamps use explicit precision 6 for the supported Iceberg contract.
+
+Trino source decoding preserves raw timestamp fractions through precision 12,
+including nested values and distinct map keys, before SDK rounding. Explicit or
+existing destinations that support precision 9 or 12 retain those native ticks;
+default inferred Trino timestamps remain precision 6. Greenplum microsecond and
+ClickHouse precision-9 limits remain unchanged. A lower inferred precision must
+fit every value exactly; an explicit reduction remains a caller conversion.
+No connector or table-format upgrade is performed. Date-free clocks retain
+their ticks and offset without acquiring a date.
+
+When source metadata cannot prove an exact destination representation, transfer
+profiles the complete selected input before creating or mutating the destination.
+Every keyed slice contributes to one schema. The adaptive path freezes the rows
+in a run-owned, length-framed, versioned checkpoint and replays those rows rather
+than running a mutable source query again. Declared types that fit retain the
+streaming path unless complete source-value validation is required. Trino
+`DATE`/`TIMESTAMP` sources and map-key conversions requiring certification are
+read completely before any destination write. A late ambiguous wire value or
+unsupported calendar invalidates the incomplete generation and releases its
+local checkpoint. Other scalar, date-free clock and proven-safe map paths
+remain lazy. Explicit `table_schema` and existing destination types remain
+authoritative: inference never widens an existing table or changes its numeric
+columns into text. Explicitly requested timestamp precision reduction is a
+deliberate caller conversion. A metadata proof for `DATE` requires date domains
+on both sides; sharing a backend does not certify text or another type family
+as date-compatible. Date values supplied to timestamp columns become
+exact midnight datetimes, using an explicitly named ClickHouse timezone when
+present, otherwise the resolved actual write timezone. Their midnight ticks
+must fit the destination calendar and precision range before destination mutation. ClickHouse `FixedString(N)` is validated in UTF-8
+bytes, and `Enum8`/`Enum16` values must belong to the declared labels or codes.
+Unrecognized authoritative native types require proven identical source metadata
+or typed-stage validation before the operation can certify them.
+
+Authoritative numeric types convert supported text before destination
+validation. Greenplum integer text uses native ASCII syntax and signed
+16/32/64-bit bounds. Direct Trino `BIGINT` keeps Python `int(value)` semantics,
+including finite numeric truncation within BIGINT bounds; other Trino integer
+text follows native syntax. ClickHouse `Int`/`UInt` widths from 8 through 256
+bits keep Python integer conversion and declared signed/unsigned bounds.
+Supported finite floating-point and Decimal text retains native floating width
+and exact decimal precision/scale checks; Decimal values never pass through
+floating point. Greenplum parameter adaptation preserves signed zero.
+Supported `NaN` and infinity text tokens retain native numeric values distinct
+from SQL NULL only when the backend type admits them and complete validation
+or a native assignment checkpoint certifies the conversion. Unsupported
+tokens, ranges and server-version casts reject before live publication.
+These conversions affect only declared numeric scalar leaves in containers;
+unrelated temporal identity and timezone handling remain unchanged. Inference
+does not turn strings into numeric columns.
+
+For an explicit `VARCHAR` stage (or Greenplum `TEXT`) feeding an existing
+GP or Trino `DATE` column,
+every frozen value must be NULL or a valid canonical `YYYY-MM-DD` date before
+publication. The original staged strings and destination schema are preserved.
+For other backend date syntax, cast the source expression `AS DATE` in
+`from_sql` so the captured input contains native dates.
+Authoritative DATE conversions are profiled during the original adaptive scan
+without changing the captured raw rows. Trino uses each datetime's supplied
+calendar date; Greenplum retains native datetime parameters for server-side
+assignment. The same conversion is checked again during replay.
+
+Explicit or existing built-in Greenplum `BOOL`/`BOOLEAN` columns accept native
+and NumPy Boolean scalars, NULL, and ASCII case-insensitive unique text prefixes
+of `true`, `false`, `yes`, `no`, `on` and `off`, or exact `1`/`0`. Only surrounding
+ASCII whitespace (space, `\t`, `\n`, `\r`, `\v`, `\f`) is trimmed. Ambiguous `o`,
+empty text and invalid values fail before mutation with sanitized diagnostics.
+Domains retain server-assignment validation; numeric casts and inference keep
+their existing rules.
+
+Explicit or existing Trino `BOOLEAN` columns accept native Boolean values,
+signed BIGINT, DOUBLE and finite DECIMAL casts, and the exact ASCII strings
+`true`, `false`, `t`, `f`, `1` and `0`, with ASCII case-insensitive letters.
+Numeric zero becomes false and nonzero becomes true, including infinite DOUBLE
+values; floating NaN retains its existing NULL handling. Decimals must fit
+precision and scale at most 38 and never pass through floating point. Strings
+are not trimmed. Invalid values fail before destination mutation with sanitized
+diagnostics; NULL stays NULL. Automatic inference is unchanged, including
+inferred integer 0/1 and text columns.
+
+ClickHouse `Bool`/`Boolean`, including nullable wrappers, accepts Boolean,
+integral, standard floating-point and Decimal scalars using exact zero/nonzero
+conversion. Decimals never pass through floating point; no integer or Decimal
+storage-width bound is imposed on values becoming Boolean. Existing NULL
+handling is unchanged. Strings and other truthy objects reject before mutation,
+and integer 0/1 inference stays integer.
+
+For an explicit GP `TEXT`/`VARCHAR` or Trino `VARCHAR` stage feeding an existing
+built-in Boolean column, every selected row is validated using the destination
+backend's Boolean rules before publication. The original stage schema and
+string payload are preserved. Greenplum's prefix/ASCII-whitespace rules and
+Trino's exact, untrimmed tokens remain distinct.
+
+Explicit GP `TEXT`/`VARCHAR`, Trino `VARCHAR` and ClickHouse `String` numeric
+stages retain their raw payloads and schemas. Final cast validation follows the
+destination's native SQL parser, including where Trino staged `BIGINT` parsing
+differs from direct Python conversion.
+
+For Greenplum types requiring server assignment, the complete captured payload
+is certified in owned persistent native tables before live publication. This
+includes the final SQL projection and casts when the requested stage schema
+differs from the destination. Retries reuse the certified native rows. Creating
+the checkpoints requires staging-schema `CREATE` and type `USAGE` permissions;
+dry plans leave this validation pending without materializing data.
+
+Key-validated Greenplum append also checks stored-stage key uniqueness. If an
+explicit incoming stage type differs from its corresponding actual target type,
+a final native owned checkpoint validates converted keys before publication.
+Same-type and equivalent integer-alias schemas retain the fast path. Offline
+plans mark this with `native_assignment_validation_pending=True` without
+database I/O.
+
+ClickHouse timestamp interpretation is bound to the operation's actual write
+timezone and policy version, separately from SQL schema identity. Explicit
+column zones take precedence; implicit declarations keep their original SQL
+type. Validation and certified replay require the same context, so a retry
+cannot silently adopt a different timezone. Unknown context is never replaced
+with an assumed UTC policy; plans leave required live resolution pending.
+Named zones use portable IANA rules, including future DST transitions.
+Authoritative timestamp schemas reject ambiguous or nonexistent naive local
+times before mutation. Inference preserves those unresolved wall times, and
+mixed naive/aware values without an explicit disambiguation policy, as exact
+text. Aware and raw timestamps already identify an instant and are not
+relocalized.
+
+Internal ClickHouse source streams retain raw UTC ticks before dataframe
+construction, including nested `DateTime` and `DateTime64` values. Two instants
+in a repeated DST hour therefore remain distinct through streaming, profiling
+and replay. Logical source SQL types remain unchanged; UTC is an internal
+transport representation. Physical ClickHouse timestamps infer timezone-aware
+Greenplum and Trino timestamp types recursively when native precision fits.
+The normal public read mode and its outer result shapes remain unchanged.
+
+If a structural cutover becomes uncertain, the certified local input is retained
+with a private versioned manifest containing its schema, source identity digest,
+row count and checksum. Recovery validates all frames, the checksum and count
+before replay. Ordinary completion and failures before mutation remove local
+checkpoints.
+
+Replay checkpoints keep a verified IANA timezone identity or an explicit numeric
+fixed offset and display name. Custom display names remain attached to their
+numeric offsets. Datetime fractional precision and fold markers survive nested
+replay. Destination timezone policy and schema still govern writes.
+
+Inference tries exact integers, decimal/numeric and temporal/native nested types
+before text. Every inferred native candidate is validated against the complete
+profile before destination publication. Date/timestamp calendar bounds and raw
+tick ranges apply during inference too: values outside ClickHouse native ranges
+use exact ISO text. Aligned timestamps try a supported lower native precision
+before text; empty/all-null temporal columns retain suitable native defaults.
+Decimal scale and integral digits include every selected value;
+integers and Decimal values never pass through binary floating point. If no
+supported native type preserves the column, text uses exact base-10 integers,
+fixed-point Decimal, ISO dates/timestamps (aware instants normalized to UTC), and
+canonical UUIDs. Structured fallback is compact typed JSON version 1, carrying
+source backend/type and recursively tagged values; maps use ordered pairs so
+duplicate keys survive. Unsupported binary text uses a `base64:` prefix; native
+binary transport remains preferred. ClickHouse `String` input is profiled before
+cross-backend text mapping: raw bytes use native Greenplum `BYTEA` or Trino
+`VARBINARY`. A string column containing NUL uses Greenplum `BYTEA` with exact
+UTF-8 encoding; ordinary valid strings retain `TEXT`. Existing authoritative
+Greenplum text columns reject raw bytes, NUL and invalid Unicode before mutation.
+SQL NULL remains NULL. Mixed naive/aware
+timestamps use typed text without assigning a timezone to naive values.
+
+At execution, bounded text columns validate the complete string encoded in
+Python, including source backend/type metadata in structured JSON. An encoded
+value that exceeds an explicit or existing width fails before target creation
+or data mutation. Native stage values handled by SQL casts retain the backend's
+cast semantics.
+
+Nested inference also tries native Trino `ARRAY`, `MAP` and `ROW`, and native
+Greenplum arrays. Greenplum arrays must be rectangular within each value;
+ragged arrays, NULL or empty subarrays, and unsupported dimensions use typed
+text. A Greenplum array column can contain different rectangular ranks across
+rows, so a cross-backend transfer profiles every selected row before choosing
+a fixed-rank destination. Greenplum maps do not cause automatic JSONB creation.
+Trino maps require non-NULL, unique keys; duplicate keys or coercions that merge
+different keys use typed text during inference and fail validation for an
+authoritative map schema. ClickHouse maps preserve duplicate ordered pairs.
+For Trino, uniqueness uses destination-native key identity, including UUID
+normalization, IPv4-mapped `IPADDRESS` aliases, `REAL` rounding, `CHAR` padding
+and temporal rules. Distinct source keys that become the same
+destination key fail validation before target mutation; an entry is never
+silently overwritten. For example, uppercase and lowercase spellings of one
+UUID cannot both become keys in an authoritative `MAP(UUID, VARCHAR)`.
+These rules compose across every declared `ROW` field and `ARRAY` element of
+composite keys. For `ROW(address IPADDRESS, label CHAR(2))`, the keys
+`('192.0.2.1', 'a')` and `('::ffff:192.0.2.1', 'a ')` collide: both the
+address alias and label padding have the same native identity. These collisions
+fail before target mutation;
+valid composite keys and legal ClickHouse duplicate pairs retain every entry.
+Map metadata can authorize streaming only when each key conversion is proven
+to preserve distinct destination-native keys. Scalar value-domain fit alone
+does not prove that: bounded `VARCHAR(2)` keys can still collide in `CHAR(2)`.
+The proof recurses through arrays, rows and maps nested in values; otherwise
+the complete selected input is validated before target mutation. An explicit
+staging schema cannot bypass the unchanged existing target's key constraints:
+both source-to-stage and stage-to-target conversions must be safe. Valid casts
+keep the requested stage schema and converted rows. Same-type and proven safe
+widening conversions retain lazy streaming.
+These rules follow [Greenplum's array implementation](https://raw.githubusercontent.com/greenplum-db/gpdb-archive/main/src/backend/utils/adt/arrayfuncs.c),
+[Trino's strict map construction](https://raw.githubusercontent.com/trinodb/trino/master/core/trino-main/src/main/java/io/trino/operator/scalar/MapFromEntriesFunction.java),
+[Trino's native type semantics](https://trino.io/docs/current/language/types.html#char),
+and [ClickHouse's map contract](https://clickhouse.com/docs/reference/data-types/map).
+
+Greenplum can use unconstrained `NUMERIC` when the required precision exceeds
+the explicit precision limit of 1000. Its native numeric storage allows up to
+131072 integral and 16383 fractional digits; larger values use text when types
+are inferred. The limits come from [Greenplum's numeric header](https://raw.githubusercontent.com/greenplum-db/gpdb-archive/main/src/include/utils/numeric.h)
+and its [numeric storage representation](https://raw.githubusercontent.com/greenplum-db/gpdb-archive/main/src/backend/utils/adt/numeric.c).
+
+Query dry runs never profile or spool full data. Their `SqlPlan.options` identify
+pending adaptive resolution and native candidates. SQL-only generation that
+cannot express this pending step requires an explicit `table_schema`.
+An adaptive input generation also binds its source configuration and selected
+availability scope while native snapshots are materialized, across keyed
+slices and count checks. A scope change invalidates the incomplete generation
+before destination publication; counting that same partial snapshot cannot
+certify it as the complete selected input.
 Native UUID source metadata maps to `UUID` on Greenplum and Trino and to
 `Nullable(UUID)` for an initially nullable ClickHouse stage. ClickHouse stage
 nullability is refined from rows, and an explicit `table_schema` still takes
@@ -292,13 +540,42 @@ precedence. Greenplum `bytea` maps to ClickHouse `String`; HTTP and native
 transports preserve the original byte sequence, including embedded nulls and
 bytes that are not valid UTF-8.
 
-Upsert finalization is backend-specific. Greenplum uses staged
-delete-and-insert on `key_columns`. Trino and ClickHouse require
+Greenplum keyed transfers preserve the instant of aware datetime keys with
+`TIMESTAMP WITH TIME ZONE` literals, including non-UTC offsets. Naive keys keep
+`TIMESTAMP` semantics. See [PostgreSQL's datetime input rules](https://www.postgresql.org/docs/16/datatype-datetime.html#DATATYPE-DATETIME-INPUT).
+
+Existing-target upserts require complete writable rows, including default-bearing
+columns and excluding generated/noninsertable columns. Missing or extra columns
+fail before staging or target mutation; reordered inputs use target column order.
+When `upsert_partition_column` is supplied, the effective key is the ordered,
+deduplicated combination of that column and `key_columns` on every backend.
+The same ID in different partitions is a different record. Without a partition
+column, the key retains `key_columns` semantics.
+Trino key-validated append and upsert compare every component of the complete
+effective key using its destination-native equality, including composite
+`ROW`/`ARRAY` values. The existing rejection of SQL NULL in effective keys is
+unchanged.
+
+Upsert finalization is backend-specific. Greenplum uses transactional staged
+delete-and-insert on the effective key. Trino and ClickHouse require
 `upsert_partition_column`, build a final increment for affected partitions, drop
 those partitions, and insert the final increment. Trino needs
 `upsert_partition_drop_sql_template` in the target connection config so the
 connector-specific partition drop syntax is explicit. Trino and ClickHouse do
 not use native `MERGE`, arbitrary key deletes, or ClickHouse lightweight key
-deletes for upsert finalization.
+deletes for upsert finalization. Their complete preservation/incoming payload is
+prepared before partition mutation and retained across transient replay. A retry
+never rereads preservation rows from a partially replaced target. If finalization
+exhausts its retry budget, recovery payload stages are retained.
+
+Trino quotes actual string partition values as data, including values beginning
+with `<`. A raw synthetic partition marker appears only when an offline plan
+does not yet know the partition values.
+
+Key-validated append selects and inserts the named incoming columns in their
+original order, so subsets and reordered inputs have ordinary append semantics.
+Stage candidates are visible before CREATE, but only acknowledged resources are
+owned and eligible for cleanup. Collisions and uncertain CREATE outcomes are
+retained without deleting unrelated resources.
 
 [SQL module index](index.md)

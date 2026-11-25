@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import pytest
@@ -59,12 +60,15 @@ def test_outage_fixed_replica_name_is_rejected_before_recovery_create(outage: An
     cluster = _replicated(outage, "ReplicatedMergeTree('/tables/{uuid}/{shard}', 'fixed')")
     cluster.members = [(1, 1, "h1", 9000), (1, 2, "h2", 9000)]
     del cluster.tables[("h2", "db.events_shard")]
-    with pytest.warns(sql.ClickHouseDegradedClusterWarning), pytest.raises(
-        sql.ClickHouseClusterTopologyError, match="identity"
-    ):
-        sql.execute(
-            "ch", "INSERT INTO db.events VALUES (9)", ch_unavailable_shards="healthy_shards"
-        )
+    with warnings.catch_warnings(record=True) as observed:
+        warnings.simplefilter("always")
+        with pytest.raises(sql.ClickHouseClusterTopologyError, match="identity"):
+            sql.execute(
+                "ch", "INSERT INTO db.events VALUES (9)", ch_unavailable_shards="healthy_shards"
+            )
+    assert not [
+        item for item in observed if issubclass(item.category, sql.ClickHouseDegradedClusterWarning)
+    ]
     assert not cluster.commands
 
 

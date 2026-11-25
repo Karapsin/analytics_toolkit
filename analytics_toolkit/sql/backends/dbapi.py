@@ -4,6 +4,9 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from analytics_toolkit.sql.backends.execution_outcome import (
+    close_cursor,  # noqa: F401 -- historical helper import.
+)
 from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 

@@ -32,6 +32,13 @@ from .references import (
     is_connection_value_reference,
     resolve_connection_value_references,
 )
+from .validation import (
+    close_validation_resource,
+    validation_scope,
+)
+from .validation import (
+    safe_validation_error as _safe_validation_error,
+)
 
 if TYPE_CHECKING:
     from analytics_toolkit.sql.backends.ch.routing import ChClusterRouting
@@ -407,11 +414,13 @@ def validate_connections(
             config = get_connection_config(key)
             connected: bool | None = None
             if connect:
-                connection = _open_validation_connection(config.connection_key)
-                try:
-                    connected = True
-                finally:
-                    connection.close()
+                with validation_scope():
+                    connection = _open_validation_connection(config.connection_key)
+                    try:
+                        get_backend(config.backend).validate_connection(connection)
+                        connected = True
+                    finally:
+                        close_validation_resource(connection)
             results.append(
                 ConnectionValidationResult(
                     connection_key=config.connection_key,
@@ -427,7 +436,7 @@ def validate_connections(
                     backend=None,
                     valid=False,
                     connected=False if connect else None,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=_safe_validation_error(exc, connecting=connect),
                 )
             )
     return results
@@ -436,7 +445,8 @@ def validate_connections(
 def _open_validation_connection(connection_key: str) -> Any:
     from .get_sql_connection import get_sql_connection
 
-    return get_sql_connection(connection_key)
+    with validation_scope():
+        return get_sql_connection(connection_key)
 
 
 def resolve_connection_backend(connection_type_or_key: str) -> BackendName:
@@ -1011,6 +1021,8 @@ def _optional_string(
             f"SQL connection '{connection_key}' field '{field_name}' must be a string."
         )
 
+    if field_name == "password":
+        return value
     normalized = value.strip()
     return normalized or default
 

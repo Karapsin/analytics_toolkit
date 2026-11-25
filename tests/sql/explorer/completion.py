@@ -50,7 +50,8 @@ def test_completion_normalization_identity_and_empty_metadata_results() -> None:
     request = CompletionRequest("gp", "GP", "table", "Sample", context="from:0")
     assert request.identity == (*request.scope, "sample")
     assert normalize_completion_values(["", " Alpha ", "alpha", "Beta"]) == (
-        "Alpha",
+        " Alpha ",
+        "alpha",
         "Beta",
     )
     assert completion_module._first_column_values(pd.DataFrame()) == ()
@@ -271,7 +272,7 @@ def test_backend_namespace_discovery_uses_serial_metadata_queries(
             return pd.DataFrame({"catalog": ["hive"]})
         if query.startswith("SHOW SCHEMAS"):
             return pd.DataFrame({"schema": ["sandbox"]})
-        if query == "SHOW DATABASES":
+        if query == "SELECT name FROM system.databases ORDER BY name":
             return pd.DataFrame({"database": ["default"]})
         return pd.DataFrame({"schema_name": ["public"]})
 

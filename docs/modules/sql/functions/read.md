@@ -138,6 +138,20 @@ and non-integers are rejected.
   schema metadata.
 - Nested values such as Trino rows and arrays of rows remain Python objects in
   `object` columns, preserving their values and named row field access.
+- Trino timestamps retain their raw fractional precision before driver rounding,
+  including nested values and map keys. Native cells at precision 0–6 use
+  `datetime`; precision 7–9 uses `pandas.Timestamp` when representable, otherwise
+  `ExactTemporal`; precision 10–12 uses `ExactTemporal`. Exact values expose
+  integer `ticks`, `scale`, source `timezone` and `isoformat()`; `wall_time`
+  distinguishes a plain timestamp from an instant. Outer result shapes stay the
+  same.
+- Trino clocks aligned to microseconds use `datetime.time`, even with a wider
+  declared precision. Other clocks use date-free `ExactClock` values with
+  `ticks`, `scale`, `offset_minutes`, `timezone_name` and `isoformat()`.
+  An absent offset remains distinct from UTC; no date is invented.
+- Ambiguous named-zone wire values fail with guidance to project an explicit UTC
+  value rather than inventing a DST fold. Calendar values outside supported
+  Python representations require an explicit ISO/VARCHAR projection.
 - `scalar` requires exactly one row and one column; `list` requires exactly one column.
 - `dict` reads backend columns directly without creating an intermediate dataframe and requires unique column names.
 - `to_excel` and `to_csv` cannot be used together in the same call.

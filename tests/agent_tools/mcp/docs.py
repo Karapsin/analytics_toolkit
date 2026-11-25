@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from tests.agent_tools._support.mcp import (
     Path,
     _write_docs_project,
@@ -26,12 +28,36 @@ def test_agent_docs_cleanup_removed_direct_docs_assistant_workflow() -> None:
     assert "Use `docs_assistant.py` for local documentation retrieval" not in agent_tools_readme
 
 
-def test_change_impact_reports_sql_contract_and_architecture_headroom() -> None:
+def test_change_impact_reports_sql_contract_and_architecture_headroom(tmp_path: Path) -> None:
+    root = _write_docs_project(tmp_path / "project")
+    manifest = json.loads(
+        (mcp_server.REPO_ROOT / "integration" / "sql_coverage_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    guide = root / "docs" / "modules" / "sql" / "functions" / "read.md"
+    guide.parent.mkdir(parents=True)
+    guide.write_text(
+        (mcp_server.REPO_ROOT / "docs" / "modules" / "sql" / "functions" / "read.md").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    integration = root / "integration"
+    integration.mkdir()
+    (integration / "sql_coverage_manifest.json").write_text(
+        json.dumps({"exports": {"read": manifest["exports"]["read"]}}), encoding="utf-8"
+    )
+    sql_backend = root / "analytics_toolkit" / "sql" / "backends"
+    sql_backend.mkdir(parents=True)
+    for name, lines in (("base.py", 899), ("at_limit.py", 900), ("over_limit.py", 901)):
+        (sql_backend / name).write_text("pass\n" * lines, encoding="utf-8")
+
     result = mcp_server.change_impact(
         "add an option to sql.read",
         module="sql",
         symbols=["sql.read"],
-        root=str(mcp_server.REPO_ROOT),
+        root=str(root),
     )
 
     assert result["ok"] is True
@@ -41,15 +67,39 @@ def test_change_impact_reports_sql_contract_and_architecture_headroom() -> None:
     assert output_type["pointer"] == "/exports/read/parameters/output_type"
     assert output_type["manifest_status"] == "aligned"
     budgets = {item["path"]: item for item in result["result"]["architecture"]["modules"]}
+    assert result["result"]["architecture"]["policy"] == "SQL modules must not exceed 900 lines"
+    for name, lines, remaining, status in (
+        ("base.py", 899, 1, "low_headroom"),
+        ("at_limit.py", 900, 0, "at_limit"),
+        ("over_limit.py", 901, -1, "over_limit"),
+    ):
+        assert budgets[f"analytics_toolkit/sql/backends/{name}"] == {
+            "path": f"analytics_toolkit/sql/backends/{name}",
+            "line_count": lines,
+            "max_lines": 900,
+            "remaining_lines": remaining,
+            "status": status,
+        }
+    assert "docs/modules/sql/functions/read.md" in result["result"]["documentation_paths"]
+    assert result["telemetry"]["response_bytes"] < 8_000
+
+
+def test_change_impact_reports_real_source_module_headroom(tmp_path: Path) -> None:
+    root = _write_docs_project(tmp_path / "project")
     base_path = "analytics_toolkit/sql/backends/base.py"
+    source = mcp_server.REPO_ROOT / base_path
+    target = root / base_path
+    target.parent.mkdir(parents=True)
+    target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    result = mcp_server.change_impact("inspect SQL source headroom", module="sql", root=str(root))
+    assert result["ok"] is True
+    budgets = {item["path"]: item for item in result["result"]["architecture"]["modules"]}
     base_budget = budgets[base_path]
-    source_lines = len((mcp_server.REPO_ROOT / base_path).read_text(encoding="utf-8").splitlines())
+    source_lines = len(source.read_text(encoding="utf-8").splitlines())
     assert base_budget["max_lines"] == 900
     assert 0 < source_lines <= base_budget["max_lines"]
     assert base_budget["line_count"] == source_lines
     assert base_budget["remaining_lines"] == base_budget["max_lines"] - source_lines
-    assert "docs/modules/sql/functions/read.md" in result["result"]["documentation_paths"]
-    assert result["telemetry"]["response_bytes"] < 8_000
 
 
 def test_docs_default_index_dir_is_resolved_from_repo_root(

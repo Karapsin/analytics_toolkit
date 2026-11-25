@@ -14,6 +14,10 @@ from analytics_toolkit.sql.backends.ch.outage_context import INTERNAL_IO
 from analytics_toolkit.sql.backends.ch.routing import _RoutingClickHouse
 from sqlglot import exp, parse_one
 
+from tests.sql._support.outage_grouping import count_result
+from tests.sql._support.outage_metadata import metadata_rows
+from tests.sql._support.outage_predicates import filter_rows
+
 
 class ProgrammingError(Exception):
     """Fake transport error without importing the driver's native extensions."""
@@ -28,6 +32,18 @@ class Result:
             list(zip(*self.result_rows)) if self.result_rows else [() for _ in names]
         )
         self.row_count = len(self.result_rows)
+
+
+def _column_default_kind(column: Any) -> str:
+    for constraint in column.args.get("constraints") or []:
+        kind = constraint.args.get("kind")
+        if isinstance(kind, exp.DefaultColumnConstraint):
+            return "DEFAULT"
+        if isinstance(kind, exp.ComputedColumnConstraint):
+            return "MATERIALIZED" if kind.args.get("persisted") else "ALIAS"
+        if isinstance(kind, exp.EphemeralColumnConstraint):
+            return "EPHEMERAL"
+    return ""
 
 
 @dataclass
@@ -77,6 +93,7 @@ class Cluster:
             "distributed_ddl_output_mode": ("throw", 0),
         }
         self.probe_requests: list[dict[str, Any]] = []
+        self.distribution_queues: dict[tuple[str, str, str], tuple[int, int]] = {}
 
     def seed(self, *, key: str = "rand()", replicated: bool = False) -> None:
         identity = str(uuid4())
@@ -160,6 +177,14 @@ class Client:
     def query(self, sql: str, **kwargs: Any) -> Result:  # noqa: C901, PLR0911, PLR0912 - fake SQL dispatcher
         self._validate_settings(kwargs.get("settings") or {})
         self.cluster.queries.append(sql)
+        prefix = "SHOW CREATE TABLE "
+        if sql.startswith(prefix):
+            target = parse_one(sql[len(prefix) :], read=_RoutingClickHouse, into=exp.Table)
+            table = self.cluster.tables.get((self.host, f"{target.db or 'db'}.{target.name}"))
+            if table is None:
+                msg = "The requested table does not exist at this endpoint."
+                raise ProgrammingError(msg)
+            return Result([(table.ddl,)], ("statement",), ("String",))
         if sql.startswith("EXISTS TABLE "):
             return Result(
                 [
@@ -172,6 +197,10 @@ class Client:
                 ]
             )
         statement = parse_one(sql, read=_RoutingClickHouse)
+        if (
+            projected := metadata_rows(self, statement, settings=kwargs.get("settings"))
+        ) is not None:
+            return Result(projected)
         filters = {
             item.left.name: str(item.right.this)
             for item in statement.find_all(exp.EQ)
@@ -270,33 +299,39 @@ class Client:
         if isinstance(statement, exp.Describe):
             return self._describe(statement)
         if function is not None:
-            args = function.expressions
-            name = f"{args[1].this}.{args[2].this}"
-            selected = self._select_hosts(function, members, name, kwargs.get("settings") or {})
-            self.cluster.selected_reads.extend((host, name) for host in selected)
-            rows = [
-                row
-                for host in selected
-                for row in self.cluster.tables.get((host, name), Table("", "", "", "")).rows
-            ]
-            if statement.find(exp.Count):
-                if statement.args.get("group") is not None:
-                    return Result(
-                        [(0, len(rows))] if rows else [],
-                        ("slice_id", "count"),
-                        ("UInt64", "UInt64"),
-                    )
-                return Result([(len(rows),)])
-            obj = next(
-                (
-                    self.cluster.tables[(host, name)]
-                    for host in hosts
-                    if (host, name) in self.cluster.tables
-                ),
-                None,
+            return self._function_result(
+                statement, function, members, hosts, kwargs.get("settings") or {}
             )
-            return self._project(statement, rows, obj)
         return self._local_data(statement, upper)
+
+    def _function_result(
+        self, statement: Any, function: Any, members: Any, hosts: Any, settings: Any
+    ) -> Result:
+        args = function.expressions
+        name = f"{args[1].this}.{args[2].this}"
+        selected = self._select_hosts(function, members, name, settings)
+        self.cluster.selected_reads.extend((host, name) for host in selected)
+        rows = [
+            row
+            for host in selected
+            for row in self.cluster.tables.get((host, name), Table("", "", "", "")).rows
+        ]
+        obj = next(
+            (
+                self.cluster.tables[(host, name)]
+                for host in hosts
+                if (host, name) in self.cluster.tables
+            ),
+            None,
+        )
+        rows = filter_rows(statement, rows, obj)
+        if statement.find(exp.Count):
+            return self._count_result(statement, rows, obj)
+        return self._project(statement, rows, obj)
+
+    @staticmethod
+    def _count_result(statement: Any, rows: Any, obj: Any) -> Result:
+        return count_result(statement, rows, obj, Result)
 
     def _local_data(self, statement: Any, upper: str) -> Result:
         local = next(
@@ -311,10 +346,11 @@ class Client:
         if local is not None:
             if "LIMIT 0" in upper:
                 return self._project(statement, [], local)
+            rows = filter_rows(statement, local.rows, local)
             return (
-                Result([(len(local.rows),)])
+                self._count_result(statement, rows, local)
                 if statement.find(exp.Count)
-                else self._project(statement, local.rows, local)
+                else self._project(statement, rows, local)
             )
         if statement.find(exp.Count):
             return Result([(1,)])
@@ -336,6 +372,7 @@ class Client:
         name = f"{filters.get('database', 'db')}.{filters.get('table', '')}"
         rows = []
         include_host = "_shard_num" in [item.alias_or_name for item in statement.expressions]
+        counting = statement.find(exp.Count) is not None
         for index, host in enumerate(hosts):
             obj = self.cluster.tables.get((host, name))
             if obj is None or host not in self.cluster.alive:
@@ -343,8 +380,10 @@ class Client:
             for column in parse_one(obj.ddl, read=_RoutingClickHouse).find_all(exp.ColumnDef):
                 value = (column.name, column.args["kind"].sql(dialect="clickhouse"))
                 rows.append((index + 1, *value) if include_host else value)
-            if not include_host:
+            if not include_host and not counting:
                 break
+        if counting:
+            return Result([(len(rows),)], ("count()",), ("UInt64",))
         if not rows and not include_host:
             rows = [("id", "UInt64")]
         return Result(
@@ -381,7 +420,11 @@ class Client:
         if not isinstance(target, (exp.Table, exp.Anonymous)):
             target = next(statement.find_all(exp.Table), None)
         if not isinstance(target, (exp.Table, exp.Anonymous)):
-            return Result([("id", "UInt64")], ("name", "type"), ("String", "String"))
+            return Result(
+                [("id", "UInt64", "")],
+                ("name", "type", "default_type"),
+                ("String", "String", "String"),
+            )
         function = target if isinstance(target, exp.Anonymous) else target.this
         name = (
             f"{function.expressions[1].this}.{function.expressions[2].this}"
@@ -392,11 +435,22 @@ class Client:
         if obj:
             columns = parse_one(obj.ddl, read=_RoutingClickHouse).find_all(exp.ColumnDef)
             return Result(
-                [(item.name, item.args["kind"].sql(dialect="clickhouse")) for item in columns],
-                ("name", "type"),
-                ("String", "String"),
+                [
+                    (
+                        item.name,
+                        item.args["kind"].sql(dialect="clickhouse"),
+                        _column_default_kind(item),
+                    )
+                    for item in columns
+                ],
+                ("name", "type", "default_type"),
+                ("String", "String", "String"),
             )
-        return Result([("id", "UInt64")], ("name", "type"), ("String", "String"))
+        return Result(
+            [("id", "UInt64", "")],
+            ("name", "type", "default_type"),
+            ("String", "String", "String"),
+        )
 
     @staticmethod
     def _project(statement: Any, rows: Any, obj: Any) -> Result:

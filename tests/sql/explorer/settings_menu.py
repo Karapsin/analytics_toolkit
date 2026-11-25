@@ -35,6 +35,22 @@ async def _press(screen: SettingsScreen, pilot: Pilot, name: str) -> None:
     await pilot.press("enter")
 
 
+def test_unrelated_button_event_does_not_save_or_dismiss_settings(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        session = FakeSession()
+        session.settings_path = tmp_path / "settings.json"
+        app = SqlExplorerApp(session)
+        async with app.run_test() as pilot:
+            screen = await _open(app, pilot)
+            screen.query_one("#settings-run-binding", Input).value = "f9"
+            screen.on_button_pressed(Button.Pressed(Button("Unrelated", id="unrelated")))
+            assert app.screen is screen
+            assert session.settings.run_binding != "f9"
+            assert not session.settings_path.exists()
+
+    asyncio.run(exercise())
+
+
 def test_settings_save_applies_all_preferences(tmp_path: Path) -> None:
     async def exercise() -> None:
         session = FakeSession()

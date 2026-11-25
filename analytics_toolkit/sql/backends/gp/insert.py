@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 import pandas as pd
 
+from analytics_toolkit.sql.backends.native_scalars import ExactArray, ExactInterval
 from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
+
+from .float_parameters import normalize_float_parameters
+from .json_values import JsonArray, JsonDocument
 
 DEFAULT_GP_INSERT_CHUNK_SIZE = 10_000
 
@@ -18,6 +23,8 @@ def execute_values(
     sql: str,
     rows: Sequence[Sequence[Any]],
     page_size: int,
+    *,
+    template: str | None = None,
 ) -> Any:
     try:
         from psycopg2.extras import execute_values as psycopg2_execute_values
@@ -25,6 +32,8 @@ def execute_values(
         raise ImportError(
             "The 'psycopg2' package is required for Greenplum batch inserts."
         ) from exc
+    if template is not None:
+        return psycopg2_execute_values(cursor, sql, rows, page_size=page_size, template=template)
     return psycopg2_execute_values(cursor, sql, rows, page_size=page_size)
 
 
@@ -33,9 +42,9 @@ def normalize_insert_batch(adapter: Any, batch: pd.DataFrame) -> pd.DataFrame:
     normalized = batch.copy()
     for column_name in normalized.columns:
         series = normalized[column_name]
-        normalized_series = series.astype(object).where(series.notna(), None)
-        if any(isinstance(value, UUID) for value in normalized_series):
-            normalized_series = normalized_series.map(_normalize_uuid_scalar)
+        normalized_series = pd.Series(
+            [_normalize_nested_scalar(value) for value in series], index=series.index, dtype=object
+        )
         normalized[column_name] = normalized_series
     return normalized
 
@@ -85,8 +94,11 @@ def insert_rows(
     on_page_success: Callable[[float, int], None] | None = None,
     target_column_types: dict[str, str] | None = None,
 ) -> None:
-    row_tuples = normalize_insert_rows(adapter, rows)
-    row_tuples = normalize_json_columns(columns, row_tuples, target_column_types)
+    # JSON array identity must be resolved while exact array carriers still
+    # retain their topology; native parameter normalization renders them later.
+    row_tuples = normalize_json_columns(columns, rows, target_column_types)
+    row_tuples = normalize_insert_rows(adapter, row_tuples)
+    row_tuples = normalize_float_parameters(columns, row_tuples, target_column_types)
     if not row_tuples:
         return
 
@@ -97,6 +109,7 @@ def insert_rows(
         query_label=query_label,
     )
 
+    template = array_parameter_template(columns, target_column_types)
     with cursor_scope(connection) as cursor:
         try:
             next_index = 0
@@ -111,7 +124,10 @@ def insert_rows(
                 )
                 row_chunk = row_tuples[next_index : next_index + page_size]
                 started_at = time.perf_counter()
-                execute_values(cursor, sql, row_chunk, page_size=page_size)
+                if template is None:
+                    execute_values(cursor, sql, row_chunk, page_size=page_size)
+                else:
+                    execute_values(cursor, sql, row_chunk, page_size=page_size, template=template)
                 duration_seconds = time.perf_counter() - started_at
                 if on_progress is not None:
                     on_progress(len(row_chunk))
@@ -133,12 +149,14 @@ def get_insert_chunk_size(explicit_value: int | None) -> int:
 
 
 def _normalize_nullable_scalar(value: Any) -> Any:
+    if isinstance(value, (list, tuple)):
+        return _normalize_nested_scalar(value)
     if _is_null_like(value):
         return None
     if isinstance(value, dict):
         from psycopg2.extras import Json  # noqa: PLC0415
 
-        return Json(value)
+        return Json(_normalize_nested_scalar(value))
     return _normalize_uuid_scalar(value)
 
 
@@ -154,13 +172,28 @@ def normalize_json_columns(
         for index, column in enumerate(columns)
         if target_column_types.get(column, "").strip().lower() in {"json", "jsonb"}
     }
-    if not json_indexes:
+    json_arrays = {}
+    for index, column in enumerate(columns):
+        native = target_column_types.get(column, "").strip().lower()
+        rank = 0
+        while native.endswith("[]"):
+            native = native[:-2].rstrip()
+            rank += 1
+        if rank and native in {"json", "jsonb"}:
+            json_arrays[index] = rank
+    if not json_indexes and not json_arrays:
         return [tuple(row) for row in rows]
     from psycopg2.extras import Json  # noqa: PLC0415
 
     return [
         tuple(
-            Json(value) if index in json_indexes and isinstance(value, (dict, list)) else value
+            value
+            if isinstance(value, ExactArray)
+            else Json(value)
+            if index in json_indexes and isinstance(value, (dict, list))
+            else _normalize_json_array(value, json_arrays[index])
+            if index in json_arrays
+            else value
             for index, value in enumerate(row)
         )
         for row in rows
@@ -168,13 +201,99 @@ def normalize_json_columns(
 
 
 def _normalize_uuid_scalar(value: Any) -> Any:
+    from .source_arrays import array_transport, interval_transport  # noqa: PLC0415
+
+    if isinstance(value, ExactArray):
+        return array_transport(value)
+    if isinstance(value, ExactInterval):
+        return interval_transport(value)
+    if isinstance(value, Decimal) and value.is_infinite():
+        # psycopg2's Decimal adapter otherwise rewrites Infinity to NUMERIC NaN.
+        return str(value)
+    return _normalize_temporal_scalar(value)
+
+
+def _normalize_temporal_scalar(value: Any) -> Any:
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - backend import cycle
+        MAX_EXACT_SCALE,
+        ExactClock,
+        ExactTemporal,
+    )
+
+    if isinstance(value, ExactClock):
+        if value.ticks % 10 ** max(0, value.scale - 6):
+            msg = (
+                "Raw clock exceeds Greenplum microsecond precision; "
+                "resolve the schema conversion first."
+            )
+            raise ValueError(msg)
+        return value.isoformat() if value.ticks == 86400 * 10**value.scale else value.time()
+    if isinstance(value, ExactTemporal):
+        if not 0 <= value.scale <= MAX_EXACT_SCALE or value.ticks % 10 ** max(0, value.scale - 6):
+            msg = (
+                "Raw timestamp exceeds Greenplum microsecond precision; "
+                "resolve the schema conversion first."
+            )
+            raise ValueError(msg)
+        if value.wall_time:
+            return value.calendar_datetime()
+        return ExactTemporal(value.ticks, value.scale, "UTC").calendar_datetime(utc=True)
     return str(value) if isinstance(value, UUID) else value
 
 
 def _is_null_like(value: Any) -> bool:
-    if value is None:
-        return True
-    try:
-        return bool(pd.isna(value))
-    except (TypeError, ValueError):
-        return False
+    from analytics_toolkit.sql.core import exact_values  # noqa: PLC0415 -- registry cycle.
+
+    return exact_values.is_null(value)
+
+
+def _normalize_nested_scalar(value: Any) -> Any:
+    if isinstance(value, JsonArray):
+        return value
+    if isinstance(value, list):
+        return [_normalize_nested_scalar(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_normalize_nested_scalar(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _normalize_nested_scalar(item) for key, item in value.items()}
+    return None if _is_null_like(value) else _normalize_uuid_scalar(value)
+
+
+def array_parameter_template(
+    columns: Sequence[str], column_types: dict[str, str] | None
+) -> str | None:
+    if not column_types or not any(
+        column_types.get(name, "").rstrip().endswith("[]") for name in columns
+    ):
+        return None
+    # UUID string arrays need a destination type context. Preserve exact numeric
+    # element typmods and multidimensional types without global driver adapters.
+    placeholders = []
+    for name in columns:
+        native = column_types.get(name, "").rstrip()
+        placeholders.append(
+            f"CAST(%s AS {native.replace('%', '%%')})" if native.endswith("[]") else "%s"
+        )
+    return "(" + ", ".join(placeholders) + ")"
+
+
+def _normalize_json_array(value: Any, rank: int) -> Any:
+    from psycopg2.extras import Json  # noqa: PLC0415 -- optional backend driver.
+
+    if _is_null_like(value):
+        return None
+    if isinstance(value, JsonArray):
+        return value
+    if not isinstance(value, (list, tuple)):
+        message = "Greenplum JSON array values must match the destination array rank."
+        raise TypeError(message)
+    if rank > 1:
+        return [_normalize_json_array(item, rank - 1) for item in value]
+    return [
+        None
+        if _is_null_like(item)
+        else item
+        if isinstance(item, (Json, JsonDocument))
+        else Json(item)
+        for item in value
+    ]
