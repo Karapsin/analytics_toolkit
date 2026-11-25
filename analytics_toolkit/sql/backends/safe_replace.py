@@ -5,13 +5,17 @@ from typing import Any
 from uuid import uuid4
 
 from analytics_toolkit.general import time_print
-from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+from analytics_toolkit.sql.backends.execution_outcome import (
+    close_cursor,  # noqa: F401 -- historical helper import.
+)
 from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
 from analytics_toolkit.sql.ddl.identifiers import (
     _add_table_identifier_suffix,
     _identifier_name,
     _parse_table_name,
 )
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
 from .gp.stage import GP_IDENTIFIER_MAX_BYTES, _fit_identifier_bytes
 from .models import StageFinalizationRequest, StageTargetTableRequest
@@ -106,16 +110,16 @@ def _transactional_cutover(
     replacement: str,
     backup: str,
 ) -> None:
-    cursor = request.connection.cursor()
-    try:
-        cursor.execute(_rename_sql(adapter, request.target_table, backup))
-        cursor.execute(_rename_sql(adapter, replacement, request.target_table))
-        cursor.execute(adapter.drop_table_sql(backup, query_label=request.query_label))
-    except Exception:
-        request.connection.rollback()
-        raise
-    finally:
-        close_cursor(cursor, backend=adapter.backend)
+    with cursor_scope(request.connection) as cursor:
+        try:
+            cursor.execute(_rename_sql(adapter, request.target_table, backup))
+            cursor.execute(_rename_sql(adapter, replacement, request.target_table))
+            cursor.execute(adapter.drop_table_sql(backup, query_label=request.query_label))
+        except Exception as exc:
+            cleanup_preserving_error(
+                request.connection.rollback, error=exc, phase="rollback_replace"
+            )
+            raise
     try:
         request.connection.commit()
     except Exception as exc:

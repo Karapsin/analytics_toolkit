@@ -11,6 +11,7 @@ from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
 from analytics_toolkit.sql.connection.errors import SqlTableReadinessError
 from analytics_toolkit.sql.ddl.ownership import execute_owned_create_sqls
 from analytics_toolkit.sql.dml.load.models import LoadOptions, LoadState
+from analytics_toolkit.sql.dml.transfer.runtime.retry import run_with_retry
 from sqlglot import exp, parse_one
 
 from tests.sql._support.assertions import strip_query_label
@@ -114,36 +115,61 @@ def test_collision_and_ambiguous_candidates_never_become_owned(monkeypatch):
     assert error.value.analytics_toolkit_sql_stage_candidate == "db.ambiguous"
 
 
-@pytest.mark.parametrize("fail", [False, True])
-def test_policy_stage_cleanup_replaces_failed_connection_before_retry(monkeypatch, fail):
+@pytest.mark.parametrize(
+    ("fail", "retry_cnt", "terminal"),
+    [(False, 1, False), (True, 1, False), (True, 2, True), (True, 2, False)],
+    ids=["False", "True", "terminal", "retry"],
+)
+def test_policy_stage_cleanup_replaces_failed_connection_before_retry(
+    monkeypatch, fail, retry_cnt, terminal
+):
     connection = object()
+    replacement = object()
     ref = {"connection": connection}
     events = []
     message = "cleanup endpoint unavailable"
     failure = ConnectionError(message)
+    if terminal:
+        failure.analytics_toolkit_sql_retry_safe = False
+    pending_failures = [failure] if fail else []
 
     def cleanup(*args, **_kwargs):
         events.append(("drop", args[1]))
-        if fail:
-            raise failure
+        if pending_failures:
+            raise pending_failures.pop(0)
+
+    def replace(key, current):
+        events.append(("replace", key, current))
+        current["connection"] = replacement
 
     monkeypatch.setattr(stage_module, "cleanup_stage_table", cleanup)
     kwargs = {
-        "retry_fn": lambda **request: request["operation"](1),
-        "retry_cnt": 1,
+        "retry_fn": run_with_retry,
+        "retry_cnt": retry_cnt,
         "timeout_increment": 0,
         "rollback_fn": lambda current: events.append(("rollback", current)),
-        "replace_connection_fn": lambda key, current: events.append(("replace", key, current)),
+        "replace_connection_fn": replace,
         "ch_creation_policy": SimpleNamespace(create_distributed_pair=False),
     }
-    if fail:
+    if fail and (terminal or retry_cnt == 1):
         with pytest.raises(ConnectionError) as raised:
             stage_module.cleanup_stage_table_with_retry("ch", "ch", ref, "db.stage", **kwargs)
         assert raised.value is failure
-        assert events == [("drop", connection), ("rollback", connection), ("replace", "ch", ref)]
+        assert events == [("drop", connection), ("rollback", connection)]
+        assert ref["connection"] is connection
     else:
         stage_module.cleanup_stage_table_with_retry("ch", "ch", ref, "db.stage", **kwargs)
-        assert events == [("drop", connection)]
+        if fail:
+            assert events == [
+                ("drop", connection),
+                ("rollback", connection),
+                ("replace", "ch", ref),
+                ("drop", replacement),
+            ]
+            assert ref["connection"] is replacement
+        else:
+            assert events == [("drop", connection)]
+            assert ref["connection"] is connection
 
 
 def test_successful_stage_creation_notifies_ownership_once_without_resource_observer(monkeypatch):

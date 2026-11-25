@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, cast
 
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
+
 from ...execution.labels import apply_query_label
 from ..registry import get_backend_adapter
 from .adapter import ch_cluster_clause
@@ -622,6 +624,7 @@ def _drop_ch_distributed_table_pair_on_host(
     per_host_connection_factory: Callable[[str], Any],
 ) -> str | None:
     host_connection = None
+    error: BaseException | None = None
     try:
         host_connection = per_host_connection_factory(host)
         _execute_ch_sqls(
@@ -642,18 +645,13 @@ def _drop_ch_distributed_table_pair_on_host(
             ),
         )
     except Exception as exc:
+        error = exc
         return f"{endpoint_identity(host)}: {exc!r}"
     finally:
         if host_connection is not None:
             close = getattr(host_connection, "close", None)
             if callable(close):
-                from analytics_toolkit.sql.dml.transfer.runtime.retry import (  # noqa: PLC0415
-                    close_connection_ref,
-                )
-
-                close_connection_ref(
-                    {"connection": host_connection}, endpoint_identity(host), "host"
-                )
+                cleanup_preserving_error(close, error=error, phase="close_host")
     return None
 
 

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+from analytics_toolkit.sql.backends.execution_outcome import (
+    close_cursor,  # noqa: F401 -- historical helper import.
+)
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 from analytics_toolkit.sql.execution.labels import apply_query_label
 from analytics_toolkit.sql.execution.query_timing import run_timed_query
 
@@ -13,11 +16,8 @@ def execute_source_setup(adapter: Any, connection: Any, statements: list[str]) -
     """Keep Greenplum setup in its transaction until schema inspection or CTAS."""
     sql = ";\n".join(statements)
     if adapter.backend == "gp":
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             run_timed_query(adapter.backend, lambda: cursor.execute(sql), phase="setup")
-        finally:
-            close_cursor(cursor, backend=adapter.backend)
         return
     adapter.execute_sql(
         connection,

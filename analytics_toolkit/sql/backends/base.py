@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+from analytics_toolkit.sql.backends.execution_outcome import (
+    close_cursor,  # noqa: F401 -- historical helper import.
+)
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 from . import adapter_defaults as _adapter_defaults
 from . import common_methods as _common_methods
@@ -231,13 +234,10 @@ class BackendAdapter(_common_methods.DataframePreparationPolicy):
         *,
         query_label: str | None = None,
     ) -> int:
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             cursor.execute(self.count_table_rows_sql(table_name, query_label=query_label))
             row = cursor.fetchone()
             return int(row[0]) if row else 0
-        finally:
-            close_cursor(cursor, backend=self.backend)
 
     destination_write_timezone = _adapter_defaults.destination_write_timezone
     requires_destination_timezone = _adapter_defaults.requires_destination_timezone

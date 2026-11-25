@@ -15,6 +15,7 @@ from analytics_toolkit.sql.connection.errors import (
 )
 from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.connection.protocols import DbApiConnection
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 from analytics_toolkit.sql.execution.labels import apply_query_label
 from analytics_toolkit.sql.execution.operation_runner import (
     run_connection_operation,
@@ -35,25 +36,19 @@ _READ_OUTPUT_TYPES = ("df", "scalar", "list", "dict")
 
 
 def _read_dbapi_query(conn: DbApiConnection, query: str) -> pd.DataFrame:
-    cursor = conn.cursor()
-    try:
+    with cursor_scope(conn) as cursor:
         cursor.execute(query)
         columns = [str(column[0]) for column in cursor.description or []]
         rows = cursor.fetchall()
         return dataframe_from_column_result(column_result_from_rows(columns, rows))
-    finally:
-        cursor.close()
 
 
 def _read_dbapi_columns(conn: DbApiConnection, query: str) -> ReadColumnResult:
-    cursor = conn.cursor()
-    try:
+    with cursor_scope(conn) as cursor:
         cursor.execute(query)
         column_names = tuple(str(column[0]) for column in cursor.description or [])
         rows = cursor.fetchall()
         return column_result_from_rows(column_names, rows)
-    finally:
-        cursor.close()
 
 
 @timed_public_sql_function

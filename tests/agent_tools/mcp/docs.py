@@ -84,6 +84,24 @@ def test_change_impact_reports_sql_contract_and_architecture_headroom(tmp_path: 
     assert result["telemetry"]["response_bytes"] < 8_000
 
 
+def test_change_impact_reports_real_source_module_headroom(tmp_path: Path) -> None:
+    root = _write_docs_project(tmp_path / "project")
+    base_path = "analytics_toolkit/sql/backends/base.py"
+    source = mcp_server.REPO_ROOT / base_path
+    target = root / base_path
+    target.parent.mkdir(parents=True)
+    target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    result = mcp_server.change_impact("inspect SQL source headroom", module="sql", root=str(root))
+    assert result["ok"] is True
+    budgets = {item["path"]: item for item in result["result"]["architecture"]["modules"]}
+    base_budget = budgets[base_path]
+    source_lines = len(source.read_text(encoding="utf-8").splitlines())
+    assert base_budget["max_lines"] == 900
+    assert 0 < source_lines <= base_budget["max_lines"]
+    assert base_budget["line_count"] == source_lines
+    assert base_budget["remaining_lines"] == base_budget["max_lines"] - source_lines
+
+
 def test_docs_default_index_dir_is_resolved_from_repo_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

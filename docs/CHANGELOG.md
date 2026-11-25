@@ -167,6 +167,7 @@ Generated from package version bumps and recent commit history.
 - Reconcile DataLens dashboard import with merged ClickHouse outage and replacement recovery safeguards while retaining stricter coverage targets
 - Fix SQL DataFrame conversion for Trino rows and nested arrays while preserving backend objects and nullable scalar dtypes.
 - Respect ClickHouse profile restrictions on internal probe timeouts and all required read, write, and DDL safety settings.
+- Stop permanent SQL and DNS retries with native backend precedence, preserve cleanup outcomes and legacy aliases, defer reconnects, and protect safe logs.
 
 ## 1.3.12.5 - 2026-10-14
 

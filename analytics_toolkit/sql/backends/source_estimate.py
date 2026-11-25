@@ -8,12 +8,13 @@ from typing import Any, cast
 import sqlparse
 from sqlglot import exp, parse_one
 
-from .registry import get_backend_adapter
-from ..connection.errors import InvalidSqlInputError
-from ..execution.labels import apply_query_label
 from analytics_toolkit.general import time_print
-from ..dml.transfer.runtime.models import TransferOptions
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
+from ..connection.errors import InvalidSqlInputError
+from ..dml.transfer.runtime.models import TransferOptions
+from ..execution.labels import apply_query_label
+from .registry import get_backend_adapter
 
 _TEXT_PLAN_ROWS_RE = re.compile(r"\brows=(\d+(?:\.\d+)?)\b")
 
@@ -33,8 +34,7 @@ def estimate_source_rows(options: TransferOptions, connection: Any) -> int | Non
     except Exception as exc:
         get_backend_adapter(options.from_db_backend).rollback_quietly(connection)
         time_print(
-            "Could not estimate source row count; "
-            f"progress total will be unknown: {exc!r}",
+            f"Could not estimate source row count; progress total will be unknown: {exc!r}",
             connection=options.from_db_key,
             backend=options.from_db_backend,
         )
@@ -75,14 +75,10 @@ def _estimate_source_rows(
 
 def _single_source_statement(source_sql: str) -> str:
     statements = [
-        statement.strip()
-        for statement in sqlparse.split(source_sql.strip())
-        if statement.strip()
+        statement.strip() for statement in sqlparse.split(source_sql.strip()) if statement.strip()
     ]
     if len(statements) != 1:
-        raise InvalidSqlInputError(
-            "estimate_total_rows expects exactly one source SQL statement."
-        )
+        raise InvalidSqlInputError("estimate_total_rows expects exactly one source SQL statement.")
     return statements[0].rstrip(";").rstrip()
 
 
@@ -139,12 +135,9 @@ def _estimate_clickhouse_source_rows(
 
 
 def _fetch_dbapi_first_column(connection: Any, sql: str) -> list[Any]:
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(sql)
         rows = cursor.fetchall()
-    finally:
-        cursor.close()
 
     values: list[Any] = []
     for row in rows:
@@ -278,8 +271,7 @@ def _extract_clickhouse_estimate_rows(result: Any) -> int | None:
         return None
 
     column_names = [
-        str(column_name).lower()
-        for column_name in (getattr(result, "column_names", None) or [])
+        str(column_name).lower() for column_name in (getattr(result, "column_names", None) or [])
     ]
     if "rows" in column_names:
         rows_index = column_names.index("rows")

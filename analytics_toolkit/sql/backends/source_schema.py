@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+
 from .models import SourceColumn
 
 _TRINO_MAX_DECIMAL_PRECISION = 38
@@ -20,15 +22,12 @@ def inspect_dbapi_source_schema(
     *,
     type_code_name: Callable[[Any, int | None, int | None], str | None],
 ) -> list[SourceColumn]:
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(zero_row_query(query))
         return [
             source_column_from_description(column, type_code_name=type_code_name)
             for column in cursor.description or []
         ]
-    finally:
-        cursor.close()
 
 
 def inspect_clickhouse_source_schema(connection: Any, query: str) -> list[SourceColumn]:

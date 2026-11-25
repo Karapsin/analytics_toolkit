@@ -17,6 +17,7 @@ from analytics_toolkit.sql.execution.backend_options import (
     current_backend_query_label,
 )
 from analytics_toolkit.sql.execution.labels import apply_query_label
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
 from .cluster_functions import (
     canonicalize_cluster_functions,
@@ -657,9 +658,10 @@ class OutageClient:
 
         with internal_io():
             delivery_connection = get_sql_connection(self._config.connection_key)
-        writer = OutageClient(delivery_connection, self._config)
-        writer._connection_policy = self._get_session(state).policy
+        error: BaseException | None = None
         try:
+            writer = OutageClient(delivery_connection, self._config)
+            writer._connection_policy = self._get_session(state).policy
             with self.query_df_stream(
                 statement.expression.sql(dialect=_RoutingClickHouse)
             ) as frames:
@@ -670,18 +672,13 @@ class OutageClient:
                     insert_frame = frame.copy()
                     insert_frame.columns = columns
                     writer.insert_df(table_sql, insert_frame, column_names=columns)
-        except BaseException:
+        except BaseException as exc:
+            error = exc
             if state.live_submitted:
                 state.preserve_recovery = True
             raise
         finally:
-            from analytics_toolkit.sql.dml.transfer.runtime.retry import (  # noqa: PLC0415 - factory imports this client
-                close_connection_ref,
-            )
-
-            close_connection_ref(
-                {"connection": delivery_connection}, self._config.connection_key, "relay"
-            )
+            cleanup_preserving_error(delivery_connection.close, error=error, phase="close_delivery")
 
     def outage_after_create(
         self, table_name: str, *, policy: Any, pair: bool, expected_columns: Any = None

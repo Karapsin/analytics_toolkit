@@ -7,7 +7,6 @@ from sqlparse import lexer, tokens
 
 from analytics_toolkit.sql._log_context import prefix_sql_log_message
 from analytics_toolkit.sql.backends.base import _apply_query_label
-from analytics_toolkit.sql.backends.execution_outcome import close_cursor
 
 from . import parameters as _parameters
 from .bindings import parameterized_values
@@ -16,6 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
     import pandas as pd
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 DEFAULT_TRINO_INSERT_CHUNK_SIZE = 1000
 DATETIME_MICROSECOND_PRECISION = 6
@@ -64,8 +64,7 @@ def insert_rows(
     from analytics_toolkit.general import time_print
 
     chunk_size = get_insert_chunk_size(trino_insert_chunk_size, connection_type)
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         row_iterator = iter_row_values(columns, rows, target_column_types)
         for row_chunk in _chunk_rows(row_iterator, chunk_size):
             values, params = parameterized_values(columns, row_chunk, target_column_types)
@@ -80,8 +79,6 @@ def insert_rows(
             cursor.execute(sql, params)
             if on_progress is not None:
                 on_progress(len(row_chunk))
-    finally:
-        close_cursor(cursor, backend="trino")
 
 
 def get_insert_chunk_size(

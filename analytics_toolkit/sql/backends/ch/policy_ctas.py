@@ -7,6 +7,7 @@ from dataclasses import asdict
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
+from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.query_source_binding import query_may_read_target
 from analytics_toolkit.sql.connection.config import get_connection_config
@@ -27,10 +28,10 @@ from analytics_toolkit.sql.dml.query_input import (
     query_input_scope,
     replay_query_input,
 )
-from analytics_toolkit.sql.dml.transfer.runtime.retry import close_connection_ref
 from analytics_toolkit.sql.execution.labels import apply_query_label
 from analytics_toolkit.sql.execution.operation_runner import tracked_sql_operation
 from analytics_toolkit.sql.execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
 from .create_table_as import (
     _annotate_ch_cte_join_exception as annotate_query_exception,
@@ -100,14 +101,13 @@ def _create_table_as_with_policy(*, policy: Any, **options: Any) -> Any:
     prepared: PreparedQueryInput | None = None
     adapter = get_backend_adapter("ch")
     exists = False
+    error: BaseException | None = None
     try:
         if not dry:
             connection = legacy.get_sql_connection(options["target_key"])
             connection_ref["connection"] = connection
             exists = adapter.table_exists(connection, table, connection_key=options["target_key"])
-            if exists and not options["drop_target_if_exists"] and not replace_target:
-                message = f"Target table {table} already exists."
-                raise InvalidSqlInputError(message)
+            _require_creation_mode(options, exists=exists, replace_target=replace_target)
         joined, schema, prepared = _resolve_population_columns(
             connection_ref,
             policy,
@@ -162,14 +162,26 @@ def _create_table_as_with_policy(*, policy: Any, **options: Any) -> Any:
         ):
             _execute_creation(connection, policy, options, schema, (drop_sqls, create_sqls))
             _populate_target(connection_ref, options, prepared, metadata)
+    except BaseException as exc:
+        error = exc
+        raise
     finally:
         if connection_ref["connection"] is not None:
-            close_connection_ref(connection_ref, options["target_key"], "target")
+            time_print("Closing connection", connection=options["target_key"], phase="close_target")
+            cleanup_preserving_error(
+                connection_ref["connection"].close, error=error, phase="close_target"
+            )
     return (
         SqlOperationResult(rows=None, metadata=metadata, plan=plan)
         if options["return_metadata"]
         else None
     )
+
+
+def _require_creation_mode(options: Any, *, exists: bool, replace_target: bool) -> None:
+    if exists and not options["drop_target_if_exists"] and not replace_target:
+        message = f"Target table {options['target_table']} already exists."
+        raise InvalidSqlInputError(message)
 
 
 def _resolve_population_columns(

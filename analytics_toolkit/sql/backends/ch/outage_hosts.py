@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Iterator, Protocol
 
 from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
 from .outage_context import internal_io
 
@@ -56,11 +57,11 @@ def host_connection(scope: HostConnectionScope, host: Host) -> Iterator[Any]:
             host.name,
             port=host.port if scope.config.driver == "native" else None,
         )
+        error: BaseException | None = None
         try:
             yield connection
+        except BaseException as exc:
+            error = exc
+            raise
         finally:
-            from analytics_toolkit.sql.dml.transfer.runtime.retry import (  # noqa: PLC0415
-                close_connection_ref,
-            )
-
-            close_connection_ref({"connection": connection}, scope.config.connection_key, "host")
+            cleanup_preserving_error(connection.close, error=error, phase="close_host")

@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from string import Formatter
 from typing import Any
 
-from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 from .. import dataframe_types as _dataframe_types
 from .. import source_schema as _source_schema
@@ -54,12 +54,9 @@ class TrinoAdapter(DbApiBackendAdapter):
         super().__init__(backend="trino", commit_commands=False)
 
     def execute_materialization_command(self, connection: Any, sql: str) -> None:
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             cursor.execute(sql)
             cursor.fetchall()
-        finally:
-            close_cursor(cursor, backend="trino")
 
     def explicit_create_property_overrides(
         self,
@@ -164,8 +161,7 @@ class TrinoAdapter(DbApiBackendAdapter):
             table_name,
             connection_key=connection_key,
         )
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             cursor.execute(
                 f"""
                 SELECT 1
@@ -176,8 +172,6 @@ class TrinoAdapter(DbApiBackendAdapter):
                 (schema_name, relation_name),
             )
             return cursor.fetchone() is not None
-        finally:
-            cursor.close()
 
     def clear_table_sqls(
         self,
@@ -270,8 +264,7 @@ class TrinoAdapter(DbApiBackendAdapter):
             table_name,
             connection_key=connection_key,
         )
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             cursor.execute(
                 f"""
                 SELECT column_name, data_type
@@ -285,8 +278,6 @@ class TrinoAdapter(DbApiBackendAdapter):
             return {
                 str(column_name): str(data_type) for column_name, data_type in cursor.fetchall()
             }
-        finally:
-            cursor.close()
 
     def inspect_source_query_schema(
         self,
@@ -535,27 +526,25 @@ class TrinoAdapter(DbApiBackendAdapter):
             f"Executing {max(len(statements) - 1, 0)} setup statement(s) and reading final query",
             backend=self.backend,
         )
-        cursor = connection.cursor()
-        try:
-            _execute_setup_statements(
-                cursor,
-                statements[:-1],
-                connection_type=self.backend,
-                execute_statement=lambda cursor, statement: cursor.execute(statement),
-                print_queries=print_queries,
-                progress=progress,
-            )
-            return _read_dbapi_cursor(
-                cursor,
-                statements[-1],
-                self.backend,
-                print_queries,
-            )
-        except Exception:
-            time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
-            raise
-        finally:
-            close_cursor(cursor, backend="trino")
+        with cursor_scope(connection) as cursor:
+            try:
+                _execute_setup_statements(
+                    cursor,
+                    statements[:-1],
+                    connection_type=self.backend,
+                    execute_statement=lambda cursor, statement: cursor.execute(statement),
+                    print_queries=print_queries,
+                    progress=progress,
+                )
+                return _read_dbapi_cursor(
+                    cursor,
+                    statements[-1],
+                    self.backend,
+                    print_queries,
+                )
+            except Exception:
+                time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
+                raise
 
     def insert_dataframe_batch(
         self,

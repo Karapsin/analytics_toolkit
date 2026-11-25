@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+
 
 def prepare_upsert_target(
     adapter: Any, connection: Any, table_name: str, *, partition_column: str | None
@@ -37,8 +39,7 @@ def fetch_upsert_partition_values(
     partition_column: str,
     incoming_stage_tables: Sequence[str] | None = None,
 ) -> list[Any]:
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(
             adapter.build_upsert_partition_values_sql(
                 stage_table,
@@ -47,8 +48,6 @@ def fetch_upsert_partition_values(
             )
         )
         return [row[0] for row in cursor.fetchall()]
-    finally:
-        cursor.close()
 
 
 def build_partition_replacement_upsert_sqls(

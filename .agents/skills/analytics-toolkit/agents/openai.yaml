@@ -1,7 +1,7 @@
 interface:
   display_name: "Analytics Toolkit"
-  short_description: "Use toolkit helpers in Python analytics workflows"
-  default_prompt: "Use $analytics-toolkit with from atk import * when possible to apply public helpers for this Python analytics task."
+  short_description: "Use toolkit helpers for warehouse SQL and Python analytics"
+  default_prompt: "Use $analytics-toolkit for this warehouse SQL or Python analytics task, with from atk import * when possible."
 
 policy:
   allow_implicit_invocation: true

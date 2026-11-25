@@ -66,16 +66,20 @@ complete payload; staging does not make that partition replacement atomic.
 operation on transient failures with fresh connections, including after mutation
 submission or a lost commit acknowledgement. Replays can repeat already committed
 effects. `retry_cnt` bounds attempts, `timeout_increment` controls backoff, and
-`retry_cnt=1` requests one attempt. Deterministic SQL errors are not retried.
-These retries provide at-least-once delivery across all three backends, including
-ClickHouse native writes. If an earlier Trino chunk committed before a later
-chunk failed, restarting the operation can repeat it. Acknowledgement loss can
-also repeat a fully accepted write. Optional metadata reports whether replay was
-possible; it does not certify exactly-once delivery.
+`retry_cnt=1` requests one toolkit attempt; driver request retries may still
+occur. Recognized permanent SQL errors are not retried; unrecognized errors
+retain the historical retry fallback. The [retry policy](retry-policy.md)
+lists backend stop conditions, including explicit native unknown-outcome codes.
 
-Connection and cursor close failures are logged and cannot replay successful
-work or replace the primary operation exception. Semantic finalization failures
-remain errors. Toolkit-managed uncertain structural cutovers retain recovery
-artifacts and are not blindly replayed.
+Transient retries provide at-least-once delivery across all three backends,
+including ClickHouse native writes. If an earlier Trino chunk committed before a
+later chunk failed, restarting the operation can repeat it. Acknowledgement loss
+can also repeat a fully accepted write. Optional metadata reports whether replay
+was possible; it does not certify exactly-once delivery.
+
+Connection and cursor close failures are reported alongside the primary error
+and cannot replay successful work or replace its original exception. Semantic
+finalization failures remain errors. Toolkit-managed uncertain structural
+cutovers retain recovery artifacts and are not blindly replayed.
 
 [SQL module index](index.md)

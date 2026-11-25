@@ -21,6 +21,9 @@ In individual module folders, use `functions/index.md` for function signatures
 and input defaults. Each major workflow section lives in its own file so the
 docs stay easy to scan and edit.
 
+SQL retry behavior and backend stop conditions are documented in the
+[retry policy](sql/retry-policy.md).
+
 [Documentation overview](../README.md)
 
 DataLens workflows: [capture an existing dashboard](datalens_utils/import-dashboard.md)

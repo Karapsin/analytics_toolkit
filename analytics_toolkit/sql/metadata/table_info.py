@@ -6,6 +6,7 @@ import pandas as pd
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.execution.metadata_cancellation import cancellable_metadata_connection
+from analytics_toolkit.sql.execution.retry_cleanup import connection_scope
 
 from ..backends import get_backend_adapter
 from ..connection.config import get_connection_config
@@ -104,54 +105,54 @@ def table_info(
     inspection_table = resolved_table or table_name
 
     connection = cancellable_metadata_connection(get_sql_connection(config.connection_key))
-    try:
-        exists = table_exists(
-            config.backend,
-            connection,
-            inspection_table,
-            connection_key=config.connection_key,
-        )
-        if not exists:
+    with connection_scope(connection):
+        try:
+            exists = table_exists(
+                config.backend,
+                connection,
+                inspection_table,
+                connection_key=config.connection_key,
+            )
+            if not exists:
+                return SqlTableInfo(
+                    connection_key=config.connection_key,
+                    backend=config.backend,
+                    table=table_name,
+                    exists=False,
+                    columns={},
+                    row_count=None,
+                    resolved_table=resolved_table,
+                    shard_table=shard_table,
+                )
+
+            columns = get_table_column_types(
+                config.backend,
+                connection,
+                inspection_table,
+                connection_key=config.connection_key,
+            )
+            row_count = (
+                count_table_rows(config.backend, connection, inspection_table)
+                if include_row_count
+                else None
+            )
             return SqlTableInfo(
                 connection_key=config.connection_key,
                 backend=config.backend,
                 table=table_name,
-                exists=False,
-                columns={},
-                row_count=None,
+                exists=True,
+                columns=columns,
+                row_count=row_count,
                 resolved_table=resolved_table,
                 shard_table=shard_table,
             )
-
-        columns = get_table_column_types(
-            config.backend,
-            connection,
-            inspection_table,
-            connection_key=config.connection_key,
-        )
-        row_count = (
-            count_table_rows(config.backend, connection, inspection_table)
-            if include_row_count
-            else None
-        )
-        return SqlTableInfo(
-            connection_key=config.connection_key,
-            backend=config.backend,
-            table=table_name,
-            exists=True,
-            columns=columns,
-            row_count=row_count,
-            resolved_table=resolved_table,
-            shard_table=shard_table,
-        )
-    finally:
-        time_print(
-            "Closing connection",
-            connection=config.connection_key,
-            backend=config.backend,
-            phase="close",
-        )
-        connection.close()
+        finally:
+            time_print(
+                "Closing connection",
+                connection=config.connection_key,
+                backend=config.backend,
+                phase="close",
+            )
 
 
 def _validate_table_name(table: str) -> str:

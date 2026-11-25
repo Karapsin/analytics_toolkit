@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.sql._support.retry_flow import SourceConversionError
 from tests.sql._support.staged_keyed import (
     Any,
     BoundedConnectionCloseError,
@@ -23,6 +24,36 @@ from tests.sql._support.staged_keyed import (
     staged_keyed_io,
     staged_keyed_pipeline,
 )
+
+
+@pytest.mark.parametrize(("terminal", "retry_cnt"), [(True, 3), (False, 1)])
+def test_staged_key_batch_does_not_replace_after_terminal_or_final_failure(
+    monkeypatch: Any,
+    terminal: bool,
+    retry_cnt: int,
+) -> None:
+    options = _options(retry_cnt=retry_cnt, timeout_increment=0)
+    task = _ready_task((options.transfer_slices or [])[0], "source.stage", 1)
+    error = SourceConversionError("invalid source integer") if terminal else OSError("read failed")
+    reads: list[int] = []
+    replacements: list[str] = []
+
+    def read(*_args: Any, **_kwargs: Any) -> Any:
+        reads.append(1)
+        raise error
+
+    monkeypatch.setattr(staged_keyed_io, "_read_backend", read)
+    source_ref = {
+        "connection": object(),
+        "bounded_replace_connection": lambda key, _ref: replacements.append(key),
+    }
+
+    with pytest.raises(type(error)) as caught:
+        staged_keyed_io.read_key_batch(options, source_ref, task, _metadata(), 1, 2, batch_index=1)
+
+    assert caught.value is error
+    assert reads == [1]
+    assert replacements == []
 
 
 def test_staged_key_batch_recovers_after_transient_replacement_open_failure(

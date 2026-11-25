@@ -248,7 +248,7 @@ def test_dbapi_batch_read_error_logs_and_closes(
     assert cursor.close_calls == 1
 
 
-def test_dbapi_query_start_failure_closes_rolls_back_and_replaces(
+def test_dbapi_query_start_failure_closes_rolls_back_without_unused_reconnect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cursor = FakeDbapiCursor([], execute_error=RuntimeError("execute failed"))
@@ -277,7 +277,7 @@ def test_dbapi_query_start_failure_closes_rolls_back_and_replaces(
         )
     assert cursor.close_calls == 1
     assert rollbacks == [connection_ref["connection"]]
-    assert replacements == ["gp_source"]
+    assert replacements == []
 
 
 def test_clickhouse_stream_skips_empty_blocks_and_handles_empty_stream() -> None:
@@ -316,7 +316,7 @@ def test_clickhouse_stream_skips_empty_blocks_and_handles_empty_stream() -> None
     assert empty_connection.context.exit_calls == 1
 
 
-def test_clickhouse_stream_start_failure_closes_and_replaces(
+def test_clickhouse_stream_start_failure_closes_without_unused_reconnect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stream = FailingClickHouseStream([], RuntimeError("unused"))
@@ -339,7 +339,7 @@ def test_clickhouse_stream_start_failure_closes_and_replaces(
             disable_query_limit=False,
         )
     assert stream.exit_calls == 1
-    assert replacements == ["ch_source"]
+    assert replacements == []
 
 
 def test_stream_error_context_and_transport_detection() -> None:

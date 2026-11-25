@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 from .. import dataframe_types as _dataframe_types
 from .. import source_schema as _source_schema
@@ -221,13 +221,10 @@ class GreenplumAdapter(DbApiBackendAdapter):
         connection_key: str,
     ) -> bool:
         del connection_key
-        cursor = connection.cursor()
-        try:
+        with cursor_scope(connection) as cursor:
             cursor.execute("SELECT to_regclass(%s)", (table_name,))
             row = cursor.fetchone()
             return bool(row and row[0])
-        finally:
-            cursor.close()
 
     def clear_table_sqls(
         self,
@@ -253,7 +250,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
         try:
             connection.rollback()
         except Exception:
-            return None
+            return
 
     def build_vacuum_table_sql(
         self,
@@ -405,44 +402,42 @@ class GreenplumAdapter(DbApiBackendAdapter):
             f"Executing {max(len(statements) - 1, 0)} setup statement(s) and reading final query",
             backend=self.backend,
         )
-        cursor = connection.cursor()
-        should_commit_at_end = len(statements) > 1
-        try:
-            setup_statements = statements[:-1]
-            if setup_statements and not gp_break_query:
-                setup_sql = ";\n".join(setup_statements)
-                _maybe_print_query(setup_sql, print_queries, split_preview=False)
-                run_timed_query(self.backend, lambda: cursor.execute(setup_sql), phase="setup")
-            else:
-                for statement in _iterate_statements_with_progress(
-                    setup_statements,
-                    self.backend,
-                    progress=progress,
-                ):
-                    _maybe_print_query(statement, print_queries, split_preview=True)
-                    run_timed_query(
+        with cursor_scope(connection) as cursor:
+            should_commit_at_end = len(statements) > 1
+            try:
+                setup_statements = statements[:-1]
+                if setup_statements and not gp_break_query:
+                    setup_sql = ";\n".join(setup_statements)
+                    _maybe_print_query(setup_sql, print_queries, split_preview=False)
+                    run_timed_query(self.backend, lambda: cursor.execute(setup_sql), phase="setup")
+                else:
+                    for statement in _iterate_statements_with_progress(
+                        setup_statements,
                         self.backend,
-                        lambda statement=statement: cursor.execute(statement),
-                        phase="setup",
-                    )
-                    if gp_commit_each_statement:
-                        connection.commit()
-                        should_commit_at_end = False
+                        progress=progress,
+                    ):
+                        _maybe_print_query(statement, print_queries, split_preview=True)
+                        run_timed_query(
+                            self.backend,
+                            lambda statement=statement: cursor.execute(statement),
+                            phase="setup",
+                        )
+                        if gp_commit_each_statement:
+                            connection.commit()
+                            should_commit_at_end = False
 
-            result = _read_dbapi_cursor(
-                cursor,
-                statements[-1],
-                self.backend,
-                print_queries,
-            )
-            if should_commit_at_end:
-                connection.commit()
-            return result
-        except Exception:
-            time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
-            raise
-        finally:
-            close_cursor(cursor, backend="gp")
+                result = _read_dbapi_cursor(
+                    cursor,
+                    statements[-1],
+                    self.backend,
+                    print_queries,
+                )
+                if should_commit_at_end:
+                    connection.commit()
+                return result
+            except Exception:
+                time_print(f"Failed SQL:\n{statements[-1]}", backend=self.backend)
+                raise
 
     def normalize_insert_batch(self, batch: Any) -> Any:
         return _insert.normalize_insert_batch(self, batch)

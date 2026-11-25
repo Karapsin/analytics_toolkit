@@ -8,8 +8,9 @@ from uuid import UUID
 
 import pandas as pd
 
-from analytics_toolkit.sql.backends.execution_outcome import close_cursor
 from analytics_toolkit.sql.backends.native_scalars import ExactArray, ExactInterval
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+from analytics_toolkit.sql.execution.retry_cleanup import cleanup_preserving_error
 
 from .float_parameters import normalize_float_parameters
 from .json_values import JsonArray, JsonDocument
@@ -109,36 +110,34 @@ def insert_rows(
     )
 
     template = array_parameter_template(columns, target_column_types)
-    cursor = connection.cursor()
-    try:
-        next_index = 0
-        while next_index < len(row_tuples):
-            remaining_rows = len(row_tuples) - next_index
-            configured_page_size = (
-                page_size_getter() if page_size_getter is not None else gp_insert_chunk_size
-            )
-            page_size = min(
-                get_insert_chunk_size(configured_page_size),
-                remaining_rows,
-            )
-            row_chunk = row_tuples[next_index : next_index + page_size]
-            started_at = time.perf_counter()
-            if template is None:
-                execute_values(cursor, sql, row_chunk, page_size=page_size)
-            else:
-                execute_values(cursor, sql, row_chunk, page_size=page_size, template=template)
-            duration_seconds = time.perf_counter() - started_at
-            if on_progress is not None:
-                on_progress(len(row_chunk))
-            if on_page_success is not None:
-                on_page_success(duration_seconds, len(row_chunk))
-            next_index += page_size
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        raise
-    finally:
-        close_cursor(cursor, backend="gp")
+    with cursor_scope(connection) as cursor:
+        try:
+            next_index = 0
+            while next_index < len(row_tuples):
+                remaining_rows = len(row_tuples) - next_index
+                configured_page_size = (
+                    page_size_getter() if page_size_getter is not None else gp_insert_chunk_size
+                )
+                page_size = min(
+                    get_insert_chunk_size(configured_page_size),
+                    remaining_rows,
+                )
+                row_chunk = row_tuples[next_index : next_index + page_size]
+                started_at = time.perf_counter()
+                if template is None:
+                    execute_values(cursor, sql, row_chunk, page_size=page_size)
+                else:
+                    execute_values(cursor, sql, row_chunk, page_size=page_size, template=template)
+                duration_seconds = time.perf_counter() - started_at
+                if on_progress is not None:
+                    on_progress(len(row_chunk))
+                if on_page_success is not None:
+                    on_page_success(duration_seconds, len(row_chunk))
+                next_index += page_size
+            connection.commit()
+        except Exception as exc:
+            cleanup_preserving_error(connection.rollback, error=exc, phase="rollback_insert")
+            raise
 
 
 def get_insert_chunk_size(explicit_value: int | None) -> int:

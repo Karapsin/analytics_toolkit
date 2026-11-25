@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
 
 _SCALAR_NAMES = {
     "int2": "SMALLINT",
@@ -73,8 +73,7 @@ def get_table_column_types(
 
     del adapter, connection_key
     schema, relation = split_gp_table_name(table_name)
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(
             "SELECT a.attname, " + catalog_column_type_sql() + " AS formatted_type "
             "FROM pg_catalog.pg_attribute AS a "
@@ -88,8 +87,6 @@ def get_table_column_types(
         return {
             str(name): canonical_catalog_type(str(native)) for name, native in cursor.fetchall()
         }
-    finally:
-        close_cursor(cursor, backend="gp")
 
 
 def canonical_catalog_type(native: str) -> str:

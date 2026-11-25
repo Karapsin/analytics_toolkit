@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from analytics_toolkit.sql.execution.cursor_cleanup import cursor_scope
+
 
 def build_stage_duplicate_keys_sql(
     adapter: Any,
@@ -10,12 +12,7 @@ def build_stage_duplicate_keys_sql(
     key_columns: Sequence[str],
 ) -> str:
     key_sql = adapter.column_list_sql(key_columns)
-    return (
-        f"SELECT 1 FROM {stage_table} "
-        f"GROUP BY {key_sql} "
-        "HAVING COUNT(*) > 1 "
-        "LIMIT 1"
-    )
+    return f"SELECT 1 FROM {stage_table} GROUP BY {key_sql} HAVING COUNT(*) > 1 LIMIT 1"
 
 
 def build_stage_duplicate_keys_sql_for_tables(
@@ -87,9 +84,6 @@ def stage_keys_overlap_target(
 
 
 def query_has_rows(adapter: Any, connection: Any, sql: str) -> bool:
-    cursor = connection.cursor()
-    try:
+    with cursor_scope(connection) as cursor:
         cursor.execute(sql)
         return cursor.fetchone() is not None
-    finally:
-        cursor.close()

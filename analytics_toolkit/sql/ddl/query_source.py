@@ -9,9 +9,9 @@ from analytics_toolkit.sql.connection.errors import SqlOperationContext, sql_pre
 from analytics_toolkit.sql.core.type_resolution import requires_adaptive_resolution
 from analytics_toolkit.sql.execution.labels import apply_query_label
 from analytics_toolkit.sql.execution.operation_runner import (
-    _close_connection,
     run_retrying_operation,
 )
+from analytics_toolkit.sql.execution.retry_cleanup import connection_scope
 
 from .ch_policy import regular_ddl_properties
 from .drop_planning import require_resolved_creation_drop_sql
@@ -121,17 +121,11 @@ def generate_create_table_from_query_sql(  # noqa: PLR0913 - Mirrors the public 
     def inspect_schema(attempt: int) -> list[Any]:
         del attempt
         source_connection = get_sql_connection_fn(source_config.connection_key)
-        try:
+        with connection_scope(source_connection, phase="close_schema_inspection"):
             return inspect_source_query_schema(
                 source_config.backend,
                 source_connection,
                 apply_query_label(source_sql, query_label),
-            )
-        finally:
-            _close_connection(
-                {"connection": source_connection},
-                source_config.connection_key,
-                backend=source_config.backend,
             )
 
     source_schema = run_retrying_operation(
