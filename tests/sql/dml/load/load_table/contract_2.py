@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from analytics_toolkit.sql.backends import get_backend_adapter
+from sqlglot import exp, parse_one
 
 from tests.sql._support.load_table import (
     Any,
@@ -247,10 +248,16 @@ def test_load_df_trino_parquet_stage_routes_through_external_table(
         and "WITH (format = 'PARQUET', external_location = 's3://bucket/tmp/" in sql
         for sql in connection.executed
     )
-    assert any(
-        sql.startswith("DROP TABLE IF EXISTS hive.pa_core_stage.daf6958bfec1c9f7__")
-        for sql in connection.executed
-    )
+    dropped = [
+        table
+        for statement in connection.executed
+        if isinstance((tree := parse_one(statement, read="trino")), exp.Drop)
+        for table in tree.find_all(exp.Table)
+    ]
+    assert len(dropped) == 1
+    assert dropped[0].catalog == "hive"
+    assert dropped[0].db == "pa_core_stage"
+    assert dropped[0].name.startswith("daf6958bfec1c9f7__")
 
 
 def test_load_df_trino_parquet_upsert_uses_merge_from_stage(

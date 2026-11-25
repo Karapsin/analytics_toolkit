@@ -11,6 +11,7 @@ from sqlglot import exp, parse_one
 
 from tests.sql._support.fakes import FakeDbapiConnection
 from tests.sql._support.load_table import load_df_module
+from tests.sql._support.trino_clock_engine import inserted_clock_values, is_clock_type
 from tests.sql._support.trino_parameters import DriverParameterConnection, DriverParameterCursor
 
 
@@ -139,7 +140,11 @@ class NativeTimeCursor(DriverParameterCursor):
     def _insert(self, tree):
         database = self.connection.database
         identity = database.table_key(tree.this)
-        if isinstance(tree.expression, exp.Select):
+        if is_clock_type(database.table_types[identity]):
+            inserted = inserted_clock_values(
+                database, identity, tree, self.connection.statements[-1][2]
+            )
+        elif isinstance(tree.expression, exp.Select):
             source = database.table_key(tree.expression.args["from_"].this)
             inserted = list(database.table_rows[source])
         else:

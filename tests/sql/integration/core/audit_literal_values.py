@@ -98,7 +98,11 @@ def test_trino_upsert_treats_marker_shaped_partitions_as_stored_strings(
             (9, None, "preserved-null-partition"),
         }
     )
-    assert set(actual.itertuples(index=False, name=None)) == expected
+    actual_rows = {
+        tuple(None if pd.isna(value) else value for value in row)
+        for row in actual.itertuples(index=False, name=None)
+    }
+    assert actual_rows == expected
     assert len(actual) == len(initial)
 
 

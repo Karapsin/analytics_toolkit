@@ -8,6 +8,7 @@ from typing import Any
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError, SqlConfigError
 
 from . import reconfigure_topology as _topology
+from .availability import bind_creation_availability
 from .ddl import build_ch_shard_table_name
 from .layout import inspect_existing_layout
 from .reconfigure_support import resolve_optional_cluster, table_exists_on_cluster
@@ -19,7 +20,9 @@ endpoints = _topology.endpoints
 
 
 def preflight_create_table_replacement(adapter: Any, connection: Any, options: Any) -> None:
-    if not options.ch_replace_table:
+    bind_creation_availability(connection, options.ch_creation_policy)
+    drop_recreate = bool(getattr(options, "drop_target_if_exists", False))
+    if not options.ch_replace_table and not drop_recreate:
         return
     policy = options.ch_creation_policy
     if policy is None:
@@ -53,16 +56,9 @@ def preflight_create_table_replacement(adapter: Any, connection: Any, options: A
         )
         raise InvalidSqlInputError(message)
     if layout is not None and layout.create_distributed_pair and desired_pair:
-        same_facade_scope = _same_storage_scope(
-            connection, layout.distributed_on_cluster, policy.distributed_on_cluster
-        )
-        if not same_facade_scope and layout.distributed_on_cluster is not None:
-            _reject_facade_collision(connection, options)
-            message = (
-                "Facade placement differs from its verified existing scope. "
-                "Reconfigure that layout before replacing its schema."
-            )
-            raise InvalidSqlInputError(message)
+        _require_existing_facade_scope(connection, layout, policy, options)
+    if drop_recreate:
+        return
     if layout is not None and layout.create_distributed_pair != desired_pair:
         prepare_replacement_layout(
             adapter,
@@ -77,6 +73,19 @@ def preflight_create_table_replacement(adapter: Any, connection: Any, options: A
         )
     elif layout is not None:
         certify_replacement_scope(connection, layout, policy, staged_exchange=False)
+
+
+def _require_existing_facade_scope(connection: Any, layout: Any, policy: Any, options: Any) -> None:
+    same_facade_scope = _same_storage_scope(
+        connection, layout.distributed_on_cluster, policy.distributed_on_cluster
+    )
+    if not same_facade_scope and layout.distributed_on_cluster is not None:
+        _reject_facade_collision(connection, options)
+        message = (
+            "Facade placement differs from its verified existing scope. "
+            "Reconfigure that layout before replacing its schema."
+        )
+        raise InvalidSqlInputError(message)
 
 
 def _reject_companion_collision(adapter: Any, connection: Any, options: Any) -> None:

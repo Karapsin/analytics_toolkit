@@ -81,7 +81,7 @@ def test_outage_create_requires_named_table_and_database(statement: Any) -> None
 def test_outage_local_create_adds_properties_and_column_signature_requires_schema() -> None:
     statement = exp.Create(this=exp.to_table("db.events"), kind="TABLE")
     created = local_create(statement)
-    assert created.args["exists"] is True
+    assert created.args["exists"] is False
     assert created.args["properties"] is not None
     with pytest.raises(sql.ClickHouseClusterTopologyError):
         _column_signature(statement)

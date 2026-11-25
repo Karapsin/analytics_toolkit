@@ -12,9 +12,12 @@ from analytics_toolkit.sql.backends.base import (
     StageTargetTableRequest,
     TargetWriteModeRequest,
 )
+from analytics_toolkit.sql.backends.upsert import prepare_upsert_target
 from analytics_toolkit.sql.connection.config import resolve_connection_backend
 from analytics_toolkit.sql.execution.backend_options import require_complete_operation
 from analytics_toolkit.sql.execution.plans import SqlOperationMetadata, SqlPlan
+from analytics_toolkit.sql.execution.upsert_replay import certified_upsert_replay
+from analytics_toolkit.sql.execution.upsert_state import retain_upsert_state
 
 from .insert_constraints import validate_staged_not_null_input
 from .table_validation import effective_upsert_key_columns
@@ -187,6 +190,7 @@ def build_upsert_stage_placeholder_sqls(
     )
 
 
+@retain_upsert_state
 def upsert_stage_table(
     connection_type: str,
     connection: Any,
@@ -213,6 +217,9 @@ def upsert_stage_table(
         backend=backend,
     )
     adapter = get_backend_adapter(backend)
+    prepare_upsert_target(
+        adapter, connection, target_table, partition_column=upsert_partition_column
+    )
     if checkpoint is not None and checkpoint.prepared:
         if (
             checkpoint.final_stage_table != final_stage_table
@@ -231,9 +238,10 @@ def upsert_stage_table(
             connection_key=connection_key or connection_type,
             query_label=query_label,
         )
-        for sql in checkpoint.replay_sqls:
-            checkpoint.mutation_started = True
-            adapter.execute_upsert_command(connection, target_table, sql)
+        with certified_upsert_replay(connection, checkpoint):
+            for sql in checkpoint.replay_sqls:
+                checkpoint.mutation_started = True
+                adapter.execute_upsert_command(connection, target_table, sql)
         return
     partition_values = None
     if upsert_partition_column is not None:
@@ -283,10 +291,11 @@ def upsert_stage_table(
             checkpoint.backend = backend
             checkpoint.replay_sqls = sqls[2:]
             checkpoint.prepared = True
-        for sql in sqls[2:]:
-            if checkpoint is not None:
-                checkpoint.mutation_started = True
-            adapter.execute_upsert_command(connection, target_table, sql)
+        with certified_upsert_replay(connection, checkpoint):
+            for sql in sqls[2:]:
+                if checkpoint is not None:
+                    checkpoint.mutation_started = True
+                adapter.execute_upsert_command(connection, target_table, sql)
         return
     validate_staged_not_null_input(
         backend,
@@ -522,6 +531,8 @@ def _ensure_stage_target_table(
     connection_key: str | None,
     ch_only_shard: bool = False,
     ch_creation_policy: Any = None,
+    on_resource_created: Any = None,
+    on_scoped_resource_created: Any = None,
 ) -> bool:
     return get_backend_adapter(backend).ensure_stage_target_table(
         StageTargetTableRequest(
@@ -540,6 +551,8 @@ def _ensure_stage_target_table(
             connection_key=connection_key,
             ch_only_shard=ch_only_shard,
             ch_creation_policy=ch_creation_policy,
+            on_resource_created=on_resource_created,
+            on_scoped_resource_created=on_scoped_resource_created,
         )
     )
 

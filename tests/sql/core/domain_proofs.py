@@ -3,6 +3,7 @@
 import datetime as dt
 
 import pytest
+from analytics_toolkit.sql.backends.trino.type_declarations import TrinoTypeDeclarationError
 from analytics_toolkit.sql.backends.type_resolution import (
     ColumnProfile,
     declared_domain_fits,
@@ -93,8 +94,10 @@ def test_bounded_binary_checks_actual_last_value_and_unqualified_ch_timestamp_id
     profile = ColumnProfile()
     profile.add(b"a")
     profile.add(b"long")
-    with pytest.raises(ValueError, match="binary length"):
+    with pytest.raises(TrinoTypeDeclarationError, match="native type declaration"):
         validate_profile(profile, "VARBINARY(2)", "trino")
+    with pytest.raises(ValueError, match="FixedString byte constraints"):
+        validate_profile(profile, "FixedString(2)", "ch")
 
 
 @pytest.mark.parametrize(("source", "backend"), [("String", "ch"), ("VARCHAR", "trino")])

@@ -27,7 +27,7 @@ _NUMERIC_TYPES: dict[str, Callable[[str], bool]] = {
     "trino": is_trino_numeric_type,
     "ch": is_ch_numeric_type,
 }
-_NATIVE_CASTS: dict[str, Callable[[str, str], Decimal | float | None]] = {
+_NATIVE_CASTS: dict[str, Callable[[str, str], Decimal | float | str | None]] = {
     "gp": gp_native_text_cast,
     "trino": trino_native_text_cast,
     "ch": ch_native_text_cast,
@@ -60,7 +60,7 @@ def _validate_null_target(native_type: str, backend: str) -> None:
 class _ExplicitNumericTextValidation(ResolvedColumn):
     """Produce only a validation view; final SQL retains the original stage payload."""
 
-    def convert(self, value: Any) -> Decimal | float | None:
+    def convert(self, value: Any) -> Decimal | float | str | None:
         if is_null(value):
             _validate_null_target(self.target_type, self.target_backend)
             return None

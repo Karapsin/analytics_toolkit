@@ -149,21 +149,21 @@ def test_native_microseconds_keep_sdk_python_calendar_range(year):
     assert value.microsecond == 1
 
 
-@pytest.mark.parametrize("raw", ["0000-01-01 00:00:00", "+10000-01-01 00:00:00"])
+@pytest.mark.parametrize("raw", ["0000-02-30 00:00:00", "+10000-13-01 00:00:00"])
 def test_unsupported_calendar_fails_with_an_actionable_sanitized_error(raw):
-    with pytest.raises(ValueError, match="project an ISO string in source SQL") as error:
+    with pytest.raises(ValueError, match="invalid Gregorian calendar fields") as error:
         decode_timestamp(raw, 0, with_timezone=False)
 
     assert raw not in str(error.value)
 
 
-def test_unrepresentable_utc_calendar_rejects_before_high_precision_output():
+def test_unrepresentable_utc_calendar_keeps_exact_high_precision_output():
     raw = "0001-01-01 00:00:00.000000001 +14:00"
 
-    with pytest.raises(ValueError, match="project an ISO string in source SQL") as error:
-        decode_timestamp(raw, 9, with_timezone=True)
-
-    assert raw not in str(error.value)
+    value = decode_timestamp(raw, 9, with_timezone=True)
+    assert isinstance(value, ExactTemporal)
+    assert value.scale == 9
+    assert value.isoformat(utc=True) == "0000-12-31T10:00:00.000000001+00:00"
 
 
 @pytest.mark.parametrize("precision", [-1, 13])

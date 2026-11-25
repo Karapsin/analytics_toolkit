@@ -77,18 +77,30 @@ def session_for(objects, *, storage=None, database="db", routing=False, fallback
     scope = SimpleNamespace(objects=lambda _db, table: objects if table == "events" else storage)
     return SimpleNamespace(
         config=config,
+        client=SimpleNamespace(query=lambda *_a, **_k: SimpleNamespace(result_rows=[])),
         scope=lambda _cluster: scope,
         local_objects=lambda *_a: objects,
         local_facade=lambda *_a: fallback,
     )
 
 
-def table(engine="Distributed", engine_full="Distributed('core','db','events_shard',rand())"):
-    return SimpleNamespace(engine=engine, engine_full=engine_full, create_sql="verified ddl")
+def table(
+    engine="Distributed",
+    engine_full="Distributed('core','db','events_shard',rand())",
+    *,
+    table_name="events",
+):
+    expression = engine_full if engine == "Distributed" else engine
+    order = " ORDER BY id" if engine.lower().endswith("mergetree") else ""
+    return SimpleNamespace(
+        engine=engine,
+        engine_full=expression,
+        create_sql=f"CREATE TABLE db.{table_name} (id Int64) ENGINE={expression}{order}",
+    )
 
 
 def test_outage_layout_requires_database_and_keeps_absent_objects_absent():
-    with pytest.raises(ClickHouseClusterTopologyError, match="database is required"):
+    with pytest.raises(ClickHouseClusterTopologyError, match="current database identity"):
         outage.inspect_outage_layout(session_for([], database=None), "events")
     assert outage.inspect_outage_layout(session_for([]), "db.events") is None
 
@@ -103,10 +115,23 @@ def test_outage_local_object_and_local_facade_fallback_keep_exact_named_identity
     assert result.physical_table == "db.events"
 
 
-@pytest.mark.parametrize("storage", [None, [], [table("Memory")]])
-def test_outage_layout_rejects_missing_or_non_mergetree_storage(storage):
-    with pytest.raises(ClickHouseClusterTopologyError, match="physical storage"):
-        outage.inspect_outage_layout(session_for([table()], storage=storage), "db.events")
+@pytest.mark.parametrize("engine", [None, "absent", "Memory", "Log", "Distributed"])
+def test_outage_layout_ownership_distinguishes_absence_from_direct_storage(engine):
+    storage = (
+        None
+        if engine is None
+        else []
+        if engine == "absent"
+        else [table(engine, table_name="events_shard")]
+    )
+    if not storage or engine == "Distributed":
+        with pytest.raises(ClickHouseClusterTopologyError, match="physical storage"):
+            outage.inspect_outage_layout(session_for([table()], storage=storage), "db.events")
+    else:
+        result = outage.inspect_outage_layout(session_for([table()], storage=storage), "db.events")
+        assert result.physical_table == "`db`.`events_shard`"
+        assert result.owns_physical is True
+        assert result.physical_ddl == storage[0].create_sql
 
 
 def test_outage_layout_rejects_dynamic_reference_without_claiming_storage_ownership():

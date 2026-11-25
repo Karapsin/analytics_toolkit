@@ -264,7 +264,7 @@ class TransferDatabase:
         elif isinstance(condition, exp.Or):
             matched = self.matches(condition.left, row) or self.matches(condition.right, row)
         elif isinstance(condition, exp.Is):
-            matched = self.value(condition.left, row) is self.value(condition.right, row)
+            matched = self._matches_is(condition, row)
         elif isinstance(condition, (exp.EQ, exp.NullSafeEQ)):
             matched = self.value(condition.left, row) == self.value(condition.right, row)
         elif isinstance(condition, exp.GT):
@@ -277,6 +277,10 @@ class TransferDatabase:
             message = f"Unsupported transfer filter: {type(condition).__name__}"
             raise AssertionError(message)
         return matched
+
+    def _matches_is(self, condition, row):
+        matched = self.value(condition.left, row) is self.value(condition.right, row)
+        return not matched if condition.args.get("negate") else matched
 
     def value(self, node, row):
         if isinstance(node, (exp.Alias, exp.Cast, exp.Paren)):

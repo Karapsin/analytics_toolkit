@@ -21,6 +21,7 @@ from analytics_toolkit.sql.execution.cancellation import (
 )
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
+from .drop_definition import drop_definition_engine
 from .drop_layout import (
     VerifiedDropLayout,
     VerifiedDropResource,
@@ -32,8 +33,8 @@ from .drop_layout import (
     require_drop_scope,
     unacknowledged_drop_positions,
 )
+from .drop_recovery_journal import execute_recovery_drop
 from .outage_context import internal_io
-from .reconfigure_ddl import engine_name, parse_create_table
 from .reconfigure_execution import cluster_clause
 from .reconfigure_facade_scope import read_rows
 from .reconfigure_support import unquoted_table_name
@@ -42,6 +43,8 @@ from .routing import local_sql
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+
+    from analytics_toolkit.sql.ddl.creation_resources import CreatedTableResource
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,7 @@ class DropExecutionOptions:
     per_host_drop_workers: int = 5
     allow_already_absent: bool = True
     defer_ack_timeout: bool = False
+    created_resource: CreatedTableResource | None = None
 
 
 @dataclass(frozen=True)
@@ -146,7 +150,7 @@ def _wait_absent(
             return
         if time.monotonic() >= deadline:
             positions = remaining_drop_positions(connection, resource)
-            engine = engine_name(parse_create_table(resource.ddl, resource.table))
+            engine = drop_definition_engine(resource.ddl, resource.table)
             database, relation = unquoted_table_name(resource.table)
             if database is None:
                 message = "Drop diagnostics require the certified qualified table identity."
@@ -192,9 +196,10 @@ def _recover_on_worker(
     adapter: Any,
     worker: Any,
     plan: VerifiedDropLayout,
-    resource: VerifiedDropResource,
+    target: DropRecoveryTarget,
     options: DropExecutionOptions,
 ) -> None:
+    resource, endpoint = target.resource, target.host
     require_drop_configuration(plan)
     if coordinator_identity(worker) != resource.local_identity:
         message = "Cannot verify the selected ClickHouse drop recovery endpoint identity."
@@ -202,7 +207,13 @@ def _recover_on_worker(
     if options.allow_already_absent and _absent(worker, resource):
         return
     require_drop_resource(worker, resource)
-    _execute_one(adapter, worker, resource, options)
+    execute_recovery_drop(
+        plan,
+        resource,
+        endpoint,
+        resource_drop_sql(resource, if_exists=options.if_exists, query_label=options.query_label),
+        lambda: _execute_one(adapter, worker, resource, options),
+    )
 
 
 def prepare_drop_recovery(
@@ -257,13 +268,13 @@ def execute_drop_recovery(
         raise_if_cancelled()
         require_drop_configuration(plan)
         worker = None
-        host, local = target.host, target.resource
+        host = target.host
         if options.host_connection_runner is not None and (
             connection is None or not target.coordinator
         ):
 
             def recover_on_host(worker: Any) -> None:
-                _recover_on_worker(adapter, worker, plan, local, options)
+                _recover_on_worker(adapter, worker, plan, target, options)
 
             options.host_connection_runner(host, recover_on_host)
             return
@@ -277,7 +288,7 @@ def execute_drop_recovery(
                         if options.per_host_connection_factory is not None
                         else get_ch_connection_for_host(plan.config.connection_key, host)
                     )
-            _recover_on_worker(adapter, worker, plan, local, options)
+            _recover_on_worker(adapter, worker, plan, target, options)
         finally:
             if worker is not None and worker is not connection:
                 close_connection_ref({"connection": worker}, host.identity, "host")
@@ -296,8 +307,18 @@ def preflight_verified_drop(
     plan: VerifiedDropLayout,
     *,
     acknowledged: set[tuple[object, ...]] | None = None,
+    created_resource: CreatedTableResource | None = None,
 ) -> None:
-    require_complete_operation("Dropping existing ClickHouse resources requires complete coverage.")
+    if created_resource is None:
+        require_complete_operation(
+            "Dropping existing ClickHouse resources requires complete coverage."
+        )
+    else:
+        from .created_resources import (  # noqa: PLC0415 - native ACK cycle.
+            require_created_drop_plan,
+        )
+
+        require_created_drop_plan(plan, created_resource)
     require_drop_configuration(plan)
     _require_http_endpoints(plan)
     for resource in plan.resources:
@@ -345,7 +366,12 @@ def execute_verified_drop(
     """Preflight every selected resource before the first destructive submission."""
     completed: set[tuple[object, ...]] = set() if acknowledged is None else acknowledged
     with _configuration_guard(plan):
-        preflight_verified_drop(connection, plan, acknowledged=completed)
+        if options.created_resource is None:
+            preflight_verified_drop(connection, plan, acknowledged=completed)
+        else:
+            preflight_verified_drop(
+                connection, plan, acknowledged=completed, created_resource=options.created_resource
+            )
         for resource in plan.resources:
             raise_if_cancelled()
             require_drop_configuration(plan)

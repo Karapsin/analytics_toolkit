@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from .ch.boolean_values import boolean_value as ch_boolean_value
@@ -28,24 +29,30 @@ from .ch.storage_types import logical_storage_type
 from .ch.timestamp_keys import source_key_validation_frame as ch_source_key_validation_frame
 from .ch.value_validation import validate_constrained_value
 from .decimal_values import convert_decimal_value, decimal_target_type
+from .finite_numeric_text import decimal_float_value
 from .gp.boolean_values import boolean_value as gp_boolean_value
 from .gp.boolean_values import is_boolean_type as is_gp_boolean_type
 from .gp.date_values import date_value as gp_date_value
 from .gp.date_values import is_date_type as is_gp_date_type
 from .gp.date_values import validate_date_profile as validate_gp_date_profile
 from .gp.integer_values import integer_text_value as gp_integer_text_value
+from .gp.integer_values import integer_value as gp_integer_value
 from .gp.integer_values import is_integer_type as is_gp_integer_type
 from .gp.json_values import convert_json_value, is_json_type
 from .gp.network_values import convert_network_value, is_network_type, validate_network_profile
 from .gp.network_values import key_validation_frames as gp_key_validation_frames
+from .gp.numeric_text import contains_numeric_text_type as contains_gp_numeric_type
+from .gp.numeric_text import convert_authoritative_numeric as convert_gp_authoritative_numeric
 from .gp.numeric_text import convert_numeric_text as convert_gp_numeric_text
 from .gp.numeric_text import normalize_authoritative_value as normalize_gp_authoritative_value
+from .gp.numeric_text import numeric_assignment_value, pending_numeric_assignment
 from .gp.numeric_text import validate_numeric_text_type_profile as validate_gp_numeric_text_profile
 from .gp.temporal_values import (
     convert_clock_interval_value,
     is_gp_clock_interval_type,
     validate_clock_interval_profile,
 )
+from .gp.type_domains import declared_numeric_domain_fits
 from .nested_types import convert_nested, nested_descriptor
 from .trino.boolean_values import (
     boolean_value,
@@ -88,19 +95,21 @@ def source_key_validation_frame(
     return ch_source_key_validation_frame(df, key_columns) if backend == "ch" else df
 
 
-def dataframe_key_validation_frames(
+def dataframe_key_validation_frames(  # noqa: PLR0913 -- exported compatibility boundary preserves both context keywords.
     df: pd.DataFrame,
     key_columns: Sequence[str] | None,
     schemas: Sequence[Mapping[str, str] | None],
     backend: str,
     *,
     destination_timezone: str | None = None,
+    connection: Any = None,
 ) -> Iterable[pd.DataFrame]:
     """Supply backend-native key identities without changing dataframe payloads."""
     if backend == "ch":
-        return ch_key_validation_frames(
-            df, key_columns, schemas, destination_timezone=destination_timezone
-        )
+        options: dict[str, Any] = {"destination_timezone": destination_timezone}
+        if connection is not None:
+            options["connection"] = connection
+        return ch_key_validation_frames(df, key_columns, schemas, **options)
     if backend == "trino":
         return trino_key_validation_frames(
             df, key_columns, schemas, destination_timezone=destination_timezone
@@ -122,9 +131,35 @@ def canonical_native_type(native_type: str | None, backend: str | None) -> str:
 def backend_domain_fits(
     source_type: str, target_type: str, target_backend: str, source_backend: str | None
 ) -> bool | None:
+    if source_backend == "gp":
+        numeric_fit = declared_numeric_domain_fits(source_type, target_backend)
+        if numeric_fit is not None:
+            return numeric_fit
     if source_backend == target_backend == "ch":
         return declared_network_fits(source_type, target_type)
     return None
+
+
+def validate_backend_declaration(native_type: str, backend: str) -> None:
+    """Check complete destination declarations independently of observed cells."""
+    if backend == "gp":
+        from .gp.type_identity import (  # noqa: PLC0415 - registry cycle.
+            canonical_builtin_type,
+        )
+
+        canonical_builtin_type(native_type)
+    elif backend == "ch":
+        from .ch.type_declarations import (  # noqa: PLC0415 - registry cycle.
+            validate_type_declaration,
+        )
+
+        validate_type_declaration(native_type)
+    elif backend == "trino":
+        from analytics_toolkit.sql.backends.trino.type_declarations import (  # noqa: PLC0415 -- backend registry initialization.
+            validate_type_declaration,
+        )
+
+        validate_type_declaration(native_type)
 
 
 def requires_native_assignment(native_type: str, backend: str) -> bool:
@@ -134,6 +169,70 @@ def requires_native_assignment(native_type: str, backend: str) -> bool:
     from .gp import native_assignment  # noqa: PLC0415 -- backend-owned checkpoint policy.
 
     return native_assignment.requires_native_assignment(native_type)
+
+
+def supports_native_assignment(native_type: str, backend: str) -> bool:
+    """Recognize schemas whose pending values may enter an owned checkpoint."""
+    if requires_native_assignment(native_type, backend):
+        return True
+    if backend != "gp":
+        return False
+    from analytics_toolkit.sql.backends.gp.temporal_assignment import (  # noqa: PLC0415 -- native policy initialization.
+        contains_temporal_type,
+    )
+
+    return contains_temporal_type(native_type) or contains_gp_numeric_type(native_type)
+
+
+def pending_native_assignment(
+    profile: ColumnProfile,
+    native_type: str,
+    backend: str,
+    *,
+    allow_timestamp_precision_loss: bool = True,
+    destination_timezone: str | None = None,
+) -> bool:
+    """Validate unaffected leaves before deferring actual native assignment."""
+    if requires_native_assignment(native_type, backend):
+        return True
+    if backend != "gp":
+        return False
+    from analytics_toolkit.sql.backends.gp.temporal_assignment import (  # noqa: PLC0415 -- native policy initialization.
+        pending_temporal_assignment,
+    )
+
+    return pending_temporal_assignment(
+        profile,
+        native_type,
+        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+        destination_timezone=destination_timezone,
+    ) or pending_numeric_assignment(
+        profile,
+        native_type,
+        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+        destination_timezone=destination_timezone,
+    )
+
+
+def native_assignment_value(
+    value: Any,
+    native_type: str,
+    backend: str,
+    *,
+    destination_timezone: str | None = None,
+) -> Any:
+    """Prepare only a run-owned binding view; native text remains unparsed."""
+    if backend != "gp" or requires_native_assignment(native_type, backend):
+        return value
+    from analytics_toolkit.sql.backends.gp.temporal_assignment import (  # noqa: PLC0415 -- native policy initialization.
+        temporal_assignment_value,
+    )
+
+    return numeric_assignment_value(
+        temporal_assignment_value(value, native_type, destination_timezone=destination_timezone),
+        native_type,
+        destination_timezone=destination_timezone,
+    )
 
 
 def normalize_authoritative_value(value: Any, native_type: str | None, backend: str) -> Any:
@@ -155,6 +254,50 @@ def validate_transport_value(value: Any, native_type: str, backend: str) -> None
         validate_json_transport_value(value, native_type)
         validate_ip_transport_value(value, native_type)
         normalize_value(value, native_type)
+
+
+def require_timestamp_write_capabilities(  # noqa: PLR0913 -- keep authority, certified profiles and run scope explicit.
+    backend: str,
+    connection: Any,
+    table: str,
+    schema: Mapping[str, str],
+    profiles: Mapping[str, ColumnProfile],
+    cache: dict[str, Any],
+    *,
+    creating: bool = False,
+    properties: Mapping[str, Any] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any] | None:
+    """Dispatch conditional backend storage proofs without coupling load to Trino."""
+    if backend != "trino":
+        return None
+    from .trino.timestamp_capabilities import (  # noqa: PLC0415 - registry cycle.
+        require_timestamp_capabilities,
+    )
+
+    return require_timestamp_capabilities(
+        connection,
+        table,
+        schema,
+        profiles,
+        cache,
+        creating=creating,
+        properties=properties,
+        dry_run=dry_run,
+    )
+
+
+def timestamp_capability_plan_options(
+    backend: str, schema: Mapping[str, str], profiles: Mapping[str, ColumnProfile] | None = None
+) -> dict[str, Any]:
+    """Expose a pending metadata step in plans without opening connections."""
+    if backend != "trino":
+        return {}
+    from .trino.timestamp_capabilities import (  # noqa: PLC0415 - registry cycle.
+        timestamp_capability_options,
+    )
+
+    return timestamp_capability_options(schema, profiles)
 
 
 def validate_backend_profile(
@@ -212,6 +355,11 @@ def convert_native_value(value: Any, resolution: ResolvedColumn) -> tuple[bool, 
     from .type_resolution import parse_native_type  # noqa: PLC0415 -- native grammar cycle.
 
     target_type = canonical_native_type(resolution.target_type, resolution.target_backend)
+    width = _float_width(target_type, resolution.target_backend)
+    if isinstance(value, Decimal) and value.is_finite() and width is not None:
+        return True, decimal_float_value(
+            value, width, reject_underflow=resolution.target_backend == "gp"
+        )
     handled, converted = _convert_backend_value(value, target_type, resolution)
     if handled:
         return True, converted
@@ -226,6 +374,7 @@ def convert_native_value(value: Any, resolution: ResolvedColumn) -> tuple[bool, 
             target_type,
             resolution.target_backend,
             destination_timezone=resolution.destination_timezone,
+            conversion_policy=resolution.conversion_policy,
         )
     return False, value
 
@@ -276,7 +425,12 @@ def _convert_trino_value(value: Any, target_type: str) -> tuple[bool, Any]:
 
 
 def _convert_gp_value(value: Any, target_type: str, resolution: ResolvedColumn) -> tuple[bool, Any]:
-    handled, converted = convert_gp_numeric_text(value, target_type)
+    converter = (
+        convert_gp_authoritative_numeric
+        if resolution.reason == "authoritative"
+        else convert_gp_numeric_text
+    )
+    handled, converted = converter(value, target_type)
     if handled:
         return True, converted
     handled, converted = _convert_gp_scalar(value, target_type)
@@ -292,8 +446,13 @@ def _convert_gp_value(value: Any, target_type: str, resolution: ResolvedColumn) 
 
 
 def _convert_gp_scalar(value: Any, target_type: str) -> tuple[bool, Any]:
-    if isinstance(value, str) and is_gp_integer_type(target_type):
-        return True, gp_integer_text_value(value, target_type)
+    if isinstance(value, (str, Decimal)) and is_gp_integer_type(target_type):
+        converted = (
+            gp_integer_text_value(value, target_type)
+            if isinstance(value, str)
+            else gp_integer_value(value, target_type)
+        )
+        return True, converted
     if is_gp_boolean_type(target_type):
         return True, gp_boolean_value(value)
     if is_gp_date_type(target_type):

@@ -63,7 +63,12 @@ def test_pending_native_profiles_keep_supported_gp_families_local(native_type):
 @pytest.mark.parametrize("backend", ["ch", "trino"])
 def test_pending_native_profiles_do_not_enable_other_backend_unknowns(backend):
     assert not requires_native_assignment("CIDR", backend)
-    with pytest.raises(ValueError, match="Cannot certify"):
+    message = (
+        "Invalid or unsupported Trino native type declaration"
+        if backend == "trino"
+        else "Cannot certify"
+    )
+    with pytest.raises(ValueError, match=message):
         resolve_profile(
             _profile("192.0.2.0/24"),
             backend,

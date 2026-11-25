@@ -67,7 +67,7 @@ Output example:
 SqlPlan: ch_reconfigure_table
 Target: alias=ch backend=ch table=sandbox.events
 Statements:
-  [create_replacement] CREATE TABLE IF NOT EXISTS sandbox.events_shard__reconfigure_...
+  [create_replacement] CREATE TABLE sandbox.events_shard__reconfigure_...
   [copy_data] INSERT INTO sandbox.events__reconfigure_... SELECT * FROM sandbox.events
   [cutover] EXCHANGE TABLES sandbox.events_shard AND sandbox.events_shard__reconfigure_...
 ```
@@ -86,14 +86,33 @@ Statements:
 - Atomic and Shared databases use `EXCHANGE TABLES`; other database engines use a rename fallback. Each submitted cutover records its inverse and acknowledgement; rollback reverses only acknowledged steps
 - an uncertain cutover or rollback stops structural replay and retains replacements and backups for recovery, with the original error and resource scopes reported
 - local-to-pair conversion rejects an existing deterministic companion before DDL; a name ending in `_shard` alone never establishes resource ownership
-- converting a coordinator-local table to a managed pair keeps source reads, renames, rollback and backup cleanup local. Desired physical and facade placement do not extend source ownership; existing facade destinations outside that ownership are rejected before DDL
+- converting a coordinator-local table to a managed pair keeps source reads, renames, rollback and backup cleanup local. Local rebuilds also read the verified local source when automatic routing points to a different table with the same name. Desired physical and facade placement do not extend source ownership; existing facade destinations outside that ownership are rejected before DDL
 - rebuilt Distributed facades retain permitted column defaults and comments and
   omit MergeTree storage clauses, including TTL clauses on the table and its
   columns; physical replacement storage retains those TTL declarations.
   Column TTL differences alone do not invalidate an otherwise verified pair;
   remaining column identity checks still apply
+- replacing a managed pair preserves applicable settings and common properties
+  from its actual existing facade, including Distributed durability settings
 - physical placement, facade placement and Distributed routing are independent. Every rebuild or conversion copy must reach exactly the verified replacement endpoints. Physical relocation must not route copies to the original endpoints; rebuilding on the same endpoints remains valid
+- every actual facade host must resolve desired routing aliases and macros to the
+  verified physical shard groups. Equivalent aliases may reorder replicas within
+  a shard; aliases that split or merge shard groups are rejected before DDL
+- replicated replacement storage must also have a resolved Keeper path distinct
+  from every selected source path. Different cluster names, endpoints, replica
+  names or auxiliary Keeper aliases do not prove isolation. The toolkit resolves
+  destination paths using each server's actual macros and defaults; `{table}`
+  alone does not isolate a relocation that retains the same physical name.
+  Distinct fixed paths are supported after this check. A `{uuid}` path uses one
+  explicit verified Atomic CREATE UUID, preserved through submission
 - before a physical change, every configured source endpoint must contain the table with matching DDL. No-op and facade-only changes skip this additional endpoint-wide source scan
+- affected Distributed facades must have no pending or broken insert-queue files
+  before replacement creation and again before cutover. Pause writers and drain
+  acknowledged asynchronous inserts with `SYSTEM FLUSH DISTRIBUTED` first; this
+  check requires read access to `system.distribution_queue`
+- replicated replacement storage is synchronized across its verified execution
+  scope before counting and cutover, so an ordinary lagging replica does not
+  invalidate an otherwise complete copy
 - independent data on multiple replicas of non-replicated engines is copied per verified endpoint when source and replacement have the same endpoint/instance bijection and the replacement remains non-replicated. Engine-family, sorting, partition and settings changes remain supported within that boundary. Relocation or pair conversion without that bijection, and conversion of such data to replicated storage, reject before DDL with guidance to migrate each host explicitly
 - validation counts replicated/shared data once per shard and independent data once per host. For physical rebuilds, `validate_row_count=False` skips data counts but retains metadata, ownership and copy-safety checks
 - metadata identity preserves literal backslashes and quoted function names. Only recognized unquoted zero-argument aliases for the current database resolve to the namespace captured for the operation

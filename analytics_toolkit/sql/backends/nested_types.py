@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from sqlglot import exp, parse_one
@@ -23,8 +24,11 @@ def resolve_nested(profile: ColumnProfile, backend: str, source_type: str | None
 
     if not profile.structurally_compatible:
         return None
+    if backend != "gp" and profile.native_array_nondefault_bounds:
+        return None
     if not profile.families:
-        from .value_profiles import ColumnProfile  # noqa: PLC0415 - empty family defaults
+        # Recursive native schema and profile policy.
+        from .value_profiles import ColumnProfile  # noqa: PLC0415
 
         kind, fields = nested_descriptor(source_type or "")
         if kind:
@@ -123,7 +127,7 @@ def resolve_nested(profile: ColumnProfile, backend: str, source_type: str | None
         )
         if profile.children[0].null_count or key.text_fallback or value.text_fallback:
             return None
-        if backend == "trino" and profile.children[0].families & {"array", "tuple", "map"}:
+        if backend == "trino" and profile.children[0].families & {"array", "map"}:
             return None  # Connector/client key support is not proved for composite keys.
         return f"{'Map' if backend == 'ch' else 'MAP'}({key.target_type}, {value.target_type})"
     return None
@@ -154,41 +158,85 @@ def nested_descriptor(type_name: str) -> tuple[str, list[tuple[str, str]]]:
 
 
 def convert_nested(
-    value: Any, type_name: str, backend: str = "", *, destination_timezone: str | None = None
+    value: Any,
+    type_name: str,
+    backend: str = "",
+    *,
+    destination_timezone: str | None = None,
+    conversion_policy: str = "",
 ) -> Any:
+    # Recursive native schema and profile policy.
+    from analytics_toolkit.sql.backends.native_scalars import (  # noqa: PLC0415
+        ExactArray,
+    )
+
     from .type_resolution import ResolvedColumn  # noqa: PLC0415 - recursive exact conversion
 
     kind, children = nested_descriptor(type_name)
+    if isinstance(value, ExactArray):
+        if kind == "gp_array":
+            native = children[0][1]
+            while native.endswith("[]"):
+                native = native[:-2]
+            leaf = ResolvedColumn(
+                native,
+                target_backend=backend,
+                destination_timezone=destination_timezone,
+                conversion_policy=conversion_policy,
+            )
+            return replace(value, values=tuple(leaf.convert(item) for item in value.values))
+        if kind != "array" or any(lower != 1 for lower in value.lower_bounds):
+            message = "Selected native array bounds cannot be preserved by the destination schema."
+            raise ValueError(message)
+        value = value.nested_values()
     if kind == "gp_array":
         native = children[0][1]
         while native.endswith("[]"):
             native = native[:-2]
         leaf = ResolvedColumn(
-            native, target_backend=backend, destination_timezone=destination_timezone
+            native,
+            target_backend=backend,
+            destination_timezone=destination_timezone,
+            conversion_policy=conversion_policy,
         )
         return [
-            convert_nested(item, type_name, backend, destination_timezone=destination_timezone)
+            convert_nested(
+                item,
+                type_name,
+                backend,
+                destination_timezone=destination_timezone,
+                conversion_policy=conversion_policy,
+            )
             if isinstance(item, list)
             else leaf.convert(item)
             for item in map(array_item, value)
         ]
     if kind == "array":
         conversion = ResolvedColumn(
-            children[0][1], target_backend=backend, destination_timezone=destination_timezone
+            children[0][1],
+            target_backend=backend,
+            destination_timezone=destination_timezone,
+            conversion_policy=conversion_policy,
         )
         return [conversion.convert(item) for item in value]
     if kind in {"tuple", "row"}:
         items = row_items(value, children)
         return tuple(
             ResolvedColumn(
-                native, target_backend=backend, destination_timezone=destination_timezone
+                native,
+                target_backend=backend,
+                destination_timezone=destination_timezone,
+                conversion_policy=conversion_policy,
             ).convert(item)
             for item, (_, native) in zip(items, children)
         )
     if kind == "map":
         key_type, value_type = (
             ResolvedColumn(
-                native, target_backend=backend, destination_timezone=destination_timezone
+                native,
+                target_backend=backend,
+                destination_timezone=destination_timezone,
+                conversion_policy=conversion_policy,
             )
             for _, native in children
         )
@@ -205,19 +253,24 @@ def convert_nested(
     return value
 
 
-def validate_nested(  # noqa: C901 - recursive authoritative nested schema
+def validate_nested(  # noqa: C901, PLR0913 - preserve recursive authority/source validation options.
     profile: ColumnProfile,
     type_name: str,
     backend: str,
     *,
     allow_timestamp_precision_loss: bool = True,
     destination_timezone: str | None = None,
+    source_type: str | None = None,
+    source_backend: str | None = None,
 ) -> bool:
     from .type_resolution import validate_profile  # noqa: PLC0415 - recursive authority validation
 
     kind, children = nested_descriptor(type_name)
     if not kind:
         return False
+    if backend != "gp" and profile.native_array_nondefault_bounds:
+        message = "Selected native array bounds cannot be preserved by the destination schema."
+        raise ValueError(message)
     if kind == "gp_array":
         if profile.families - {"array"} or not profile.gp_array_compatible:
             msg = "Selected input is incompatible with authoritative rectangular array schema."
@@ -226,12 +279,17 @@ def validate_nested(  # noqa: C901 - recursive authoritative nested schema
             native = children[0][1]
             while native.endswith("[]"):
                 native = native[:-2]
+            source_leaf = source_type or profile.native_type or ""
+            while nested_descriptor(source_leaf)[0] in {"array", "gp_array"}:
+                source_leaf = nested_descriptor(source_leaf)[1][0][1]
             validate_profile(
                 profile.array_leaves,
                 native,
                 backend,
                 allow_timestamp_precision_loss=allow_timestamp_precision_loss,
                 destination_timezone=destination_timezone,
+                source_type=source_leaf or profile.array_leaves.native_type,
+                source_backend=source_backend or profile.array_leaves.source_backend,
             )
         return True
     family = "tuple" if kind == "row" else kind
@@ -258,29 +316,24 @@ def validate_nested(  # noqa: C901 - recursive authoritative nested schema
             backend,
             allow_timestamp_precision_loss=allow_timestamp_precision_loss,
             destination_timezone=destination_timezone,
+            source_type=child.native_type,
+            source_backend=source_backend or child.source_backend,
         )
     return True
 
 
-def map_declared_nested(  # noqa: PLR0911 - native declaration families
-    source_type: str, target_backend: str, source_backend: str
-) -> str | None:
+def map_declared_nested(source_type: str, target_backend: str, source_backend: str) -> str | None:
     from .models import SourceColumn  # noqa: PLC0415 - backend policy recursion
     from .source_schema import map_source_column  # noqa: PLC0415 - backend policy recursion
-    from .type_resolution import parse_native_type  # noqa: PLC0415 - native wrappers
+
+    # Recursive native schema and profile policy.
+    from .type_resolution import parse_native_type  # noqa: PLC0415
 
     kind, fields = nested_descriptor(source_type)
     if not kind:
         return None
     if target_backend == "gp":
-        if kind not in {"array", "gp_array"}:
-            return None
-        native = fields[0][1]
-        while nested_descriptor(native)[0] in {"array", "gp_array"}:
-            native = nested_descriptor(native)[1][0][1]
-        if nested_descriptor(native)[0]:
-            return None
-        return map_source_column(SourceColumn("", native), target_backend, source_backend) + "[]"
+        return _map_declared_gp_array(kind, fields, source_backend)
     mapped = [
         (name, map_source_column(SourceColumn(name, native), target_backend, source_backend))
         for name, native in fields
@@ -304,6 +357,22 @@ def map_declared_nested(  # noqa: PLR0911 - native declaration families
         )
         + ")"
     )
+
+
+def _map_declared_gp_array(
+    kind: str, fields: list[tuple[str, str]], source_backend: str
+) -> str | None:
+    from .models import SourceColumn  # noqa: PLC0415 - recursive source-schema conversion.
+    from .source_schema import map_source_column  # noqa: PLC0415 - recursive type mapping.
+
+    if kind not in {"array", "gp_array"}:
+        return None
+    native = fields[0][1]
+    while nested_descriptor(native)[0] in {"array", "gp_array"}:
+        native = nested_descriptor(native)[1][0][1]
+    if nested_descriptor(native)[0]:
+        return None
+    return map_source_column(SourceColumn("", native), "gp", source_backend) + "[]"
 
 
 def declared_nested_fits(  # noqa: PLR0911 - nested domain proof
@@ -362,7 +431,7 @@ def declared_nested_fits(  # noqa: PLR0911 - nested domain proof
 
 
 def needs_timestamp_adaptation(type_name: str) -> bool:
-    from .type_resolution import (  # noqa: PLC0415 - native precision contract
+    from .type_resolution import (  # noqa: PLC0415 - recursive native schema and profile policy.
         is_timestamp_type,
         timestamp_scale,
     )

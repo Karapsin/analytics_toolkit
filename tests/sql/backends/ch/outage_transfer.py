@@ -4,14 +4,70 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.backends.ch import created_resources
+from analytics_toolkit.sql.core.identifiers import TableIdentifier
 from analytics_toolkit.sql.dml.transfer.flow import row_counts
 from analytics_toolkit.sql.execution.backend_options import backend_operation
 
 from tests.sql._support.outage import Client
 from tests.sql._support.outage_gp import MemoryGreenplum
+
+
+def _observe_owned_cleanup(monkeypatch: Any, cluster: Any) -> list[Any]:
+    receipts = []
+    original = created_resources.drop_created_resource
+
+    def drop(adapter: Any, connection: Any, resource: Any) -> None:
+        certificate = resource.certificate
+        assert isinstance(certificate, created_resources.CreatedIdentity)
+        assert resource.scope.kind in {"host", "local"}
+        assert resource.scope.endpoint in {None, ("h1", 9000)}
+        assert certificate.resource.scope is None
+        name = ".".join(TableIdentifier.parse(resource.name, "ch").parts)
+        current = cluster.tables[("h1", name)]
+        assert certificate.uuid == UUID(current.uuid)
+        assert certificate.resource.table_identities == ((1, certificate.uuid),)
+        receipts.append(resource)
+        original(adapter, connection, resource)
+
+    monkeypatch.setattr(created_resources, "drop_created_resource", drop)
+    return receipts
+
+
+@pytest.mark.parametrize("routed", [False, True], ids=["local", "all-replicas"])
+@pytest.mark.parametrize("empty", [False, True], ids=["rows", "empty"])
+def test_outage_snapshot_group_counts_use_actual_columns_and_values(
+    outage: Any, routed: bool, empty: bool
+) -> None:
+    cluster, configure = outage
+    configure(cluster_routing=None, ddl_defaults=None)
+    for host in cluster.hosts:
+        cluster.create(
+            host,
+            "CREATE TABLE db.snapshot_groups (id UInt64, category String, bucket UInt64) "
+            "ENGINE=Memory",
+        )
+    if not empty:
+        cluster.tables[("h1", "db.snapshot_groups")].rows = [
+            (4, "red", 1),
+            (5, "blue", 1),
+            (6, "red", 1),
+            (7, "red", 2),
+        ]
+        cluster.tables[("h2", "db.snapshot_groups")].rows = [(8, "blue", 1)]
+    source = (
+        "clusterAllReplicas('core', 'db', 'snapshot_groups')" if routed else "db.snapshot_groups"
+    )
+    result = sql.read(
+        "ch", f"SELECT category, bucket, COUNT(*) AS n FROM {source} GROUP BY category, bucket"
+    )
+    expected = [] if empty else [("blue", 1, 2 if routed else 1), ("red", 1, 2), ("red", 2, 1)]
+    assert list(result.columns) == ["category", "bucket", "n"]
+    assert sorted(result.itertuples(index=False, name=None)) == expected
 
 
 @pytest.mark.parametrize("write_mode", ["replace", "upsert", "truncate_insert"])
@@ -81,6 +137,8 @@ def test_outage_public_append_transfer_validates_observed_rows_in_both_direction
     cluster.alive.remove("h2")
     greenplum = MemoryGreenplum()
     greenplum.install(monkeypatch)
+    receipts = _observe_owned_cleanup(monkeypatch, cluster)
+    source_snapshots = []
     source_changed = False
     original_query = Client.query
 
@@ -88,6 +146,9 @@ def test_outage_public_append_transfer_validates_observed_rows_in_both_direction
         nonlocal source_changed
         result = original_query(client, statement, **kwargs)
         if direction == "from_ch" and "GROUP BY" in statement and "__source" in statement:
+            source_snapshots.extend(
+                name for host, name in cluster.tables if host == "h1" and name.endswith("__source")
+            )
             cluster.tables[("h1", "db.events_shard")].rows = [(7,)]
             source_changed = True
         return result
@@ -123,9 +184,17 @@ def test_outage_public_append_transfer_validates_observed_rows_in_both_direction
         assert greenplum.tables["db.target"].id.tolist() == [99, 1]
     else:
         assert cluster.tables[("h1", "db.events_shard")].rows == [(1,), (10,), (11,)]
+    assert receipts if direction == "to_ch" else source_snapshots
+    assert all(
+        ("h1", ".".join(TableIdentifier.parse(resource.name, "ch").parts)) not in cluster.tables
+        for resource in receipts
+    )
+    assert all(("h1", name) not in cluster.tables for name in source_snapshots)
 
 
-def test_outage_transfer_keeps_independent_alias_defaults_and_completeness(outage: Any) -> None:
+def test_outage_transfer_keeps_independent_alias_defaults_and_completeness(
+    outage: Any, monkeypatch: Any
+) -> None:
     cluster, configure = outage
     configure(
         aliases=("source", "target"),
@@ -149,6 +218,7 @@ def test_outage_transfer_keeps_independent_alias_defaults_and_completeness(outag
     )
     cluster.tables[("h1", "db.single_shard")].rows = [(10,)]
     cluster.alive.remove("h2")
+    receipts = _observe_owned_cleanup(monkeypatch, cluster)
     with pytest.warns(sql.ClickHouseDegradedClusterWarning):
         result = sql.transfer(
             from_db="source",
@@ -169,6 +239,7 @@ def test_outage_transfer_keeps_independent_alias_defaults_and_completeness(outag
     assert result.metadata.target_data_complete is False
     assert {item["alias"] for item in result.metadata.ch_cluster_status} == {"source", "target"}
     assert cluster.tables[("h1", "db.events_shard")].rows == [(1,), (10,)]
+    assert receipts
     before = list(cluster.commands)
     with pytest.raises(sql.ClickHouseClusterUnavailableError):
         sql.transfer(

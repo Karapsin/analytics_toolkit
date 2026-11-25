@@ -414,13 +414,13 @@ def validate_connections(
             config = get_connection_config(key)
             connected: bool | None = None
             if connect:
-                connection = _open_validation_connection(config.connection_key)
-                try:
-                    with validation_scope():
+                with validation_scope():
+                    connection = _open_validation_connection(config.connection_key)
+                    try:
                         get_backend(config.backend).validate_connection(connection)
-                    connected = True
-                finally:
-                    close_validation_resource(connection)
+                        connected = True
+                    finally:
+                        close_validation_resource(connection)
             results.append(
                 ConnectionValidationResult(
                     connection_key=config.connection_key,

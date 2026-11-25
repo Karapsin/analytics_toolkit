@@ -68,6 +68,7 @@ class ChReconfiguration:
     cleanup_complete: bool = False
     cleanup_error: str | None = None
     cutover_journal: list[dict[str, Any]] = field(default_factory=list)
+    create_submission_journal: list[dict[str, Any]] = field(default_factory=list)
     physical_execution: PhysicalExecutionScope | None = field(default=None, repr=False)
 
     @property
@@ -99,6 +100,7 @@ class ChReconfiguration:
             "cleanup_complete": self.cleanup_complete,
             "cleanup_error": self.cleanup_error,
             "cutover_journal": [dict(step) for step in self.cutover_journal],
+            "create_submission_journal": [dict(step) for step in self.create_submission_journal],
             "physical_row_counts": self.plan.options.get("physical_row_counts"),
         }
 

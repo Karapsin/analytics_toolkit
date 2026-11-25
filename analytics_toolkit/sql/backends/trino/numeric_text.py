@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import re
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from typing import Any, cast
 
 from analytics_toolkit.sql.backends.finite_numeric_text import decimal_float_value
+from analytics_toolkit.sql.backends.native_scalars import NativeFloatNaN
 
 _JAVA_TRIM = "".join(chr(index) for index in range(33))
 _JAVA_CHAR_MAX = 0xFFFF
@@ -100,6 +102,9 @@ def _floating_text(value: str, bits: int) -> float:
     token = value.strip(_JAVA_TRIM)
     if not token.isascii():
         raise TrinoNumericTextValueError(_INVALID)
+    if token in {"Infinity", "+Infinity", "-Infinity", "NaN", "+NaN", "-NaN"}:
+        number = float(token)
+        return NativeFloatNaN(number) if math.isnan(number) else number
     if token.endswith(("f", "F", "d", "D")):
         token = token[:-1]
     if _DECIMAL.fullmatch(token) is not None:

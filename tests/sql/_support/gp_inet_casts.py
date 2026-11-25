@@ -7,12 +7,13 @@ import ipaddress
 
 from sqlglot import exp
 
+from tests.sql._support.gp_relation_identity import RelationIdentityDatabase
 from tests.sql._support.gp_temporal_values import TemporalConnection, TemporalDatabase
 from tests.sql._support.load_table import load_df_module
 from tests.sql._support.transfer_not_null import TransferDatabase
 
 
-class InetDatabase(TemporalDatabase):
+class InetDatabase(RelationIdentityDatabase, TemporalDatabase):
     def __init__(self, native_type):
         super().__init__(native_type)
         seed = ipaddress.ip_interface("198.51.100.2/24")

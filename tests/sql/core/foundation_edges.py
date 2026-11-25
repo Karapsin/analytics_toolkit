@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pandas as pd
 import pytest
-from analytics_toolkit.sql.backends import dataframe_types
+from analytics_toolkit.sql.backends import dataframe_types, get_backend_adapter
 from analytics_toolkit.sql.backends.ch.value_validation import validate_constrained_value
 from analytics_toolkit.sql.backends.nested_types import (
     convert_nested,
@@ -23,6 +23,11 @@ from analytics_toolkit.sql.backends.type_resolution import (
     resolve_profile,
 )
 from analytics_toolkit.sql.core.exact_values import truncate_temporal
+
+from tests.sql._support.trino_binary_buffers import use_actual_formatter
+from tests.sql._support.trino_parameters import DriverParameterConnection
+
+_TUPLE_MAP_TYPE = 'MAP(ROW("field0" BIGINT, "field1" BIGINT), BIGINT)'
 
 
 def observed(value, native=None):
@@ -44,13 +49,47 @@ def observed(value, native=None):
         (observed((2**300,)), "trino", None, None),
         (ColumnProfile(families={"map"}), "ch", None, "Map(String, String)"),
         (ColumnProfile(families={"map"}), "trino", None, "MAP(VARCHAR, VARCHAR)"),
-        (observed({(1, 2): 3}), "trino", None, None),
+        (observed({(1, 2): 3}), "trino", None, _TUPLE_MAP_TYPE),
     ],
 )
 def test_nested_inference_defaults_and_unsupported_native_structures(
     profile, backend, source, expected
 ):
     assert resolve_nested(profile, backend, source) == expected
+
+
+@pytest.mark.parametrize("sdk", ["current", "minimum-0.320"])
+def test_inferred_tuple_map_uses_exact_native_row_keys_in_actual_sdk(monkeypatch, sdk):
+    use_actual_formatter(monkeypatch, sdk)
+    source = {(1, 2): 3}
+    resolution = resolve_profile(observed(source), "trino")
+
+    assert resolution.target_type == _TUPLE_MAP_TYPE
+    assert resolution.text_fallback is False
+    converted = resolution.convert(source)
+    assert converted == {(1, 2): 3}
+
+    connection = DriverParameterConnection()
+    get_backend_adapter("trino").insert_rows_batch(
+        connection,
+        "iceberg.sandbox.target",
+        ["payload"],
+        [(converted,)],
+        target_column_types={"payload": resolution.target_type},
+        trino_insert_chunk_size=None,
+        gp_insert_chunk_size=None,
+        connection_type="trino",
+        query_label=None,
+        on_progress=None,
+    )
+
+    assert len(connection.statements) == 1
+    statement, parameters, wire = connection.statements[0]
+    assert f"CAST(? AS {_TUPLE_MAP_TYPE})" in statement
+    assert parameters == [{(1, 2): 3}]
+    assert wire == ["MAP(ARRAY[ROW(1,2)], ARRAY[3])"]
+    assert connection.cursor_close_calls == 1
+    assert source == {(1, 2): 3}
 
 
 @pytest.mark.parametrize(

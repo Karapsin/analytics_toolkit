@@ -38,6 +38,8 @@ def drop_existing_target(
 ) -> None:
     if not options.drop_target_if_exists:
         return
+    adapter = get_backend_adapter(options.backend)
+    adapter.preflight_create_table_replacement(connection, options)
     with tracked_sql_operation(
         metadata=metadata,
         operation_name="create_table",
@@ -48,7 +50,7 @@ def drop_existing_target(
         query_label=options.query_label,
         preview_sql=drop_sqls[0] if drop_sqls else None,
     ):
-        get_backend_adapter(options.backend).prepare_existing_target_for_create_from_sql(
+        adapter.prepare_existing_target_for_create_from_sql(
             connection,
             options.table_name,
             drop_target_if_exists=True,

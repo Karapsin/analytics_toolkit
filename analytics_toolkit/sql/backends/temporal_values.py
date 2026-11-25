@@ -84,6 +84,7 @@ def validate_timestamp_range(
         lower // unit < minimum
         or upper is None
         or upper // unit > maximum
+        or profile.timestamp_calendar_outside_python
         or (profile.minimum_date is not None and profile.minimum_date < dt.date(1900, 1, 1))
         or (profile.maximum_date is not None and profile.maximum_date > dt.date(2299, 12, 31))
     ):

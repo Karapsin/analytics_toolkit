@@ -17,6 +17,7 @@ from analytics_toolkit.sql.dml.transfer.runtime import retry as transfer_retry
 from analytics_toolkit.sql.dml.transfer.runtime.models import RowBatch
 from sqlglot import exp, parse_one
 
+from tests.sql._support.created_gp_relations import relation_catalog_result
 from tests.sql._support.gp_cidr_casts import SHORT_DOMAIN
 from tests.sql._support.gp_inet_casts import InetDatabase
 from tests.sql._support.gp_temporal_values import TemporalConnection
@@ -48,6 +49,14 @@ class NativeTransferDatabase(InetDatabase):
         self.assignment_values = []
         self.parameter_catalog_reads = []
         self.private_value_attempts = []
+        self.next_relation_oid = 10000
+        self.namespace_oids = {}
+
+    def execute(self, connection, statement, params=None):
+        catalog = relation_catalog_result(self, connection, statement, params)
+        if catalog is not None:
+            return catalog
+        return super().execute(connection, statement, params)
 
     def metadata(self, statement, params):
         if "a.atttypid, a.attndims" in statement and "a.attname = ANY" in statement:
@@ -156,6 +165,10 @@ class NativeTransferDatabase(InetDatabase):
 
 
 class NativeTransferConnection(TemporalConnection):
+    def __init__(self, database):
+        super().__init__(database)
+        self.alias = "gp"
+
     def commit(self):
         database = self.database
         statement = database._ddl_schema_prefix(database.commands[-1]) if database.commands else ""
@@ -209,6 +222,7 @@ def install_native_transfer(
                 message = "Certified native transfer reopened its mutable source."
                 raise AssertionError(message)
         connection = NativeTransferConnection(database)
+        connection.alias = alias
         database.opened.append(connection)
         return connection
 

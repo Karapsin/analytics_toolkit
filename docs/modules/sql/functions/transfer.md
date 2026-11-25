@@ -33,8 +33,8 @@ transfer(from_db: 'str', to_db: 'str', from_sql: 'str | None' = None, to_table: 
 - `target_batch_memory_mb` - approximate in-process RowBatch memory target used for adaptive transfer batches; lazy keyed staging treats it as an aggregate target across active and prefetched batches
 - `min_batch_memory_mb` - minimum allowed value for memory-based adaptive targets when enabled
 - `max_batch_memory_mb` - maximum allowed value for memory-based adaptive targets when enabled
-- `key_columns` - key column or columns used to validate staged rows and required when `write_mode="upsert"`
-- `upsert_partition_column` - single staged column that defines affected partitions for Trino and ClickHouse upsert replacement; required for those backends when `write_mode="upsert"`
+- `key_columns` - key column or columns used to validate staged rows and required when `write_mode="upsert"`; an upsert partition column augments this key on every backend
+- `upsert_partition_column` - single staged column included first in the ordered, deduplicated effective upsert key on every backend; also defines affected partitions and is required for Trino and ClickHouse upsert replacement
 - `retry_cnt` - number of operation retries with fresh connections
 - `timeout_increment` - delay increment used between operation retries
 - `full_retry_cnt` - number of retries for the whole transfer flow after a transfer-level failure
@@ -416,24 +416,27 @@ rows = sql.transfer(
   applied independently to every slot.
 - Internal snapshot, source-batch, stage-count, ordinal, and superseded-stage
   queries use distinct info-level action and phase labels in transfer logs.
+- Keyed and unkeyed snapshot reads enable exact source transport values before
+  eager decoding and bind temporal values to the actual reading connection's
+  policy using the original source types. This preserves instants and fractional
+  precision when source and destination timezones differ.
 - Transfer SQL stage names use one identifier policy on every backend: at most
   63 UTF-8 bytes, beginning with a stable 16-hex destination hash and carrying
   the full transfer ID and worker/role identity.
   Catalog/schema qualification and quoting remain backend-specific. Within the
-  configured staging schema, the destination hash, full transfer ID, reserved
-  worker/role suffix, and collision suffix form the automatic-cleanup authority.
-  Malformed, current-attempt, legacy, `load_df`, and other-destination names are
-  protected. The configured staging schema should therefore be reserved for
-  toolkit-managed resources.
+  configured staging schema, those components identify cleanup candidates;
+  names alone never establish ownership. Automatic cleanup requires this
+  operation's acknowledged creation identity and exact execution scope.
 - Target-bound SQL/VALUES batches, Parquet files, and target stages contain only
   user columns. Transfer ID, destination, slice ID, and row ordinal are never
   repeated in transported rows. Source snapshots retain only collision-resolved
   slice and ordinal columns for local bounded paging; range queries filter and
   order by them but project only user columns across the network.
-- No manifest, lease, owner marker, heartbeat, bookkeeping, or other persistent
-  coordination table, view, work queue, or sequence is created. Scheduling,
-  acknowledgements, verified-key checkpoints, progress, and ETA state exist only
-  in memory for the current attempt and cannot resume after process restart.
+- No persistent database coordination table, view, work queue, or sequence is
+  created. Scheduling, acknowledgements, verified-key checkpoints, progress,
+  and ETA state exist only in memory for the current attempt. A certified local
+  replay checkpoint may retain a versioned recovery manifest; this does not
+  provide automatic public-operation resume after process restart.
 - A CTAS/count failure never publishes its key. A source-read, target-write, or
   validation failure retains that key's source stage and prevents final target
   mutation. Once target validation succeeds, cleanup retries never retransmit
@@ -443,6 +446,10 @@ rows = sql.transfer(
   key. It may therefore observe newer source data.
 - Prefer this short entrypoint in user-facing examples.
 - Retries restart the public operation with fresh connections.
+- Transient source-range retries may split a failed range into smaller batches.
+  Split children retain the attempts already consumed by their parent range,
+  including when another worker reads them. Deterministic source errors stop
+  before range requeueing or reconnection.
 - Deterministic input and configuration errors stop immediately without an
   operation or full-transfer retry. This includes missing Trino `catalog` or
   `schema` settings required to resolve qualified target table names and
@@ -532,7 +539,13 @@ rows = sql.transfer(
   rejects duplicate generated key tuples, but it cannot prove that arbitrary SQL
   expressions produce non-overlapping slices.
 - `write_mode="upsert"` stages source rows and rejects duplicate staged keys
-  before any target mutation. Greenplum then uses staged key delete-and-insert.
+  before any target mutation. Existing targets require every writable column,
+  including columns with defaults; generated and other noninsertable columns
+  are excluded. Complete reordered input is accepted, while missing or extra
+  columns fail before mutation. When `upsert_partition_column` is supplied, the
+  effective key is that partition column followed by `key_columns`, with
+  duplicates removed. Thus ID 7 in January and ID 7 in February are distinct
+  records. Greenplum then uses staged effective-key delete-and-insert.
   Trino and ClickHouse require `upsert_partition_column`, build a final
   increment for affected partitions, drop those partitions, and insert the
   final increment. They do not use native `MERGE`, arbitrary key deletes, or
@@ -576,19 +589,15 @@ rows = sql.transfer(
   validation. `validate_row_count=False` disables only the public
   source-to-target count comparison; streamed-to-stage payload counts,
   uniqueness, target-key overlap, and in-memory range coverage remain mandatory.
-- A new call removes discoverable empty or non-empty stages on its current
-  source and target connections when their reserved collision-safe name has the
-  exact destination hash and a different full transfer ID. This covers crashes
-  after partial loading without persistent per-row ownership metadata.
-  Current-attempt, malformed, legacy, `load_df`, and other-destination names
-  remain protected. Because simultaneous calls for one destination are
-  unsupported, a newer call may remove an older still-running call's stage.
-  Historical source stages on another connection alias may require explicit
+- A new call reports matching prior-run stage candidates and retains them when
+  no acknowledged creation identity proves ownership. This includes empty,
+  nonempty, current-format and recognized legacy names. Review retained
+  resources before requesting explicit
   `cleanup_stale_stage_tables(stage_tables=[...])` cleanup.
 - For ClickHouse sources with no explicit `LIMIT`, row-count validation streams
   with `LIMIT <counted_source_rows>` and temporarily disables the client
-  `query_limit` while opening the stream, so connection-level query caps do not
-  silently truncate transfers.
+  `query_limit` through actual lazy submission and the first response, so
+  connection-level query caps do not silently truncate transfers.
 - If a ClickHouse source stream fails mid-read with a transport/chunk error,
   the current staged attempt is aborted before finalization. When `full_retry_cnt`
   permits another full-transfer attempt, the retry restarts from scratch with
@@ -616,12 +625,18 @@ rows = sql.transfer(
   strings because those native Iceberg target types are unsupported by Hive
   external tables. UUID strings and offset-bearing timestamp strings are cast
   back to the target's declared native types during finalization. Timestamp
-  columns without time zones use microsecond precision in the Hive stage to
-  match Trino's configured Parquet timestamp precision.
+  columns without time zones and with precision at most six use a microsecond
+  Hive timestamp representation. Higher-precision timestamps use VARCHAR in
+  the Hive stage, preserving every fractional digit before the final native cast.
+  JSON and nested JSON types require values staging or an explicit VARCHAR
+  representation; unsupported Hive types are rejected before target mutation.
 - Parquet transfer streams source rows into temporary Parquet files under
   `s3_transfer_staging_location`, creates a Trino external stage table in
   `s3_transfer_staging_schema`, and then applies the normal `append`, `replace`,
   `truncate_insert`, or `upsert` finalization logic from that stage table.
+  An uncertain CREATE or failed stage DROP retains its external prefix. A
+  retention diagnostic identifies the candidate and location; the original
+  exception carries `analytics_toolkit_sql_stage_external_location`.
 - Python and Trino must both have access to the same object-storage prefix for
   Parquet staging. The Parquet/object-storage Python dependencies are installed
   with the package; if the complete S3 pair is not configured, Trino targets

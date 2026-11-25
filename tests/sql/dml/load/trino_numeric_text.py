@@ -16,9 +16,9 @@ from tests.sql._support.trino_numeric_text import native_numeric_target
 
 _EXACT = "12345678901234567890.123456789"
 _TYPES = ["REAL", "DOUBLE", "DECIMAL(38,9)"]
-_INVALID = [
-    (native, bad) for native in _TYPES for bad in ["private-invalid-numeric", "NaN", "Infinity"]
-] + [
+_INVALID = [(native, "private-invalid-numeric") for native in _TYPES] + [
+    ("DECIMAL(38,9)", "NaN"),
+    ("DECIMAL(38,9)", "Infinity"),
     ("REAL", "1E100"),
     ("DOUBLE", "1E1000"),
     ("DECIMAL(38,9)", "1E29"),

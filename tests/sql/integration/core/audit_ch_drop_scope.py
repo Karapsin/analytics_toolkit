@@ -237,7 +237,7 @@ def test_execute_create_skips_existing_remote_plain_target_before_setup(
     assert before[_CORE] == []
     # The operation may create a local fallback if skip regresses. The name is
     # generated for this disposable run and was verified absent above.
-    resource_registry.table("ch", table, ch_only_shard=True)
+    resource_registry.table("ch", table)
     result = sql.execute_create(
         "ch",
         table,

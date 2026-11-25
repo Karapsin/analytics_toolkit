@@ -392,7 +392,7 @@ def test_ipaddress_casts_key_dispatch_never_guesses_types_or_changes_keyless_app
     schemas = ({"payload": "IPADDRESS"},) if backend != "trino" else (None, {"payload": "VARCHAR"})
 
     frames = list(dataframe_key_validation_frames(frame, key_columns, schemas, backend))
-    if backend == "trino" and key_columns:
+    if backend in {"trino", "ch"} and key_columns:
         assert len(frames) == 1
         pd.testing.assert_frame_equal(frames[0], frame)
         assert frames[0]["payload"].tolist() == ["192.0.2.1", "::ffff:192.0.2.1"]

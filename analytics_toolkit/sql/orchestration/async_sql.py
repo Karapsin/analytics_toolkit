@@ -12,6 +12,7 @@ from typing import Any
 
 from tqdm import tqdm
 
+from analytics_toolkit.general import time_print_context
 from analytics_toolkit.sql.execution.cancellation import (
     AsyncSqlCancelled,
     SqlCancellationScope,
@@ -28,21 +29,27 @@ from ..dml.io.read_sql import read_sql
 from ..dml.load.load_df import load_df
 from ..dml.transfer.flow.api import transfer_table
 from ..execution.operation_runner import timed_public_sql_function
-from .pipeline import _PipelineContext, _is_async_callable
-from .capacity import run_with_capacity, suspend_capacity
-from analytics_toolkit.general import time_print_context
+from .capacity import (
+    CONCURRENCY_STATE,
+    build_concurrency_state,
+    run_with_capacity,
+    suspend_capacity,
+)
+from .pipeline import _is_async_callable, _PipelineContext
 from .tasks import (
     _PIPELINE_TASK_TYPE,
     _PROGRESS_TASK_TYPES,
     _annotate_task_exception,
     _log_failed_sql_task,
     _normalize_task_result,
-    _run_sync_task as _dispatch_sync_task,
     _validate_concurrency,
     _validate_hard_concurrency_cap,
     _validate_optional_soft_concurrency_cap,
     _validate_progress,
     _validate_tasks,
+)
+from .tasks import (
+    _run_sync_task as _dispatch_sync_task,
 )
 
 _DEFAULT_HARD_CONCURRENCY_CAP = 5
@@ -53,9 +60,7 @@ _SYNC_TASK_RUNNERS = {
     "load_df": lambda kwargs: load_df(**kwargs),
     "transfer": lambda kwargs: transfer_table(**kwargs),
 }
-_CONCURRENCY_STATE: contextvars.ContextVar["_ConcurrencyState | None"] = contextvars.ContextVar(
-    "analytics_toolkit_async_sql_concurrency", default=None
-)
+_CONCURRENCY_STATE = CONCURRENCY_STATE
 
 
 @dataclass(frozen=True)
@@ -118,7 +123,7 @@ async def _async_sql_impl(
         )
 
 
-async def _async_sql_impl_scoped(  # noqa: PLR0912, PLR0913, PLR0915
+async def _async_sql_impl_scoped(  # noqa: PLR0913, PLR0915
     tasks: Sequence[Mapping[str, Any]],
     *,
     concurrency: int,
@@ -220,16 +225,14 @@ async def _async_sql_impl_scoped(  # noqa: PLR0912, PLR0913, PLR0915
                 for index, (name, _task_type, _kwargs) in enumerate(task_defs)
             }
         except BaseException as exc:
+            # Async task cancellation cannot stop executor workers already
+            # waiting for a shared permit. Cancel their scope before waking them.
+            cancellation_scope.request_cancel()
+            for task in async_tasks:
+                if not task.done():
+                    task.cancel()
             if _is_interrupt_exception(exc):
-                cancellation_scope.request_cancel()
-                for task in async_tasks:
-                    if not task.done():
-                        task.cancel()
                 cancel_scope_queries(cancellation_scope)
-            else:
-                for task in async_tasks:
-                    if not task.done():
-                        task.cancel()
             await asyncio.gather(*async_tasks, return_exceptions=True)
             raise
     finally:
@@ -323,42 +326,13 @@ def _build_concurrency_state(
     soft_concurrency_cap: int | None,
     hard_concurrency_cap: int,
 ) -> _ConcurrencyState:
-    active_state = _CONCURRENCY_STATE.get()
-    if active_state is None:
-        hard_cap = hard_concurrency_cap
-        soft_cap = concurrency if soft_concurrency_cap is None else soft_concurrency_cap
-        semaphores = (Semaphore(soft_cap),)
-        effective_concurrency = concurrency
-    else:
-        hard_cap = active_state.hard_cap
-        if (
-            hard_concurrency_cap != _DEFAULT_HARD_CONCURRENCY_CAP
-            and hard_concurrency_cap >= hard_cap
-        ):
-            hard_cap = hard_concurrency_cap
-
-        soft_cap = active_state.soft_cap
-        semaphores = active_state.semaphores
-        if soft_concurrency_cap is not None and soft_concurrency_cap < soft_cap:
-            soft_cap = soft_concurrency_cap
-            semaphores = (*semaphores, Semaphore(soft_cap))
-
-        effective_concurrency = active_state.effective_concurrency * concurrency
-
-    actual_worker_ceiling = min(effective_concurrency, soft_cap)
-    if actual_worker_ceiling > hard_cap:
-        raise ValueError(
-            "effective concurrency exceeds hard_concurrency_cap "
-            f"({actual_worker_ceiling} > {hard_cap}). Reduce concurrency, set "
-            "soft_concurrency_cap at or below hard_concurrency_cap, or increase "
-            "hard_concurrency_cap."
-        )
-
-    return _ConcurrencyState(
-        effective_concurrency=effective_concurrency,
-        hard_cap=hard_cap,
-        soft_cap=soft_cap,
-        semaphores=semaphores,
+    return build_concurrency_state(
+        concurrency=concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
+        default_hard_cap=_DEFAULT_HARD_CONCURRENCY_CAP,
+        state_factory=_ConcurrencyState,
+        semaphore_factory=Semaphore,
     )
 
 

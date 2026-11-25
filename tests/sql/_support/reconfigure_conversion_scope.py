@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, ClassVar
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from analytics_toolkit import sql
 from analytics_toolkit.general import set_connections_path
@@ -156,6 +156,7 @@ class ConversionScopeClient:
         self.query_settings = []
         self.created = []
         self.ready_queries = []
+        self.distribution_queues = {}
         self.closed = False
         self.after_facade_cutover = None
         self._facade_callback_called = False
@@ -198,6 +199,9 @@ class ConversionScopeClient:
             else None,
             rows=deepcopy(list(rows)),
         )
+        identity = create.find(exp.UuidProperty)
+        if identity is not None:
+            self.host_tables[host][name]._resource_uuid = UUID(identity.this.name)
         self.created.append((host, name))
 
     def _read(self, host, table):
@@ -317,6 +321,13 @@ class ConversionScopeClient:
         ]
         if any(isinstance(item, exp.Count) for item in select.expressions):
             return [(len(records),)]
+        if all(isinstance(item, exp.Sum) for item in select.expressions):
+            return [
+                tuple(
+                    sum(_project(item.this, record) for record in records)
+                    for item in select.expressions
+                )
+            ]
         return [tuple(_project(item, record) for item in select.expressions) for record in records]
 
     def _host_record(self, host):
@@ -328,8 +339,24 @@ class ConversionScopeClient:
         }
 
     def _metadata(self, name, hosts):
+        if name == "system.distribution_queue":
+            return [
+                {
+                    "_shard_num": position,
+                    "database": database,
+                    "table": relation,
+                    "data_files": counters[0],
+                    "broken_data_files": counters[1],
+                }
+                for position, host in enumerate(hosts, 1)
+                for (endpoint, database, relation), counters in self.distribution_queues.items()
+                if endpoint == host
+            ]
         if name == "system.databases":
-            return [{"name": "analytics", "engine": "Atomic"}]
+            return [
+                {"_shard_num": position, "name": "analytics", "engine": "Atomic"}
+                for position, _host in enumerate(hosts, 1)
+            ]
         if name == "system.clusters":
             return [
                 {

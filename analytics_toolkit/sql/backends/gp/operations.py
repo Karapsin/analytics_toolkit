@@ -10,6 +10,11 @@ from analytics_toolkit.sql.backends.insert_constraints import validate_not_null_
 from analytics_toolkit.sql.ddl.properties import overlay_with_properties
 
 from ..utils import sql_string_literal
+from .metadata_types import (
+    canonical_catalog_type,
+    catalog_column_type_sql,
+    catalog_type_joins_sql,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -44,11 +49,11 @@ def get_writable_table_column_types(
     try:
         # JSON field lookup is safe when older GP catalogs lack generated/identity fields.
         cursor.execute(
-            "SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod) "
-            "|| pg_catalog.repeat('[]', GREATEST(a.attndims - 1, 0)) "
+            "SELECT a.attname, " + catalog_column_type_sql() + " "
             "FROM pg_catalog.pg_attribute AS a "
             "JOIN pg_catalog.pg_class AS c ON c.oid = a.attrelid "
             "JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace "
+            + catalog_type_joins_sql() +
             "WHERE n.nspname = %s AND c.relname = %s "
             "AND a.attnum > 0 AND NOT a.attisdropped "
             "AND COALESCE(row_to_json(a)->>'attgenerated', '') = '' "
@@ -56,7 +61,10 @@ def get_writable_table_column_types(
             "ORDER BY a.attnum",
             (schema, relation),
         )
-        return {str(name): str(native_type) for name, native_type in cursor.fetchall()}
+        return {
+            str(name): canonical_catalog_type(str(native_type))
+            for name, native_type in cursor.fetchall()
+        }
     finally:
         close_cursor(cursor, backend="gp")
 

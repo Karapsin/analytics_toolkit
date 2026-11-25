@@ -6,6 +6,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.gp.native_assignment import (
     NativeAssignmentCertificate,
     NativeAssignmentError,
@@ -17,6 +18,11 @@ from analytics_toolkit.sql.dml import query_native_assignment as native
 from analytics_toolkit.sql.dml.transfer.flow import attempt
 from analytics_toolkit.sql.dml.transfer.runtime.models import TransferOptions
 from analytics_toolkit.sql.execution.plans import SqlOperationMetadata
+
+from tests.sql._support.query_lifecycle_resources import (
+    acknowledge_query_resources,
+    query_lifecycle_connection,
+)
 
 
 def checkpoint(monkeypatch):
@@ -192,6 +198,7 @@ def test_native_query_cleanup_only_drops_acknowledged_resources_in_reverse_order
     unowned = "sandbox.events__stage__uncertain"
     stage = owned.certificate.stage_table
     owned.state.owned_stage_resources[:] = [(source, source), (stage, stage), (stage, stage)]
+    acknowledge_query_resources(options, owned)
     owned.state.stage_table_candidates.extend([source, unowned])
     dropped, opened = [], []
     monkeypatch.setattr(native, "preserve_recovery_artifacts", lambda: False)
@@ -205,7 +212,7 @@ def test_native_query_cleanup_only_drops_acknowledged_resources_in_reverse_order
     monkeypatch.setattr(
         native,
         "drop_owned_resource",
-        lambda _adapter, _conn, resource, **_kw: dropped.append(resource),
+        lambda _adapter, _conn, resource, **_kw: dropped.append(resource.name),
     )
 
     native.close_query_assignment(options)
@@ -227,6 +234,7 @@ def test_native_query_structural_recovery_retains_every_checkpoint(monkeypatch):
 def test_native_query_cleanup_continues_after_failure_and_preserves_primary(monkeypatch):
     options, _schema, owned = checkpoint(monkeypatch)
     owned.state.owned_stage_resources.append(("sandbox.other", "sandbox.other"))
+    acknowledge_query_resources(options, owned)
     dropped = []
     monkeypatch.setattr(native, "preserve_recovery_artifacts", lambda: False)
 
@@ -246,6 +254,7 @@ def test_native_query_cleanup_continues_after_failure_and_preserves_primary(monk
 
 def test_native_query_semantic_cleanup_failure_surfaces_after_success(monkeypatch):
     options, _schema, _owned = checkpoint(monkeypatch)
+    acknowledge_query_resources(options, _owned)
     monkeypatch.setattr(native, "preserve_recovery_artifacts", lambda: False)
 
     def cleanup(*_args, **_kwargs):
@@ -266,30 +275,31 @@ def test_native_query_create_distinguishes_collision_from_ambiguous_ownership(mo
     names = iter(["sandbox.foreign", "sandbox.owned"])
     calls = []
 
-    def execute(_connection, statement):
-        calls.append(statement)
+    real_create = native.execute_scoped_create
+
+    def execute(adapter, connection, statement, resource):
+        calls.append((resource.name, options.source_sql))
         if len(calls) == 1:
             error = ConnectionError("create acknowledgement unavailable")
             if failure == "collision":
                 error.pgcode = "42P07"
             raise error
+        real_create(adapter, connection, statement, resource)
 
-    adapter = SimpleNamespace(
-        table_exists=lambda *_args, **_kwargs: False,
-        build_materialize_transfer_source_sql=lambda stage, query, **_kw: (stage, query),
-        execute_command=execute,
-    )
-    monkeypatch.setattr(native, "get_backend_adapter", lambda _backend: adapter)
+    adapter = get_backend_adapter("gp")
+    monkeypatch.setattr(adapter, "table_exists", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(native, "execute_scoped_create", execute)
     monkeypatch.setattr(native, "build_stage_table_name", lambda *_a, **_k: next(names))
+    connection = query_lifecycle_connection()
     if failure == "uncertain":
         with pytest.raises(ConnectionError) as raised:
-            native._materialize_native_query(options, owned, object())
+            native._materialize_native_query(options, owned, connection)
         assert raised.value.analytics_toolkit_sql_stage_candidate == "sandbox.foreign"
         assert not raised.value.analytics_toolkit_sql_acknowledged_resources
         assert not owned.state.owned_stage_resources
         assert owned.state.stage_table_candidates == ["sandbox.foreign"]
     else:
-        assert native._materialize_native_query(options, owned, object()) == "sandbox.owned"
+        assert native._materialize_native_query(options, owned, connection) == "sandbox.owned"
         assert owned.state.stage_table_candidates == ["sandbox.owned"]
         assert owned.state.owned_stage_resources == [("sandbox.owned", "sandbox.owned")]
     assert calls[0][1] == options.source_sql

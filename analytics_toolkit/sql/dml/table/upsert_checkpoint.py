@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -15,3 +16,4 @@ class UpsertCheckpoint:
     replay_sqls: list[str] = field(default_factory=list)
     prepared: bool = False
     mutation_started: bool = False
+    backend_state: dict[str, Any] = field(default_factory=dict, repr=False)

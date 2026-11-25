@@ -6,6 +6,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
+from analytics_toolkit.sql.connection.config import ChConfig, get_connection_config
 from sqlglot import exp, parse_one
 
 from tests.sql._support.load_column_state import ColumnConnection, ExistingColumnStore
@@ -132,8 +133,12 @@ class ClientStore(ExistingColumnStore):
 
 
 class ClientConnection(ColumnConnection):
-    def __init__(self, store):
+    def __init__(self, store, *, connection_key="ch"):
         super().__init__(store)
+        # This fake advertises the composed OutageClient protocol, including
+        # the actual frozen alias identity used to bind creation policy.
+        self._config = get_connection_config(connection_key)
+        assert isinstance(self._config, ChConfig)
         if self.is_native_transport:
             self.context = native_context()
             self.context.settings.update(store.settings)
@@ -218,8 +223,8 @@ def client_target(monkeypatch, transport, schema, *, exists=True):
         store.generation += 1
         return initialize(*args, **kwargs)
 
-    def connect(_key):
-        return ClientConnection(store)
+    def connect(key):
+        return ClientConnection(store, connection_key=key)
 
     monkeypatch.setattr(load_df_module, "get_sql_connection", connect)
     monkeypatch.setattr(

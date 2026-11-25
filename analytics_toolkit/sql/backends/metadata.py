@@ -1,9 +1,14 @@
-# ruff: noqa: S608 -- SQL builders quote values; catalog identifiers are quoted by the caller.
 from __future__ import annotations
+
+# ruff: noqa: S608 -- SQL builders quote values; catalog identifiers are quoted by the caller.
+from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
 from .utils import sql_string_literal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def build_clickhouse_show_tables_query(
@@ -13,7 +18,14 @@ def build_clickhouse_show_tables_query(
     *,
     include_distributed_metadata: bool = False,
 ) -> str:
-    filters = metadata_filters(schema, table_names, conditions)
+    from .ch.dialect import (  # noqa: PLC0415 - generic metadata and CH registry cycle.
+        sql_string_literal as ch_string_literal,
+    )
+
+    filters = metadata_filters(schema, table_names, conditions, render_literal=ch_string_literal)
+    inner_filters = _base_filters(
+        "database", "name", schema, table_names, render_literal=ch_string_literal
+    )
     distributed_metadata_columns = (
         ",\n    engine,\n    engine_full" if include_distributed_metadata else ""
     )
@@ -25,7 +37,7 @@ def build_clickhouse_show_tables_query(
         total_rows AS row_count,
         total_bytes AS table_size_bytes{distributed_metadata_columns}
     FROM system.tables
-    WHERE 1 = 1{_base_filters("database", "name", schema, table_names)}
+    WHERE 1 = 1{inner_filters}
     """.strip()
     return normalized_metadata_query(inner_query, filters)
 
@@ -85,12 +97,14 @@ def metadata_filters(
     schema: str | None,
     table_names: list[str] | None,
     conditions: str | None,
+    *,
+    render_literal: Callable[[str], str] = sql_string_literal,
 ) -> list[str]:
     filters: list[str] = []
     if schema is not None:
-        filters.append(f"schema = {sql_string_literal(schema)}")
+        filters.append(f"schema = {render_literal(schema)}")
     if table_names is not None:
-        filters.append(table_names_filter("table_name", table_names))
+        filters.append(table_names_filter("table_name", table_names, render_literal=render_literal))
     if conditions is not None:
         filters.append(f"({conditions})")
     return filters
@@ -111,10 +125,15 @@ def format_filter_lines(filters: list[str]) -> str:
     return "".join(f"\n  AND {filter_sql}" for filter_sql in filters)
 
 
-def table_names_filter(column: str, table_names: list[str]) -> str:
+def table_names_filter(
+    column: str,
+    table_names: list[str],
+    *,
+    render_literal: Callable[[str], str] = sql_string_literal,
+) -> str:
     if len(table_names) == 1:
-        return f"{column} = {sql_string_literal(table_names[0])}"
-    values = ", ".join(sql_string_literal(name) for name in table_names)
+        return f"{column} = {render_literal(table_names[0])}"
+    values = ", ".join(render_literal(name) for name in table_names)
     return f"{column} IN ({values})"
 
 
@@ -232,13 +251,18 @@ def build_trino_completion_query(catalog: str, schema: str | None, prefix: str) 
 
 
 def _base_filters(
-    schema_column: str, name_column: str, schema: str | None, names: list[str] | None
+    schema_column: str,
+    name_column: str,
+    schema: str | None,
+    names: list[str] | None,
+    *,
+    render_literal: Callable[[str], str] = sql_string_literal,
 ) -> str:
     filters = []
     if schema is not None:
-        filters.append(f"{schema_column} = {sql_string_literal(schema)}")
+        filters.append(f"{schema_column} = {render_literal(schema)}")
     if names is not None:
-        filters.append(table_names_filter(name_column, names))
+        filters.append(table_names_filter(name_column, names, render_literal=render_literal))
     return format_filter_lines(filters)
 
 

@@ -13,6 +13,7 @@ import pytest
 from agent_tools import agent_runtimes, local_review, sessions
 from tests._support.paths import REPO_ROOT
 from tests.agent_tools.local_review import candidate as candidate  # noqa: PLC0414
+from tests.agent_tools.local_review_evidence import commit
 from tests.agent_tools.sessions import git
 from tests.agent_tools.sessions import source as source  # noqa: PLC0414
 
@@ -105,6 +106,8 @@ def adapter_base(candidate: Path) -> Path:
     (bootstrap / "manifest.json").write_text(json.dumps(manifest))
     head = git(candidate, "rev-parse", "HEAD")
     (local_review.directory(candidate) / (head + ".json")).unlink()
+    fresh_head = commit(candidate, {"runtime_probe.py": "PROBE = 'actual reviewer runtime'\n"})
+    assert fresh_head != head
     return candidate
 
 
@@ -132,6 +135,51 @@ def install_fake(
     (binary / name).chmod(0o755)
     monkeypatch.setenv("PATH", str(binary) + ":/usr/bin:/bin")
     return control, thread
+
+
+def _assert_private_runtime_proof(root, payload, runtime):
+    compact = payload["review_iterations"]
+    assert compact["version"] == 4
+    proof_path = local_review.directory(root) / ("proof-" + compact["proof_sha256"] + ".json")
+    data = proof_path.read_bytes()
+    assert hashlib.sha256(data).hexdigest() == compact["proof_sha256"]
+    proof = json.loads(data)
+    assert proof["version"] == 4
+    waves = proof["waves"]
+    assert len(waves) == compact["completed_waves"] == 1
+    assert len({wave["payload"]["wave_id"] for wave in waves}) == 1
+    reviewers = []
+    for wave in waves:
+        outcome = wave["payload"]
+        assert outcome["review_scope"] == "wave"
+        assert outcome["coverage_complete"] is True
+        assert outcome["discovery_only"] is False
+        assert outcome["verdict"]["approved"] is True
+        children = outcome["review_wave"]["children"]
+        origins = outcome["review_wave"]["origins"]
+        assert len(children) == len(origins) == 1
+        assert {child["payload"]["chunk_id"] for child in children} == {
+            chunk["id"] for chunk in outcome["review_wave"]["manifest"]["chunks"]
+        }
+        for child, origin in zip(children, origins):
+            observed = child["payload"]
+            assert observed["head"] == payload["head"]
+            assert origin["subject"]["head"] == payload["head"]
+            assert origin["manifest"] == outcome["review_wave"]["manifest"]
+            assert origin["wave_id"] == observed["wave_id"]
+            assert observed["review_scope"] == "chunk"
+            assert observed["wave_id"] == outcome["wave_id"]
+            assert observed["coverage_complete"] is True
+            assert observed["reviewer_runtime"] == (
+                "claude-code" if runtime == "claude" else "codex"
+            )
+            reviewer = observed["reviewer_id"]
+            assert reviewer.startswith("reviewer:")
+            identity = reviewer.removeprefix("reviewer:")
+            assert str(uuid.UUID(identity, version=4)) == identity
+            reviewers.append(reviewer)
+    assert len(reviewers) == len(set(reviewers)) == compact["reviewer_count"]
+    assert payload["reviewer_id"] == waves[-1]["payload"]["reviewer_id"]
 
 
 @pytest.mark.parametrize("weakened", [False, True])
@@ -199,6 +247,7 @@ def test_adapter_review_records_runtime_identity_and_isolation(
     monkeypatch.setenv("ATK_UNLISTED_PROBE", "synthetic-unlisted")
     receipt = local_review.review(adapter_base)
     payload = receipt["payload"]
+    assert payload["head"] == git(adapter_base, "rev-parse", "HEAD")
     args = json.loads((control / "argv.json").read_text())
     environment = json.loads((control / "env.json").read_text())
     assert agent_runtimes.policy_violations(runtime, [runtime, *args]) == []
@@ -222,13 +271,66 @@ def test_adapter_review_records_runtime_identity_and_isolation(
     else:
         assert args[-3:] == ["-c", 'model_reasoning_effort="high"', "-"]
         assert payload["reviewer_id"].startswith("reviewer:")
-        assert (
-            len({r["payload"]["reviewer_id"] for r in payload["review_iterations"]["rounds"]}) == 2
-        )
         assert payload["reviewer_runtime"] == "codex"
         assert payload["reviewer_version"] == "codex-cli 9.9.9"
         assert payload["reviewer_auth"] == "chatgpt"
+    _assert_private_runtime_proof(adapter_base, payload, runtime)
     assert local_review.review(adapter_base) == receipt
+
+
+@pytest.mark.parametrize(
+    ("runtime", "trusted_timeout"),
+    [("codex", 1800), ("codex", 7200), ("claude", 1800), ("claude", 7200), ("codex", None)],
+)
+def test_source_review_budget_applies_to_trusted_adapters_and_codex_fallback(
+    adapter_base: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime: str,
+    trusted_timeout: int | None,
+) -> None:
+    install_fake(tmp_path, monkeypatch, runtime, "approve")
+    monkeypatch.setenv("ATK_LOCAL_REVIEWER", runtime)
+    bootstrap = sessions.state_path(adapter_base).with_name("atk-local-review-bootstrap")
+    adapter_path = bootstrap / "agent_runtimes.py"
+    manifest_path = bootstrap / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    if trusted_timeout is None:
+        manifest["files"].pop(local_review.RUNTIME_ADAPTER)
+        adapter_path.unlink()
+    else:
+        adapter_path.write_text(
+            adapter_path.read_text() + f"\nREVIEW_TIMEOUT = {trusted_timeout!r}\n"
+        )
+        manifest["files"][local_review.RUNTIME_ADAPTER] = hashlib.sha256(
+            adapter_path.read_bytes()
+        ).hexdigest()
+    manifest_path.write_text(json.dumps(manifest))
+    executed = []
+    real_run = local_review.subprocess.run
+
+    def capture_review_execution(command, *args, **kwargs):
+        if (
+            isinstance(command, (list, tuple))
+            and command
+            and str(command[0]).rsplit("/", 1)[-1] == runtime
+            and "input" in kwargs
+        ):
+            executed.append((list(command), kwargs.get("timeout")))
+        return real_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(local_review.subprocess, "run", capture_review_execution)
+    receipt = local_review.review(adapter_base)
+    assert agent_runtimes.REVIEW_TIMEOUT == 7200
+    assert local_review.REVIEW_TIMEOUT == agent_runtimes.REVIEW_TIMEOUT
+    assert [timeout for _command, timeout in executed] == [7200]
+    assert all(
+        agent_runtimes.policy_violations(runtime, command) == [] for command, _timeout in executed
+    )
+    _assert_private_runtime_proof(adapter_base, receipt["payload"], runtime)
+    assert local_review.verified(adapter_base, receipt["payload"]["head"]) == receipt
+    assert local_review.review(adapter_base) == receipt
+    assert [timeout for _command, timeout in executed] == [7200]
 
 
 @pytest.mark.parametrize(
@@ -284,10 +386,13 @@ def test_claude_reviewer_requires_the_adapter_in_the_base(
 ) -> None:
     head = git(candidate, "rev-parse", "HEAD")
     (local_review.directory(candidate) / (head + ".json")).unlink()
+    fresh_head = commit(candidate, {"missing_adapter_probe.py": "PROBE = 'fresh Claude scope'\n"})
+    assert fresh_head != head
     monkeypatch.setenv("ATK_LOCAL_REVIEWER", "claude")
     monkeypatch.setattr(local_review, "arguments", lambda *args: pytest.fail("codex fallback"))
     with pytest.raises(RuntimeError, match="requires the reviewed runtime adapter"):
         local_review.review(candidate)
+    assert not (local_review.directory(candidate) / (fresh_head + ".json")).exists()
 
 
 def test_tampered_adapter_is_never_executed(adapter_base: Path, tmp_path: Path) -> None:

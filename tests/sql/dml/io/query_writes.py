@@ -8,12 +8,15 @@ from typing import Any
 
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.creation_policy import (
     ClickHouseCreationPolicy,
     build_policy_create_as_sqls,
 )
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 from analytics_toolkit.sql.execution.plans import SqlPlan, SqlStatement
+
+from tests.sql._support.create_from_sql_protocol import execute_create_pair
 
 ddl_api_module = importlib.import_module("analytics_toolkit.sql.ddl.api")
 ddl_module = importlib.import_module("analytics_toolkit.sql.ddl")
@@ -372,15 +375,15 @@ def test_execute_create_runs_setup_drop_and_create_on_one_connection(
 def test_execute_create_runs_multi_create_then_one_insert(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = _ExecuteCreateAdapter()
-    connection = _ExecuteCreateConnection()
+    adapter = get_backend_adapter("ch")
+    connection, policy, create_sqls = execute_create_pair()
     options = _execute_create_options(
         backend="ch",
         connection_key="ch",
-        create_sqls=[
-            "CREATE TABLE mart.target_shard EMPTY AS SELECT 1",
-            "CREATE TABLE mart.target",
-        ],
+        table_name="analytics.target",
+        source_sql="SELECT id FROM analytics.source_rows",
+        ch_creation_policy=policy,
+        create_sqls=create_sqls,
         insert_after_create=True,
     )
     plan = execute_create_module._build_execute_create_plan(options)
@@ -390,15 +393,18 @@ def test_execute_create_runs_multi_create_then_one_insert(
     result = execute_create_module._execute_create_options(options, plan)
 
     assert result == 7
-    assert adapter.events == [
-        ("commands", []),
-        (
-            "commands",
-            ["CREATE TABLE mart.target_shard EMPTY AS SELECT 1", "CREATE TABLE mart.target"],
-        ),
-        "after_create",
-        ("command", "INSERT INTO mart.target\nSELECT 1 AS id"),
+    assert [statement.split()[0] for statement in connection.commands] == [
+        "CREATE",
+        "CREATE",
+        "INSERT",
     ]
+    assert connection.commands[-1] == (
+        "INSERT INTO analytics.target\nSELECT id FROM analytics.source_rows"
+    )
+    assert connection.state.rows(connection.host, "analytics.target") == [
+        (value,) for value in range(7)
+    ]
+    assert connection.close_calls == 1
 
 
 @pytest.mark.parametrize("backend", ["gp", "trino", "ch"])

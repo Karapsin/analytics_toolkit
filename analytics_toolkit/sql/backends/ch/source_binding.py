@@ -10,32 +10,65 @@ from sqlglot.optimizer.scope import Scope, traverse_scope
 
 
 def _bound_source(
-    scope: Scope, column: exp.Column, bindings: dict[int, list[exp.Table]]
+    scope: Scope,
+    column: exp.Column,
+    bindings: dict[int, list[exp.Table]],
+    default_database: str | None = None,
 ) -> exp.Table | None:
+    bound = _bound_reference(scope, column, bindings, default_database)
+    return bound[0] if bound is not None else None
+
+
+def _bound_reference(
+    scope: Scope,
+    column: exp.Column,
+    bindings: dict[int, list[exp.Table]],
+    default_database: str | None,
+) -> tuple[exp.Table, int] | None:
     owner: Scope | None = scope
     while owner is not None:
         candidates = [
-            source for source in bindings.get(id(owner), []) if _matches_source(column, source)
+            (source, prefix)
+            for source in bindings.get(id(owner), [])
+            if (prefix := _source_prefix_length(column, source, default_database))
         ]
         if candidates:
             # A bare name shared by several local sources is ambiguous. Do not
             # guess one or fall through to an unrelated enclosing source.
-            return candidates[0] if len(candidates) == 1 else None
+            longest = max(prefix for _source, prefix in candidates)
+            matches = [item for item in candidates if item[1] == longest]
+            return matches[0] if len(matches) == 1 else None
         # A CTE/subquery/other source with the same alias shadows ancestors.
-        if column.table in owner.sources and not column.db and not column.catalog:
+        if column.parts[0].name in owner.sources:
             return None
         owner = owner.parent
     return None
 
 
-def _matches_source(column: exp.Column, source: exp.Table) -> bool:
-    if column.db or column.catalog:
-        return (
-            column.table == source.name
-            and (not column.db or column.db == source.db)
-            and (not column.catalog or column.catalog == source.catalog)
-        )
-    return column.table == source.alias_or_name
+def _source_prefix_length(
+    column: exp.Column, source: exp.Table, default_database: str | None
+) -> int:
+    parts = [part.name for part in column.parts]
+    prefixes = [[source.alias_or_name]]
+    database = source.db or default_database
+    if database:
+        prefixes.append([database, source.name])
+        if source.catalog:
+            prefixes.append([source.catalog, database, source.name])
+    return max(
+        (
+            len(prefix)
+            for prefix in prefixes
+            if len(parts) > len(prefix) and parts[: len(prefix)] == prefix
+        ),
+        default=0,
+    )
+
+
+def _matches_source(
+    column: exp.Column, source: exp.Table, default_database: str | None = None
+) -> bool:
+    return bool(_source_prefix_length(column, source, default_database))
 
 
 def _source_alias(source: exp.Table, names: Counter[str], ordinal: int) -> exp.Identifier:
@@ -51,7 +84,19 @@ def _source_alias(source: exp.Table, names: Counter[str], ordinal: int) -> exp.I
     return identifier
 
 
-def preserve_source_bindings(statement: exp.Expression) -> None:
+def _local_scope_columns(scope: Scope) -> list[exp.Column]:
+    columns = {
+        id(column): column
+        for reference in [*scope.columns, *scope.stars]
+        for column in reference.find_all(exp.Column)
+        if column.table and column.find_ancestor(exp.Query) is scope.expression
+    }
+    return list(columns.values())
+
+
+def preserve_source_bindings(
+    statement: exp.Expression, default_database: str | None = None
+) -> None:
     scopes = list(traverse_scope(statement) or [])
     bindings: dict[int, list[exp.Table]] = {}
     qualified_sources: set[int] = set()
@@ -68,20 +113,19 @@ def preserve_source_bindings(statement: exp.Expression) -> None:
         for source in bindings[id(scope)]:
             aliases[id(source)] = _source_alias(source, names, len(aliases) + 1)
     for scope in scopes:
-        columns = [
-            column
-            for reference in [*scope.columns, *scope.stars]
-            for column in reference.find_all(exp.Column)
-        ]
-        for column in columns:
-            if not column.table:
+        for column in _local_scope_columns(scope):
+            bound = _bound_reference(scope, column, bindings, default_database)
+            if bound is None:
                 continue
-            bound_source = _bound_source(scope, column, bindings)
-            if bound_source is None:
-                continue
-            column.set("table", aliases[id(bound_source)].copy())
-            column.set("db", None)
-            column.set("catalog", None)
+            bound_source, prefix = bound
+            fields = column.parts[prefix:]
+            replacement: exp.Expression = exp.Column(
+                this=fields[0].copy(), table=aliases[id(bound_source)].copy()
+            )
+            for field in fields[1:]:
+                replacement = exp.Dot(this=replacement, expression=field.copy())
+            replacement.add_comments(column.comments)
+            column.replace(replacement)
             qualified_sources.add(id(bound_source))
     for sources in bindings.values():
         for table in sources:

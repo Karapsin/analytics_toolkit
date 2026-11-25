@@ -37,12 +37,13 @@ def show_tables(
     )
     config = get_connection_config(db_key)
     adapter = get_backend_adapter(config.backend)
-    schema_filter = _validate_optional_string(schema, "schema")
+    schema_filter = _validate_optional_string(schema, "schema", preserve_identity=True)
     table_name_filter = _validate_table_names(table_name, schema_filter)
     conditions_filter = _validate_conditions(conditions)
     trino_catalog_filter = _validate_optional_string(
         trino_catalog,
         "trino_catalog",
+        preserve_identity=True,
     )
     if trino_catalog_filter is not None and not adapter.allows_show_tables_catalog_filter():
         raise InvalidSqlInputError("trino_catalog is only supported for Trino connections.")
@@ -65,6 +66,7 @@ def show_tables(
         result.copy(),
         ch_distributed_table_stats=ch_distributed_table_stats,
         read_sql=read_sql,
+        conditions=conditions_filter,
     )
     if normalized.empty:
         empty = pd.DataFrame(columns=_SHOW_TABLES_COLUMNS)
@@ -81,7 +83,9 @@ def show_tables(
     return normalized.loc[:, _SHOW_TABLES_COLUMNS].copy()
 
 
-def _validate_optional_string(value: str | None, parameter_name: str) -> str | None:
+def _validate_optional_string(
+    value: str | None, parameter_name: str, *, preserve_identity: bool = False
+) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
@@ -90,7 +94,7 @@ def _validate_optional_string(value: str | None, parameter_name: str) -> str | N
     normalized = value.strip()
     if not normalized:
         raise InvalidSqlInputError(f"{parameter_name} must not be empty.")
-    return normalized
+    return value if preserve_identity else normalized
 
 
 def _validate_bool(value: bool, parameter_name: str) -> None:
@@ -120,8 +124,8 @@ def _validate_table_names(
 def _validate_table_name_value(value: str, schema: str | None) -> str:
     if not isinstance(value, str):
         raise TypeError("table_name values must be strings.")
-    normalized = value.strip()
-    if not normalized:
+    normalized = value
+    if not normalized.strip():
         raise InvalidSqlInputError("table_name values must not be empty.")
     if schema is not None and normalized.startswith(f"{schema}."):
         normalized = normalized[len(schema) + 1 :]

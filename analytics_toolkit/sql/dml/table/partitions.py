@@ -35,6 +35,7 @@ class _GpPartitionDefinition:
     end: str | None = None
     value: str | None = None
 
+
 @dataclass(frozen=True)
 class _GpCreatePartitionsOptions:
     connection_key: str
@@ -68,9 +69,7 @@ def build_drop_many_partitions_sqls(
     adapter = get_backend_adapter(connection_type)
     target_table = _validate_non_empty_table_name(table)
     partition_keys = _validate_partition_keys(partition_keys_list)
-    normalized_trino_partition_column = _normalize_partition_column(
-        trino_partition_column
-    )
+    normalized_trino_partition_column = _normalize_partition_column(trino_partition_column)
     adapter.validate_drop_partitions_options(
         partition_column=normalized_trino_partition_column,
         gp_truncate=gp_truncate,
@@ -85,6 +84,7 @@ def build_drop_many_partitions_sqls(
             ch_cluster=ch_cluster,
         )
     ]
+
 
 def _build_gp_create_partitions_sqls(
     table: str,
@@ -121,6 +121,7 @@ def _build_gp_create_partitions_sqls(
         )
         for partition in partitions
     ]
+
 
 @timed_public_sql_function
 def gp_create_partitions(
@@ -185,8 +186,7 @@ def gp_create_partitions(
             preview_sql=plan.sqls[0] if plan.sqls else None,
         ):
             get_backend_adapter(options.backend).execute_commands(
-                connection_ref["connection"],
-                plan.sqls,
+                connection_ref["connection"], plan.sqls
             )
             metadata.affected_rows = None
 
@@ -202,9 +202,7 @@ def gp_create_partitions(
         )
 
     run_connection_operation(
-        operation_name=(
-            f"creating partitions on {options.connection_key}.{options.target_table}"
-        ),
+        operation_name=(f"creating partitions on {options.connection_key}.{options.target_table}"),
         connection_key=options.connection_key,
         backend=options.backend,
         retry_cnt=options.retry_cnt,
@@ -253,8 +251,7 @@ def drop_partitions(
 
     metadata = plan.metadata
     time_print(
-        f"Dropping {len(options.partition_keys)} partition(s) "
-        f"from {options.target_table}",
+        f"Dropping {len(options.partition_keys)} partition(s) from {options.target_table}",
         connection=options.connection_key,
         backend=options.backend,
     )
@@ -270,10 +267,12 @@ def drop_partitions(
             query_label=options.query_label,
             preview_sql=plan.sqls[0] if plan.sqls else None,
         ):
-            get_backend_adapter(options.backend).execute_commands(
-                connection_ref["connection"],
-                plan.sqls,
-            )
+            adapter = get_backend_adapter(options.backend)
+            execute_resolved = getattr(adapter, "execute_drop_partitions", None)
+            if callable(execute_resolved):
+                execute_resolved(connection_ref["connection"], options, plan)
+            else:
+                adapter.execute_commands(connection_ref["connection"], plan.sqls)
             metadata.affected_rows = None
 
     def context(attempt: int) -> SqlOperationContext:
@@ -302,6 +301,7 @@ def drop_partitions(
     if options.return_metadata:
         return SqlOperationResult(rows=None, metadata=metadata, plan=plan)
     return None
+
 
 def build_gp_create_partitions_plan(
     options: _GpCreatePartitionsOptions,
@@ -347,6 +347,7 @@ def build_gp_create_partitions_plan(
     )
     return plan
 
+
 def _build_gp_create_partitions_options(
     *,
     db_key: str,
@@ -369,8 +370,7 @@ def _build_gp_create_partitions_options(
     config = get_connection_config(db_key)
     if config.backend != "gp":
         raise UnsupportedConnectionTypeError(
-            "gp_create_partitions requires a gp connection, "
-            f"got '{config.backend}'."
+            f"gp_create_partitions requires a gp connection, got '{config.backend}'."
         )
     validate_retry_options(retry_cnt, timeout_increment)
 
@@ -404,8 +404,10 @@ def _build_gp_create_partitions_options(
         query_label=query_label,
     )
 
+
 def _format_sql_statements(sqls: Sequence[str]) -> str:
     return ";\n".join(statement.rstrip(";") for statement in sqls)
+
 
 def build_drop_many_partitions_plan(
     options: DropManyPartitionsOptions,
@@ -442,7 +444,13 @@ def build_drop_many_partitions_plan(
         phase="drop_partitions",
         target_table=options.target_table,
     )
+    prepare_plan = getattr(
+        get_backend_adapter(options.backend), "prepare_drop_partitions_plan", None
+    )
+    if callable(prepare_plan):
+        prepare_plan(options, plan)
     return plan
+
 
 def _build_drop_many_partitions_options(
     *,
@@ -463,9 +471,7 @@ def _build_drop_many_partitions_options(
 
     target_table = _validate_non_empty_table_name(table)
     partition_keys = _validate_partition_keys(partition_keys_list)
-    normalized_trino_partition_column = _normalize_partition_column(
-        trino_partition_column
-    )
+    normalized_trino_partition_column = _normalize_partition_column(trino_partition_column)
     get_backend_adapter(config.backend).validate_drop_partitions_options(
         partition_column=normalized_trino_partition_column,
         gp_truncate=gp_truncate,
@@ -484,6 +490,7 @@ def _build_drop_many_partitions_options(
         return_metadata=return_metadata,
         query_label=query_label,
     )
+
 
 def _normalize_gp_create_partitions(
     *,
@@ -518,6 +525,7 @@ def _normalize_gp_create_partitions(
         return _normalize_gp_period_partitions(years, "years", name_template)
     raise AssertionError(f"Unexpected Greenplum partition input: {selected}")
 
+
 def _selected_gp_create_partition_input(
     *,
     intervals: Sequence[Mapping[str, Any]] | None,
@@ -541,10 +549,10 @@ def _selected_gp_create_partition_input(
     }
     if len(provided) != 1:
         raise InvalidSqlInputError(
-            "Exactly one of intervals, values, days, weeks, months, or years "
-            "must be provided."
+            "Exactly one of intervals, values, days, weeks, months, or years must be provided."
         )
     return next(iter(provided))
+
 
 def _normalize_gp_interval_partitions(
     intervals: Sequence[Mapping[str, Any]] | None,
@@ -554,9 +562,7 @@ def _normalize_gp_interval_partitions(
     partitions: list[_GpPartitionDefinition] = []
     for index, item in enumerate(interval_items):
         if not isinstance(item, Mapping):
-            raise InvalidSqlInputError(
-                "intervals must contain mappings with start and end values."
-            )
+            raise InvalidSqlInputError("intervals must contain mappings with start and end values.")
         start = _parse_gp_partition_date(item.get("start"), "interval start")
         end = _parse_gp_partition_date(item.get("end"), "interval end")
         if end <= start:
@@ -579,6 +585,7 @@ def _normalize_gp_interval_partitions(
         )
     return partitions
 
+
 def _normalize_gp_value_partitions(
     values: Sequence[str] | None,
     name_template: str,
@@ -599,6 +606,7 @@ def _normalize_gp_value_partitions(
         )
     return partitions
 
+
 def _normalize_gp_period_partitions(
     raw_values: Sequence[str] | None,
     input_name: str,
@@ -618,6 +626,7 @@ def _normalize_gp_period_partitions(
         )
     return partitions
 
+
 def _validate_gp_partition_sequence(
     value: Sequence[Any] | None,
     argument_name: str,
@@ -625,20 +634,15 @@ def _validate_gp_partition_sequence(
     if value is None:
         raise InvalidSqlInputError(f"{argument_name} must be provided.")
     if isinstance(value, (str, bytes)) or isinstance(value, Mapping):
-        raise InvalidSqlInputError(
-            f"{argument_name} must be a non-empty sequence."
-        )
+        raise InvalidSqlInputError(f"{argument_name} must be a non-empty sequence.")
     try:
         items = list(value)
     except TypeError as exc:
-        raise InvalidSqlInputError(
-            f"{argument_name} must be a non-empty sequence."
-        ) from exc
+        raise InvalidSqlInputError(f"{argument_name} must be a non-empty sequence.") from exc
     if not items:
-        raise InvalidSqlInputError(
-            f"{argument_name} must be a non-empty sequence."
-        )
+        raise InvalidSqlInputError(f"{argument_name} must be a non-empty sequence.")
     return items
+
 
 def _parse_gp_partition_date(value: Any, argument_name: str) -> date:
     if isinstance(value, datetime):
@@ -648,9 +652,7 @@ def _parse_gp_partition_date(value: Any, argument_name: str) -> date:
     elif isinstance(value, str):
         normalized = value.strip()
         if not normalized:
-            raise InvalidSqlInputError(
-                f"{argument_name} must contain ISO date strings."
-            )
+            raise InvalidSqlInputError(f"{argument_name} must contain ISO date strings.")
         try:
             parsed = date.fromisoformat(normalized)
         except ValueError as exc:
@@ -658,10 +660,9 @@ def _parse_gp_partition_date(value: Any, argument_name: str) -> date:
                 f"{argument_name} must contain valid ISO date strings."
             ) from exc
     else:
-        raise InvalidSqlInputError(
-            f"{argument_name} must contain ISO date strings."
-        )
+        raise InvalidSqlInputError(f"{argument_name} must contain ISO date strings.")
     return parsed
+
 
 def _next_gp_partition_period_start(start: date, input_name: str) -> date:
     if input_name == "days":
@@ -682,14 +683,14 @@ def _next_gp_partition_period_start(start: date, input_name: str) -> date:
         return date(start.year + 1, 1, 1)
     raise AssertionError(f"Unexpected Greenplum period input: {input_name}")
 
+
 def _validate_gp_partition_name_template(name_template: str) -> None:
     if not isinstance(name_template, str):
         raise InvalidSqlInputError("name_template must be a string.")
     remainder = name_template.replace("{}", "", 1)
     if name_template.count("{}") != 1 or "{" in remainder or "}" in remainder:
-        raise InvalidSqlInputError(
-            "name_template must contain exactly one {} placeholder."
-        )
+        raise InvalidSqlInputError("name_template must contain exactly one {} placeholder.")
+
 
 def _render_gp_partition_name(name_template: str, value: str) -> str:
     sanitized = _sanitize_gp_partition_name_token(value)
@@ -698,8 +699,10 @@ def _render_gp_partition_name(name_template: str, value: str) -> str:
         "partition name",
     )
 
+
 def _sanitize_gp_partition_name_token(value: str) -> str:
     return _gp_partitions.sanitize_gp_partition_name_token(value)
+
 
 def _validate_gp_partition_identifier(value: Any, argument_name: str) -> str:
     if not isinstance(value, str):
@@ -708,10 +711,9 @@ def _validate_gp_partition_identifier(value: Any, argument_name: str) -> str:
     if not normalized:
         raise InvalidSqlInputError(f"{argument_name} must not be empty.")
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", normalized) is None:
-        raise InvalidSqlInputError(
-            f"{argument_name} must be an unquoted SQL identifier."
-        )
+        raise InvalidSqlInputError(f"{argument_name} must be an unquoted SQL identifier.")
     return normalized
+
 
 def _validate_non_empty_table_name(table: str) -> str:
     normalized = str(table).strip()
@@ -719,11 +721,10 @@ def _validate_non_empty_table_name(table: str) -> str:
         raise InvalidSqlInputError("Table name must not be empty.")
     return normalized
 
+
 def _validate_partition_keys(partition_keys_list: Sequence[str]) -> list[str]:
     if isinstance(partition_keys_list, (str, bytes)) or not partition_keys_list:
-        raise InvalidSqlInputError(
-            "partition_keys_list must be a non-empty sequence of strings."
-        )
+        raise InvalidSqlInputError("partition_keys_list must be a non-empty sequence of strings.")
 
     partition_keys: list[str] = []
     for partition_key in partition_keys_list:
@@ -734,6 +735,7 @@ def _validate_partition_keys(partition_keys_list: Sequence[str]) -> list[str]:
             raise InvalidSqlInputError("Partition values must not be empty.")
         partition_keys.append(normalized)
     return partition_keys
+
 
 def _normalize_partition_column(partition_column: str | None) -> str | None:
     if partition_column is None:

@@ -59,9 +59,15 @@ def dataframe_from_columns(
 
 
 def _modern_array(values: Sequence[Any]) -> Any:
+    from analytics_toolkit.sql.backends.native_scalars import (  # noqa: PLC0415 -- decoded carrier identity is established after registry initialization.
+        ExactArray,
+        ExactInterval,
+        JsonDocument,
+    )
     from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 -- avoid registry cycle.
         ExactClock,
         ExactTemporal,
+        is_native_float_nan,
     )
 
     non_missing = [
@@ -69,12 +75,29 @@ def _modern_array(values: Sequence[Any]) -> Any:
         for value in values
         if value is not None and value is not pd.NA and value is not pd.NaT
     ]
-    if not values or any(
-        isinstance(
-            value,
-            (Decimal, ExactTemporal, ExactClock, list, tuple, dict, bytes, bytearray, memoryview),
+    if (
+        not values
+        or any(is_native_float_nan(value) for value in non_missing)
+        or any(
+            isinstance(
+                value,
+                (
+                    Decimal,
+                    ExactTemporal,
+                    ExactClock,
+                    ExactArray,
+                    ExactInterval,
+                    JsonDocument,
+                    list,
+                    tuple,
+                    dict,
+                    bytes,
+                    bytearray,
+                    memoryview,
+                ),
+            )
+            for value in non_missing
         )
-        for value in non_missing
     ):
         return _object_array(values)
     if non_missing and all(

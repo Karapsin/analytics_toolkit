@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID, uuid4
 
 import sqlparse
 from sqlglot import exp, parse_one
@@ -17,12 +18,18 @@ STAGE = "stage.0123456789abcdef__aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa__w00000"
 STAGED_ROWS = 700_004
 
 
+class FixtureTableAlreadyExistsError(RuntimeError):
+    code = 57
+
+
 @dataclass(frozen=True)
 class Table:
     rows: int
     columns: tuple[str, ...]
     replicated: bool = True
     replica_rows: tuple[int, ...] | None = None
+    uuid: UUID = field(default_factory=uuid4, compare=False)
+    create: exp.Create | None = field(default=None, compare=False, repr=False)
 
 
 class ReplacementClient:
@@ -76,6 +83,7 @@ class ReplacementClient:
         self.fail_cutover_after_apply = False
         self.cutover_attempts = 0
         self.metadata = ReplacementMetadata(self)
+        self.default_replica_path = "/clickhouse/{database}/{table}/{shard}"
 
     def command(self, sql: str, settings: dict[str, Any] | None = None) -> None:
         self.commands.append((sql, settings or {}))
@@ -238,11 +246,24 @@ class ReplacementClient:
             columns = source.columns
             types = self.column_types.get((source_scope, source_table), ("Int64",) * len(columns))
         key = (execution_scope, self.table_name(target))
+        if key in self.tables:
+            if tree.args.get("exists"):
+                return
+            message = "The table already exists in the selected fixture scope."
+            raise FixtureTableAlreadyExistsError(message)
         engine = tree.find(exp.EngineProperty).this.name.lower()
         if key not in self.tables:
             self.column_types[key] = types
+        declared_uuid = tree.find(exp.UuidProperty)
         self.tables.setdefault(
-            key, Table(0, columns, replicated=engine.startswith(("replicated", "shared")))
+            key,
+            Table(
+                0,
+                columns,
+                replicated=engine.startswith(("replicated", "shared")),
+                uuid=UUID(declared_uuid.this.name) if declared_uuid is not None else uuid4(),
+                create=tree.copy(),
+            ),
         )
         if engine == "distributed":
             arguments = tree.find(exp.EngineProperty).this.expressions

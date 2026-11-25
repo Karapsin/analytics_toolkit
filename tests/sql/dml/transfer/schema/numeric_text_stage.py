@@ -1,4 +1,4 @@
-"""Final finite numeric casts validate complete text stages without rewriting them."""
+"""Native numeric casts validate complete text stages without rewriting them."""
 
 from __future__ import annotations
 
@@ -7,11 +7,13 @@ import re
 from decimal import Decimal, localcontext
 
 import pytest
+from analytics_toolkit import sql
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.dml.transfer.flow import attempt, finalize
 from sqlglot import exp, parse_one
 
 from tests.sql._support.adaptive_transfer import install, track_spools
+from tests.sql._support.numeric_text_transfer import install_numeric_text_transfer
 from tests.sql.dml.transfer.schema.direct_date_stage import capture_raw_spool_rows
 
 _EXACT = "12345678901234567890.123456789"
@@ -47,12 +49,20 @@ _INVALID = [
         )
         + ([("native-underflow", "1E-999")] if case[0] == "ch" and case[3] == "float" else [])
     )
+    if not (
+        kind in {"nan", "infinity"}
+        and (case[0] == "gp" or (case[0] == "trino" and case[3] == "float"))
+    )
 ]
 
 
-def portable_numeric_cast(value, family):
+def portable_numeric_cast(value, family, backend):
     if value is None:
         return None
+    # Trino's VARCHAR-to-DOUBLE operator delegates these tokens to parseDouble.
+    # Its native NaN/Infinity values are distinct from SQL NULL.
+    if backend == "trino" and family == "float" and value in {"NaN", "Infinity", "-Infinity"}:
+        return float(value)
     if not isinstance(value, str) or _PORTABLE_TEXT.fullmatch(value) is None:
         message = "Independent destination numeric CAST rejected staged text."
         raise ValueError(message)
@@ -103,7 +113,8 @@ class NumericDestination:
         elif isinstance(parsed, exp.Insert):
             assert list(parsed.find_all(exp.Cast))
             converted = [
-                (portable_numeric_cast(row[0], self.family),) for row in self.scenario.loaded[-1]
+                (portable_numeric_cast(row[0], self.family, self.backend),)
+                for row in self.scenario.loaded[-1]
             ]
             self.rows[:] = converted
             self.rowcount = len(converted)
@@ -194,6 +205,139 @@ def test_numeric_text_stage_preserves_raw_strings_and_exact_finite_final_values(
     )
     assert paths
     assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize("text", ["NaN", "Infinity", "-Infinity"])
+def test_trino_float_text_stage_preserves_native_specials_and_distinct_null(monkeypatch, text):
+    values = ["1.25", None, text]
+    raw_rows = [(value,) for value in values]
+    captured = capture_raw_spool_rows(monkeypatch)
+    case = ("trino", "VARCHAR", "DOUBLE", "float")
+    scenario, destination = numeric_text_transfer(monkeypatch, case, values)
+    paths = track_spools(monkeypatch)
+
+    result = scenario.run(metadata=True)
+
+    assert result.rows == result.metadata.input_count == 3
+    assert destination.rows[:2] == [(1.25,), (None,)]
+    special = destination.rows[2][0]
+    assert type(special) is float
+    if text == "NaN":
+        assert math.isnan(special)
+    else:
+        assert special == float(text)
+    assert scenario.schemas == [{"id": "VARCHAR"}]
+    assert scenario.existing_types == {"id": "DOUBLE"}
+    assert scenario.loaded == [raw_rows]
+    assert captured == raw_rows
+    assert scenario.read_count == scenario.finalizations == 1
+    assert scenario.events.index("complete:SELECT id FROM source") < scenario.events.index(
+        "create_target"
+    )
+    assert paths
+    assert all(not path.exists() for path in paths)
+
+
+def _run_gp_text_stage(stage_type):
+    return sql.transfer(
+        "trino",
+        "gp",
+        from_sql="SELECT id FROM source",
+        to_table="sandbox.events",
+        table_schema={"id": stage_type},
+        write_mode="truncate_insert",
+        ignore_source_staging=True,
+        validate_row_count=False,
+        retry_cnt=1,
+        full_retry_cnt=1,
+        timeout_increment=0,
+        full_timeout_increment=0,
+        return_metadata=True,
+    )
+
+
+@pytest.mark.parametrize("stage_type", ["TEXT", "VARCHAR"])
+@pytest.mark.parametrize(
+    ("native_type", "text"),
+    [
+        ("DOUBLE PRECISION", "NaN"),
+        ("DOUBLE PRECISION", "Infinity"),
+        ("DOUBLE PRECISION", "-Infinity"),
+        ("NUMERIC(38,9)", "NaN"),
+    ],
+)
+def test_gp_numeric_text_stage_certifies_native_specials_and_distinct_null(
+    monkeypatch, stage_type, native_type, text
+):
+    raw_rows = [("1.25",), (None,), (text,)]
+    captured = capture_raw_spool_rows(monkeypatch)
+    database = install_numeric_text_transfer(
+        monkeypatch, rows=raw_rows, final_type=native_type, stage_type=stage_type
+    )
+    paths = track_spools(monkeypatch)
+
+    result = _run_gp_text_stage(stage_type)
+
+    assert result.rows == result.metadata.input_count == 3
+    assert result.metadata.inserted_rows == result.metadata.affected_rows == 3
+    expected_finite = Decimal("1.250000000") if native_type.startswith("NUMERIC") else 1.25
+    assert database.target.rows[:2] == [{"id": expected_finite}, {"id": None}]
+    special = database.target.rows[2]["id"]
+    if native_type.startswith("NUMERIC"):
+        assert type(special) is Decimal
+        assert special.is_qnan()
+        assert database.private_value_attempts
+        assert ("sandbox", "events") not in database.private_value_attempts
+        assert result.metadata.type_resolutions[0]["native_assignment_validation"] == "certified"
+        assert result.metadata.type_resolutions[0]["certified_input_count"] == 3
+    else:
+        assert type(special) is float
+        if text == "NaN":
+            assert math.isnan(special)
+        else:
+            assert special == float(text)
+    assert database.target.schema == {"id": native_type}
+    assert database.original_source_rows == raw_rows
+    assert database.bound_rows == raw_rows
+    assert captured == raw_rows
+    assert len(database.reads) == database.source_opens == 1
+    assert len(database.source_completions) == 1
+    assert database.live_mutations
+    assert set(database.tables) == {("sandbox", "events")}
+    assert paths
+    assert all(not path.exists() for path in paths)
+    assert all(connection.close_count == 1 for connection in database.opened)
+
+
+@pytest.mark.parametrize("stage_type", ["TEXT", "VARCHAR"])
+@pytest.mark.parametrize("text", ["Infinity", "-Infinity"])
+def test_gp_numeric_text_stage_rejects_unsupported_native_infinity_before_live_mutation(
+    monkeypatch, stage_type, text
+):
+    raw_rows = [("1.25",), (None,), (text,)]
+    captured = capture_raw_spool_rows(monkeypatch)
+    database = install_numeric_text_transfer(
+        monkeypatch, rows=raw_rows, final_type="NUMERIC(38,9)", stage_type=stage_type
+    )
+    paths = track_spools(monkeypatch)
+
+    with pytest.raises(ValueError, match=r"(?i)native|numeric|destination schema") as failure:
+        _run_gp_text_stage(stage_type)
+
+    assert text not in str(failure.value)
+    assert database.target.rows == database.sentinel_rows
+    assert database.target.schema == {"id": "NUMERIC(38,9)"}
+    assert database.live_mutations == []
+    assert database.private_value_attempts
+    assert ("sandbox", "events") not in database.private_value_attempts
+    assert database.bound_rows == raw_rows
+    assert database.original_source_rows == captured == raw_rows
+    assert len(database.reads) == database.source_opens == 1
+    assert len(database.source_completions) == 1
+    assert set(database.tables) == {("sandbox", "events")}
+    assert paths
+    assert all(not path.exists() for path in paths)
+    assert all(connection.close_count == 1 for connection in database.opened)
 
 
 @pytest.mark.parametrize(("case", "invalid_kind", "invalid_text"), _INVALID)

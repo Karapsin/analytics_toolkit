@@ -135,7 +135,12 @@ def test_ch_boolean_invalid_declarations_reject_empty_or_null_only_profiles(nati
     for value in values:
         profile.add(value)
 
-    with pytest.raises(ValueError, match=r"unparameterized|storage type"):
+    message = (
+        "storage type"
+        if native == "Nullable(Bool, UInt8)"
+        else "native type declaration does not accept type arguments"
+    )
+    with pytest.raises(ValueError, match=message):
         validate_profile(profile, native, "ch")
 
     assert profile.count == len(values)

@@ -53,8 +53,10 @@ def date_value(value: Any) -> dt.date:
             return pd.Timestamp(value).date()
         if isinstance(value, dt.date):
             return value
-        if isinstance(value, str) and _ISO_DATE.fullmatch(value) is not None:
-            return dt.date.fromisoformat(value)
+        if isinstance(value, str):
+            token = value.strip()
+            if _ISO_DATE.fullmatch(token) is not None:
+                return dt.date.fromisoformat(token)
     except (TypeError, ValueError, OverflowError):
         raise TrinoDateValueError(_INVALID_DATE) from None
     raise TrinoDateValueError(_INVALID_DATE)

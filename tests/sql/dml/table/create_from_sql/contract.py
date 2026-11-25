@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import engine_name
 from analytics_toolkit.sql.backends.models import SourceColumn
 
 from tests.sql._support.create_from_sql import (
     SOURCE_DESCRIPTION,
     FakeClickHouseClient,
-    FakeDbapiConnection,
     SimpleNamespace,
     _candidate_create_options,
     acknowledged_create,
@@ -18,6 +18,18 @@ from tests.sql._support.create_from_sql import (
     pytest,
     sql_module,
 )
+from tests.sql._support.create_from_sql_protocol import (
+    CatalogClickHouseClient,
+    install_fake_type_registration,
+)
+from tests.sql._support.create_from_sql_protocol import (
+    CatalogConnection as FakeDbapiConnection,
+)
+
+
+@pytest.fixture(autouse=True)
+def _fake_native_driver_boundary(monkeypatch):
+    install_fake_type_registration(monkeypatch)
 
 
 def test_clickhouse_fast_path_applies_only_to_same_alias(
@@ -187,6 +199,7 @@ def test_create_from_sql_generic_metadata_direct_and_delegated_paths(
     assert transfer_calls[0]["query_label"] == "candidate-9"
     assert transfer_calls[0]["table_schema"] == {"id": "BIGINT"}
     assert transfer_calls[0]["return_metadata"] is True
+    assert transfer_calls[0]["ch_only_shard"] is True
     assert all(connection.close_calls == 1 for connection in connections)
 
 
@@ -205,6 +218,8 @@ def test_create_table_from_sql_inserts_by_default(monkeypatch) -> None:
         "gp",
         "sandbox.target_table",
         "select id, amount from source_table",
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 4
@@ -219,8 +234,9 @@ def test_create_table_from_sql_is_not_public() -> None:
 def test_create_table_from_sql_passes_only_shard_to_cross_backend_transfer(
     monkeypatch,
 ) -> None:
-    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
-    target = FakeClickHouseClient()
+    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION, insert_rowcount=5)
+    source.source_rows = [(index, Decimal("1.25")) for index in range(5)]
+    target = CatalogClickHouseClient()
     transfer_calls: list[dict[str, object]] = []
 
     def fake_get_sql_connection(connection_key: str) -> object:
@@ -245,20 +261,26 @@ def test_create_table_from_sql_passes_only_shard_to_cross_backend_transfer(
         insert_data=True,
         ch_only_shard=True,
         order_by=["id"],
+        ch_ddl_ready_timeout_seconds=0.01,
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 5
-    assert transfer_calls[0]["ch_only_shard"] is True
-    assert any(
-        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events\n")
-        and "ENGINE = ReplicatedMergeTree" in command
-        for command in target.commands
+    # Complete profiling now replays its certified input directly; the
+    # delegated branch above separately retains the only-shard forwarding ABI.
+    assert not transfer_calls
+    assert any(command.startswith("CREATE TABLE analytics.events") for command in target.commands)
+    assert engine_name(target.state.host_tables[target.host]["analytics.events"].create) == (
+        "ReplicatedMergeTree"
     )
     assert not any(
-        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
-        for command in target.commands
+        command.startswith("CREATE TABLE analytics.events_shard") for command in target.commands
     )
     assert not any("ENGINE = Distributed(" in command for command in target.commands)
+    assert target.state.rows(target.host, "analytics.events") == source.source_rows
+    assert source.source_rows == [(index, Decimal("1.25")) for index in range(5)]
+    assert source.close_calls == target.close_calls == 1
 
 
 def test_create_table_from_sql_profiles_explicit_cross_backend_schema_before_creation(
@@ -266,7 +288,7 @@ def test_create_table_from_sql_profiles_explicit_cross_backend_schema_before_cre
 ) -> None:
     source = FakeDbapiConnection(description=SOURCE_DESCRIPTION, insert_rowcount=5)
     source.source_rows = [(index, Decimal("1.25")) for index in range(5)]
-    target = FakeClickHouseClient()
+    target = CatalogClickHouseClient()
     transfer_calls: list[dict[str, object]] = []
     opened: list[str] = []
 
@@ -311,11 +333,12 @@ def test_create_table_from_sql_profiles_explicit_cross_backend_schema_before_cre
     ]
     assert source.source_rows == [(index, Decimal("1.25")) for index in range(5)]
     assert any(
-        command.startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
-        and "`id` String" in command
-        and "`amount` Float64" in command
-        for command in target.commands
+        command.startswith("CREATE TABLE analytics.events_shard") for command in target.commands
     )
+    assert target.state.host_tables[target.state.remote]["analytics.events_shard"].schema == {
+        "id": "String",
+        "amount": "Float64",
+    }
 
 
 def test_create_table_from_sql_same_clickhouse_delegates_to_adapter_fast_path(
@@ -402,6 +425,8 @@ def test_create_table_from_sql_table_schema_overrides_source_types(
         "select id, amount from source_table",
         insert_data=True,
         table_schema={"id": "TEXT", "amount": "DOUBLE PRECISION"},
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 3
@@ -435,13 +460,15 @@ def test_insert_data_same_backend_emits_typed_insert_and_returns_rowcount(
         "sandbox.target_table",
         "select id, amount from source_table",
         insert_data=True,
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 7
     assert connection.executed[-1] == (
         'INSERT INTO sandbox.target_table ("id", "amount") '
-        'SELECT CAST("id" AS INTEGER) AS "id", '
-        'CAST("amount" AS NUMERIC(12, 2)) AS "amount" '
+        'SELECT CAST("id" AS integer) AS "id", '
+        'CAST("amount" AS numeric(12,2)) AS "amount" '
         "FROM (select id, amount from source_table) AS source_query"
     )
 
@@ -466,6 +493,8 @@ def test_insert_data_same_trino_preserves_array_types(monkeypatch) -> None:
         "iceberg.sandbox.target_table",
         "select campaign_codes, po_bonus_pk, pers_offers_pk from source_table",
         insert_data=True,
+        retry_cnt=1,
+        timeout_increment=0,
     )
 
     assert inserted_rows == 1

@@ -5272,8 +5272,8 @@
             {
               "state": "true",
               "status": "covered",
-              "tests": [
-                "tests/sql/architecture/misc_contracts.py::test_public_mutating_sql_helpers_accept_dry_run_plan_options"
+              "scenarios": [
+                "audit.metadata.clickhouse.logical_totals"
               ]
             }
           ]
@@ -11453,6 +11453,87 @@
       "regression_tests": [
         "tests/sql/dml/load/ch_integer_timestamps.py::test_ch_authoritative_timestamp_array_accepts_tuple_sequences",
         "tests/sql/dml/load/ch_timestamp_keys.py::test_ch_timestamp_keys_hashable_array_payloads_reject_equal_native_keys_before_create"
+      ]
+    },
+    "audit.metadata.clickhouse.logical_totals": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/logical_metadata.py::test_native_clickhouse_logical_statistics_and_replica_identity",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/logical_statistics.py::test_logical_statistics_counts_replicated_shards_and_independent_hosts",
+        "tests/sql/backends/ch/logical_statistics.py::test_routed_show_tables_deduplicates_exact_identity_and_keeps_case"
+      ]
+    },
+    "audit.clickhouse.replication_storage_isolation.replace.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/replication_storage_isolation.py::test_replicated_rebuild_never_joins_the_live_source_storage[audit.clickhouse.replication_storage_isolation.replace.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/replication_isolation.py::test_public_staged_replace_rejects_shared_live_replication_path_before_create",
+        "tests/sql/backends/ch/replication_isolation.py::test_public_cross_cluster_reconfigure_rejects_same_expanded_table_replication_path"
+      ]
+    },
+    "audit.clickhouse.replication_storage_isolation.replace.ch_native": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/replication_storage_isolation.py::test_replicated_rebuild_never_joins_the_live_source_storage[audit.clickhouse.replication_storage_isolation.replace.ch_native]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/replication_isolation.py::test_public_staged_replace_rejects_shared_live_replication_path_before_create",
+        "tests/sql/backends/ch/replication_isolation.py::test_public_cross_cluster_reconfigure_rejects_same_expanded_table_replication_path"
+      ]
+    },
+    "audit.clickhouse.replication_storage_isolation.relocate.ch": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/replication_storage_isolation.py::test_replicated_rebuild_never_joins_the_live_source_storage[audit.clickhouse.replication_storage_isolation.relocate.ch]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/replication_isolation.py::test_public_staged_replace_rejects_shared_live_replication_path_before_create",
+        "tests/sql/backends/ch/replication_isolation.py::test_public_cross_cluster_reconfigure_rejects_same_expanded_table_replication_path"
+      ]
+    },
+    "audit.clickhouse.replication_storage_isolation.relocate.ch_native": {
+      "profile": "core",
+      "node_id": "tests/sql/integration/core/replication_storage_isolation.py::test_replicated_rebuild_never_joins_the_live_source_storage[audit.clickhouse.replication_storage_isolation.relocate.ch_native]",
+      "backends": [
+        "ch"
+      ],
+      "regression_tests": [
+        "tests/sql/backends/ch/replication_isolation.py::test_public_staged_replace_rejects_shared_live_replication_path_before_create",
+        "tests/sql/backends/ch/replication_isolation.py::test_public_cross_cluster_reconfigure_rejects_same_expanded_table_replication_path"
+      ]
+    },
+    "fault.clickhouse.optional_facade.ch": {
+      "profile": "fault",
+      "backends": [
+        "ch"
+      ],
+      "node_id": "tests/sql/integration/fault/clickhouse_facade_availability.py::test_healthy_physical_cluster_survives_optional_facade_outage[fault.clickhouse.optional_facade.ch]",
+      "regression_tests": [
+        "tests/sql/backends/ch/availability.py::test_default_creation_requires_shards_and_warns_for_optional_facade",
+        "tests/sql/backends/ch/availability.py::test_missing_required_shard_stops_before_optional_facade_creation",
+        "tests/sql/backends/ch/availability.py::test_no_shard_cluster_preserves_full_participating_cluster_requirement",
+        "tests/sql/backends/ch/availability_writes.py::test_public_writes_finish_with_only_acknowledged_optional_facade_resources"
+      ]
+    },
+    "fault.clickhouse.optional_facade.ch_native": {
+      "profile": "fault",
+      "backends": [
+        "ch"
+      ],
+      "node_id": "tests/sql/integration/fault/clickhouse_facade_availability.py::test_healthy_physical_cluster_survives_optional_facade_outage[fault.clickhouse.optional_facade.ch_native]",
+      "regression_tests": [
+        "tests/sql/backends/ch/availability.py::test_default_creation_requires_shards_and_warns_for_optional_facade",
+        "tests/sql/backends/ch/availability.py::test_missing_required_shard_stops_before_optional_facade_creation",
+        "tests/sql/backends/ch/availability.py::test_no_shard_cluster_preserves_full_participating_cluster_requirement",
+        "tests/sql/backends/ch/availability_writes.py::test_public_writes_finish_with_only_acknowledged_optional_facade_resources"
       ]
     }
   },

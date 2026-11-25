@@ -19,7 +19,7 @@ class _StorageClauseError(ValueError):
 
 
 @lru_cache(maxsize=128)
-def _engine_features(engine: str) -> tuple[str, bool]:
+def _engine_features(engine: str) -> tuple[str, bool, bool]:
     try:
         create = parse_one(
             f"CREATE TABLE __atk_storage__ (id UInt8) ENGINE = {engine}",
@@ -34,8 +34,10 @@ def _engine_features(engine: str) -> tuple[str, bool]:
     if properties is None or engine_property is None:
         raise _StorageClauseError(_INVALID_ENGINE)
     name = engine_property.this.name or engine_property.this.key
-    return name.casefold(), any(
-        isinstance(property_, _KEY_PROPERTIES) for property_ in properties.expressions
+    return (
+        name.casefold(),
+        any(isinstance(property_, _KEY_PROPERTIES) for property_ in properties.expressions),
+        any(isinstance(property_, exp.Order) for property_ in properties.expressions),
     )
 
 
@@ -49,9 +51,9 @@ def physical_storage_clauses(
     Only the engine is parsed: rendered keys and engine literals are returned by
     their existing builders without a parse/render round trip.
     """
-    name, engine_keys = _engine_features(engine)
+    name, engine_keys, engine_order = _engine_features(engine)
     if name == "memory" and (partition_sql or explicit_order or engine_keys):
         raise _StorageClauseError(_MEMORY_KEYS)
-    if not explicit_order and not name.endswith("mergetree"):
+    if not explicit_order and (engine_order or not name.endswith("mergetree")):
         order_sql = ""
     return partition_sql + order_sql

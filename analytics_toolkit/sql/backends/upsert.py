@@ -3,6 +3,15 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+
+def prepare_upsert_target(
+    adapter: Any, connection: Any, table_name: str, *, partition_column: str | None
+) -> None:
+    prepare = getattr(adapter, "prepare_upsert_target", None)
+    if callable(prepare):
+        prepare(connection, table_name, partition_column=partition_column)
+
+
 def build_upsert_partition_values_sql(
     adapter: Any,
     stage_table: str,

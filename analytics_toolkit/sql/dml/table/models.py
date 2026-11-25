@@ -5,6 +5,14 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 
+class _UnsafeAttemptFailure:
+    """Preserve the original failure when a query attempt cannot safely replay."""
+
+    def __init__(self, error: Exception, attempt: int) -> None:
+        self.error = error
+        self.attempt = attempt
+
+
 @dataclass(frozen=True)
 class CreateTableFromSqlOptions:
     source_key: str

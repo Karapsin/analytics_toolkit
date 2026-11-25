@@ -24,6 +24,7 @@ from sqlglot import exp, parse_one
 from tests.conftest import DEFAULT_SQL_CONNECTIONS
 from tests.sql._support.load_table import load_df_module
 from tests.sql._support.outage import Client, Cluster
+from tests.sql._support.upsert_metadata import UpsertMetadata
 from tests.sql._support.upsert_scope import (
     EXPECTED_ROWS,
     INCOMING_ROWS,
@@ -50,6 +51,7 @@ class ExistingStorageClient:
         self.commands = []
         self.queries = []
         self.mutations = []
+        self.metadata = UpsertMetadata(local=local, physical_table="custom_storage")
         self.partitions = {
             ("caller_a", "custom_storage"): {202401: "unrelated caller data"},
             ("storage_b", "custom_storage"): {202401: "selected target data"},
@@ -57,61 +59,18 @@ class ExistingStorageClient:
             ("caller_a", "events"): {202401: "unrelated routed data"},
         }
 
-    def query(self, statement):
+    def query(self, statement, settings=None, **_kwargs):
         self.queries.append(statement)
-        metadata_rows = self._routing_metadata(statement)
-        if metadata_rows is not None:
-            return SimpleNamespace(result_rows=metadata_rows)
-        if statement.startswith("SHOW CREATE TABLE"):
-            ddl = "CREATE TABLE db.events (id Int64, month Int64, value Int64) " + (
-                "ENGINE=MergeTree PARTITION BY month ORDER BY id"
-                if self.local
-                else "ENGINE=Distributed('storage_b', 'db', 'custom_storage', rand())"
-            )
-            rows = [(ddl,)]
-        elif statement.startswith("SELECT create_table_query FROM clusterAllReplicas("):
-            assert "'storage_b'" in statement
-            assert "custom_storage" in statement
-            rows = [
-                (
-                    "CREATE TABLE db.custom_storage (id Int64, month Int64, value Int64) "
-                    "ENGINE=MergeTree PARTITION BY month ORDER BY id",
-                )
-            ]
-        elif statement.startswith("DESCRIBE TABLE"):
-            rows = [(name, "Int64", "") for name in ("id", "month", "value")]
-        elif statement.startswith("EXISTS TABLE"):
-            rows = [(1,)]
-        elif "SELECT DISTINCT" in statement:
+        metadata = self.metadata.query(statement, settings=settings)
+        if metadata is not None:
+            return metadata
+        if "SELECT DISTINCT" in statement:
             rows = [(202401,)]
         elif "HAVING" in statement:
             rows = []
-        elif statement == "SELECT currentDatabase()":
-            rows = [("db",)]
         else:
             rows = []
         return SimpleNamespace(result_rows=rows)
-
-    @staticmethod
-    def _routing_metadata(statement):
-        if "FROM system.clusters" in statement:
-            rows = [(1, 1, "host_a")]
-        elif "system, one" in statement:
-            rows = [("host_a",)]
-        elif "FROM system.tables" in statement or ("SELECT hostName(), engine" in statement):
-            tree = parse_one(statement, read=ClickHouseDialect)
-            relation = next(
-                item.right.this for item in tree.find_all(exp.EQ) if item.left.name == "name"
-            )
-            ddl = (
-                f"CREATE TABLE db.{relation} (id Int64, month Int64, value Int64) "
-                "ENGINE=MergeTree PARTITION BY month ORDER BY id"
-            )
-            row = ("MergeTree", "MergeTree()", ddl)
-            rows = [("host_a", *row, "fake-uuid")] if "SELECT hostName()" in statement else [row]
-        else:
-            return None
-        return rows
 
     def command(self, statement, **_kwargs):
         self.commands.append(statement)
@@ -452,8 +411,8 @@ class StringPartitionClient(ExistingStorageClient):
         self.value = value
         self.partition_literals = []
 
-    def query(self, statement):
-        result = super().query(statement)
+    def query(self, statement, settings=None, **kwargs):
+        result = super().query(statement, settings=settings, **kwargs)
         if "SELECT DISTINCT" in statement:
             result.result_rows = [(self.value,)]
         elif statement.startswith("DESCRIBE TABLE"):

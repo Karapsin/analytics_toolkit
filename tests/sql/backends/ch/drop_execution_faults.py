@@ -21,9 +21,12 @@ from analytics_toolkit.sql.backends.ch.drop_layout import (
 )
 from analytics_toolkit.sql.backends.ch.lifecycle import drop_ch_table
 from analytics_toolkit.sql.backends.ch.reconfigure_ddl import parse_create_table
-from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
+from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError, InvalidSqlInputError
 from analytics_toolkit.sql.connection.get_sql_connection import get_ch_connection_for_host
-from analytics_toolkit.sql.execution.backend_options import current_backend_operation
+from analytics_toolkit.sql.execution.backend_options import (
+    backend_operation,
+    current_backend_operation,
+)
 
 from tests.sql._support.assertions import strip_query_label
 from tests.sql._support.ch_drop_scope import _DropConnection, install_drop_scope
@@ -88,6 +91,20 @@ def _only_facade_removed(state, before):
     expected = deepcopy(before)
     expected[state.coordinator].pop(_TARGET)
     return expected
+
+
+def _assert_ambiguous_recovery(error, failure, state, operation):
+    assert type(error) is AmbiguousSqlReplaceError
+    assert error.__cause__ is failure
+    journal = error.analytics_toolkit_sql_drop_journal
+    assert journal["submitted"] is True
+    assert journal["acknowledged"] is False
+    assert journal["recovery_retained"] is True
+    assert journal["endpoint"] == f"{state.host_endpoints[state.remote][1]}:9000"
+    assert journal["certificate"][-2] == state.host_tables[state.remote][_PHYSICAL].uuid
+    assert operation.resources["clickhouse_drop_recovery_journal"] == [journal]
+    assert operation.preserve_recovery is True
+    assert operation.structural_replay_blocked is True
 
 
 def test_configuration_guard_rejects_changed_alias_before_a_new_client_or_drop(
@@ -356,10 +373,14 @@ def test_worker_failure_preserves_primary_error_and_remaining_data(fault_case, f
         workers.append(worker)
         return worker
 
-    with _connection() as connection, pytest.raises(RuntimeError) as error:
-        _execute_pair(connection, _delayed_options(per_host_connection_factory=factory))
-
-    assert error.value is failure
+    expected_error = RuntimeError if failure_kind == "factory" else AmbiguousSqlReplaceError
+    with backend_operation() as operation:
+        with _connection() as connection, pytest.raises(expected_error) as error:
+            _execute_pair(connection, _delayed_options(per_host_connection_factory=factory))
+        if failure_kind == "factory":
+            assert error.value is failure
+        else:
+            _assert_ambiguous_recovery(error.value, failure, state, operation)
     assert state.snapshot() == _only_facade_removed(state, before)
     assert len(state.commands) == 2
     assert len(attempts) == (1 if failure_kind == "write-and-close" else 0)

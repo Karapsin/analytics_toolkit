@@ -43,6 +43,7 @@ class AdaptiveRangeScheduler:
             if row_count
         )
         self._claimed: dict[OrdinalRange, int] = {}
+        self._failures: dict[OrdinalRange, int] = {}
         self._completed: set[OrdinalRange] = set()
         self._lock = Lock()
 
@@ -55,11 +56,17 @@ class AdaptiveRangeScheduler:
             if not self._pending:
                 return None
             pending = self._pending.popleft()
+            failures = self._failures.pop(pending, 0)
             stop = min(pending.stop_ordinal, pending.start_ordinal + batch_size)
             claimed = OrdinalRange(pending.slice_id, pending.start_ordinal, stop)
             if stop < pending.stop_ordinal:
-                self._pending.appendleft(OrdinalRange(pending.slice_id, stop, pending.stop_ordinal))
+                remaining = OrdinalRange(pending.slice_id, stop, pending.stop_ordinal)
+                self._pending.appendleft(remaining)
+                if failures:
+                    self._failures[remaining] = failures
             self._claimed[claimed] = worker_id
+            if failures:
+                self._failures[claimed] = failures
             return claimed
 
     def complete(self, worker_id: int, claimed: OrdinalRange) -> None:
@@ -68,7 +75,17 @@ class AdaptiveRangeScheduler:
             if owner != worker_id:
                 raise RuntimeError("Ordinal range was not claimed by this worker.")
             del self._claimed[claimed]
+            self._failures.pop(claimed, None)
             self._completed.add(claimed)
+
+    def record_failure(self, worker_id: int, claimed: OrdinalRange) -> int:
+        """Consume a retry from the range lineage, independently of worker identity."""
+        with self._lock:
+            if self._claimed.get(claimed) != worker_id:
+                raise RuntimeError("Ordinal range was not claimed by this worker.")
+            failures = self._failures.get(claimed, 0) + 1
+            self._failures[claimed] = failures
+            return failures
 
     def requeue_failed(
         self,
@@ -84,6 +101,7 @@ class AdaptiveRangeScheduler:
             if owner != worker_id:
                 raise RuntimeError("Ordinal range was not claimed by this worker.")
             del self._claimed[claimed]
+            failures = self._failures.pop(claimed, 0)
             children = [
                 OrdinalRange(
                     claimed.slice_id,
@@ -97,6 +115,8 @@ class AdaptiveRangeScheduler:
                 )
             ]
             self._pending.extendleft(reversed(children))
+            if failures:
+                self._failures.update((child, failures) for child in children)
 
     @property
     def finished(self) -> bool:

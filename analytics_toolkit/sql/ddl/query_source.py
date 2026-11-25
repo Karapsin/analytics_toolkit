@@ -43,6 +43,7 @@ def generate_create_table_from_query_sql(  # noqa: PLR0913 - Mirrors the public 
     get_sql_connection_fn: Callable[[str], Any],
     ch_creation_policy: Any = None,
     ch_replace_table: bool = False,
+    if_not_exists: bool = False,
 ) -> str:
     # Source creation imports the DDL facade; defer these shared normalizers until execution.
     # The API calls this helper; import its compatibility builders after initialization.
@@ -190,6 +191,7 @@ def generate_create_table_from_query_sql(  # noqa: PLR0913 - Mirrors the public 
         target_exists_before_drop=False,
     )
     create_kwargs["ch_replace_table"] = ch_replace_table
+    create_kwargs["if_not_exists"] = if_not_exists
     create_sqls = _build_create_table_sqls(
         target_config.backend,
         table_name,

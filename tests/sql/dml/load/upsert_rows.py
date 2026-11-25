@@ -22,6 +22,7 @@ from analytics_toolkit.sql.dml.table.write_modes import (
 from sqlglot import parse_one
 
 from tests.sql._support.fakes import FakeDbapiConnection
+from tests.sql._support.gp_upsert_load import native_upsert_load
 from tests.sql._support.load_table import load_df_module
 
 
@@ -69,10 +70,13 @@ def test_existing_upsert_rejects_missing_default_or_extra_before_stage(monkeypat
 
 
 def test_reordered_complete_upsert_is_canonical_and_partition_scoped(monkeypatch):
-    connection, inserted = _patch_load_boundaries(
-        monkeypatch,
-        writable_types={"id": "BIGINT", "month": "TEXT", "value": "INTEGER"},
+    database = native_upsert_load(
+        monkeypatch, {"id": "BIGINT", "month": "TEXT", "value": "INTEGER"}
     )
+    database.target.rows = [
+        {"id": 1, "month": "January", "value": -1},
+        {"id": 1, "month": "March", "value": 30},
+    ]
     count = sql.load_df(
         "gp",
         "public.target",
@@ -84,11 +88,18 @@ def test_reordered_complete_upsert_is_canonical_and_partition_scoped(monkeypatch
         timeout_increment=0,
     )
     assert count == 2
-    assert list(inserted[0]) == ["id", "month", "value"]
-    deletion = next(statement for statement in connection.executed if "DELETE FROM" in statement)
+    assert list(database.inserted_frames[0]) == ["id", "month", "value"]
+    deletion = next(statement for statement in database.commands if "DELETE FROM" in statement)
     assert 'target_dst."month" = stage_src."month"' in deletion
     assert 'target_dst."id" = stage_src."id"' in deletion
-    assert connection.commit_calls == 1
+    # Private checkpoint CREATE/INSERT commits are separate from the one live
+    # transactional key deletion and publication commit.
+    assert database.target_transactions == [("DELETE", "INSERT")]
+    assert sorted(database.target.rows, key=lambda row: row["month"]) == [
+        {"id": 1, "month": "February", "value": 20},
+        {"id": 1, "month": "January", "value": 10},
+        {"id": 1, "month": "March", "value": 30},
+    ]
 
 
 def test_same_partition_key_is_duplicate_before_any_stage(monkeypatch):
@@ -308,7 +319,7 @@ def test_gp_character_last_row_rejects_before_truncate(monkeypatch):
 
 
 def test_load_retry_reuses_certified_upsert_payload_without_loading_again(monkeypatch):
-    _patch_load_boundaries(monkeypatch, writable_types={"id": "BIGINT"})
+    native_upsert_load(monkeypatch, {"id": "BIGINT"})
     loads = []
     replays = []
 

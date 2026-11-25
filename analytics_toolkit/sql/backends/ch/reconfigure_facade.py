@@ -33,20 +33,23 @@ class FacadeMutation:
     source_cluster: str | None = None
     physical_scope: str | None = None
     pair_to_local: bool = False
+    coordinator_required: bool = True
 
 
 def _certify_facades(
     connection: Any,
-    table: str,
-    cluster: str | None,
-    source_ddl: str | None,
-    source_cluster: str | None,
+    mutation: FacadeMutation,
 ) -> _FacadeOwnership:
+    table = cast("str", mutation.table)
+    cluster = mutation.scope
+    source_ddl = mutation.source_ddl
     if cluster is None:
         return _FacadeOwnership(None, {}, source_ddl)
-    scope = inspect_facade_scope(connection, cluster)
+    scope = inspect_facade_scope(
+        connection, cluster, coordinator_required=mutation.coordinator_required
+    )
     occupied = occupied_definitions(connection, table, scope)
-    if scope.coordinator not in occupied:
+    if scope.coordinator is not None and scope.coordinator not in occupied:
         message = "Cannot verify the coordinator logical table in the facade execution scope."
         raise InvalidSqlInputError(message)
     if source_ddl is None:
@@ -65,7 +68,7 @@ def _certify_facades(
             table,
             scope,
             occupied,
-            FacadeSource(source_ddl, cast("str", source_cluster)),
+            FacadeSource(source_ddl, cast("str", mutation.source_cluster)),
         )
     return _FacadeOwnership(scope, occupied, source_ddl)
 
@@ -117,9 +120,7 @@ def validate_facade_destination(
     if mutation.table is None:
         message = "Cannot verify the logical table identity for the facade cutover."
         raise InvalidSqlInputError(message)
-    ownership = _certify_facades(
-        connection, mutation.table, mutation.scope, mutation.source_ddl, mutation.source_cluster
-    )
+    ownership = _certify_facades(connection, mutation)
     if mutation.pair_to_local:
         _validate_physical_destination(
             connection, mutation.table, mutation.physical_scope, ownership

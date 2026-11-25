@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from ipaddress import IPv6Address
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import retarget_create
 from sqlglot import exp, parse_one
 
 
@@ -51,6 +52,8 @@ class ReplacementMetadata:
         scope, name = self._scope(key[0]), key[1]
         key = scope, name
         value = self.client.tables[key]
+        if value.create is not None:
+            return retarget_create(value.create, name, None).sql(dialect=ClickHouseDialect)
         table = _table(name)
         types = self.client.column_types.get(key, ("Int64",) * len(value.columns))
         columns = ", ".join(
@@ -139,8 +142,57 @@ class ReplacementMetadata:
                         else "MergeTree",
                         "engine_full": engine.sql(dialect=ClickHouseDialect),
                         "create_table_query": ddl,
+                        "uuid": self._table_uuid(scope, table, value),
                     }
                 )
+        return records
+
+    def _table_uuid(self, scope, table, value):
+        database = table.db or self.client.current_database
+        engine = self.client.database_engines.get((scope, database), self.client.engines[scope])
+        return UUID(int=0) if engine == "Ordinary" else value.uuid
+
+    def _database_records(self, scope):
+        databases = {
+            _table(name).db or self.client.current_database
+            for _resource_scope, name in self.client.tables
+        }
+        return [
+            {
+                "_shard_num": position,
+                "name": database,
+                "engine": self.client.database_engines.get(
+                    (self._scope(scope), database), self.client.engines[self._scope(scope)]
+                ),
+            }
+            for position, _instance in enumerate(self._instances(scope), 1)
+            for database in databases
+        ]
+
+    def _replica_records(self, scope):
+        records = []
+        for record in self._table_records(scope):
+            if not record["engine"].casefold().startswith("replicated"):
+                continue
+            create = parse_one(record["create_table_query"], read=ClickHouseDialect)
+            arguments = create.find(exp.EngineProperty).this.expressions
+            template = (
+                arguments[0].this if len(arguments) >= 2 else self.client.default_replica_path
+            )
+            values = {
+                "database": record["database"],
+                "table": record["name"],
+                "uuid": str(record["uuid"]),
+                "shard": "1",
+                "replica": record["host_name"],
+            }
+            records.append(
+                {
+                    **record,
+                    "table": record["name"],
+                    "zookeeper_path": template.format_map(values),
+                }
+            )
         return records
 
     def _column_records(self, scope):
@@ -161,7 +213,7 @@ class ReplacementMetadata:
         ]
 
     def _macro_records(self, scope):
-        return [
+        records = [
             {
                 "_shard_num": position,
                 "macro": macro[1:-1],
@@ -171,25 +223,60 @@ class ReplacementMetadata:
             for macro, value in self.client.scope_aliases.items()
             if macro.startswith("{") and macro.endswith("}")
         ]
+        records.extend(
+            {"_shard_num": position, "macro": macro, "substitution": value}
+            for position, instance in enumerate(self._instances(scope), 1)
+            for macro, value in (
+                ("shard", "1"),
+                ("replica", self._instance_record(instance)["host_name"]),
+            )
+        )
+        return records
 
-    def rows(self, tree, scope, table):
-        fields = tuple(item.name.casefold() for item in tree.expressions)
-        if tree.find(exp.Count) is not None:
-            return None
+    def _native_records(self, tree, scope, table, fields):
         if table == "system.clusters" and ("host_address" in fields or "is_local" in fields):
-            records = self._cluster_records(tree, scope)
-        elif table == "system.one" and "serveruuid" in fields:
-            records = [
+            return self._cluster_records(tree, scope)
+        if table == "system.one" and "serveruuid" in fields:
+            return [
                 {**self._instance_record(instance), "_shard_num": position}
                 for position, instance in enumerate(self._instances(scope), 1)
             ]
-        elif table == "system.tables" and "create_table_query" in fields:
-            records = self._table_records(scope)
-        elif table == "system.columns":
-            records = self._column_records(scope)
-        elif table == "system.macros" and "substitution" in fields:
-            records = self._macro_records(scope)
-        else:
+        return None
+
+    def _server_setting_records(self, scope):
+        return [
+            {
+                "_shard_num": position,
+                "name": "default_replica_path",
+                "value": self.client.default_replica_path,
+            }
+            for position, _instance in enumerate(self._instances(scope), 1)
+        ]
+
+    def _catalog_records(self, tree, scope, table):
+        fields = tuple(item.name.casefold() for item in tree.expressions)
+        if table in {"system.clusters", "system.one"}:
+            return self._native_records(tree, scope, table, fields)
+        if table == "system.tables" and any(
+            name in fields for name in ("create_table_query", "uuid", "engine")
+        ):
+            return self._table_records(scope)
+        if table == "system.macros" and "substitution" in fields:
+            return self._macro_records(scope)
+        recorders = {
+            "system.databases": self._database_records,
+            "system.replicas": self._replica_records,
+            "system.server_settings": self._server_setting_records,
+            "system.columns": self._column_records,
+        }
+        recorder = recorders.get(table)
+        return recorder(scope) if recorder is not None else None
+
+    def rows(self, tree, scope, table):
+        if tree.find(exp.Count) is not None:
+            return None
+        records = self._catalog_records(tree, scope, table)
+        if records is None:
             return None
         condition = tree.args.get("where")
         if condition is not None:

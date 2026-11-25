@@ -20,6 +20,7 @@ from analytics_toolkit.sql.backends.models import SourceColumn
 from analytics_toolkit.sql.backends.native_values import (
     normalize_authoritative_value,
     requires_native_assignment,
+    supports_native_assignment,
 )
 from analytics_toolkit.sql.backends.stage_ownership import single_resource_policy
 from analytics_toolkit.sql.connection.config import get_connection_config
@@ -53,6 +54,7 @@ from analytics_toolkit.sql.dml.transfer.flow.conversion_validation import (
 )
 from analytics_toolkit.sql.dml.transfer.flow.native_assignment import (
     close_assignment_checkpoint,
+    requires_native_input_profile,
     validate_pending_final_conversions,
 )
 from analytics_toolkit.sql.dml.transfer.flow.resolved_transfer import (
@@ -66,6 +68,7 @@ from analytics_toolkit.sql.dml.transfer.flow.source_generation import (
     observing_source_generation,
     source_availability_scope,
 )
+from analytics_toolkit.sql.dml.transfer.flow.storage_capabilities import cache_converted_profiles
 from analytics_toolkit.sql.dml.transfer.io.source import iter_source_batches, normalize_source_batch
 from analytics_toolkit.sql.dml.transfer.runtime.models import (
     RowBatch,
@@ -461,7 +464,7 @@ def _resolve_scan(
                 {"allow_pending_native_assignment": True}
                 if schema.allow_pending_native_assignment
                 and schema.authoritative
-                and requires_native_assignment(
+                and supports_native_assignment(
                     schema.target_types[column.name], options.to_db_backend
                 )
                 else {}
@@ -487,6 +490,7 @@ def _validate_resolved_input(
         )
     except (TypeError, ValueError, OverflowError):
         _reject("Selected input cannot be converted to the resolved destination schema.")
+    cache_converted_profiles(options, spool, resolutions, profiles)
     if schema.allow_pending_native_assignment and validate_pending_final_conversions(
         options, state, schema.columns, resolutions, profiles, spool
     ):
@@ -644,16 +648,12 @@ def resolve_adaptive_input(
     source_validation = context.source_values_in_python and get_backend_adapter(
         options.from_db_backend
     ).requires_value_certification([column.native_type for column in source_schema])
-    cross_alias_native = (
-        context.allow_pending_native_assignment
-        and options.from_db_key.lower() != options.to_db_key.lower()
-        and any(
-            requires_native_assignment(native_type, options.to_db_backend)
-            for native_type in (
-                *target_types.values(),
-                *(state.insert_column_types or {}).values(),
-            )
-        )
+    cross_alias_native = requires_native_input_profile(
+        options,
+        state,
+        target_types,
+        allow_pending=context.allow_pending_native_assignment,
+        requires_assignment=requires_native_assignment,
     )
     needs_profile = (
         context.force_freeze
@@ -681,20 +681,21 @@ def resolve_adaptive_input(
     )
     if not needs_profile and "spool" not in cached:
         state.stage_column_types = target_types
-        state.input_types_resolved = authoritative
+        state.input_types_resolved = True
         return False
     cached["used"] = True
+    resolution_schema = _ResolutionSchema(
+        source_schema,
+        target_types,
+        authoritative,
+        allow_pending_native_assignment=context.allow_pending_native_assignment,
+    )
     if "spool" not in cached:
         spool, resolutions = _freeze(
             options,
             refs,
             state,
-            _ResolutionSchema(
-                source_schema,
-                target_types,
-                authoritative,
-                allow_pending_native_assignment=context.allow_pending_native_assignment,
-            ),
+            resolution_schema,
             context,
         )
         cached.update(
@@ -712,6 +713,7 @@ def resolve_adaptive_input(
             for column, resolution in zip(cached["source_schema"], resolutions)
         ):
             _reject("Destination schema differs from certified transfer input.")
+        _validate_resolved_input(options, state, resolution_schema, spool, resolutions)
     certify_frozen_client_input(options, context)
     native = cached.get("native_snapshot")
     if native is not None:

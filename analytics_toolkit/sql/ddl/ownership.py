@@ -13,6 +13,14 @@ from sqlglot import exp
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 from analytics_toolkit.sql.execution.backend_options import preflight_sql_statements
 
+from .creation_resources import (
+    CreatedTableResource,
+    configuration_digest,
+    execute_scoped_create,
+    scoped_creation_observer,
+    skipped_creation_count,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
@@ -23,6 +31,7 @@ class CreationOwnership:
     acknowledged_creates: list[str] = field(default_factory=list)
     pending_resource: str | None = None
     submitted: bool = False
+    scoped_resources: list[CreatedTableResource] = field(default_factory=list)
 
 
 _CREATION_OWNERSHIP: ContextVar[CreationOwnership | None] = ContextVar(
@@ -46,6 +55,16 @@ def acknowledge_created_resource(name: str) -> None:
         if name not in ownership.resources:
             ownership.resources.append(name)
         ownership.pending_resource = None
+
+
+def acknowledge_created_table_resource(resource: CreatedTableResource) -> None:
+    ownership = _CREATION_OWNERSHIP.get()
+    if ownership is not None:
+        if resource not in ownership.scoped_resources:
+            ownership.scoped_resources.append(resource)
+        ownership.submitted = True
+        if resource.name not in ownership.resources:
+            ownership.resources.append(resource.name)
 
 
 def _created_table_header(sql: str, dialect: Any) -> tuple[str | None, bool, bool]:
@@ -72,11 +91,14 @@ def _created_table_header(sql: str, dialect: Any) -> tuple[str | None, bool, boo
     return target.sql(dialect=dialect), cluster, not exists and not replace
 
 
-def execute_owned_create_sqls(
+def execute_owned_create_sqls(  # noqa: PLR0913 -- preserve positional API and optional creation observers.
     adapter: Any,
     connection: Any,
     sqls: Sequence[str],
-    on_resource_created: Callable[[str], None],
+    on_resource_created: Callable[[str], None] | None,
+    *,
+    on_scoped_resource_created: Callable[[CreatedTableResource], None] | None = None,
+    connection_key: str | None = None,
 ) -> None:
     preflight_sql_statements(connection, sqls)
     clustered: set[str] = set()
@@ -85,26 +107,47 @@ def execute_owned_create_sqls(
     if any(name is None for name, _cluster, _plain in headers):
         message = "Owned creation requires a statically named CREATE TABLE statement."
         raise InvalidSqlInputError(message)
-    for sql, (name, has_cluster, plain_create) in zip(sqls, headers):
+    for original_sql, (name, has_cluster, original_plain_create) in zip(sqls, headers):
+        sql, plain_create = original_sql, original_plain_create
         if name is not None and has_cluster:
             clustered.add(name)
-        context = adapter.local_creation_context(
-            connection, local=name in clustered and not has_cluster
-        )
+        context = adapter.local_creation_context(connection, local=not has_cluster)
         ownership = (
             _CREATION_OWNERSHIP.get()
             if on_resource_created is acknowledge_created_resource
+            or on_scoped_resource_created is acknowledge_created_table_resource
             else None
         )
         if ownership is not None and name is not None:
             ownership.submitted = True
             ownership.pending_resource = name
         with context:
-            adapter.execute_command(connection, sql)
+            skipped = False
+            if name in clustered and not has_cluster and not plain_create:
+                from analytics_toolkit.sql.backends.creation_resources import (  # noqa: PLC0415 -- actual backend mirror acquisition, independent of naming conventions.
+                    prepare_coordinator_mirror,
+                )
+
+                sql, plain_create = prepare_coordinator_mirror(adapter, connection, sql)
+            resource = None
+            if plain_create and name is not None and on_scoped_resource_created is not None:
+                resource = CreatedTableResource(
+                    name,
+                    adapter.backend,
+                    connection_key=connection_key,
+                    configuration_digest=configuration_digest(connection_key),
+                )
+                with scoped_creation_observer(on_scoped_resource_created):
+                    before_skipped = skipped_creation_count()
+                    execute_scoped_create(adapter, connection, sql, resource)
+                    skipped = skipped_creation_count() != before_skipped
+            else:
+                adapter.execute_command(connection, sql)
         if ownership is not None and name is not None:
             ownership.pending_resource = None
-            ownership.acknowledged_creates.append(name)
-        if plain_create and name is not None:
+            if not skipped:
+                ownership.acknowledged_creates.append(name)
+        if not skipped and plain_create and name is not None and on_resource_created is not None:
             on_resource_created(name)
 
 

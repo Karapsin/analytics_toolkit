@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 
 _ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", flags=re.ASCII)
 _INVALID_DATE = (
-    "Greenplum authoritative date schema requires a valid canonical YYYY-MM-DD string "
-    "or native calendar value. "
+    "Greenplum authoritative date schema requires a native date assignment "
+    "or compatible calendar value. "
     "For other date syntax, CAST the source expression AS DATE in from_sql."
 )
 
@@ -51,8 +51,8 @@ def _datetime_parameter(value: Any) -> dt.datetime:
         return cast("dt.datetime", converted)
 
 
-def date_value(value: Any) -> dt.date | None:
-    """Retain native datetime parameters so the server owns their DATE cast."""
+def date_value(value: Any) -> dt.date | str | None:
+    """Retain server-owned DATE syntax and native timestamp parameter semantics."""
     from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 -- registry initialization.
         ExactTemporal,
         is_null,
@@ -71,6 +71,8 @@ def date_value(value: Any) -> dt.date | None:
             return dt.date.fromisoformat(value)
         except ValueError:
             raise GreenplumDateValueError(_INVALID_DATE) from None
+    if isinstance(value, str):
+        return value  # The full profile must select an owned native assignment checkpoint.
     raise GreenplumDateValueError(_INVALID_DATE)
 
 

@@ -172,5 +172,5 @@ def test_trino_dates_parameterized_date_declaration_rejects_before_any_mutation(
     assert database.table_types == {database.target: "DATE"}
     assert database.mutations == []
     assert _insertions(database) == []
-    _assert_closed(database)
+    assert database.opened == []
     pd.testing.assert_frame_equal(frame, original)

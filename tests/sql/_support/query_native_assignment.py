@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import ipaddress
 from copy import deepcopy
 
 from analytics_toolkit.sql.backends.models import SourceColumn
@@ -13,12 +14,20 @@ from analytics_toolkit.sql.dml.transfer.runtime.models import RowBatch
 from sqlglot import Dialect, exp, parse_one
 
 from tests.conftest import DEFAULT_SQL_CONNECTIONS
+from tests.sql._support.created_gp_relations import locked_relation, relation_catalog_result
+from tests.sql._support.gp_description import description_column, native_catalog_row
 from tests.sql._support.gp_temporal_values import TemporalCursor
 from tests.sql._support.load_column_state import ExistingColumnStore
+from tests.sql._support.query_snapshot_sql import (
+    expand_snapshot_stars,
+    is_zero_limit_query,
+    ordinal_snapshot_rows,
+)
 from tests.sql._support.transfer_native_assignment import (
     NativeTransferConnection,
     NativeTransferDatabase,
 )
+from tests.sql._support.transfer_not_null import TransferCursor
 
 create = importlib.import_module("analytics_toolkit.sql.dml.table.create_table_from_sql")
 
@@ -45,6 +54,9 @@ class QueryNativeDatabase(NativeTransferDatabase):
         self.fail_private_query_assignments = 0
         self.private_failure_live_mutations = []
         self.reject_source_reexecution = False
+        self.counting_source = False
+        self.next_relation_oid = 10000
+        self.namespace_oids = {}
         source = ExistingColumnStore("gp", ["payload"], not_null=())
         source.schema = {"payload": native_type}
         source.rows = [{"payload": row[0]} for row in rows]
@@ -72,7 +84,19 @@ class QueryNativeDatabase(NativeTransferDatabase):
         return statement
 
     def execute(self, connection, statement, params=None):
+        if "FROM pg_catalog.pg_type t WHERE t.oid = %s" in statement:
+            self.commands.append(statement)
+            self.result_types = ["TEXT", "INTEGER", "INTEGER"]
+            return [native_catalog_row(params[0])], ["typtype", "typbasetype", "typelem"]
+        catalog = relation_catalog_result(self, connection, statement, params)
+        if catalog is not None:
+            return catalog
         tree = parse_one(self._ddl_schema_prefix(statement), read="postgres")
+        if isinstance(tree, exp.Create) and tree.args.get("kind") == "INDEX":
+            assert self.identity(tree.find(exp.Table)) in self.tables
+            self.commands.append(statement)
+            self.result_types = []
+            return [], []
         if isinstance(tree, exp.Create) and tree.expression is not None:
             self.commands.append(statement)
             connection.begin_mutation()
@@ -90,9 +114,16 @@ class QueryNativeDatabase(NativeTransferDatabase):
         return rows, names
 
     def select(self, tree, outer=None):
+        tree = expand_snapshot_stars(self, tree)
+        snapshot = ordinal_snapshot_rows(self, tree, outer)
+        if snapshot is not None:
+            return snapshot
         if isinstance(tree, exp.Subquery):
             return self.select(tree.this, outer)
         if isinstance(tree, exp.Select):
+            if is_zero_limit_query(tree):
+                self.query_inspections.append(tree.sql(dialect="postgres"))
+                return [], self.query_names(tree)
             condition = tree.args.get("where")
             if (
                 condition is not None
@@ -107,17 +138,29 @@ class QueryNativeDatabase(NativeTransferDatabase):
             is_probe = tree.find(exp.Table) is not None and any(
                 table.name in {"source_rows", "events"} for table in tree.find_all(exp.Table)
             )
-            if not isinstance(source, exp.Subquery) and self.identity(source) in {
-                ("sandbox", "events"),
-                ("sandbox", "source_rows"),
-            }:
+            if (
+                not self.counting_source
+                and tree.find(exp.Count) is None
+                and not isinstance(source, exp.Subquery)
+                and self.identity(source)
+                in {
+                    ("sandbox", "events"),
+                    ("sandbox", "source_rows"),
+                }
+            ):
                 assert not self.reject_source_reexecution, "Certified query source was rerun."
                 self.source_evaluations.append(tree.sql(dialect="postgres"))
             elif is_probe and source.alias == "source_schema_probe":
                 self.query_inspections.append(tree.sql(dialect="postgres"))
-        return super().select(tree, outer)
+        previous = self.counting_source
+        self.counting_source = previous or tree.find(exp.Count) is not None
+        try:
+            return super().select(tree, outer)
+        finally:
+            self.counting_source = previous
 
     def query_names(self, tree):
+        tree = expand_snapshot_stars(self, tree)
         if isinstance(tree, exp.Subquery):
             return self.query_names(tree.this)
         if not isinstance(tree.expressions[0], exp.Star):
@@ -130,6 +173,7 @@ class QueryNativeDatabase(NativeTransferDatabase):
         )
 
     def query_types(self, tree):
+        tree = expand_snapshot_stars(self, tree)
         if isinstance(tree, exp.Subquery):
             return self.query_types(tree.this)
         source = tree.args["from_"].this
@@ -171,13 +215,17 @@ class QueryNativeDatabase(NativeTransferDatabase):
 
 class QueryNativeCursor(TemporalCursor):
     def execute(self, statement, params=None):
+        text = statement.decode("utf-8") if isinstance(statement, bytes) else statement
+        if locked_relation(text) is not None:
+            TransferCursor.execute(self, text, params)
+            self.connection.insert_pending = False
+            return
         super().execute(statement, params)
         database = self.connection.database
         self.description = [
-            (name, native_type, None, None, None, None, None)
+            description_column(name, native_type)
             for (name, *_rest), native_type in zip(self.description or [], database.result_types)
         ]
-        text = statement.decode("utf-8") if isinstance(statement, bytes) else statement
         tree = parse_one(database._ddl_schema_prefix(text), read="postgres")
         if database.snapshot_header_rename and isinstance(tree, exp.Select):
             source = tree.args.get("from_")
@@ -222,17 +270,37 @@ def install_query_native(monkeypatch, rows, *, native_type="TEXT", exists=True):
         databases[alias].opened.append(connection)
         return connection
 
-    def read(_key, _backend, _ref, query, *_args, **_kwargs):
-        database.python_reads.append(query)
-        for row in database.source_rows:
-            database.python_selected_rows.append(row)
-            yield RowBatch(["payload"], [row])
+    def read(_key, backend, ref, query, *_args, **_kwargs):
+        selected = ref["connection"].database
+        selected.python_reads.append(query)
+        tree = parse_one(query, read="postgres" if backend == "gp" else "clickhouse")
+        rows, columns = selected.select(tree)
+        for row in rows:
+            decoded = tuple(_decoded_native_value(value) for value in row)
+            selected.python_selected_rows.append(decoded)
+            yield RowBatch(columns, [decoded])
 
     for module in (create, adaptive_input, attempt, transfer_retry, query_native_assignment):
         monkeypatch.setattr(module, "get_sql_connection", connect)
     monkeypatch.setattr(adaptive_input, "iter_source_batches", read)
     monkeypatch.setattr(attempt, "iter_source_batches", read)
     return database, databases, connect
+
+
+def _decoded_native_value(value):
+    if isinstance(value, (list, tuple)):
+        return [_decoded_native_value(item) for item in value]
+    if isinstance(
+        value,
+        (
+            ipaddress.IPv4Network,
+            ipaddress.IPv6Network,
+            ipaddress.IPv4Interface,
+            ipaddress.IPv6Interface,
+        ),
+    ):
+        return str(value)
+    return value
 
 
 def install_python_query_native(monkeypatch, write_sql_connections, rows):

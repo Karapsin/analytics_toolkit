@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from analytics_toolkit.sql.dml.transfer.flow import stage_ownership, target_ownership
+
 from tests.sql._support.row_batches import (
     Any,
     FakeTransferConnection,
@@ -15,6 +17,7 @@ from tests.sql._support.row_batches import (
     staging_module,
     warnings,
 )
+from tests.sql._support.transfer_ownership import acknowledge_stage, acknowledge_target
 
 
 def test_cleanup_and_infer_parquet_helpers_delegate(
@@ -69,14 +72,16 @@ def test_cleanup_stage_drops_each_worker_stage_once(
         stage_table="stage_w00000",
         stage_tables=["stage_w00000", "stage_w00001", "stage_w00001"],
     )
+    for name in stage_state.stage_tables:
+        acknowledge_stage(stage_state, name, options.to_db_backend)
     dropped: list[str] = []
 
     def fake_cleanup_stage_table_with_retry(*args: Any, **_kwargs: Any) -> None:
-        dropped.append(args[3])
+        dropped.append(args[2].name)
 
     monkeypatch.setattr(
-        finalize_module,
-        "cleanup_stage_table_with_retry",
+        stage_ownership,
+        "drop_owned_resource",
         fake_cleanup_stage_table_with_retry,
     )
     monkeypatch.setattr(
@@ -92,7 +97,7 @@ def test_cleanup_stage_drops_each_worker_stage_once(
         read_retry_cnt=1,
     )
 
-    assert dropped == ["stage_w00000", "stage_w00001"]
+    assert sorted(dropped) == ["stage_w00000", "stage_w00001"]
 
 
 def test_cleanup_stage_drops_stage_table_and_removes_remote_prefix(
@@ -157,6 +162,8 @@ def test_cleanup_stage_preserves_stage_cleanup_as_primary_error(
         stage_table="stage.temp",
         stage_external_location="s3://bucket/stage",
     )
+    acknowledge_stage(state, state.stage_table, options.to_db_backend)
+    acknowledge_target(state, options.target_table, options.to_db_backend)
     stage_error = RuntimeError("stage cleanup")
     messages: list[str] = []
 
@@ -169,17 +176,20 @@ def test_cleanup_stage_preserves_stage_cleanup_as_primary_error(
     monkeypatch.setattr(
         finalize_module,
         "cleanup_parquet_stage_location",
-        lambda _location: (_ for _ in ()).throw(RuntimeError("remote cleanup")),
+        lambda _location: pytest.fail("A failed table DROP must retain its Parquet files."),
     )
     monkeypatch.setattr(
-        finalize_module,
-        "cleanup_stage_table_with_retry",
+        target_ownership,
+        "drop_owned_resource",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("target cleanup")),
     )
     monkeypatch.setattr(
         general_module,
         "time_print",
         lambda message, **_kwargs: messages.append(message),
+    )
+    monkeypatch.setattr(
+        finalize_module, "time_print", lambda message, **_kwargs: messages.append(message)
     )
 
     with pytest.raises(RuntimeError, match="stage cleanup"):
@@ -190,18 +200,20 @@ def test_cleanup_stage_preserves_stage_cleanup_as_primary_error(
             1,
             drop_created_target=True,
         )
-    assert any("Remote Parquet" in message for message in messages)
+    assert any("Retaining" in message and "Parquet" in message for message in messages)
     assert any("Target cleanup" in message for message in messages)
 
+    only_stage = models_module.TransferStageState(
+        target_exists=False,
+        stage_table="stage.only",
+        stage_table_created=True,
+    )
+    acknowledge_stage(only_stage, only_stage.stage_table, options.to_db_backend)
     with pytest.raises(RuntimeError, match="stage"):
         finalize_module.cleanup_stage(
             options,
             models_module.TransferConnectionRefs(),
-            models_module.TransferStageState(
-                target_exists=False,
-                stage_table="stage.only",
-                stage_table_created=True,
-            ),
+            only_stage,
             1,
         )
 

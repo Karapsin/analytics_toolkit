@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from analytics_toolkit.sql.backends.stage_ownership import single_resource_policy
 
-# ruff: noqa: BLE001, EM101, EM102, I001, PLR0913, PLR0915, PLR2004, TC006, TID252, TRY003, TRY300, TRY301
+# ruff: noqa: BLE001, EM101, EM102, I001, PLR0913, PLR0915, PLR2004, TID252, TRY003, TRY300, TRY301
 
 import contextvars
 import math
@@ -10,7 +10,7 @@ import time
 import uuid
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import replace
-from typing import Any, cast
+from typing import Any, cast  # noqa: F401 - preserve historical compatibility imports.
 
 from tqdm import tqdm
 
@@ -39,6 +39,7 @@ from ..runtime.models import (
 from ..runtime.retry import (
     close_connection_ref,
     close_connection_refs_preserving,
+    is_non_retryable_sql_error,
     replace_connection,
     rollback_quietly,
     run_with_retry,
@@ -64,6 +65,7 @@ from .source_snapshot import (
 from .stage import _with_internal_column_types, create_stage_state, ensure_transfer_target_table
 from .stage_identity import resolve_internal_columns
 from .staged_keyed_pipeline import run_keyed_staged_source_transfer_attempt
+from .staged_source_read import exact_staged_source_connection, normalize_staged_source_result
 from .staged_target import (
     create_sql_worker_stages,
     prepare_shared_parquet_stage,
@@ -587,7 +589,6 @@ def _range_worker(
         max_size=options.max_batch_size,
         target_seconds=options.target_batch_seconds,
     )
-    source_failures: dict[tuple[int, int, int], int] = {}
     worker_error: BaseException | None = None
     try:
         source_ref["connection"] = get_sql_connection(options.from_db_key)
@@ -607,10 +608,11 @@ def _range_worker(
                     stage_state,
                     claimed,
                 )
-            except Exception:
-                key = (claimed.slice_id, claimed.start_ordinal, claimed.stop_ordinal)
-                source_failures[key] = source_failures.get(key, 0) + 1
-                if source_failures[key] >= options.retry_cnt:
+            except Exception as exc:
+                if is_non_retryable_sql_error(exc):
+                    raise
+                failure_count = scheduler.record_failure(worker_id, claimed)
+                if failure_count >= options.retry_cnt:
                     raise
                 reduced = max(options.min_batch_size, claimed.row_count // 2)
                 scheduler.requeue_failed(
@@ -626,7 +628,7 @@ def _range_worker(
                 time_print(
                     "[slice=1/1] Retrying source-stage range "
                     f"{claimed.slice_id}:{claimed.start_ordinal}-{claimed.stop_ordinal} read: "
-                    f"attempt {source_failures[key] + 1}/{options.retry_cnt}; committed total "
+                    f"attempt {failure_count + 1}/{options.retry_cnt}; committed total "
                     f"remains {committed_rows:,} rows; ETA unchanged"
                 )
                 continue
@@ -762,42 +764,26 @@ def _read_snapshot_range(
         ordinal_range=claimed,
     )
     with sql_log_context("[slice=1/1] ", suppress_sql=True):
+        read_connection = exact_staged_source_connection(
+            options, connection, stage_state.source_column_types or {}
+        )
         result = _read_backend(
             options.from_db_backend,
-            connection,
+            read_connection,
             sql,
             print_queries=False,
             output_type="dict",
             action_name="source-batch reading",
             phase="read_source_batch",
         )
-    result_row_count = len(result.columns[0]) if result.columns else 0
-    if any(len(column) != result_row_count for column in result.columns):
-        raise RuntimeError("[slice=1/1] Source batch columns have unequal lengths.")
-    if result_row_count > claimed.row_count:
-        raise RuntimeError(
-            f"[slice=1/1] Source batch returned {result_row_count} row(s); "
-            f"scheduled limit is {claimed.row_count}."
-        )
-    batch = RowBatch(
-        columns=list(result.column_names),
-        rows=list(zip(*result.columns)),
+    return normalize_staged_source_result(
+        options,
+        connection,
+        result,
+        stage_state.source_column_types or {},
+        row_limit=claimed.row_count,
+        log_prefix="[slice=1/1] ",
     )
-    normalized = cast(
-        RowBatch,
-        get_backend_adapter(
-            options.from_db_backend,
-        ).normalize_transfer_source_batch(
-            batch,
-            stage_state.source_column_types or {},
-        ),
-    )
-    if normalized.row_count > claimed.row_count:
-        raise RuntimeError(
-            f"[slice=1/1] Normalized source batch returned {normalized.row_count} row(s); "
-            f"scheduled limit is {claimed.row_count}."
-        )
-    return normalized
 
 
 def _consolidate_worker_stages(

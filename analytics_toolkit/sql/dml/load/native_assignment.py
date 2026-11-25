@@ -9,11 +9,18 @@ from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.gp.native_assignment import (
     NativeAssignmentError,
     assignment_parameter_types,
+    capture_native_assignment_context,
     certify_assignment_checkpoint,
     native_assignment_errors,
+    require_native_assignment_context,
+    requires_assignment_session_context,
     requires_keyed_append_assignment,
 )
-from analytics_toolkit.sql.backends.native_values import requires_native_assignment
+from analytics_toolkit.sql.backends.native_values import (
+    pending_native_assignment,
+    require_timestamp_write_capabilities,
+    requires_native_assignment,
+)
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.core.replay_spool import FrozenInputIdentity
 from analytics_toolkit.sql.dml.table.table_validation import effective_upsert_key_columns
@@ -24,6 +31,8 @@ from analytics_toolkit.sql.dml.transfer.runtime.retry import (
 from analytics_toolkit.sql.execution.backend_options import current_backend_operation
 
 from .load_sql_table import insert_table_batch
+from .owned_payload import inferred_load_metadata
+from .resource_ownership import scoped_creation_kwargs
 from .stage import create_stage_table
 from .type_validation import (
     _validated_dataframe_profiles,
@@ -182,8 +191,14 @@ def require_assignment_identity(options: LoadOptions, state: LoadState | None = 
         if state is not None
         else ()
     )
+    context = options.destination_context.get("native_assignment_session_context")
     if any(
-        cert is not None and (expected is None or cert.input_identity != expected)
+        cert is not None
+        and (
+            expected is None
+            or cert.input_identity != expected
+            or getattr(cert, "session_context", None) != context
+        )
         for cert in certificates
     ):
         message = "Native assignment checkpoint is not bound to the frozen destination identity."
@@ -199,6 +214,32 @@ def require_assignment_identity(options: LoadOptions, state: LoadState | None = 
             "native assignment checkpoint."
         )
         raise _identity_error(options, message)
+
+
+def require_assignment_session_context(options: LoadOptions, connection: Any) -> None:
+    expected = options.destination_context.get("native_assignment_session_context")
+    if expected is not None:
+        require_native_assignment_context(
+            get_backend_adapter(options.connection_backend),
+            connection,
+            expected,
+            query_label=options.query_label,
+        )
+
+
+def require_load_timestamp_capabilities(options: LoadOptions, connection: Any) -> None:
+    cache = options.destination_context
+    for schema, profiles, creating, properties in cache.get("load_timestamp_capability_inputs", ()):
+        require_timestamp_write_capabilities(
+            options.connection_backend,
+            connection,
+            options.destination_table,
+            schema,
+            profiles,
+            cache,
+            creating=creating and not cache.get("load_timestamp_target_acknowledged", False),
+            properties=properties,
+        )
 
 
 def freeze_assignment_identity(options: LoadOptions) -> FrozenInputIdentity:
@@ -328,20 +369,41 @@ def prepare_assignment_checkpoint(
         _require_checkpoint_schema(state.native_assignment_checkpoint, final_schema)
         return
     keyed_assignment = _keyed_append_assignment_required(options, final_schema)
+    pending = options.destination_context.get("native_assignment_pending_columns", ())
+    requested_pending = options.destination_context.get("native_assignment_requested_pending", ())
     if not (
         assignment_required(final_schema, options.connection_backend)
         or assignment_required(requested, options.connection_backend)
         or keyed_assignment
+        or pending
     ):
         return
     explicit_first = requested != final_schema and (
-        assignment_required(requested, options.connection_backend) or keyed_assignment
+        assignment_required(requested, options.connection_backend)
+        or keyed_assignment
+        or requested_pending
     )
     if explicit_first:
         if source is None:
             source = _populate_checkpoint(options, state, connection, df, schema=requested)
             state.native_assignment_source_checkpoint = source
         _require_checkpoint_schema(source, requested)
+        if requested_pending:
+            from analytics_toolkit.sql.backends.gp.temporal_exactness import (  # noqa: PLC0415 - post-assignment exactness.
+                validate_temporal_assignment_exactness,
+            )
+
+            validate_temporal_assignment_exactness(
+                get_backend_adapter(options.connection_backend),
+                connection,
+                source.stage_table,
+                {name: requested[name] for name in requested_pending},
+                {name: final_schema[name] for name in requested_pending},
+                query_label=options.query_label,
+                session_context=options.destination_context.get(
+                    "native_assignment_session_context"
+                ),
+            )
     certificate = _populate_checkpoint(options, state, connection, df, schema=final_schema)
     state.native_assignment_checkpoint = certificate
     state.overlap_stage_table = certificate.stage_table
@@ -361,6 +423,7 @@ def _populate_checkpoint(
     *,
     schema: Mapping[str, str],
 ) -> NativeAssignmentCertificate:
+    require_assignment_session_context(options, connection)
     identity = freeze_assignment_identity(options)
     source = state.native_assignment_source_checkpoint
     adapter = get_backend_adapter(options.connection_backend)
@@ -381,6 +444,7 @@ def _populate_checkpoint(
             ddl_properties=options.staging_ddl_properties,
             on_stage_candidate=state.stage_candidates.append,
             on_resource_created=lambda resource: _own_assignment_resource(options, state, resource),
+            **scoped_creation_kwargs(options, state),
         )
     if not df.empty:
         with native_assignment_errors(
@@ -413,7 +477,10 @@ def _populate_checkpoint(
                     connection_key=options.connection_key,
                     safe_exception_logging=True,
                 )
-    keys = effective_upsert_key_columns(options.key_columns, options.upsert_partition_column)
+    keys = effective_upsert_key_columns(
+        options.key_columns,
+        options.upsert_partition_column if options.write_mode == "upsert" else None,
+    )
     return certify_assignment_checkpoint(
         adapter,
         connection,
@@ -423,6 +490,11 @@ def _populate_checkpoint(
         key_columns=keys,
         input_identity=identity,
         query_label=options.query_label,
+        **(
+            {"session_context": options.destination_context["native_assignment_session_context"]}
+            if "native_assignment_session_context" in options.destination_context
+            else {}
+        ),
     )
 
 
@@ -448,6 +520,7 @@ def _insert_assigned_rows(
 
 def insert_checkpoint_rows(options: LoadOptions, state: LoadState, connection: Any) -> None:
     """Assign already-certified native values using a named, cast-free projection."""
+    require_assignment_session_context(options, connection)
     require_assignment_identity(options, state)
     certificate = state.native_assignment_checkpoint
     if certificate is None:
@@ -481,7 +554,22 @@ def prepare_load_profiles(
         for name, native in (options.table_schema or {}).items()
         if requires_native_assignment(native, options.connection_backend)
     }
+    requested_profiles = (
+        validated_local_profiles(
+            df, options.table_schema, options.connection_backend, destination_timezone=zone
+        )
+        if options.table_schema is not None
+        else {}
+    )
+    requested_pending = _pending_profile_columns(
+        requested_profiles, options.table_schema or {}, options, allow_precision_loss=True
+    )
+    options.destination_context["native_assignment_requested_pending"] = tuple(
+        str(name) for name in df.columns if str(name) in requested_pending
+    )
+    pending = set(requested_pending)
     null_columns: tuple[str, ...] = ()
+    profiles: dict[str, ColumnProfile] = {}
     if state.target_column_types is not None:
         validate_dataframe_columns(df, state.target_column_types)
         frame = (
@@ -495,7 +583,11 @@ def prepare_load_profiles(
             if options.table_schema is not None
             else df
         )
-        names = [str(name) for name in frame.columns if str(name) not in explicit_unknown]
+        names = [
+            str(name)
+            for name in frame.columns
+            if str(name) not in explicit_unknown | requested_pending
+        ]
         local_df, local_schema = local_validation_view(
             frame.loc[:, names],
             {name: state.target_column_types[name] for name in names},
@@ -508,16 +600,51 @@ def prepare_load_profiles(
             allow_timestamp_precision_loss=False,
             destination_timezone=zone,
         )
-        null_columns = tuple(name for name, profile in profiles.items() if profile.null_count)
-    if options.table_schema is not None:
-        validated_local_profiles(
-            df, options.table_schema, options.connection_backend, destination_timezone=zone
+        pending.update(
+            _pending_profile_columns(profiles, local_schema, options, allow_precision_loss=False)
         )
+        null_columns = tuple(name for name, profile in profiles.items() if profile.null_count)
+    if null_columns and state.original_target_exists:
+        get_backend_adapter(options.connection_backend).validate_existing_dataframe_insert_columns(
+            connection,
+            options.destination_table,
+            [str(name) for name in df.columns],
+            connection_key=options.connection_key,
+            null_columns=null_columns,
+            row_count=len(df),
+        )
+    options.destination_context["native_assignment_pending_columns"] = tuple(
+        str(name) for name in df.columns if str(name) in pending
+    )
+    pending_schemas = (options.table_schema or {}, state.target_column_types or {})
+    if any(
+        requires_assignment_session_context(schema[name])
+        for schema in pending_schemas
+        for name in pending.intersection(schema)
+    ):
+        if "native_assignment_session_context" not in options.destination_context:
+            options.destination_context["native_assignment_session_context"] = (
+                capture_native_assignment_context(
+                    get_backend_adapter(options.connection_backend),
+                    connection,
+                    query_label=options.query_label,
+                )
+            )
+        require_assignment_session_context(options, connection)
     authority = (
         state.target_column_types
         if state.original_target_exists
         and options.write_mode in {"append", "truncate_insert", "upsert"}
         else options.table_schema
+    )
+    if authority is None:
+        authority = options.destination_context.get("inferred_schema")
+    _certify_timestamp_capabilities(
+        options,
+        state,
+        connection,
+        df,
+        (requested_profiles, profiles),
     )
     if authority is not None and (
         assignment_required(
@@ -525,6 +652,7 @@ def prepare_load_profiles(
         )
         or explicit_unknown
         or _keyed_append_assignment_required(options, authority)
+        or pending
     ):
         payload, _ = convert_local_dataframe(
             df,
@@ -537,6 +665,71 @@ def prepare_load_profiles(
             "NativeAssignmentCertificate", state.native_assignment_checkpoint
         ).null_columns
     return null_columns
+
+
+def _certify_timestamp_capabilities(
+    options: LoadOptions,
+    state: LoadState,
+    connection: Any,
+    df: pd.DataFrame,
+    profiles: tuple[Mapping[str, ColumnProfile], Mapping[str, ColumnProfile]],
+) -> None:
+    cache = options.destination_context
+    requested, final = profiles
+    selected = []
+    if options.table_schema is not None:
+        selected.append((options.table_schema, requested))
+    schema = state.target_column_types or options.table_schema or cache.get("inferred_schema")
+    if schema is not None:
+        if not final and options.table_schema is None and not state.original_target_exists:
+            final = validated_local_profiles(
+                df,
+                schema,
+                options.connection_backend,
+                allow_timestamp_precision_loss=False,
+                destination_timezone=cache.get("destination_timezone"),
+            )
+        selected.append((schema, final or requested))
+    creating = not state.original_target_exists or options.write_mode == "replace"
+    retained = []
+    for schema, selected_profiles in selected:
+        if (
+            require_timestamp_write_capabilities(
+                options.connection_backend,
+                connection,
+                options.destination_table,
+                schema,
+                selected_profiles,
+                cache,
+                creating=creating,
+                properties=options.regular_ddl_properties,
+            )
+            is not None
+        ):
+            retained.append(
+                (dict(schema), selected_profiles, creating, options.regular_ddl_properties)
+            )
+    cache["load_timestamp_capability_inputs"] = retained
+
+
+def _pending_profile_columns(
+    profiles: Mapping[str, ColumnProfile],
+    schema: Mapping[str, str],
+    options: LoadOptions,
+    *,
+    allow_precision_loss: bool,
+) -> set[str]:
+    return {
+        name
+        for name, profile in profiles.items()
+        if pending_native_assignment(
+            profile,
+            schema[name],
+            options.connection_backend,
+            allow_timestamp_precision_loss=allow_precision_loss,
+            destination_timezone=options.destination_context.get("destination_timezone"),
+        )
+    }
 
 
 def load_input_dataframe(
@@ -555,8 +748,9 @@ def load_input_dataframe(
     if state.native_assignment_checkpoint is not None:
         return (
             state.prepared_json_dataframe if state.prepared_json_dataframe is not None else df
-        ), []
-    return converter(options, state, df)
+        ), inferred_load_metadata(options, [])
+    frame, metadata = converter(options, state, df)
+    return frame, inferred_load_metadata(options, metadata)
 
 
 def has_assignment_checkpoint(state: LoadState) -> bool:

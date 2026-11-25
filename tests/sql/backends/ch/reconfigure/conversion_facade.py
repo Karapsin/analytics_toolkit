@@ -17,6 +17,7 @@ from tests.sql._support.reconfigure_conversion_scope import (
     configure_conversion,
     convert,
 )
+from tests.sql._support.reconfigure_host_view import install_conversion_host_views
 
 _ENDPOINT_COLUMNS = ("_shard_num", "serveruuid", "tcpport")
 _DEFINITION_COLUMNS = ("_shard_num", "create_table_query")
@@ -92,6 +93,7 @@ def _guarded_query_settings(client):
 def _prepare(monkeypatch, write_sql_connections, client=None):
     configure_conversion(write_sql_connections)
     client = client or ConversionScopeClient()
+    install_conversion_host_views(monkeypatch, client)
     monkeypatch.setattr(reconfigure_api, "get_sql_connection", lambda _key: client)
     return client
 
@@ -161,7 +163,11 @@ def test_local_to_pair_allows_secure_facade_endpoint_with_a_plain_native_listene
         (relation, columns, target)
         for cluster, relation, columns, target, _settings in proofs
         if cluster == "coordinator_only"
-    ] == [("one", _ENDPOINT_COLUMNS, None), ("tables", _DEFINITION_COLUMNS, "events")]
+    ] == [
+        ("one", _ENDPOINT_COLUMNS, None),
+        ("tables", _DEFINITION_COLUMNS, "events"),
+        ("one", _ENDPOINT_COLUMNS, None),
+    ]
     assert {
         (relation, columns)
         for cluster, relation, columns, _target, _settings in proofs
@@ -191,6 +197,14 @@ def test_local_to_pair_cluster_facade_can_create_only_unoccupied_remote_destinat
     for host in (client.coordinator, client.remote):
         assert sorted(client.rows(host, client.source_table)) == [(1,), (2,), (3,)]
     assert result.metadata.source_rows == result.metadata.final_target_rows == 3
+    assert client.host_views
+    assert any(view.host == client.remote for view in client.host_views)
+    assert all(view.closed and view.close_calls == 1 for view in client.host_views)
+    assert all(
+        settings == {"skip_unavailable_shards": 0}
+        for view in client.host_views
+        for _statement, settings in view.query_events
+    )
 
 
 def test_local_to_pair_local_facade_requires_only_physical_endpoint_identity(

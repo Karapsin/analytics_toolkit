@@ -5,7 +5,10 @@ from __future__ import annotations
 from types import MethodType
 from typing import Any
 
+from analytics_toolkit.sql.connection.validation import validation_remaining
+
 from .exact_temporal import datetime_from_seconds, timestamp_from_ticks, timestamp_ticks
+from .float_values import decoded_float_values
 from .temporal_context import native_context_timezone
 
 
@@ -43,6 +46,10 @@ def _datetime_seconds_items(column: Any, items: Any, nulls_map: Any = None) -> t
         )
         for index, value in enumerate(items)
     )
+
+
+def _float_items(_column: Any, items: Any, nulls_map: Any = None) -> tuple[Any, ...]:
+    return decoded_float_values(items, nulls_map)
 
 
 def _raw_temporal_items(items: Any, scale: int, nulls_map: Any = None) -> tuple[Any, ...]:
@@ -97,12 +104,15 @@ def _prepare_column(column: Any) -> Any:
         DateTime64Column,
         DateTimeColumn,
     )
+    from clickhouse_driver.columns.floatcolumn import FloatColumn  # noqa: PLC0415
     from clickhouse_driver.columns.mapcolumn import MapColumn  # noqa: PLC0415
 
     if isinstance(column, DateTime64Column):
         column.after_read_items = MethodType(_datetime_items, column)
     elif isinstance(column, DateTimeColumn):
         column.after_read_items = MethodType(_datetime_seconds_items, column)
+    elif isinstance(column, FloatColumn):
+        column.after_read_items = MethodType(_float_items, column)
     if isinstance(column, DateTimeColumn):
         column.before_write_items = MethodType(_datetime_write, column)
     if isinstance(column, MapColumn):
@@ -191,7 +201,9 @@ def _connection_stream(connection: Any) -> Any:
 def _receive_progress(connection: Any) -> Any:
     from clickhouse_driver import defines  # noqa: PLC0415
 
+    validation_remaining()
     progress = connection._atk_original_receive_progress()  # noqa: SLF001
+    validation_remaining()
     if connection.server_info.used_revision >= defines.DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO:
         connection._atk_written_rows_known = True  # noqa: SLF001
     return progress

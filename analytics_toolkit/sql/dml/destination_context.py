@@ -5,9 +5,14 @@ from __future__ import annotations
 from typing import Any, cast
 
 from analytics_toolkit.sql.backends import get_backend_adapter
-from analytics_toolkit.sql.backends.dataframe_types import _infer_column_type
+from analytics_toolkit.sql.backends.dataframe_types import (
+    _infer_column_type as _backend_infer_column_type,
+)
+from analytics_toolkit.sql.backends.dataframe_types import resolve_dataframe_column
 from analytics_toolkit.sql.backends.temporal_context import TIMEZONE_POLICY_VERSION
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
+
+_infer_column_type = _backend_infer_column_type
 
 
 def freeze_destination_timezone(
@@ -50,11 +55,19 @@ def freeze_destination_timezone(
 def infer_dataframe_write_schema(df: Any, backend: str, cache: dict[str, Any]) -> dict[str, str]:
     if "inferred_schema" not in cache:
         zone = cache.get("destination_timezone")
+        resolutions = [
+            resolve_dataframe_column(df.iloc[:, index], backend, destination_timezone=zone)
+            for index in range(len(df.columns))
+        ]
         schema = {
-            str(name): _infer_column_type(df.iloc[:, index], backend, destination_timezone=zone)
-            for index, name in enumerate(df.columns)
+            str(name): resolution.target_type for name, resolution in zip(df.columns, resolutions)
         }
         cache["inferred_schema"] = schema
+        cache["inferred_column_conversions"] = resolutions
+        cache["inferred_type_metadata"] = [
+            {"column": str(name), **resolution.metadata()}
+            for name, resolution in zip(df.columns, resolutions)
+        ]
     return dict(cache["inferred_schema"])
 
 

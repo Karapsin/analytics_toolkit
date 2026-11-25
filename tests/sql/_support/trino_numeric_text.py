@@ -30,6 +30,12 @@ class _NumericDatabase(NativeTimeDatabase):
         if isinstance(value, exp.Neg):
             sign = -1
             value = value.this
+        if isinstance(value, exp.Anonymous) and value.name.casefold() in {"nan", "infinity"}:
+            number = float("nan" if value.name.casefold() == "nan" else "inf") * sign
+            form = "<f" if self.native_type == "REAL" else "<d"
+            physical = struct.pack(form, number)
+            self.physical_float_values.append(physical)
+            return struct.unpack(form, physical)[0]
         assert isinstance(value, exp.Literal)
         if self.native_type.startswith("DECIMAL"):
             assert value.is_string

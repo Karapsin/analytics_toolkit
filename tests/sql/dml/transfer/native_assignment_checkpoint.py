@@ -6,6 +6,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.gp.native_assignment import NativeAssignmentCertificate
 from analytics_toolkit.sql.backends.models import SourceColumn
 from analytics_toolkit.sql.core.replay_spool import FrozenInputIdentity
@@ -15,6 +16,11 @@ from analytics_toolkit.sql.dml.transfer.flow import native_assignment as native
 from analytics_toolkit.sql.dml.transfer.runtime.models import (
     TransferConnectionRefs,
     TransferStageState,
+)
+
+from tests.sql._support.stage_ownership_native import (
+    create_native_owned_stage,
+    native_stage_target,
 )
 
 
@@ -47,6 +53,33 @@ def checkpoint(*, final=True):
         stage_column_types=dict(schema),
         insert_column_types=dict(schema),
     )
+    return options, state, cached
+
+
+def owned_checkpoint():
+    options, state, original = checkpoint()
+    database, connection = native_stage_target()
+    table = original.certificate.stage_table
+    schema = dict(original.certificate.column_types)
+    create_native_owned_stage(connection, state, table, logical_stage=table, column_types=schema)
+    certificate = native.certify_assignment_checkpoint(
+        get_backend_adapter("gp"),
+        connection,
+        table,
+        schema,
+        expected_rows=0,
+        input_identity=original.certificate.input_identity,
+    )
+    cached = native._RetainedAssignment(
+        certificate,
+        tuple(state.owned_stage_resources),
+        tuple(schema.items()),
+        final=True,
+        scoped_resources=tuple(state.owned_stage_scoped_resources),
+    )
+    options.input_resolution["native_assignment_checkpoint"] = cached
+    connection.close()
+    assert database.identity_from_name(table) in database.tables
     return options, state, cached
 
 
@@ -112,6 +145,15 @@ def test_native_checkpoint_requires_authoritative_types_before_restore():
 
     with pytest.raises(ValueError, match="authoritative destination schema"):
         native.restore_assignment_checkpoint(options, state, lambda *_args: pytest.fail("SQL"))
+
+
+def test_native_checkpoint_restore_rejects_unproved_generation_before_payload_queries():
+    options, state, _cached = checkpoint()
+    with pytest.raises(ValueError, match="no acknowledged creation identity"):
+        native.restore_assignment_checkpoint(
+            options, state, lambda _role, operation: operation({"connection": object()})
+        )
+    assert state.stage_table is None
 
 
 @pytest.mark.parametrize("missing", ["table", "schema"])
@@ -213,8 +255,20 @@ def test_native_checkpoint_cleanup_preserves_structural_recovery_artifacts(monke
     assert cached.certificate.stage_table in capsys.readouterr().out
 
 
-def test_native_checkpoint_cleanup_does_not_follow_retargeted_connection_alias(monkeypatch, capsys):
+def test_native_checkpoint_legacy_name_cannot_authorize_terminal_cleanup(monkeypatch, capsys):
     options, _state, cached = checkpoint()
+    monkeypatch.setattr(native, "preserve_recovery_artifacts", lambda: False)
+    monkeypatch.setattr(
+        native, "run_with_fresh_connection", lambda *_args, **_kwargs: pytest.fail("SQL")
+    )
+    native.close_assignment_checkpoint(options)
+    output = capsys.readouterr().out
+    assert cached.certificate.stage_table in output
+    assert "no acknowledged creation identity" in output
+
+
+def test_native_checkpoint_cleanup_does_not_follow_retargeted_connection_alias(monkeypatch, capsys):
+    options, _state, cached = owned_checkpoint()
 
     def reject(_options):
         message = "Connection configuration differs from certified transfer input."
@@ -236,7 +290,7 @@ def test_native_checkpoint_cleanup_does_not_follow_retargeted_connection_alias(m
 def test_native_checkpoint_terminal_cleanup_reports_failure_without_masking_primary(
     monkeypatch, capsys, primary
 ):
-    options, _state, cached = checkpoint()
+    options, _state, cached = owned_checkpoint()
     monkeypatch.setattr(adaptive_input, "require_frozen_configuration", lambda _options: None)
 
     def fail(*_args, **_kwargs):

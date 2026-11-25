@@ -18,6 +18,7 @@ def query_may_read_target(query: str, target: str, backend: str) -> bool:
         parse_one(target, read=dialect, into=exp.Table), dialect=dialect
     )
     destination = TableIdentifier.parse(target_ast.sql(dialect=dialect), backend)
+    unresolved_dependency = False
     try:
         statement = normalize_identifiers(parse_one(query, read=dialect), dialect=dialect)
         for scope in traverse_scope(statement) or []:
@@ -34,7 +35,11 @@ def query_may_read_target(query: str, target: str, backend: str) -> bool:
                 overlap = min(len(identity.parts), len(destination.parts))
                 if identity.parts[-overlap:] == destination.parts[-overlap:]:
                     return True
+                # A distinct SQL name can still be a view or storage facade
+                # over the destination. No catalog dependency proof is carried
+                # by this static binding check.
+                unresolved_dependency = True
     except SqlglotError as exc:
         message = "Cannot verify replacement query bindings before target mutation."
         raise InvalidSqlInputError(message) from exc
-    return False
+    return unresolved_dependency

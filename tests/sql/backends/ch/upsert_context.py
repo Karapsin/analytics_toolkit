@@ -111,11 +111,25 @@ def test_verified_local_upsert_keeps_partial_and_recovery_guards(outage, recover
     connection = sql.get_sql_connection("ch")
     with backend_operation() as state:
         state.preserve_recovery = recovery
+        state.structural_replay_blocked = recovery
         state.observed_partial = not recovery
         failure = pytest.raises(sql.ClickHouseClusterUnavailableError, match=r"Recovery|complete")
         with verified_local_upsert(connection, "db.local"), local_sql(connection), failure:
             connection.command("ALTER TABLE db.local DROP PARTITION 1")
     assert not cluster.commands
+
+
+def test_verified_local_upsert_keeps_data_checkpoint_without_blocking_known_local_mutation(outage):
+    cluster, _ = outage
+    connection = sql.get_sql_connection("ch")
+    with backend_operation() as state:
+        state.preserve_recovery = True
+        with verified_local_upsert(connection, "db.local"), local_sql(connection):
+            connection.command("ALTER TABLE db.local DROP PARTITION 1")
+        assert state.preserve_recovery is True
+        assert state.structural_replay_blocked is False
+    assert len(cluster.commands) == 1
+    assert "ON CLUSTER" not in cluster.commands[0][1]
 
 
 def test_verified_local_upsert_without_local_execution_keeps_cluster_preflight(outage):

@@ -3,8 +3,10 @@
 # SQL correctness audit closure
 
 The audit is a reproduction inventory. This table records the selected contracts
-and their fast regression evidence. Publication requires complete managed checks
-and the SQL Explorer visual-review receipt. Disposable
+and their fast regression evidence. Author regression results do not constitute
+source approval. Publication requires complete managed checks, independent
+source approval for the final candidate, and then the SQL Explorer visual-review
+receipt. Disposable
 integration cases are registered in the
 [SQL coverage manifest](../../../integration/sql_coverage_manifest.json); they
 are advisory during ordinary development and were not run locally for this repair.
@@ -57,7 +59,7 @@ correctness bug: closing a connection cannot cause successful work to replay.
 | 37 | Conversion retains invalid MergeTree clauses on Distributed facades | fixed | `backends/ch/reconfigure/structural_safety.py::test_replacement_create_is_plain_and_facade_excludes_physical_properties`; `backends/ch/reconfigure/structural_safety.py::test_local_to_pair_reconfiguration_removes_only_facade_column_ttl` |
 | 38 | Reconfiguration changes `rand()` into `randCanonical()` | fixed | `backends/ch/routing_contract.py::test_rand_and_randcanonical_remain_distinct_in_routed_defaults` |
 | 39 | Guarded replacement loses optional Distributed engine arguments | fixed | `backends/ch/replace_routing.py::test_guarded_replacement_preserves_configured_distributed_template_arguments` |
-| 40 | Readiness failures leak created stages | fixed | `dml/load/stage_ownership.py::test_load_readiness_failure_cleans_acknowledged_partial_pair_only`; `dml/transfer/row_batches/stage_ownership.py::test_keyed_worker_readiness_failure_cleans_acknowledged_stage_before_return`; `dml/transfer/row_batches/stage_registration.py::test_keyed_initialization_registers_partial_pair_before_readiness_returns` |
+| 40 | Readiness failures leak created stages | fixed | `dml/load/stage_ownership.py::test_load_readiness_failure_cleans_acknowledged_partial_pair_only`; `dml/transfer/row_batches/stage_ownership.py::test_keyed_worker_readiness_failure_cleans_acknowledged_stage_before_return`; `dml/transfer/row_batches/stage_registration.py::test_keyed_initialization_registers_partial_pair_before_readiness_returns`; `backends/ch/availability_writes.py::test_public_writes_finish_with_only_acknowledged_optional_facade_resources` |
 | 41 | CH string-key literals mishandle backslashes | fixed | `dml/transfer/row_batches/predicate_literals.py::test_clickhouse_literals_escape_backslashes_and_preserve_precise_instants` |
 | 42 | CH datetime transfer keys fail with fractions or timezone offsets | fixed | `dml/transfer/row_batches/predicate_literals.py::test_clickhouse_literals_escape_backslashes_and_preserve_precise_instants`; `dml/transfer/row_batches/predicate_literals.py::test_raw_clickhouse_key_literals_use_ticks_instead_of_naive_display` |
 | 43 | Transfer placeholders ignore SQL context | fixed | `dml/transfer/row_batches/predicate_literals.py::test_inserted_placeholder_text_is_never_scanned_again` |
@@ -286,14 +288,16 @@ Existing and explicit Trino `TIME` compatibility is covered by
 `dml/load/trino_time_values.py::test_existing_time_precision_rejects_inexact_values_before_clearing_target`,
 `dml/load/trino_time_values.py::test_explicit_time_precision_uses_native_rounding_and_midnight_wrap`,
 `dml/load/trino_time_values.py::test_clock_retry_reuses_captured_offset_after_lost_insert_acknowledgement`,
-`dml/load/trino_time_values.py::test_inferred_clock_column_uses_exact_typed_text_without_native_time_upgrade`,
+`dml/load/trino_time_values.py::test_inferred_naive_clock_column_keeps_exact_native_time_and_sql_null`,
+`dml/load/trino_time_values.py::test_inferred_unsupported_clock_offsets_keep_exact_typed_text`,
 `dml/load/trino_time_values.py::test_unsupported_parquet_time_stage_rejects_before_clearing_target`,
 and `dml/load/trino_time_values.py::test_parquet_append_omitting_nullable_time_stages_only_incoming_columns`.
 The disposable `audit.load.trino_time` case in
 `integration/core/audit_trino_time_values.py::test_trino_time_values_preserve_precision_and_stage_only_incoming_columns`
 uses Iceberg `TIME(6)` and explicit conversions against the existing schema; it
-was not run locally. These restore native clock binding without adding interval,
-connector or native-time inference features.
+was not run locally. Native inference retains exact supported clock values;
+unsupported offsets use typed text. Connector precision and interval binding
+follow the documented backend limits.
 
 Trino clock map-key identity and payloads are covered by
 `dml/load/trino_time_map_keys.py::test_trino_time_map_cast_collision_cannot_clear_existing_rows`,
@@ -390,8 +394,9 @@ Greenplum native INET casts are additionally covered by
 and `backends/gp/network_values.py::test_inet_values_native_key_views_retain_partition_mask_and_family`.
 These preserve wire spelling, host bits, masks and family, including array
 elements, while validating native effective-key identity before writes.
-`dml/load/gp_inet_casts.py::test_gp_inet_casts_mixed_naive_aware_timetz_keys_reject_before_write`
-covers the explicit-offset requirement for mixed-awareness clock key values.
+`dml/load/gp_inet_casts.py::test_gp_inet_casts_mixed_naive_aware_timetz_keys_reject_before_live_write`
+covers native TIMETZ key validation with captured session settings. Resulting
+duplicate keys reject before live writes, after private key validation.
 The disposable `audit.load.gp_inet_parameters` case in
 `integration/core/audit_gp_inet_parameters.py::test_greenplum_inet_parameters_preserve_native_hosts_and_masks`
 compares four parameters with independent native INET controls in one query.
@@ -415,10 +420,17 @@ Transfer coverage includes
 `dml/transfer/gp_native_assignment.py::test_gp_native_transfer_certifies_the_actual_final_explicit_cast_chain`
 and `dml/transfer/gp_native_assignment.py::test_gp_native_transfer_inner_retry_stops_deterministic_assignment_failures`.
 Query creation is covered by
-`dml/table/create_from_sql/gp_native_assignment.py::test_gp_query_native_cross_alias_projection_runs_in_target_context`,
+`dml/table/create_from_sql/gp_native_assignment.py::test_gp_query_cross_alias_projection_reads_certified_source_input`,
 `dml/table/create_from_sql/gp_native_assignment.py::test_gp_query_native_lost_ack_reuses_certified_sql_payload`,
 and `dml/table/create_from_sql/gp_native_assignment.py::test_gp_query_native_dry_plan_has_pending_validation_without_materialization`.
-These retain each consumer's actual assignment or SQL-cast semantics. The
+These retain each consumer's actual assignment or SQL-cast semantics. For
+independent Greenplum databases, `source_db` selects the source connection:
+the complete selected rows are frozen once and assigned into a target-owned
+native checkpoint before replacing the target. An unrelated table with the
+same name in the target database does not become the source. Shared-storage
+alias replacement is covered separately by
+`dml/table/create_from_sql/source_alias_identity.py::test_public_cross_alias_self_replacement_freezes_before_destroying_shared_storage`.
+The
 disposable `audit.load.gp_native_assignment` case in
 `integration/core/audit_gp_assignment_preflight.py::test_greenplum_native_assignment_certifies_cidr_and_scalar_domain_before_clear`
 covers GP6-supported CIDR, MACADDR, a scalar domain and CIDR arrays. It was not run

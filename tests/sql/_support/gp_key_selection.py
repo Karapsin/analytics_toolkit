@@ -21,6 +21,17 @@ class TimestampKeyCursor:
         self.connection.queries.append(statement)
         predicate = parse_one(statement, read="postgres").find(exp.EQ)
         assert predicate is not None
+        left = predicate.left
+        while isinstance(left, exp.Paren):
+            left = left.this
+        assert isinstance(left, exp.Column)
+        column = left.name
+        if column == "row_id":
+            self.rows = self._text_rows(predicate.right)
+            return
+        if column != "stamp":
+            message = "The native key predicate references an unknown column."
+            raise ValueError(message)
         cast = predicate.right
         assert isinstance(cast, exp.Cast)
         assert isinstance(cast.this, exp.Literal)
@@ -41,6 +52,17 @@ class TimestampKeyCursor:
             ]
         else:
             self.rows = [row for row in self.connection.rows if row[0] == value]
+
+    def _text_rows(self, literal):
+        if isinstance(literal, exp.Cast) and literal.to.this in {
+            exp.DataType.Type.TIMESTAMP,
+            exp.DataType.Type.TIMESTAMPTZ,
+        }:
+            message = "Native text column row_id cannot be compared with a timestamp."
+            raise ValueError(message)
+        assert isinstance(literal, exp.Literal)
+        assert literal.is_string
+        return [row for row in self.connection.rows if row[1] == literal.this]
 
     def fetchmany(self, size):
         result = self.rows[:size]

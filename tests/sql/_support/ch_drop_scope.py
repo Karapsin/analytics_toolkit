@@ -67,6 +67,8 @@ class _DropConnection(_Connection):
 
 
 class DropScopeState(ReplacementScopeState):
+    connection_class = _DropConnection
+
     def __init__(self):
         super().__init__()
         self.query_events = []
@@ -85,7 +87,7 @@ class DropScopeState(ReplacementScopeState):
             and (config.driver != "native" or config.port == port)
         ]
         assert len(matches) == 1, (config.host, matches)
-        raw = _DropConnection(self, matches[0], native=config.driver == "native")
+        raw = self.connection_class(self, matches[0], native=config.driver == "native")
         self.opened.append(raw)
         if INTERNAL_IO.get():
             return raw
@@ -94,8 +96,14 @@ class DropScopeState(ReplacementScopeState):
         return wrapped
 
 
-def install_drop_scope(
-    monkeypatch, write_sql_connections, *, driver="http", connection_key="ch", cluster_routing=None
+def install_drop_scope(  # noqa: PLR0913 - preserve shared fixture defaults and call shapes.
+    monkeypatch,
+    write_sql_connections,
+    *,
+    driver="http",
+    connection_key="ch",
+    cluster_routing=None,
+    staging_cluster=None,
 ):
     assert driver in {"http", "native"}
     path = write_sql_connections(
@@ -121,7 +129,11 @@ def install_drop_scope(
                             "on_cluster": None,
                             "sharding_key": "rand()",
                         },
-                    }
+                    },
+                    "staging": {
+                        "create_distributed_pair": False,
+                        "shard": {"engine": "Memory", "on_cluster": staging_cluster},
+                    },
                 },
             }
         }

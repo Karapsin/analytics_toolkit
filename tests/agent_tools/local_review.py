@@ -309,18 +309,25 @@ def test_fresh_review_execution_and_fail_closed_publication(
         receipt = local_review.review(candidate)
         assert receipt["payload"]["head"] == head
         assert receipt["payload"]["reviewer_id"].startswith("reviewer:")
+        compact = receipt["payload"]["review_iterations"]
+        proof = json.loads(
+            (
+                local_review.directory(candidate) / ("proof-" + compact["proof_sha256"] + ".json")
+            ).read_text()
+        )
         assert (
             len(
                 {
-                    r["payload"]["reviewer_id"]
-                    for r in receipt["payload"]["review_iterations"]["rounds"]
+                    child["payload"]["reviewer_id"]
+                    for wave in proof["waves"]
+                    for child in wave["payload"]["review_wave"]["children"]
                 }
             )
-            == 2
+            == 1
         )
         assert local_review.review(candidate) == receipt
     inputs = list(local_review.directory(candidate).glob("run-*/reviewer-input.txt"))
-    assert len(inputs) == (2 if error is None else 1)
+    assert len(inputs) == 1
     prompt = inputs[0].read_text(encoding="utf-8")
     payload = json.loads(prompt[prompt.index("{") :])
     assert payload["user_task"] == task_context.protocol().public_context(context)

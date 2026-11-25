@@ -33,6 +33,25 @@ def is_network_type(native_type: str) -> bool:
     return canonical_builtin_type(native_type) == "INET"
 
 
+def _native_network_value(value: Any) -> Any:
+    if isinstance(value, str) or is_null(value):
+        return value
+    from psycopg2.extras import Inet  # noqa: PLC0415 -- optional native driver wrapper.
+
+    return value.addr if isinstance(value, Inet) else value
+
+
+def normalize_authoritative_network(value: Any, native_type: str) -> Any:
+    """Own the known driver's input spelling before profiling, without DNS."""
+    if not is_network_type(native_type):
+        return value
+    owned = _native_network_value(unwrap_enum(value))
+    if is_null(owned):
+        return None
+    network_value_identity(owned, native_type)
+    return owned
+
+
 def validate_network_profile(profile: ColumnProfile, native_type: str) -> bool:
     if not is_network_type(native_type):
         return False
@@ -48,12 +67,12 @@ def convert_network_value(value: Any, native_type: str) -> Any:
     value = unwrap_enum(value)
     if is_null(value):
         return None
-    network_value_identity(value, native_type)
-    return value
+    return normalize_authoritative_network(value, native_type)
 
 
 def network_value_identity(value: Any, native_type: str = "INET") -> tuple[int, bytes, int]:
     """Native INET equality includes family, complete address and prefix length."""
+    value = _native_network_value(unwrap_enum(value))
     if (
         not is_network_type(native_type)
         or not isinstance(value, str)

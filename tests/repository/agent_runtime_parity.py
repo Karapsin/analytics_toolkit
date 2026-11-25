@@ -221,6 +221,50 @@ def test_shared_reviewer_contract_is_byte_identical() -> None:
     assert "GITHUB_TOKEN" not in agent_runtimes.RUNTIMES["codex"].reviewer_env(environ)
 
 
+def test_shared_reviewer_prompt_retires_zero_new_scopes_without_repeat_clean_reviews() -> None:
+    prompt = agent_runtimes.REVIEW_PROMPT
+    required = (
+        "one worker in a bounded parallel review wave",
+        "exhaustively reviews its assigned bounded scope in the frozen wave",
+        "Read EVERY assigned read_diff page, including deletions",
+        "interacting immutable source and tests needed to assess that scope",
+        "report ALL novel issues, not just the first issue or an initial sample",
+        "explicitly exclude open issues from the current frozen discovery batch",
+        "Only the current batch's open issue exclusions may be supplied",
+        "validated aggregate inventory must cover the entire candidate",
+        "The plan, head, base and task stay frozen for the wave",
+        "Bound worker concurrency and resource cost",
+        "retain completed signed scope results so interrupted cycles can resume",
+        "Collect ALL active workers before any batch decision",
+        "One clean chunk never constitutes whole-candidate approval",
+        "Failed, incomplete or uncertain chunks remain active",
+        "Retire every completed ZERO-NEW scope for the same frozen head, base, tree and assignment",
+        "Later cycles schedule ONLY scopes whose latest result found new issues",
+        "Never revisit a retired scope because another component or integration check found issues",
+        "Preserve each reused result's original signed origin",
+        "no author fixes or tests between discovery cycles",
+        "Discovery closes when ALL scopes are retired",
+        "Only then may the author batch ALL known current issues and tests",
+        "A changed head, tree or base resets ALL scope clearances and starts EMPTY finding history",
+        "Every scope receives its first pass on the new candidate",
+        "no historical fixed findings, fix summaries or prior review conclusions supplied",
+        "complete private audit is retained internally, not forwarded as review hints",
+        "Incomplete inspection, tool errors or uncertainty never count as zero additional issues",
+        "current open issues block final approval",
+        "There is no second clean look or two-clean-wave minimum",
+        "one complete clean signed result for EVERY component and integration scope",
+        "exact current task, source and plan",
+        "explicit nonapproving policy-19-to-20 migration may retain old clean reports",
+        "clean validation for the exact reviewed head",
+        "visual checks start only after final aggregate source approval",
+    )
+    assert all(requirement in prompt for requirement in required)
+    assert "Independently verify previous candidate fixes" not in prompt
+    assert "checks previous fixes" not in prompt
+    assert "read EVERY read_diff page for EVERY path" not in prompt
+    assert "requires at least two" not in prompt
+
+
 def test_interactive_sessions_share_effort_and_clone() -> None:
     root = Path("/sessions/0123456789abcdef")
     codex = agent_runtimes.RUNTIMES["codex"].interactive_argv("/bin/codex", root)

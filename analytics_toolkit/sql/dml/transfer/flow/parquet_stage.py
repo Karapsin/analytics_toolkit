@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from analytics_toolkit.general import time_print
-
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.transfer_stage import collision_stage_suffix
 from analytics_toolkit.sql.backends.trino.arrow_types import (
     arrow_type_for_trino_stage,
     parquet_scalar,
@@ -18,6 +18,7 @@ from analytics_toolkit.sql.backends.trino.arrow_types import (
 )
 from analytics_toolkit.sql.dml.load.stage import (
     STAGE_TABLE_NAME_MAX_ATTEMPTS,
+    _is_confirmed_create_collision,
     build_stage_table_name,
 )
 from analytics_toolkit.sql.dml.table._basic_ops import table_exists
@@ -27,6 +28,8 @@ from analytics_toolkit.sql.dml.transfer.runtime.models import (
     TransferOptions,
     TransferStageState,
 )
+
+from .stage_ownership import stage_creation_callbacks
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -66,7 +69,9 @@ def create_parquet_stage_table(
             else uuid.uuid4().hex
         )
         suffix = (
-            preferred_suffix if attempt == 1 else f"{preferred_suffix}__c_{uuid.uuid4().hex[:8]}"
+            preferred_suffix
+            if attempt == 1
+            else collision_stage_suffix("trino", preferred_suffix, uuid.uuid4().hex)
         )
         stage_table = build_stage_table_name(
             "trino",
@@ -100,12 +105,35 @@ def create_parquet_stage_table(
             query_label=options.query_label,
             ddl_properties=options.parquet_ddl_properties,
         )
-        adapter.execute_command(
-            connection_refs.target["connection"],
-            create_sql,
-        )
         stage_state.stage_table = stage_table
         stage_state.stage_external_location = stage_external_location
+        stage_state.stage_table_created = False
+        callbacks = stage_creation_callbacks(stage_state)
+        callbacks["on_stage_candidate"](stage_table)
+        try:
+            adapter.execute_command(connection_refs.target["connection"], create_sql)
+        except BaseException as exc:
+            if isinstance(exc, Exception) and _is_confirmed_create_collision(exc):
+                stage_state.stage_table = None
+                stage_state.stage_external_location = None
+                time_print(
+                    f"Stage table creation raced for {stage_table}; retrying with "
+                    f"a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
+                )
+                continue
+            exc.__dict__["analytics_toolkit_sql_stage_candidate"] = stage_table
+            exc.__dict__["analytics_toolkit_sql_stage_external_location"] = stage_external_location
+            exc.__dict__["analytics_toolkit_sql_acknowledged_resources"] = ()
+            time_print(
+                f"Retaining unacknowledged Parquet stage {stage_table} "
+                f"at {stage_external_location}",
+                level="warning",
+                connection=options.to_db_key,
+                backend=options.to_db_backend,
+                phase="create_stage",
+            )
+            raise
+        callbacks["on_resource_created"](stage_table)
         stage_state.stage_table_created = True
         return
 

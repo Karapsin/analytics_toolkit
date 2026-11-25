@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from math import gcd
 from typing import TYPE_CHECKING, Any
+
+from analytics_toolkit.sql.backends.native_scalars import ExactArray, ExactInterval
 
 if TYPE_CHECKING:
     from analytics_toolkit.sql.backends.value_profiles import ColumnProfile
@@ -116,7 +118,9 @@ def is_gp_clock_interval_type(native_type: str) -> bool:
 def temporal_family(value: Any) -> str | None:
     if isinstance(value, (dt.time, TimeTransport)) or _exact_clock(value) is not None:
         return "time"
-    return "interval" if isinstance(value, (dt.timedelta, IntervalTransport)) else None
+    return (
+        "interval" if isinstance(value, (dt.timedelta, IntervalTransport, ExactInterval)) else None
+    )
 
 
 def _exact_clock(value: Any) -> ExactClock | None:
@@ -208,6 +212,11 @@ def _checked_interval_parts(days: int, ticks: int) -> tuple[int, int]:
 
 
 def _interval_parts(value: Any) -> tuple[int, int]:
+    if isinstance(value, ExactInterval):
+        if not -(2**31) <= value.months < 2**31:
+            message = "Greenplum INTERVAL months exceed their native range."
+            raise ValueError(message)
+        return _checked_interval_parts(value.days, value.microseconds * 1000)
     if isinstance(value, dt.timedelta):
         return _checked_interval_parts(
             value.days,
@@ -217,13 +226,28 @@ def _interval_parts(value: Any) -> tuple[int, int]:
             ),
         )
     if isinstance(value, IntervalTransport):
-        match = re.fullmatch(r"([+-]?\d+) days ([+-]?\d+)\.(\d{6,9}) seconds", value)
+        match = re.fullmatch(
+            r"(?:[+-]?\d+ mons )?([+-]?\d+) days ([+-]?\d+)\.(\d{6,9}) seconds", value
+        )
         if match:
             days, second, fraction = match.groups()
             ticks = abs(int(second)) * _SECOND + int(fraction.ljust(9, "0"))
             return _checked_interval_parts(int(days), -ticks if second.startswith("-") else ticks)
     message = "Selected input is incompatible with authoritative Greenplum INTERVAL values."
     raise ValueError(message)
+
+
+def _interval_months(value: Any) -> int:
+    if isinstance(value, ExactInterval):
+        return value.months
+    if isinstance(value, IntervalTransport):
+        match = re.match(r"([+-]?\d+) mons ", value)
+        months = int(match[1]) if match else 0
+        if not -(2**31) <= months < 2**31:
+            message = "Greenplum INTERVAL months exceed their native range."
+            raise ValueError(message)
+        return months
+    return 0
 
 
 def _fraction_scale(ticks: int) -> int:
@@ -254,6 +278,9 @@ def observe_temporal_value(profile: ColumnProfile, value: Any) -> None:
             profile.temporal_scale = max(profile.temporal_scale, _fraction_scale(ticks))
             profile.interval_days_nonzero |= bool(days)
             profile.interval_time_gcd = gcd(profile.interval_time_gcd, ticks)
+            months = _interval_months(value)
+            profile.interval_months_nonzero |= bool(months)
+            profile.interval_months_gcd = gcd(profile.interval_months_gcd, months)
     except (TypeError, ValueError, OverflowError):
         profile.native_constraints_valid = False
 
@@ -294,6 +321,8 @@ def validate_clock_interval_profile(
         unit = {"day": _DAY, "hour": 3600 * _SECOND, "minute": 60 * _SECOND}.get(spec.least_field)
         if spec.least_field in {"year", "month"}:
             incompatible = profile.interval_days_nonzero or bool(profile.interval_time_gcd)
+            if spec.least_field == "year":
+                incompatible |= bool(profile.interval_months_gcd % 12)
         elif unit is not None:
             incompatible = (
                 bool(profile.interval_time_gcd % unit)
@@ -325,11 +354,12 @@ def _time_text(ticks: int, offset: int | None, *, digits: int) -> TimeTransport:
     return TimeTransport(f"{hour:02d}:{minute:02d}:{second:02d}.{fraction_text}{suffix}")
 
 
-def _interval_text(days: int, ticks: int, *, digits: int) -> IntervalTransport:
+def _interval_text(days: int, ticks: int, *, digits: int, months: int = 0) -> IntervalTransport:
     seconds, fraction = divmod(abs(ticks), _SECOND)
     fraction_text = f"{fraction:09d}"[:digits]
     return IntervalTransport(
-        f"{days} days {'-' if ticks < 0 else '+'}{seconds}.{fraction_text} seconds"
+        (f"{months} mons " if months else "")
+        + f"{days} days {'-' if ticks < 0 else '+'}{seconds}.{fraction_text} seconds"
     )
 
 
@@ -387,24 +417,36 @@ def freeze_clock_interval_value(value: Any, native_type: str) -> Any:
         return None
     native = (canonical_builtin_type(native_type) or native_type).rstrip()
     if native.endswith("[]"):
-        if not isinstance(value, (list, tuple)):
-            message = "Greenplum native temporal arrays require array values."
-            raise ValueError(message)
-        while native.endswith("[]"):
-            native = native[:-2].rstrip()
-        return _freeze_native_array(value, native)
+        return _freeze_clock_interval_array(value, native)
     spec = _temporal_type(native)
     if spec is None:
         message = "A supported Greenplum TIME/INTERVAL destination is required."
         raise ValueError(message)
     if spec.family == "time":
-        if _exact_clock(value) is not None:
-            return value  # Immutable coordinates preserve sub-microticks for exact text fallback.
-        if isinstance(value, dt.time):
-            return _snapshot_time(value)
-        return _time_text(*_time_parts(value), digits=9)
+        return _freeze_clock(value)
     _interval_parts(value)
     return value  # Native durations are immutable; retain their exact type/unit for text fallback.
+
+
+def _freeze_clock_interval_array(value: Any, native: str) -> Any:
+    while native.endswith("[]"):
+        native = native[:-2].rstrip()
+    if isinstance(value, ExactArray):
+        return replace(
+            value, values=tuple(freeze_clock_interval_value(item, native) for item in value.values)
+        )
+    if isinstance(value, (list, tuple)):
+        return _freeze_native_array(value, native)
+    message = "Greenplum native temporal arrays require array values."
+    raise ValueError(message)
+
+
+def _freeze_clock(value: Any) -> Any:
+    if _exact_clock(value) is not None:
+        return value  # Immutable coordinates preserve sub-microticks for exact text fallback.
+    if isinstance(value, dt.time):
+        return _snapshot_time(value)
+    return _time_text(*_time_parts(value), digits=9)
 
 
 def convert_clock_interval_value(value: Any, native_type: str) -> Any:
@@ -437,8 +479,11 @@ def convert_clock_interval_value(value: Any, native_type: str) -> Any:
             _round_ticks(ticks, unit), offset if spec.with_timezone else None, digits=6
         )
     days, ticks = _interval_parts(value)
+    months = _interval_months(value)
     if spec.least_field in {"year", "month"}:
         days, ticks = 0, 0
+        if spec.least_field == "year":
+            months = (1 if months >= 0 else -1) * (abs(months) // 12) * 12
     elif spec.least_field == "day":
         ticks = 0
     elif spec.least_field in {"hour", "minute"}:
@@ -447,4 +492,4 @@ def convert_clock_interval_value(value: Any, native_type: str) -> Any:
     else:
         ticks = _round_ticks(ticks, unit)
     _checked_interval_parts(days, ticks)
-    return _interval_text(days, ticks, digits=6)
+    return _interval_text(days, ticks, digits=6, months=months)

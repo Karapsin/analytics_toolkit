@@ -97,6 +97,16 @@ def freeze_time_value(value: Any) -> dt.time | ExactClock:
     value = unwrap_enum(value)
     if isinstance(value, ExactClock):
         return value
+    if isinstance(value, str):
+        from .exact_temporal_reads import decode_time  # noqa: PLC0415 -- exact text input boundary.
+
+        token = value.strip()
+        with_timezone = re.search(r"[+-][0-9]{2}:[0-9]{2}$", token, flags=re.ASCII) is not None
+        decoded = decode_time(token, _MAX_PRECISION, with_timezone=with_timezone)
+        if decoded is None:
+            message = "Selected input is incompatible with authoritative Trino TIME values."
+            raise TypeError(message)
+        return decoded
     if not isinstance(value, dt.time):
         message = "Selected input is incompatible with authoritative Trino TIME values."
         raise TypeError(message)
@@ -125,6 +135,12 @@ def _snapshot_time(value: Any) -> dt.time | ExactClock:
 
     value = freeze_time_value(value)
     if isinstance(value, ExactClock):
+        if not 0 <= value.ticks < 86400 * 10**value.scale:
+            message = (
+                "Trino TIME requires clock coordinates before 24:00; "
+                "raw 24:00 cannot be wrapped to midnight."
+            )
+            raise ValueError(message)
         if value.offset_minutes is not None and abs(value.offset_minutes) > 14 * 60:
             message = "Trino TIME offsets must be whole minutes within -14:00 and +14:00."
             raise ValueError(message)
@@ -197,6 +213,13 @@ def convert_time_value(value: Any, native_type: str) -> dt.time | ExactClock | N
     value = unwrap_enum(value)
     if is_null(value):
         return None
+    if isinstance(value, str):
+        # Load the wire codec only at the native text-conversion boundary.
+        from .exact_temporal_reads import (  # noqa: PLC0415
+            decode_time,
+        )
+
+        value = decode_time(value.strip(), _MAX_PRECISION, with_timezone=spec.with_timezone)
     value = _snapshot_time(value)
     clock = _clock_coordinates(value)
     if clock.scale > spec.precision:
@@ -212,7 +235,7 @@ def convert_time_value(value: Any, native_type: str) -> dt.time | ExactClock | N
     return converted.replace(fold=value.fold if isinstance(value, dt.time) else 0)
 
 
-def time_parameter_value(value: Any, native_type: str) -> str | None:
+def time_parameter_value(value: Any, native_type: str) -> Any:
     """Represent resolved clocks exactly for every supported SDK formatter."""
     from analytics_toolkit.sql.core.exact_values import ExactClock  # noqa: PLC0415
 
@@ -220,6 +243,10 @@ def time_parameter_value(value: Any, native_type: str) -> str | None:
     converted = convert_time_value(value, native_type)
     if converted is None:
         return None
+    if spec.with_timezone and _clock_coordinates(converted).offset_minutes is None:
+        # A typed TIME parameter invokes Trino's session-timezone cast. A
+        # VARCHAR without an offset is invalid for TIME WITH TIME ZONE.
+        return converted
     if not spec.with_timezone:
         return (
             ExactClock(converted.ticks, converted.scale).isoformat()
@@ -298,19 +325,10 @@ def _freeze_row(value: Any, children: list[tuple[str, str]]) -> Any:
     return value
 
 
-def _freeze_value(value: Any, native_type: str | None) -> Any:
+def _freeze_nested_value(value: Any, native_type: str) -> Any:
     from analytics_toolkit.sql.backends.nested_types import nested_descriptor  # noqa: PLC0415
-    from analytics_toolkit.sql.backends.nested_values import array_item  # noqa: PLC0415
-    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
-        OrderedMapPairs,
-        is_null,
-    )
+    from analytics_toolkit.sql.core.exact_values import OrderedMapPairs  # noqa: PLC0415
 
-    value = array_item(value)
-    if is_null(value):
-        return None
-    if native_type is None or is_time_type(native_type):
-        return freeze_time_value(value) if native_type is None else _snapshot_time(value)
     kind, children = nested_descriptor(native_type)
     if kind == "array" and isinstance(value, (list, tuple)):
         return [_freeze_value(item, children[0][1]) for item in value]
@@ -324,6 +342,24 @@ def _freeze_value(value: Any, native_type: str | None) -> Any:
             )
         )
     return value
+
+
+def _freeze_value(value: Any, native_type: str | None) -> Any:
+    from analytics_toolkit.sql.backends.nested_values import array_item  # noqa: PLC0415
+    from analytics_toolkit.sql.core.exact_values import is_null  # noqa: PLC0415
+
+    value = array_item(value)
+    if is_null(value):
+        return None
+    if native_type is None:
+        return freeze_time_value(value)
+    if is_time_type(native_type):
+        return (
+            convert_time_value(value, native_type)
+            if isinstance(value, str)
+            else _snapshot_time(value)
+        )
+    return _freeze_nested_value(value, native_type)
 
 
 def prepare_dataframe_payload(

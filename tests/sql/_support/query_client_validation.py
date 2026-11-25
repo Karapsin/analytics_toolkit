@@ -79,12 +79,25 @@ class QueryCodecClient:
         if not self.exists or filters != {"database": "analytics", "name": "events"}:
             return []
         values = {
+            "database": "analytics",
+            "name": "events",
             "uuid": self.table_uuid,
             "create_table_query": self._ddl(),
             "engine": "MergeTree",
             "engine_full": "MergeTree",
         }
-        return [tuple(values[column.name] for column in tree.expressions)]
+
+        def project(expression):
+            if isinstance(expression, exp.Alias):
+                expression = expression.this
+            column = (
+                expression if isinstance(expression, exp.Column) else expression.find(exp.Column)
+            )
+            assert column is not None, expression
+            value = values[column.name]
+            return str(value) if expression.sql().lower().startswith("tostring(") else value
+
+        return [tuple(project(expression) for expression in tree.expressions)]
 
     def query(self, statement, **_kwargs):
         self.metadata_queries.append((statement, deepcopy(_kwargs)))
@@ -136,7 +149,7 @@ class QueryCodecClient:
             self.events.append("server_copy")
             self.rows.extend({"payload": deepcopy(value)} for value in self.values)
 
-    def insert(self, *, table, data, column_names, column_type_names):
+    def insert(self, table, data, *, column_names, column_type_names, **_kwargs):
         assert table == "analytics.events"
         assert column_names == ["payload"]
         self.normalization_hints.append(tuple(column_type_names))

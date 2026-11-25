@@ -4,6 +4,8 @@ import importlib
 
 import pandas as pd
 import pytest
+from analytics_toolkit.sql.backends.ch.outage_context import LOGICAL_STATISTICS, STATISTICS_TARGETS
+from sqlglot import exp, parse_one
 
 show_tables_module = importlib.import_module("analytics_toolkit.sql.metadata.show_tables")
 ch_metadata_module = importlib.import_module("analytics_toolkit.sql.backends.ch.metadata")
@@ -12,6 +14,43 @@ sql_module = importlib.import_module("analytics_toolkit.sql")
 
 def _compact(sql: str) -> str:
     return " ".join(sql.split())
+
+
+def _complete_metadata_frame(data: dict[str, list[object]]) -> pd.DataFrame:
+    result = pd.DataFrame(data)
+    result.attrs["data_complete"] = True
+    return result
+
+
+def _assert_logical_shard_query(query: str, database: str) -> None:
+    statement = parse_one(query, read="clickhouse")
+    ctes = {item.alias_or_name: item.this for item in statement.ctes}
+    eligible = ctes["eligible_statistics"]
+    source = eligible.args["from_"].this
+    assert source.alias == "source"
+    assert isinstance(source.this, exp.Anonymous)
+    assert source.this.name.lower() == "clusterallreplicas"
+    predicate = next(eligible.args["where"].find_all(exp.In))
+    assert isinstance(predicate.this, exp.Tuple)
+    assert [(item.table, item.name) for item in predicate.this.expressions] == [
+        ("source", "database"),
+        ("source", "name"),
+    ]
+    assert len(predicate.expressions) == 1
+    assert isinstance(predicate.expressions[0], exp.Tuple)
+    assert [item.this for item in predicate.expressions[0].expressions] == [
+        database,
+        "events_shard",
+    ]
+    assert [item.alias_or_name for item in statement.expressions] == [
+        "shard_database",
+        "shard_table",
+        "row_count",
+        "table_size_bytes",
+        "statistics_complete",
+    ]
+    assert LOGICAL_STATISTICS.get() is True
+    assert STATISTICS_TARGETS.get() == (("core", database, "events_shard"),)
 
 
 def _capture_read_sql(
@@ -99,6 +138,7 @@ def test_clickhouse_shard_stats_missing_metadata_and_partial_results() -> None:
     resolved = ch_metadata_module.apply_clickhouse_shard_stats("ch", tables, read_sql=read_sql)
     assert resolved.loc[0, "row_count"] == 7
     assert pd.isna(resolved.loc[1, "row_count"])
+    assert resolved.attrs["data_complete"] is False
 
 
 def test_clickhouse_metadata_parser_quoting_nesting_and_malformed_inputs() -> None:
@@ -227,7 +267,7 @@ def test_show_tables_clickhouse_distributed_tables_use_shard_stats(
     def fake_read_sql(connection_type: str, query: str) -> pd.DataFrame:
         calls.append((connection_type, query))
         if "FROM system.tables" in query:
-            return pd.DataFrame(
+            return _complete_metadata_frame(
                 {
                     "db": ["pa_core_stage", "pa_core_stage", "pa_core_stage"],
                     "schema": ["pa_core_stage", "pa_core_stage", "pa_core_stage"],
@@ -243,15 +283,18 @@ def test_show_tables_clickhouse_distributed_tables_use_shard_stats(
                 }
             )
         if "FROM clusterAllReplicas('core', system, tables)" in query:
-            return pd.DataFrame(
+            _assert_logical_shard_query(query, "pa_core_stage")
+            return _complete_metadata_frame(
                 {
                     "shard_database": ["pa_core_stage"],
                     "shard_table": ["events_shard"],
                     "row_count": [1200],
                     "table_size_bytes": [2048],
+                    "statistics_complete": [True],
                 }
             )
-        raise AssertionError(f"Unexpected query:\n{query}")
+        message = f"Unexpected query:\n{query}"
+        raise AssertionError(message)
 
     monkeypatch.setattr(show_tables_module, "read_sql", fake_read_sql)
 
@@ -268,9 +311,11 @@ def test_show_tables_clickhouse_distributed_tables_use_shard_stats(
     assert "clusterAllReplicas('core', system, tables)" in stats_query
     assert "argMin" in stats_query
     assert "host_scope.shard_num" in stats_query
-    assert "WHERE (database, name) IN (('pa_core_stage', 'events_shard'))" in stats_query
     assert result["row_count"].tolist() == [1200, 1200, 7]
     assert result["table_size"].tolist() == ["2.00 KiB", "2.00 KiB", "32 B"]
+    assert result.attrs["data_complete"] is True
+    assert LOGICAL_STATISTICS.get() is False
+    assert STATISTICS_TARGETS.get() == ()
     assert list(result.columns) == [
         "db",
         "schema",
@@ -288,7 +333,7 @@ def test_show_tables_clickhouse_distributed_stats_support_current_database_macro
     def fake_read_sql(connection_type: str, query: str) -> pd.DataFrame:
         calls.append((connection_type, query))
         if "FROM system.tables" in query:
-            return pd.DataFrame(
+            return _complete_metadata_frame(
                 {
                     "db": ["analytics"],
                     "schema": ["analytics"],
@@ -304,15 +349,18 @@ def test_show_tables_clickhouse_distributed_stats_support_current_database_macro
         if "getMacro('cluster')" in query:
             return pd.DataFrame({"cluster_name": ["core"]})
         if "FROM clusterAllReplicas('core', system, tables)" in query:
-            return pd.DataFrame(
+            _assert_logical_shard_query(query, "analytics")
+            return _complete_metadata_frame(
                 {
                     "shard_database": ["analytics"],
                     "shard_table": ["events_shard"],
                     "row_count": [42],
                     "table_size_bytes": [1024],
+                    "statistics_complete": [True],
                 }
             )
-        raise AssertionError(f"Unexpected query:\n{query}")
+        message = f"Unexpected query:\n{query}"
+        raise AssertionError(message)
 
     monkeypatch.setattr(show_tables_module, "read_sql", fake_read_sql)
 
@@ -323,9 +371,11 @@ def test_show_tables_clickhouse_distributed_stats_support_current_database_macro
     )
 
     assert [call[0] for call in calls] == ["ch", "ch", "ch"]
-    assert "WHERE (database, name) IN (('analytics', 'events_shard'))" in calls[2][1]
     assert result.loc[0, "row_count"] == 42
     assert result.loc[0, "table_size"] == "1.00 KiB"
+    assert result.attrs["data_complete"] is True
+    assert LOGICAL_STATISTICS.get() is False
+    assert STATISTICS_TARGETS.get() == ()
 
 
 def test_show_tables_clickhouse_distributed_stats_failure_falls_back(
@@ -349,7 +399,8 @@ def test_show_tables_clickhouse_distributed_stats_failure_falls_back(
                     ],
                 }
             )
-        raise RuntimeError("cluster metadata unavailable")
+        message = "cluster metadata unavailable"
+        raise RuntimeError(message)
 
     monkeypatch.setattr(show_tables_module, "read_sql", fake_read_sql)
 

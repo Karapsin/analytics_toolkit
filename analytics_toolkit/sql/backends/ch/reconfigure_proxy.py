@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from analytics_toolkit.sql.execution.backend_options import clear_data_replay_retention
+
+from .outage_context import preserve_source_scope
 from .routing import local_sql
 
 
@@ -21,10 +24,11 @@ def execute(
 ) -> None:
     from .reconfigure import execute_ch_table_reconfiguration  # noqa: PLC0415
 
-    with local_sql(connection):
+    with local_sql(connection), preserve_source_scope():
         execute_ch_table_reconfiguration(
             adapter,
             connection,
             reconfiguration,
             validate_row_count=validate_row_count,
         )
+        clear_data_replay_retention()

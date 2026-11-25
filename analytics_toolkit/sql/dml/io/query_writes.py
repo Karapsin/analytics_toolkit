@@ -166,8 +166,7 @@ def _prepare_query_insert(
         *statements[:-1],
         f"INSERT INTO {target_table}\n{final_query}",
     ]
-    if query_label is not None:
-        write_statements = [apply_query_label(sql, query_label) for sql in write_statements]
+    write_statements = [apply_query_label(sql, query_label) for sql in write_statements]
     write_sql = _join_statements(write_statements)
     options = _build_execute_sql_options(
         db_key=db_key,

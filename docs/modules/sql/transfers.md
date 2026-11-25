@@ -7,8 +7,9 @@ right workflow when the source data is already in a database and Python should
 coordinate extraction, batching, type mapping, and target writes. The public
 entrypoint is [sql.transfer](functions/transfer.md).
 
-For a keyed source whose connection defines `transfer_staging_schema`, the
-staged-source flow is a pipeline rather than a sequence of global phases:
+For a keyed source whose connection defines `transfer_staging_schema`, metadata
+that proves the selected native representation fits permits this streaming
+pipeline:
 
 1. Generate one transfer ID, resolve the exact canonical destination, open
    bounded source and target pools, and inspect source/target metadata once for
@@ -24,8 +25,10 @@ staged-source flow is a pipeline rather than a sequence of global phases:
    and consolidate only the target stages that were created, then perform one
    final destination mutation.
 
-There is no all-keys materialization barrier: one key can be in CTAS, another in
-RAM batching, another in target insertion, and another in validation. Unkeyed
+This metadata-proven path has no all-keys materialization barrier: one key can
+be in CTAS, another in RAM batching, another in target insertion, and another in
+validation. Adaptive type resolution instead completes profiling across every
+selected key before creating or publishing the resolved destination. Unkeyed
 source staging retains one immutable slice-zero snapshot with bounded ordinal
 ranges.
 
@@ -146,18 +149,17 @@ name rather than reusing an existing table.
 
 Only workers inside one `sql.transfer` invocation are supported concurrently.
 Independent simultaneous calls to the same destination are unsupported.
-Best-effort startup cleanup is not a lock or fencing mechanism, and the design
-creates no manifest, lease, heartbeat, owner marker, bookkeeping or coordination
+Best-effort startup cleanup is not a lock or fencing mechanism. Scheduling
+creates no SQL lease, heartbeat, owner marker, bookkeeping or coordination
 table, persistent work queue, coordination view, or sequence. Empty or ambiguous
 stage names created by the current attempt are tracked for exact cleanup. Objects
 whose ownership cannot be proved from exact runtime state or validated identity
 are never dropped automatically and remain for explicit cleanup.
 
-On a later invocation, an empty crash remnant can be cleaned without row
-identity only when its generated name has the exact destination hash and a
-different full transfer ID. Current-attempt and malformed names remain
-protected. This rule relies on the documented restriction that independent
-transfers to the same exact destination are unsupported.
+On a later invocation, recognized crash remnants are reported and retained
+unless a persisted creation identity proves ownership. An empty table, a
+destination hash or a different full transfer ID never authorizes deletion.
+Explicit cleanup requires reviewing the retained resource names and scopes.
 
 ## Lazy scheduling and resource bounds
 
@@ -277,11 +279,13 @@ key is rematerialized, including keys whose earlier source tables were already
 dropped. Per-key CTAS operations and full retries can observe different source
 moments, so no cross-attempt snapshot is promised.
 
-Checkpoints cannot survive process restart. Startup/crash cleanup may discover
-attempt-owned stages on the current aliases, but no manifest or coordination
-table is available for resume. Finalization never treats retained staging as
-proof that the destination mutation succeeded, and append is not retried after
-an ambiguous final append.
+The in-memory verified-key checkpoints and scheduler state do not survive
+process restart. Separately, a certified local replay checkpoint can be retained
+with its versioned manifest for recovery; reopening it verifies the complete
+payload before replay. Public operations do not automatically resume a prior
+process from those artifacts. Retained staging never proves that destination
+publication succeeded, and uncertain structural cutovers require recovery
+before further structural replay.
 
 ClickHouse finalization retries are narrower when the operation creates its
 target from scratch: append/upsert/replace when the target was absent. Each
@@ -352,7 +356,10 @@ bits keep Python integer conversion and declared signed/unsigned bounds.
 Supported finite floating-point and Decimal text retains native floating width
 and exact decimal precision/scale checks; Decimal values never pass through
 floating point. Greenplum parameter adaptation preserves signed zero.
-Nonfinite text tokens reject before publication rather than becoming SQL NULL.
+Supported `NaN` and infinity text tokens retain native numeric values distinct
+from SQL NULL only when the backend type admits them and complete validation
+or a native assignment checkpoint certifies the conversion. Unsupported
+tokens, ranges and server-version casts reject before live publication.
 These conversions affect only declared numeric scalar leaves in containers;
 unrelated temporal identity and timezone handling remain unchanged. Inference
 does not turn strings into numeric columns.

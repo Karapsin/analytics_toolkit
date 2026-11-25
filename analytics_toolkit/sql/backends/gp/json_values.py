@@ -11,6 +11,13 @@ from uuid import UUID
 from sqlglot import Dialect, exp
 from sqlglot.errors import ParseError, TokenError
 
+from analytics_toolkit.sql.backends import native_scalars
+from analytics_toolkit.sql.backends.native_scalars import ExactArray
+
+from .source_arrays import map_array_values
+
+JsonDocument = native_scalars.JsonDocument
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from typing import List
@@ -33,6 +40,10 @@ def prepare_dataframe_payload(
 ) -> pd.DataFrame | None:
     """Own JSON documents and exact temporal components before mutation/replay."""
     del self
+    from .network_values import (  # noqa: PLC0415 -- own the optional driver's known wrapper.
+        is_network_type,
+        normalize_authoritative_network,
+    )
     from .temporal_values import (  # noqa: PLC0415 -- runtime dataframe codec.
         freeze_clock_interval_value,
         is_gp_clock_interval_type,
@@ -62,7 +73,11 @@ def prepare_dataframe_payload(
         (index, name, schema[str(name)])
         for index, name in enumerate(df.columns)
         if str(name) in schema
-        and (is_json_type(schema[str(name)]) or is_temporal(schema[str(name)]))
+        and (
+            is_json_type(schema[str(name)])
+            or is_temporal(schema[str(name)])
+            or is_network_type(schema[str(name)])
+        )
     ]
     if not payload_columns:
         return None
@@ -75,7 +90,9 @@ def prepare_dataframe_payload(
             [
                 convert_json_value(value, native)
                 if is_json_type(native)
-                else freeze_clock_interval_value(value, native)
+                else normalize_authoritative_network(value, native)
+                if is_network_type(native)
+                else _freeze_temporal_payload(value, native, freeze_clock_interval_value)
                 for value in df.iloc[:, index]
             ],
             index=df.index,
@@ -84,10 +101,15 @@ def prepare_dataframe_payload(
     return prepared
 
 
-class JsonDocument(str):
-    """An immutable encoded document, distinct from a logical JSON-array string."""
+def _freeze_temporal_payload(value: Any, native: str, freeze: Any) -> Any:
+    from .temporal_assignment import (  # noqa: PLC0415 -- value-aware native parameter policy.
+        temporal_assignment_value,
+        temporal_text_value_required,
+    )
 
-    __slots__ = ()
+    if temporal_text_value_required(value, native):
+        return temporal_assignment_value(value, native)
+    return freeze(value, native)
 
 
 class JsonArray(_JsonArrayBase):
@@ -286,6 +308,13 @@ def convert_json_value(value: Any, native_type: str, *, decoded: bool = False) -
         return None
     try:
         if rank:
+            if isinstance(value, ExactArray):
+                return map_array_values(
+                    value,
+                    lambda item: (
+                        None if _is_null(item) else _document(item, native, logical_leaf=True)
+                    ),
+                )
             return _array_documents(value, native, rank)[0]
         return _document(value, native, logical_leaf=decoded)
     except Exception:  # noqa: BLE001 -- custom serializers may raise payload-bearing errors.

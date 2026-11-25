@@ -14,6 +14,36 @@ def should_ensure_load_target_table(
     return not target_exists or not getattr(connection, "_ch_outage_client", False)
 
 
+def ensure_stage_target_table(adapter: Any, request: Any) -> bool:
+    if request.on_resource_created is not None or request.on_scoped_resource_created is not None:
+        # DDL API and backend registry cycle.
+        from analytics_toolkit.sql.backends.target_acquisition import (  # noqa: PLC0415
+            ensure_stage_target_table as acquire,
+        )
+
+        return acquire(adapter, request)
+    adapter.ensure_distributed_target_pair(
+        request.connection,
+        request.target_table,
+        request.sample_batch,
+        target_exists=False,
+        target_column_types=request.target_column_types,
+        insert_column_types=request.target_column_types,
+        gp_distributed_by_key=request.gp_distributed_by_key,
+        partition_by=request.partition_by,
+        order_by=request.order_by,
+        ch_engine=request.ch_engine,
+        ch_cluster=request.ch_cluster,
+        ch_sharding_key=request.ch_sharding_key,
+        query_label=request.query_label,
+        connection_key=request.connection_key,
+        ch_replace_table=False,
+        ch_only_shard=request.ch_only_shard,
+        ch_creation_policy=request.ch_creation_policy,
+    )
+    return True
+
+
 def expected_create_table_column_types(
     adapter: Any,
     batch: Any,
@@ -117,8 +147,10 @@ def local_creation_context(adapter: Any, connection: Any, *, local: bool) -> Any
 
 def apply_target_write_mode(adapter: Any, request: Any) -> bool:
     from .layout import inspect_existing_layout  # noqa: PLC0415 - adapter initialization cycle
-    from .lifecycle import truncate_ch_distributed_table_pair  # noqa: PLC0415 - adapter cycle
     from .operations import drop_table_with_options  # noqa: PLC0415 - adapter cycle
+
+    # DDL API and backend registry cycle.
+    from .truncate_layout import truncate_existing_layout  # noqa: PLC0415
 
     if request.write_mode in {"append", "upsert"} or not request.target_exists:
         return bool(request.target_exists)
@@ -126,18 +158,17 @@ def apply_target_write_mode(adapter: Any, request: Any) -> bool:
         request.connection, request.table_name, distributed_on_cluster=request.ch_cluster
     )
     if request.write_mode == "truncate_insert":
-        if layout.create_distributed_pair:
-            truncate_ch_distributed_table_pair(
-                request.connection,
-                request.table_name,
-                shard_table=layout.physical_table,
-                ch_cluster=layout.shard_on_cluster,
-                query_label=request.query_label,
-            )
-        else:
+        if not layout.create_distributed_pair and layout.shard_on_cluster is None:
             adapter.clear_table(
-                request.connection, request.table_name, query_label=request.query_label
+                request.connection, layout.logical_table, query_label=request.query_label
             )
+            return True
+        truncate_existing_layout(
+            request.connection,
+            layout,
+            connection_key=request.connection_key or "ch",
+            query_label=request.query_label,
+        )
         return True
     drop_table_with_options(
         adapter,

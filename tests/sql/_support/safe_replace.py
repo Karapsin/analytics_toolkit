@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from analytics_toolkit.sql.backends.ch.cluster_functions import cluster_arguments
 from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
+from analytics_toolkit.sql.backends.ch.outage_statements import exchange_or_rename
+from analytics_toolkit.sql.backends.ch.reconfigure_ddl import retarget_create
 from analytics_toolkit.sql.core.identifiers import TableIdentifier
 from sqlglot import exp, parse_one
+
+from tests.sql._support.ch_transfer_replacement import _selected_rows
 
 
 class ReplacementCursor:
@@ -79,6 +84,16 @@ class ClickHouseReplacementConnection:
             self.definitions["sandbox.target_shard"] = (
                 f"CREATE TABLE sandbox.target_shard {columns} ENGINE = MergeTree ORDER BY id"
             )
+        self.definitions = {
+            name: parse_one(ddl, read=ClickHouseDialect).sql(dialect=ClickHouseDialect)
+            for name, ddl in self.definitions.items()
+        }
+        self.table_identities = {name: uuid4() for name in self.definitions}
+        self.table_rows = {name: [] for name in self.definitions}
+        physical = "sandbox.target_shard" if pair else "sandbox.target"
+        self.table_rows[physical] = [(901, "old-a"), (902, "old-b")]
+        self.table_rows["stage.incoming"] = [(1, "a"), (2, "b")]
+        self.input_columns = {"stage.incoming": ["id", "new_column"]}
 
     def _scope_metadata(self, sql: str) -> list[tuple[Any, ...]] | None:
         if sql.startswith("SELECT getMacro("):
@@ -109,15 +124,65 @@ class ClickHouseReplacementConnection:
         if sql.startswith("SHOW CREATE TABLE "):
             identifier = TableIdentifier.parse(sql[len("SHOW CREATE TABLE ") :], "ch")
             return [(self.definitions[".".join(identifier.parts)],)]
-        if "create_table_query" not in sql:
+        parsed = parse_one(sql, read=ClickHouseDialect)
+        if not isinstance(parsed, exp.Select) or parsed.find(exp.Count) is not None:
             return None
+        source = parsed.args.get("from_")
+        if source is None:
+            return None
+        return self._system_table_metadata(parsed, source.this, sql)
+
+    def _system_table_metadata(
+        self, parsed: exp.Select, source_table: exp.Table, sql: str
+    ) -> list[tuple[Any, ...]] | None:
+        system_table = source_table.name
+        if isinstance(source_table.this, exp.Anonymous):
+            system_table = source_table.this.expressions[2].name
+        selected = (
+            self.members if isinstance(source_table.this, exp.Anonymous) else self.members[:1]
+        )
+        if system_table == "server_settings":
+            return [
+                (_position(item, index), "/clickhouse/{database}/{table}/{shard}")
+                for index, _host in enumerate(selected, 1)
+                for item in [parsed.expressions[0]]
+            ]
+        if system_table == "macros":
+            return [
+                (_position(parsed.expressions[0], index), macro, value)
+                for index, host in enumerate(selected, 1)
+                for macro, value in (("shard", str(index)), ("replica", host))
+            ]
+        if system_table != "tables" or not any(
+            item.name in {"uuid", "engine", "create_table_query"} for item in parsed.expressions
+        ):
+            return None
+        return self._resource_metadata(parsed, selected, sql)
+
+    def _resource_metadata(
+        self, parsed: exp.Select, selected: tuple[str, ...], sql: str
+    ) -> list[tuple[Any, ...]]:
         filters = _filters(sql)
-        definition = self.definitions.get(f"{filters['database']}.{filters['name']}")
+        name = f"{filters['database']}.{filters['name']}"
+        definition = self.definitions.get(name)
         if definition is None:
             return []
+        create = parse_one(definition, read=ClickHouseDialect)
+        record = {
+            "uuid": self.table_identities[name],
+            "engine": create.find(exp.EngineProperty).this.name,
+            "create_table_query": definition,
+        }
         return [
-            (position, definition) if "_shard_num" in sql else (definition,)
-            for position, _host in enumerate(self.members, 1)
+            tuple(
+                index
+                if item.name == "_shard_num"
+                else _position(item, index)
+                if isinstance(item, (exp.Alias, exp.Literal))
+                else record[item.name]
+                for item in parsed.expressions
+            )
+            for index, _host in enumerate(selected, 1)
         ]
 
     def _count(self, sql: str) -> int:
@@ -152,8 +217,96 @@ class ClickHouseReplacementConnection:
 
     def command(self, sql: str, **_kwargs: Any) -> None:
         self.commands.append(sql)
-        if sql.startswith("CREATE TABLE "):
-            create = parse_one(sql, read=ClickHouseDialect)
-            table = create.this.this if isinstance(create.this, exp.Schema) else create.this
-            identifier = TableIdentifier.parse(table.sql(dialect=ClickHouseDialect), "ch")
-            self.definitions[".".join(identifier.parts)] = sql
+        special = exchange_or_rename(sql)
+        if special is not None:
+            operation, _clusters = special
+            left, right = (_table_name(table) for table in operation.expressions)
+            if operation.this == "EXCHANGE":
+                self._exchange(left, right)
+            else:
+                self._rename(left, right)
+            return
+        statement = parse_one(sql, read=ClickHouseDialect)
+        if isinstance(statement, exp.Create):
+            self._create(statement)
+        elif isinstance(statement, exp.Drop):
+            for target in statement.args.get("tables") or [statement.this]:
+                name = _table_name(target)
+                self.definitions.pop(name, None)
+                self.table_identities.pop(name, None)
+                self.table_rows.pop(name, None)
+        elif isinstance(statement, exp.Insert):
+            target = (
+                statement.this.this if isinstance(statement.this, exp.Schema) else statement.this
+            )
+            _columns, rows = self._select_rows(statement.expression)
+            self.table_rows[_table_name(target)].extend(rows)
+
+    def _select_rows(self, select: exp.Select) -> tuple[list[str], list[tuple[Any, ...]]]:
+        assert select.args.get("where") is None
+        source = select.args["from_"].this
+        if isinstance(source, exp.Subquery):
+            columns, rows = self._select_rows(source.this)
+        else:
+            name = _table_name(source)
+            rows = self.rows(name)
+            if name in self.definitions:
+                create = parse_one(self.definitions[name], read=ClickHouseDialect)
+                columns = [column.name for column in create.this.expressions]
+            else:
+                columns = self.input_columns[name]
+        records = [dict(zip(columns, row)) for row in rows]
+        return _selected_rows(select, records, columns)
+
+    def _create(self, create: exp.Create) -> None:
+        table = create.this.this if isinstance(create.this, exp.Schema) else create.this
+        name = _table_name(table)
+        assert name not in self.definitions
+        declared = create.find(exp.UuidProperty)
+        self.definitions[name] = create.sql(dialect=ClickHouseDialect)
+        self.table_identities[name] = UUID(declared.this.name) if declared else uuid4()
+        self.table_rows[name] = []
+
+    def _rename(self, source: str, target: str) -> None:
+        assert target not in self.definitions
+        create = parse_one(self.definitions.pop(source), read=ClickHouseDialect)
+        self.definitions[target] = retarget_create(create, target, None).sql(
+            dialect=ClickHouseDialect
+        )
+        self.table_identities[target] = self.table_identities.pop(source)
+        self.table_rows[target] = self.table_rows.pop(source)
+
+    def _exchange(self, left: str, right: str) -> None:
+        left_create = parse_one(self.definitions[left], read=ClickHouseDialect)
+        right_create = parse_one(self.definitions[right], read=ClickHouseDialect)
+        self.definitions[left] = retarget_create(right_create, left, None).sql(
+            dialect=ClickHouseDialect
+        )
+        self.definitions[right] = retarget_create(left_create, right, None).sql(
+            dialect=ClickHouseDialect
+        )
+        for catalog in (self.table_identities, self.table_rows):
+            catalog[left], catalog[right] = catalog[right], catalog[left]
+
+    def rows(self, name: str) -> list[tuple[Any, ...]]:
+        definition = self.definitions.get(name)
+        if definition is not None:
+            engine = parse_one(definition, read=ClickHouseDialect).find(exp.EngineProperty).this
+            if engine.name.casefold() == "distributed":
+                database, relation = engine.expressions[1:3]
+                return self.rows(f"{database.name}.{relation.name}")
+        return list(self.table_rows[name])
+
+
+def _position(expression: exp.Expression, index: int) -> int:
+    if isinstance(expression, exp.Alias):
+        expression = expression.this
+    return int(expression.this) if isinstance(expression, exp.Literal) else index
+
+
+def _table_name(table: exp.Expr) -> str:
+    function = table.this if isinstance(table, exp.Table) else table
+    if isinstance(function, exp.Anonymous):
+        _cluster, database, relation, _arguments = cluster_arguments(function, "sandbox")
+        return f"{database}.{relation}"
+    return ".".join(TableIdentifier.parse(table.sql(dialect=ClickHouseDialect), "ch").parts)

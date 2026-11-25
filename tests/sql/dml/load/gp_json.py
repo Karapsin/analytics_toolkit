@@ -15,7 +15,7 @@ from analytics_toolkit import sql
 from analytics_toolkit.sql.execution.plans import SqlPlan
 from psycopg2.extras import Json
 
-from tests.sql._support.gp_json import json_target
+from tests.sql._support.gp_json import JSON_NULL, json_target
 
 
 def load(frame, **options):
@@ -88,7 +88,7 @@ def test_raw_json_text_is_unchanged_and_json_null_differs_from_sql_null(monkeypa
         {"payload": None},
         {"payload": {"x": 1}},
         {"payload": "hello"},
-        {"payload": None},
+        {"payload": JSON_NULL},
         {"payload": [1, {"x": 2}]},
         {"payload": None},
     ]
@@ -102,7 +102,11 @@ def test_existing_psycopg_json_wrapper_preserves_json_null(monkeypatch, native_t
 
     assert load(frame, write_mode="truncate_insert") == 3
 
-    assert database.target.rows == [{"payload": None}, {"payload": None}, {"payload": {"x": 1}}]
+    assert database.target.rows == [
+        {"payload": None},
+        {"payload": JSON_NULL},
+        {"payload": {"x": 1}},
+    ]
     assert database.sql_null_rows == [(True,), (False,), (False,)]
 
 
@@ -301,7 +305,7 @@ def test_json_array_wrapper_null_string_and_sql_null_elements_remain_distinct(mo
 
     assert load(frame, write_mode="truncate_insert") == 1
 
-    assert database.target.rows == [{"payload": [None, "null", None]}]
+    assert database.target.rows == [{"payload": [JSON_NULL, "null", None]}]
     assert any("ARRAY['null','\"null\"',NULL]" in statement for statement in database.commands)
 
 
@@ -374,7 +378,7 @@ def test_json_null_document_and_sql_null_obey_existing_not_null_constraint(monke
         assert database.bound_rows == []
     else:
         assert load(frame, table_schema={"payload": "JSONB"}, write_mode="truncate_insert") == 1
-        assert database.target.rows == [{"payload": None}]
+        assert database.target.rows == [{"payload": JSON_NULL}]
         assert database.serialized_rows == [("null",)]
         assert database.sql_null_rows == [(False,)]
 

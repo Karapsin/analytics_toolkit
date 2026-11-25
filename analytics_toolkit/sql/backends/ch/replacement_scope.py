@@ -15,19 +15,13 @@ from .reconfigure_facade import FacadeMutation, validate_facade_destination
 from .reconfigure_facade_relationship import FacadeSource, verify_facade_relationships
 from .reconfigure_facade_scope import inspect_facade_scope, occupied_definitions
 from .reconfigure_support import resolve_optional_cluster
+from .scope_identity import grouped_scope_identity as _scope_identity
 
 if TYPE_CHECKING:
     from .creation_policy import ClickHouseCreationPolicy
     from .layout import ExistingClickHouseLayout
     from .reconfigure_facade_scope import FacadeScope
     from .reconfigure_physical import PhysicalRebuildExecutionScope
-
-
-def _scope_identity(scope: FacadeScope) -> dict[tuple[int, int], tuple[Any, Any]]:
-    return {
-        (member[0], member[1]): (endpoint.native, scope.identities[position])
-        for position, (member, endpoint) in enumerate(zip(scope.membership, scope.endpoints), 1)
-    }
 
 
 def _physical_signature(ddl: str, table: str) -> str:
@@ -219,6 +213,7 @@ def certify_replacement_scope(
                     scope=facade,
                     source_ddl=layout.ddl,
                     source_cluster=original,
+                    coordinator_required=False,
                 ),
             )
         else:

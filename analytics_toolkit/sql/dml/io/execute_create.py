@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # ruff: noqa: ARG001, BLE001, EM101, EM102, PLR0913, PYI041, TC003, TID252, TRY003
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Callable, cast
 
@@ -28,10 +28,19 @@ from ...execution.operation_runner import (
 )
 from ...execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 from ..ddl_options import resolve_operation_ddl
+from ..query_input import mark_query_input_mutation, query_input_scope, replay_query_input
 from ..table.create_table_from_sql import _validate_backend_options, _validate_source_columns
 from ..table.table_validation import normalize_key_columns, validate_key_columns_in_columns
 from ..transfer.runtime.retry import run_with_retry
 from ..transfer.schema import inspect_source_query_schema, map_source_schema_to_target
+from .execute_create_replay import (
+    execute_create_replay_state,
+    execute_initial_creation,
+    prepare_execute_create_input,
+    prepare_execute_create_target,
+    protect_unfinished_execute_create,
+    require_execute_create_resources,
+)
 from .execute_sql import (
     _iterate_statements_with_progress,
     _maybe_print_query,
@@ -75,6 +84,7 @@ class _ExecuteCreateOptions:
     return_metadata: bool
     progress: bool
     pending_drop_options: Mapping[str, Any] | None = None
+    input_resolution: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
 
 @timed_public_sql_function
@@ -284,6 +294,10 @@ def _build_execute_create_options(**values: Any) -> _ExecuteCreateOptions:
         query_label=values["query_label"],
         return_metadata=values["return_metadata"],
         progress=values["progress"],
+        input_resolution={
+            "retry_cnt": values["retry_cnt"],
+            "timeout_increment": values["timeout_increment"],
+        },
     )
 
 
@@ -363,13 +377,19 @@ def _execute_create_options(
     attempt_numbers = [] if attempt_numbers is None else attempt_numbers
     metadata = plan.metadata
     adapter = get_backend_adapter(options.backend)
+    state = execute_create_replay_state(options)
+    state.metadata = metadata
 
     def operation(attempt: int) -> int:
         attempt_numbers.append(attempt)
         connection: Any | None = None
+        state.connection_ref = {}
         try:
             connection = get_sql_connection(options.connection_key)
-            if _skip_existing_execute_create_target(adapter, connection, options):
+            state.connection_ref = {"connection": connection}
+            if not state.creation_complete and _skip_existing_execute_create_target(
+                adapter, connection, options
+            ):
                 metadata.statement_count = 0
                 metadata.affected_rows = 0
                 metadata.inserted_rows = 0
@@ -389,26 +409,30 @@ def _execute_create_options(
                 metadata.inserted_rows = result
                 return result
         except Exception as exc:
+            protect_unfinished_execute_create(options, state, exc)
             context = _execute_create_context(options, attempt)
             annotate_sql_exception(exc, context)
-            if connection is not None:
-                adapter.rollback_quietly(connection)
+            current = state.connection_ref.get("connection", connection)
+            if current is not None:
+                adapter.rollback_quietly(current)
             raise
         finally:
-            _close_connection_quietly(connection, options)
+            _close_connection_quietly(state.connection_ref.get("connection", connection), options)
 
-    result = cast(
-        "int",
-        run_with_retry(
-            operation_name=(
-                f"creating table {options.connection_key}.{options.table_name} "
-                f"({options.backend}) from final query"
+    config = get_connection_config(options.connection_key)
+    with query_input_scope(options.input_resolution, [config, config]):
+        result = cast(
+            "int",
+            run_with_retry(
+                operation_name=(
+                    f"creating table {options.connection_key}.{options.table_name} "
+                    f"({options.backend}) from final query"
+                ),
+                retry_cnt=options.retry_cnt,
+                timeout_increment=options.timeout_increment,
+                operation=operation,
             ),
-            retry_cnt=options.retry_cnt,
-            timeout_increment=options.timeout_increment,
-            operation=operation,
-        ),
-    )
+        )
     if options.return_metadata:
         return SqlOperationResult(rows=result, metadata=metadata, plan=plan)
     return result
@@ -438,6 +462,10 @@ def _execute_create_attempt(
     adapter: Any,
     connection: Any,
 ) -> int:
+    state = execute_create_replay_state(options)
+    reusing_created_target = state.creation_complete
+    connection_ref = state.connection_ref or {"connection": connection}
+    metadata = state.metadata or SqlOperationMetadata()
     if options.setup_sqls:
         adapter.execute_sql(
             connection,
@@ -447,11 +475,8 @@ def _execute_create_attempt(
             gp_commit_each_statement=options.gp_commit_each_statement,
             progress=options.progress,
         )
-    prepare_target = getattr(adapter, "prepare_execute_create_target", None)
-    if callable(prepare_target):
-        prepare_target(connection, options)
-    else:
-        adapter.execute_commands(connection, options.drop_sqls)
+    prepared = prepare_execute_create_input(options, adapter, connection_ref, metadata)
+    prepare_execute_create_target(options, adapter, connection, state, prepared)
     create_sqls = options.create_sqls
     if getattr(adapter, "requires_execute_create_schema_inference", False) and (
         options.gp_partitions is not None
@@ -463,11 +488,7 @@ def _execute_create_attempt(
         progress=options.progress,
     ):
         _maybe_print_query(sql, options.print_queries, split_preview=False)
-    result: Any = None
-    if len(create_sqls) != 1:
-        adapter.execute_commands(connection, create_sqls)
-    else:
-        result = adapter.execute_command(connection, create_sqls[0])
+    result = execute_initial_creation(options, adapter, connection, state, (create_sqls, prepared))
     adapter.after_create_table(
         connection,
         options.table_name,
@@ -485,6 +506,11 @@ def _execute_create_attempt(
         ch_only_shard=options.ch_only_shard,
         ch_creation_policy=options.ch_creation_policy,
     )
+    if reusing_created_target:
+        require_execute_create_resources(state, adapter, connection, options.table_name)
+    if prepared is not None:
+        mark_query_input_mutation(options.input_resolution)
+        return replay_query_input(prepared, connection_ref, metadata)
     if options.insert_after_create:
         result = adapter.execute_command(connection, _prepared_insert_sql(options))
     return extract_row_count(result)

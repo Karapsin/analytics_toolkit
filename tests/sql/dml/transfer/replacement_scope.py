@@ -19,7 +19,7 @@ from sqlglot import exp, parse_one
 from tests.conftest import DEFAULT_SQL_CONNECTIONS
 from tests.sql._support.assertions import strip_query_label
 from tests.sql._support.ch_transfer_replacement import ReplacementScopeState
-from tests.sql._support.outage_gp import Connection, MemoryGreenplum
+from tests.sql._support.outage_gp import MemoryGreenplum
 
 _SOURCE_ROWS = [(201,), (202,)]
 _TARGET = "analytics.events"
@@ -56,11 +56,7 @@ def _install(monkeypatch, write_sql_connections, *, desired, pair=True, stage_en
     source = MemoryGreenplum()
     source.tables["db.source"] = pd.DataFrame(_SOURCE_ROWS, columns=["id"])
     state = ReplacementScopeState()
-    monkeypatch.setattr(
-        get_backend_adapter("gp"),
-        "open_connection",
-        lambda *_args, **_kwargs: Connection(source),
-    )
+    source.install(monkeypatch)
     monkeypatch.setattr(get_backend_adapter("ch"), "open_connection", state.open)
     return source, state
 

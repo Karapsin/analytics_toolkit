@@ -9,7 +9,13 @@ from typing import Any
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.ch.created_resources import (
+    CreatedIdentity,
+    drop_created_resource,
+)
 from analytics_toolkit.sql.backends.ch.routing import local_sql
+from analytics_toolkit.sql.ddl.ownership import execute_owned_create_sqls
 from analytics_toolkit.sql.dml.transfer.runtime.retry import is_non_retryable_sql_error
 from analytics_toolkit.sql.execution.backend_options import backend_operation
 
@@ -27,17 +33,29 @@ def test_outage_local_stage_metadata_does_not_inherit_regular_cluster_defaults(
     name = "db.local__stage__metadata"
     with backend_operation():
         client = sql.get_sql_connection("ch")
+        receipts = []
         with local_sql(client):
-            client.command(f"CREATE TABLE IF NOT EXISTS {name} (id UInt64) ENGINE=Memory")
+            execute_owned_create_sqls(
+                get_backend_adapter("ch"),
+                client,
+                [f"CREATE TABLE {name} (id UInt64) ENGINE=Memory"],
+                None,
+                on_scoped_resource_created=receipts.append,
+                connection_key="ch",
+            )
+        assert len(receipts) == 1
+        assert receipts[0].scope.kind == "local"
+        assert isinstance(receipts[0].certificate, CreatedIdentity)
+        with local_sql(client):
             assert client.query(f"DESCRIBE TABLE {name}").result_rows == [("id", "UInt64", "")]
             assert client.query(
                 "SELECT name, type FROM system.columns "
                 "WHERE database='db' AND table='local__stage__metadata'"
             ).result_rows == [("id", "UInt64")]
         assert client.outage_table_exists(name)
+        drop_created_resource(get_backend_adapter("ch"), client, receipts[0])
         with local_sql(client):
-            client.command(f"DROP TABLE {name}")
-        assert not client.outage_table_exists(name)
+            assert client.query(f"EXISTS TABLE {name}").result_rows == [(0,)]
         assert not client._session.scopes
 
 
@@ -77,7 +95,7 @@ def test_outage_local_target_proof_checks_the_actual_local_scope(outage: Any, ca
 
 @pytest.mark.parametrize("routed", [True, False])
 @pytest.mark.parametrize("preexisting", [True, False])
-def test_outage_stop_if_not_exists_claims_only_verified_absent_stages(
+def test_outage_stop_if_not_exists_never_claims_private_named_stages(
     outage: Any, routed: bool, preexisting: bool
 ) -> None:
     cluster, configure = outage
@@ -98,8 +116,9 @@ def test_outage_stop_if_not_exists_claims_only_verified_absent_stages(
         cluster.failure = ConnectionError("stage insert accepted before disconnect")
         with pytest.raises(ConnectionError) as error:
             client.insert(name, [(9,)], column_names=["id"])
-        assert state.live_submitted is preexisting
-        assert state.preserve_recovery is preexisting
+        assert state.live_submitted is True
+        assert state.preserve_recovery is True
+        assert not state.resources.get(("ch_owned", "ch", ("db", "production__stage__retry")))
         assert is_non_retryable_sql_error(error.value) is False
         assert cluster.tables[("h1", name)].rows == ([(77,), (9,)] if preexisting else [(9,)])
         if not preexisting:

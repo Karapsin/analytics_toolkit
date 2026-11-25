@@ -21,9 +21,12 @@ from ...core.identifiers import sqlglot_dialect as _registry_sqlglot_dialect
 from ...ddl.api import _create_sql_table_with_connection
 from ..table._basic_ops import table_exists
 from ..table.maintenance import drop_table, drop_table_with_retry
+from .resource_ownership import cluster_scoped_creation, resolve_stage_creation_policy
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+
+    from analytics_toolkit.sql.ddl.creation_resources import CreatedTableResource
 
 
 CLICKHOUSE_TABLE_ALREADY_EXISTS_CODE = 57
@@ -51,7 +54,11 @@ def create_stage_table(
     log_prefix: str = "",
     ddl_properties: Mapping[str, Any] | None = None,
     ch_creation_policy: Any = None,
+    on_scoped_resource_created: Callable[[CreatedTableResource], None] | None = None,
 ) -> str:
+    ch_creation_policy = resolve_stage_creation_policy(
+        connection_type, connection_key, ch_creation_policy
+    )
     preferred_suffix = random_suffix or uuid.uuid4().hex[:8]
     for attempt in range(1, STAGE_TABLE_NAME_MAX_ATTEMPTS + 1):
         candidate_suffix = (
@@ -100,9 +107,9 @@ def create_stage_table(
             on_stage_candidate(stage_table)
         acknowledged: list[str] = []
 
-        register_resource = _ownership_callback(acknowledged, on_resource_created)
-
-        create_kwargs["on_resource_created"] = register_resource
+        create_kwargs.update(
+            _creation_observers(acknowledged, on_resource_created, on_scoped_resource_created)
+        )
         try:
             _create_sql_table_with_connection(
                 connection_type,
@@ -115,7 +122,12 @@ def create_stage_table(
                 **create_kwargs,
             )
         except Exception as exc:  # noqa: BLE001 -- classify driver collisions, rethrow every other failure.
-            _require_confirmed_collision(exc, acknowledged, stage_table)
+            _require_confirmed_collision(
+                exc,
+                acknowledged,
+                stage_table,
+                clustered=cluster_scoped_creation(ch_creation_policy),
+            )
             time_print(
                 f"{log_prefix}Stage table creation raced for {stage_table}; retrying with "
                 f"a new name ({attempt}/{STAGE_TABLE_NAME_MAX_ATTEMPTS})"
@@ -132,6 +144,15 @@ def create_stage_table(
     )
 
 
+def _creation_observers(
+    acknowledged: list[str], callback: Any, scoped_callback: Any
+) -> dict[str, Any]:
+    observers = {"on_resource_created": _ownership_callback(acknowledged, callback)}
+    if scoped_callback is not None:
+        observers["on_scoped_resource_created"] = scoped_callback
+    return observers
+
+
 def _ownership_callback(acknowledged: list[str], callback: Any) -> Any:
     def register(resource: str) -> None:
         acknowledged.append(resource)
@@ -141,11 +162,15 @@ def _ownership_callback(acknowledged: list[str], callback: Any) -> Any:
     return register
 
 
-def _require_confirmed_collision(exc: Exception, acknowledged: list[str], stage: str) -> None:
+def _require_confirmed_collision(
+    exc: Exception, acknowledged: list[str], stage: str, *, clustered: bool = False
+) -> None:
     _raise_if_readiness_failure(exc)
-    if acknowledged or not _is_confirmed_create_collision(exc):
+    if acknowledged or clustered or not _is_confirmed_create_collision(exc):
         exc.__dict__["analytics_toolkit_sql_stage_candidate"] = stage
         exc.__dict__["analytics_toolkit_sql_acknowledged_resources"] = tuple(acknowledged)
+        if clustered and _is_confirmed_create_collision(exc):
+            exc.__dict__["analytics_toolkit_sql_retry_safe"] = False
         raise exc
 
 
@@ -218,7 +243,7 @@ def cleanup_stage_table_with_retry(
     *,
     retry_fn: Any,
     retry_cnt: int,
-    timeout_increment: int | float,
+    timeout_increment: float,
     rollback_fn: Any,
     replace_connection_fn: Any,
     query_label: str | None = None,

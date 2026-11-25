@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.creation_resources import supports_created_resource_identity
 from analytics_toolkit.sql.backends.stage_ownership import drop_owned_resource
 from analytics_toolkit.sql.dml.transfer.runtime.models import TransferSliceRowCount
 
@@ -13,6 +15,7 @@ from .staged_keyed_logging import slice_tag as _slice_tag
 if TYPE_CHECKING:
     import pandas as pd
 
+    from analytics_toolkit.sql.ddl.creation_resources import CreatedTableResource
     from analytics_toolkit.sql.dml.transfer.runtime.models import (
         TransferConnectionRefs,
         TransferOptions,
@@ -20,7 +23,7 @@ if TYPE_CHECKING:
     )
 
 
-def stage_creation_callbacks(state: Any) -> dict[str, Any]:
+def stage_creation_callbacks(state: Any, backend: str | None = None) -> dict[str, Any]:
     candidate: list[str] = []
 
     def visible(name: str) -> None:
@@ -30,19 +33,41 @@ def stage_creation_callbacks(state: Any) -> dict[str, Any]:
     def owned(name: str) -> None:
         state.owned_stage_resources.append((name, candidate[-1]))
 
-    return {"on_stage_candidate": visible, "on_resource_created": owned}
+    callbacks: dict[str, Any] = {"on_stage_candidate": visible, "on_resource_created": owned}
+    if backend is not None and supports_created_resource_identity(get_backend_adapter(backend)):
+        state.scoped_stage_ownership_requested = True
+        if not hasattr(state, "owned_stage_scoped_resources"):
+            state.owned_stage_scoped_resources = []
+
+        def scoped(resource: CreatedTableResource) -> None:
+            state.owned_stage_scoped_resources.append((resource, candidate[-1]))
+
+        callbacks["on_scoped_resource_created"] = scoped
+    return callbacks
 
 
 def cleanup_acknowledged_stages(
     options: Any, state: Any, run_target: Any, *, retained_resources: frozenset[str] = frozenset()
 ) -> None:
 
-    seen: set[str] = set()
+    seen: set[Any] = set()
     first_error: Exception | None = None
-    for resource, stage in reversed(state.owned_stage_resources):
-        if resource in seen or resource in retained_resources:
+    scoped = getattr(state, "owned_stage_scoped_resources", [])
+    identity_required = supports_created_resource_identity(
+        get_backend_adapter(options.to_db_backend)
+    )
+    if identity_required:
+        scoped_names = {resource.name for resource, _stage in scoped}
+        for name, _stage in state.owned_stage_resources:
+            if name not in scoped_names:
+                time_print(f"Retaining stage resource {name}: native ownership is unverified.")
+    resources = scoped if identity_required else state.owned_stage_resources
+    for resource, stage in reversed(resources):
+        name = resource.name if identity_required else resource
+        key = (name, resource.scope) if identity_required else name
+        if key in seen or name in retained_resources:
             continue
-        seen.add(resource)
+        seen.add(key)
         try:
             run_target(
                 lambda ref, resource=resource, stage=stage: drop_owned_resource(
@@ -124,7 +149,7 @@ def create_keyed_worker_stage_tables(  # noqa: PLR0913 -- injected stage constru
             destination_hash=options.destination_hash,
             ddl_properties=options.staging_ddl_properties,
             ch_creation_policy=options.staging_ch_policy,
-            **stage_creation_callbacks(stage_state),
+            **stage_creation_callbacks(stage_state, options.to_db_backend),
         )
         stage_tables.append(stage_table)
         stage_state.stage_table = stage_tables[0]

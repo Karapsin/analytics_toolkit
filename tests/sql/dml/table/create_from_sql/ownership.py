@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import importlib
-from types import SimpleNamespace
+from decimal import Decimal
 
 import pytest
 from analytics_toolkit import sql
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
 from analytics_toolkit.sql.connection.errors import SqlTableReadinessError
 from analytics_toolkit.sql.ddl.ownership import (
     CreationOwnership,
@@ -15,13 +16,22 @@ from analytics_toolkit.sql.ddl.ownership import (
     capture_creation_ownership,
     execute_owned_create_sqls,
 )
+from sqlglot import exp, parse_one
 
+from tests.sql._support.assertions import strip_query_label
 from tests.sql._support.create_from_sql import (
     SOURCE_DESCRIPTION,
-    FakeClickHouseClient,
     FakeDbapiConnection,
     FakeDbapiCursor,
     create_module,
+)
+from tests.sql._support.create_from_sql_protocol import (
+    CatalogConnection,
+    install_fake_type_registration,
+)
+from tests.sql._support.query_creation_ownership import (
+    QueryOwnershipClient,
+    install_query_ownership_client,
 )
 
 legacy = importlib.import_module("analytics_toolkit.sql.backends.ch.create_table_as")
@@ -71,33 +81,19 @@ def test_generic_query_create_never_populates_or_deletes_unacknowledged_target(
     )
 
 
-def _ch_client(monkeypatch, client):
-    monkeypatch.setattr(create_module, "get_sql_connection", lambda _key: client)
-    monkeypatch.setattr(legacy, "get_sql_connection", lambda _key: client)
-    original_query = client.query
-
-    def query(statement):
-        if statement.startswith("DESCRIBE TABLE ("):
-            return SimpleNamespace(result_rows=[("id", "UInt64"), ("amount", "Decimal(12, 2)")])
-        if "_ch_create_table_as_source" in statement:
-            return SimpleNamespace(
-                column_names=["id", "amount"], column_types=["UInt64", "Decimal(12, 2)"]
-            )
-        return original_query(statement)
-
-    client.query = query
+def _ch_client(monkeypatch, client, *, source=None):
+    install_query_ownership_client(monkeypatch, client, source=source)
 
 
 @pytest.mark.parametrize("same_alias", [False, True])
 def test_query_create_readiness_failure_cleans_only_acknowledged_pair_resources(
     monkeypatch, same_alias
 ):
-    source = FakeDbapiConnection(description=SOURCE_DESCRIPTION)
-    client = FakeClickHouseClient()
-    _ch_client(monkeypatch, client)
-    monkeypatch.setattr(
-        create_module, "get_sql_connection", lambda key: client if key == "ch" else source
-    )
+    install_fake_type_registration(monkeypatch)
+    source = CatalogConnection(description=SOURCE_DESCRIPTION)
+    client = QueryOwnershipClient()
+    _ch_client(monkeypatch, client, source=source)
+    before = client.state.snapshot()
 
     def not_ready(*_args, **_kwargs):
         message = "target readiness failed after CREATE acknowledgements"
@@ -114,29 +110,22 @@ def test_query_create_readiness_failure_cleans_only_acknowledged_pair_resources(
             retry_cnt=1,
             timeout_increment=0,
         )
-    drops = [statement for statement in client.commands if statement.startswith("DROP TABLE")]
-    assert len(drops) == 2
-    assert any("events_shard" in statement for statement in drops)
-    assert any("events`" in statement for statement in drops)
+    drops = [
+        table
+        for statement in client.commands
+        if isinstance(
+            (tree := parse_one(strip_query_label(statement), read=ClickHouseDialect)), exp.Drop
+        )
+        for table in tree.find_all(exp.Table)
+    ]
+    assert {table.name for table in drops} == {"events", "events_shard"}
+    assert client.state.snapshot() == before
     assert not any(statement.startswith("INSERT INTO") for statement in client.commands)
 
 
 @pytest.mark.parametrize("failure", ["collision", "lost_ack"])
 def test_fast_query_create_retains_unowned_facade_and_never_deletes_it(monkeypatch, failure):
-    class Client(FakeClickHouseClient):
-        def command(self, statement, settings=None):
-            if statement.startswith("CREATE TABLE analytics.events\n"):
-                self.commands.append(statement)
-                self.created_tables.add("analytics.events")
-                if failure == "collision":
-                    error = RuntimeError("concurrent facade TABLE_ALREADY_EXISTS")
-                    error.error_name = "TABLE_ALREADY_EXISTS"
-                    raise error
-                message = "facade CREATE acknowledgement lost"
-                raise ConnectionError(message)
-            return super().command(statement, settings=settings)
-
-    client = Client()
+    client = QueryOwnershipClient(failure)
     _ch_client(monkeypatch, client)
     expected = RuntimeError if failure == "collision" else ConnectionError
     with pytest.raises(expected):
@@ -148,41 +137,56 @@ def test_fast_query_create_retains_unowned_facade_and_never_deletes_it(monkeypat
             retry_cnt=3,
             timeout_increment=0,
         )
-    assert "analytics.events" in client.created_tables
-    drops = [statement for statement in client.commands if statement.startswith("DROP TABLE")]
+    assert client.fault["fired"]
+    drops = [
+        table
+        for statement in client.commands
+        if isinstance(
+            (tree := parse_one(strip_query_label(statement), read=ClickHouseDialect)), exp.Drop
+        )
+        for table in tree.find_all(exp.Table)
+    ]
     if failure == "collision":
-        assert len(drops) == 1
-        assert "events_shard" in drops[0]
+        assert drops
+        assert {table.name for table in drops} == {"events_shard"}
+        for host, resource, identity, definition in client.fault["foreign"]:
+            retained = client.state.host_tables[host]["analytics.events"]
+            assert retained is resource
+            assert retained.uuid == identity
+            assert retained.create == definition
+            assert retained.rows == [(number, Decimal(number)) for number in range(100)]
     else:
         assert drops == []
-        assert "analytics.events_shard" in client.created_tables
+        assert any(
+            "analytics.events_shard" in tables for tables in client.state.host_tables.values()
+        )
+        assert any("analytics.events" in tables for tables in client.state.host_tables.values())
     assert not any(statement.startswith("INSERT INTO") for statement in client.commands)
 
 
 def test_explicit_query_replace_never_adopts_or_cleans_preexisting_resources(monkeypatch):
-    class Client(FakeClickHouseClient):
-        def command(self, statement, settings=None):
-            if statement.startswith("CREATE OR REPLACE TABLE analytics.events\n"):
-                self.commands.append(statement)
-                message = "replacement facade acknowledgement lost"
-                raise ConnectionError(message)
-            return super().command(statement, settings=settings)
-
-    client = Client()
-    client.created_tables.update({"analytics.events", "analytics.events_shard"})
+    client = QueryOwnershipClient("lost_ack")
+    client.seed_existing_pair()
+    before = client.state.snapshot()
     _ch_client(monkeypatch, client)
     preflights = []
-    monkeypatch.setattr(
-        get_backend_adapter("ch"),
-        "preflight_create_table_replacement",
-        lambda _connection, options: preflights.append(options),
-    )
+    adapter = get_backend_adapter("ch")
+    original_preflight = adapter.preflight_create_table_replacement
+
+    def preflight(connection, options):
+        preflights.append(options)
+        return original_preflight(connection, options)
+
+    monkeypatch.setattr(adapter, "preflight_create_table_replacement", preflight)
     with pytest.raises(ConnectionError) as error:
         sql.create_table(
             "ch",
             "analytics.events",
             sql="SELECT id, amount FROM source_table",
             ch_replace_table=True,
+            ch_shard_on_cluster="storage",
+            ch_distributed_on_cluster="core",
+            ch_distributed_cluster="storage",
             insert_data=True,
             retry_cnt=3,
             timeout_increment=0,
@@ -192,7 +196,29 @@ def test_explicit_query_replace_never_adopts_or_cleans_preexisting_resources(mon
     assert error.value.analytics_toolkit_sql_retry_safe is False
     assert error.value.analytics_toolkit_sql_acknowledged_resources == ()
     assert error.value.analytics_toolkit_sql_acknowledged_creates
-    assert not any(statement.startswith("DROP TABLE") for statement in client.commands)
+    dropped = [
+        table
+        for statement in client.commands
+        if isinstance(
+            (tree := parse_one(strip_query_label(statement), read=ClickHouseDialect)), exp.Drop
+        )
+        for table in tree.find_all(exp.Table)
+    ]
+    assert len(dropped) == 1
+    assert dropped[0].db == "analytics_toolkit_transfer"
+    assert dropped[0].name.endswith("__source")
+    assert {table.name for table in dropped}.isdisjoint({"events", "events_shard"})
+    after = client.state.snapshot()
+    coordinator, remote = client.state.coordinator, client.state.remote
+    assert (
+        after[coordinator]["analytics.events_shard"]
+        == before[coordinator]["analytics.events_shard"]
+    )
+    assert (
+        after[coordinator]["analytics.source_table"]
+        == before[coordinator]["analytics.source_table"]
+    )
+    assert after[remote]["analytics.events"] == before[remote]["analytics.events"]
 
 
 def test_target_receipt_does_not_adopt_independently_owned_source_stage():

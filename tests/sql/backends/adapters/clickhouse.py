@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from analytics_toolkit import sql as toolkit_sql
 from analytics_toolkit.sql.backends.ch import operations as ch_operations
+from analytics_toolkit.sql.backends.ch import truncate_layout as ch_truncate_layout
 from analytics_toolkit.sql.backends.ch.layout import ExistingClickHouseLayout
 from analytics_toolkit.sql.backends.ch.reconfigure_ddl import parse_create_table
 
@@ -295,11 +296,14 @@ def test_clickhouse_adapter_write_mode_matrix(
     )
     connection = SimpleNamespace(outage_inspect_existing_layout=lambda _table: layout)
     monkeypatch.setattr(adapter, "clear_table", lambda *args, **kwargs: events.append("clear"))
-    monkeypatch.setattr(
-        ch_lifecycle_backend_module,
-        "truncate_ch_distributed_table_pair",
-        lambda *args, **kwargs: events.append("truncate_pair"),
-    )
+
+    def truncate_verified(received_connection, received_layout, **options):
+        assert received_connection is connection
+        assert received_layout is layout
+        assert options == {"connection_key": "ch", "query_label": None}
+        events.append("truncate_pair")
+
+    monkeypatch.setattr(ch_truncate_layout, "truncate_existing_layout", truncate_verified)
 
     def drop_verified(received_adapter, received_connection, table, **options):
         assert received_adapter is adapter

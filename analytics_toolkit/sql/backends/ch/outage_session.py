@@ -18,7 +18,7 @@ from .cluster_functions import cluster_arguments
 from .dialect import sql_string_literal
 from .managed_routing import ManagedTableRoute
 from .metadata import extract_clickhouse_distributed_shard_table, extract_clickhouse_function_args
-from .outage_context import INSERT_KEY, LOGICAL_STATISTICS, WRITING
+from .outage_context import INSERT_KEY, LOGICAL_STATISTICS, STATISTICS_TARGETS, WRITING
 from .outage_ddl import provision_missing
 from .outage_topology import ClusterScope, Host, TableObject, query_rows, warn_degraded
 from .routing import ChClusterRouting, _RoutingClickHouse
@@ -97,18 +97,40 @@ class OutageSession:
             self.infer_routing(exp.select("*").from_(table.copy()))
         return exists
 
+    def _system_metadata_route(
+        self, scope: ClusterScope, database: str, table: str, coverage_intent: str | None
+    ) -> ManagedTableRoute:
+        if LOGICAL_STATISTICS.get():
+            # The aggregate certifies requested table coverage itself. Host
+            # reachability alone cannot classify replicated/independent data.
+            scope.record(
+                scope.reachable,
+                f"{database}.{table}",
+                coverage_intent="logical_shards"
+                if STATISTICS_TARGETS.get()
+                else coverage_intent or "physical_hosts",
+            )
+            return ManagedTableRoute(database, table, "all_replicas")
+        status = scope.record(scope.reachable, f"{database}.{table}")
+        if self.policy == "stop":
+            scope.require_all(scope.reachable, "System metadata")
+        elif not status["complete"]:
+            warn_degraded(self.state, self.config, status, "read metadata")
+        return ManagedTableRoute(database, table, "all_replicas")
+
     def resolve(  # noqa: C901, PLR0912, PLR0915 - one verified route decision boundary
         self, *, cluster: str, database: str, table: str, coverage_intent: str | None = None
     ) -> ManagedTableRoute:
+        from .outage_ownership import owned_local  # noqa: PLC0415 - session/ownership cycle.
+
+        if owned_local(self, (database, table)):
+            local = self.local_objects(database, table)
+            if local and local[0].engine.casefold() != "distributed":
+                return ManagedTableRoute(database, table, "local", local[0].engine)
         scope = self.scope(cluster)
         writing = WRITING.get()
-        if database.lower() == "system":
-            status = scope.record(scope.reachable, f"{database}.{table}")
-            if self.policy == "stop":
-                scope.require_all(scope.reachable, "System metadata")
-            elif not status["complete"]:
-                warn_degraded(self.state, self.config, status, "read metadata")
-            return ManagedTableRoute(database, table, "all_replicas")
+        if database == "system":
+            return self._system_metadata_route(scope, database, table, coverage_intent)
         objects = scope.objects(database, table)
         local_facade = False
         if not objects:
@@ -118,6 +140,12 @@ class OutageSession:
             msg = f"Table {database}.{table} has no usable schema."
             raise ClickHouseClusterUnavailableError(msg)
         logical_objects = objects
+        from .outage_ownership import (  # noqa: PLC0415 - session/ownership cycle.
+            owned_private as is_owned_private,
+        )
+
+        owned_private = is_owned_private(self, (database, table))
+        effective_intent = coverage_intent or ("physical_hosts" if owned_private else None)
         sharding_key = getattr(
             getattr(self.config, "cluster_routing", None), "sharding_key", "rand()"
         )
@@ -129,7 +157,7 @@ class OutageSession:
                 if self.policy == "healthy_shards":
                     msg = "Ad hoc routing requires a standard managed table pair."
                     raise ClickHouseClusterTopologyError(msg)
-                scope.require_all(scope.reachable, "Distributed facade")
+                scope.require_available(scope.reachable, "Distributed facade")
                 if shard is None:
                     msg = "Cannot verify the physical destination of this Distributed facade."
                     raise ClickHouseClusterTopologyError(msg)
@@ -140,17 +168,21 @@ class OutageSession:
                     f"{shard.database}.{shard.table}",
                     write=writing,
                     identity=(shard.database, shard.table),
-                    coverage_intent=coverage_intent,
+                    coverage_intent=effective_intent,
                 )
                 if physical[0].engine.lower() == "distributed":
                     msg = "Nested Distributed destinations cannot be verified safely."
                     raise ClickHouseClusterTopologyError(msg)
-                return ManagedTableRoute(database, table, "local", engine)
+                from .facade_read_route import independent_facade_read_route  # noqa: PLC0415
+
+                return independent_facade_read_route(
+                    self, logical_objects, physical, destination, shard, writing=writing
+                ) or ManagedTableRoute(database, table, "local", engine)
             if self.scope(shard.cluster).cluster != scope.cluster:
                 if self.policy == "healthy_shards":
                     msg = "Ad hoc routing requires the facade and data routing clusters to agree."
                     raise ClickHouseClusterTopologyError(msg)
-                scope.require_all(scope.reachable, "Distributed facade")
+                scope.require_available(scope.reachable, "Distributed facade")
                 scope = self.scope(shard.cluster)
                 local_facade = True
             args = extract_clickhouse_function_args(objects[0].engine_full, "Distributed")
@@ -162,8 +194,14 @@ class OutageSession:
             if not objects:
                 msg = f"Managed shard {database}.{routed_table} is absent."
                 raise ClickHouseClusterUnavailableError(msg)
+            if self.config.cluster_routing is not None:
+                from .facade_read_route import verify_facade_projection  # noqa: PLC0415
+
+                verify_facade_projection(logical_objects, objects)
             if writing and self.policy == "healthy_shards":
-                objects = provision_missing(scope, database, routed_table, objects)
+                objects = provision_missing(
+                    scope, database, routed_table, objects, coverage_intent=effective_intent
+                )
                 defaults = getattr(self.config.ddl_defaults, "regular", None)
                 facade = getattr(defaults, "distributed", None)
                 facade_cluster = getattr(facade, "on_cluster", _MISSING)
@@ -174,12 +212,25 @@ class OutageSession:
                     and self.scope(facade_cluster).cluster == scope.cluster
                     and not local_facade
                 ):
-                    provision_missing(scope, database, table, logical_objects)
+                    provision_missing(
+                        scope,
+                        database,
+                        table,
+                        logical_objects,
+                        coverage_intent=effective_intent
+                        or (
+                            "logical_shards"
+                            if objects[0].engine.lower().startswith(("replicated", "shared"))
+                            else "physical_hosts"
+                        ),
+                    )
             # Facades must agree where they are present, but reads use the
             # physical relation and do not require a facade on each replica.
             engine = objects[0].engine
         elif writing and self.policy == "healthy_shards":
-            objects = provision_missing(scope, database, table, objects)
+            objects = provision_missing(
+                scope, database, table, objects, coverage_intent=effective_intent
+            )
         if engine.lower() in {"view", "materializedview", "liveview", "windowview"}:
             scope.require_all(scope.reachable, "View dependencies cannot be degraded safely")
             return ManagedTableRoute(database, table, "local", engine)
@@ -188,13 +239,13 @@ class OutageSession:
             f"{database}.{routed_table}",
             write=writing,
             identity=(database, routed_table),
-            coverage_intent=coverage_intent or ("physical_hosts" if private_table(table) else None),
+            coverage_intent=effective_intent,
         )
         if (
             self.policy == "healthy_shards"
             and writing
             and len(hosts) != len(scope.hosts)
-            and not private_table(table)
+            and not owned_private
             and not engine.lower().endswith("mergetree")
         ):
             msg = f"Unsupported ad hoc engine {engine!r}."
@@ -203,12 +254,16 @@ class OutageSession:
         multi_replica = any(
             sum(h.shard == host.shard for h in scope.hosts) > 1 for host in scope.hosts
         )
-        all_replicas = private_table(table) or (not replicated and multi_replica)
+        all_replicas = (
+            effective_intent == "physical_hosts"
+            or owned_private
+            or (not replicated and multi_replica)
+        )
         if writing:
             sharding_key = INSERT_KEY.get() or sharding_key
             self.insert_scope, self.insert_hosts = scope, hosts
             self.insert_all_replicas, self.insert_key = all_replicas, sharding_key
-        if local_facade:
+        if local_facade and not all_replicas:
             return ManagedTableRoute(database, table, "local", "Distributed")
         return ManagedTableRoute(
             database,
@@ -216,6 +271,7 @@ class OutageSession:
             "all_replicas" if all_replicas else "cluster",
             engine,
             sharding_key=sharding_key if writing else None,
+            cluster=scope.cluster,
         )
 
     def local_facade(self, database: str, table: str) -> list[Any]:
@@ -229,6 +285,7 @@ class OutageSession:
             "SELECT engine, engine_full, create_table_query, toString(uuid) FROM system.tables "  # noqa: S608 - escaped literals
             f"WHERE database = {sql_string_literal(database)} "
             f"AND name = {sql_string_literal(table)}",
+            text_columns=(0, 1, 2, 3),
         )
         if not rows or len(rows[0]) != _DISTRIBUTED_KEY_ARGUMENTS:
             return []
@@ -281,6 +338,9 @@ class OutageSession:
 
     def infer_routing(self, statement: exp.Expr) -> ChClusterRouting | None:
         if LOGICAL_STATISTICS.get():
+            from .statistics_scope import preflight_statistics_targets  # noqa: PLC0415
+
+            preflight_statistics_targets(self)
             for table in _native_tables(statement):
                 if isinstance(table.this, exp.Anonymous):
                     self._preflight_function(table.this)
@@ -296,7 +356,7 @@ class OutageSession:
             if isinstance(table.this, exp.Anonymous):
                 self._preflight_function(table.this)
                 continue
-            if not isinstance(table.this, exp.Identifier) or table.db.lower() == "system":
+            if not isinstance(table.this, exp.Identifier) or table.db == "system":
                 continue
             database = table.db or self.config.database
             if not database:
@@ -306,6 +366,7 @@ class OutageSession:
                 "SELECT engine_full FROM system.tables "  # noqa: S608 - escaped literals or parsed SQL identifiers
                 f"WHERE database = {sql_string_literal(database)} "
                 f"AND name = {sql_string_literal(table.name)}",
+                text_columns=(0,),
             )
             if rows:
                 shard = extract_clickhouse_distributed_shard_table(str(rows[0][0]), database)

@@ -76,7 +76,7 @@ def test_gp_inet_casts_preserve_nullable_host_bits_prefix_and_address_family(mon
     assert all(frame.iloc[index, 0] is value for index, value in enumerate(values))
 
 
-def test_gp_inet_casts_mixed_naive_aware_timetz_keys_reject_before_write(monkeypatch):
+def test_gp_inet_casts_mixed_naive_aware_timetz_keys_reject_before_live_write(monkeypatch):
     database = native_inet_target(monkeypatch, exists=False)
     values = ["192.0.2.1", "192.0.2.1/32"]
     clocks = [dt.time(12), dt.time(12, tzinfo=dt.timezone.utc)]
@@ -105,13 +105,19 @@ def test_gp_inet_casts_mixed_naive_aware_timetz_keys_reject_before_write(monkeyp
         assert database.target.rows[0]["clock"] == (43_200_000_000, 0)
         pytest.fail("Load accepted equal INET/TIMETZ keys under the UTC fixture session.")
 
-    with pytest.raises(ValueError, match=r"Mixed.*TIMETZ.*explicit offset"):
+    # Explicit TIMETZ delegates wall-clock assignment to this frozen UTC server
+    # session. Its typed checkpoint, not a guessed local offset, detects the tie.
+    with pytest.raises(ValueError, match=r"Duplicate native key"):
         load_mixed_keys()
 
     assert ("sandbox", "events") not in database.tables
     assert database.live_mutations == []
-    assert database.bound_rows == []
-    assert database.wire_rows == []
+    assert database.bound_rows == [
+        (values[0], "12:00:00.000000"),
+        (values[1], "12:00:00.000000+00:00:00"),
+    ]
+    assert len(database.wire_rows) == 2
+    assert database.tables == {}
     pd.testing.assert_frame_equal(frame, original)
 
 
@@ -290,8 +296,13 @@ def test_gp_inet_casts_native_key_aliases_reject_before_any_write(monkeypatch, w
     else:
         assert ("sandbox", "events") not in database.tables
     assert database.live_mutations == []
-    assert database.bound_rows == []
-    assert database.wire_rows == []
+    if write_mode == "upsert":
+        assert database.bound_rows == [(value,) for value in values]
+        assert database.wire_rows == [(f"'{value}'",) for value in values]
+        assert database.tables == {}
+    else:
+        assert database.bound_rows == []
+        assert database.wire_rows == []
     pd.testing.assert_frame_equal(frame, original)
     assert all(frame.iloc[index, 0] is value for index, value in enumerate(values))
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
@@ -10,6 +11,7 @@ import pandas as pd
 import pytest
 from analytics_toolkit import sql
 
+from tests.sql._support.gp_timestamp_precision import timestamp_precision_target
 from tests.sql._support.load_encoded_values import configure_load
 
 
@@ -131,29 +133,36 @@ def test_encoded_dataframe_character_bounds_count_unicode_characters(
     assert connection.bound_rows == [("é🙂",)]
 
 
-def test_encoded_dataframe_validation_preserves_explicit_timestamp_narrowing(
-    monkeypatch, write_sql_connections
-):
-    schema = {"value": "TIMESTAMP(3)"}
-    connection = configure_load(monkeypatch, write_sql_connections, exists=False, schema=schema)
+def test_encoded_dataframe_validation_preserves_explicit_timestamp_narrowing(monkeypatch):
+    database = timestamp_precision_target(monkeypatch, "TIMESTAMP(3)")
+    database.tables.pop(("sandbox", "events"))
+    raw = pd.Timestamp("2025-01-01T00:00:00.123456789")
+    frame = pd.DataFrame({"payload": pd.Series([raw, None], dtype=object)})
+    original = frame.copy(deep=True)
+
     assert (
         sql.load_df(
-            "encoded_gp",
-            "public.encoded_target",
-            pd.DataFrame(
-                {
-                    "value": pd.Series(
-                        [pd.Timestamp("2025-01-01T00:00:00.123456789"), None], dtype=object
-                    )
-                }
-            ),
-            table_schema=schema,
+            "gp",
+            "sandbox.events",
+            frame,
+            table_schema={"payload": "TIMESTAMP(3)"},
             retry_cnt=1,
             timeout_increment=0,
         )
         == 2
     )
-    assert connection.bound_rows == [(pd.Timestamp("2025-01-01T00:00:00.123"),), (None,)]
+
+    expected = datetime(2025, 1, 1, microsecond=123000)  # noqa: DTZ001 -- TIMESTAMP(3) is deliberately naive.
+    assert database.rows == [
+        {"payload": expected},
+        {"payload": None},
+    ]
+    assert database.bound_rows == [(raw.isoformat(),), (None,)]
+    assert any(
+        b".123456789" in wire for _template, _values, wire in database.formatter_observations
+    )
+    assert database.schema == {"payload": "TIMESTAMP(3)"}
+    pd.testing.assert_frame_equal(frame, original)
 
 
 def test_encoded_dataframe_validation_preserves_native_exact_numbers(

@@ -11,6 +11,10 @@ from uuid import UUID
 
 import pandas as pd
 import pytest
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
+from analytics_toolkit.sql.backends.ch.identifiers import quote_identifier
+from analytics_toolkit.sql.core.identifiers import TableIdentifier
+from sqlglot import exp, parse_one
 
 from tests.sql._support.fakes import FakeDbapiConnection
 
@@ -23,6 +27,15 @@ TEST_CH_SHARD_TABLE = f"test_table_{CURRENT_DT}_shard"
 TEST_CH_STAGE_TABLE = f"test_table_{CURRENT_DT}__stage__abcd1234"
 
 TEST_CH_SHARD_RELATION = f"test_table_{CURRENT_DT}_shard"
+
+
+def _table_key(parts: Any) -> str:
+    return ".".join(part if part.isidentifier() else quote_identifier(part) for part in parts)
+
+
+def _raw_table_key(name: str) -> str:
+    return _table_key(TableIdentifier.parse(name, "ch").parts)
+
 
 create_sql_table_module = importlib.import_module("analytics_toolkit.sql.ddl.api")
 
@@ -105,7 +118,7 @@ class FakeClickHouseClient:
         elif "clusterAllReplicas" in sql and "system, columns" in sql:
             rows = [(sql.count("name = ") or 1,)]
         elif sql.startswith("EXISTS TABLE "):
-            table_name = sql[len("EXISTS TABLE ") :].strip()
+            table_name = _raw_table_key(sql[len("EXISTS TABLE ") :].strip())
             rows = [(int(table_name in self.created_tables),)]
         else:
             rows = [(1,)]
@@ -175,17 +188,26 @@ class FakeClickHouseClient:
         self.close_calls += 1
 
     def _track_table_ddl(self, sql: str) -> None:
-        if sql.startswith("CREATE TABLE IF NOT EXISTS "):
-            table_name = sql[len("CREATE TABLE IF NOT EXISTS ") :].split(maxsplit=1)[0]
-            self.created_tables.add(table_name)
+        if not sql.lstrip().upper().startswith(("CREATE", "DROP")):
             return
-        if sql.startswith("CREATE TABLE "):
-            table_name = sql[len("CREATE TABLE ") :].split(maxsplit=1)[0]
-            self.created_tables.add(table_name)
+        statement = parse_one(sql, read=ClickHouseDialect)
+        if (
+            not isinstance(statement, (exp.Create, exp.Drop))
+            or statement.args.get("kind") != "TABLE"
+        ):
             return
-        if sql.startswith("DROP TABLE IF EXISTS "):
-            table_name = sql[len("DROP TABLE IF EXISTS ") :].split(maxsplit=1)[0]
-            self.created_tables.discard(table_name.replace("`", ""))
+        if isinstance(statement, exp.Drop):
+            tables = list(statement.find_all(exp.Table))
+            assert tables
+            for table in tables:
+                self.created_tables.discard(_table_key(part.name for part in table.parts))
+            return
+        table = statement.this
+        if isinstance(table, exp.Schema):
+            table = table.this
+        assert isinstance(table, exp.Table)
+        table_name = _table_key(part.name for part in table.parts)
+        self.created_tables.add(table_name)
 
     def _cluster_table_count(self, sql: str) -> int:
         marker = "AND name = '"
@@ -195,7 +217,7 @@ class FakeClickHouseClient:
         return sum(
             1
             for table_name in self.created_tables
-            if table_name.rsplit(".", 1)[-1] == relation_name
+            if TableIdentifier.parse(table_name, "ch").relation == relation_name
         )
 
 

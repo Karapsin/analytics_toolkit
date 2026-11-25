@@ -45,6 +45,7 @@ class ClientWriteValidation:
     normalization_types: tuple[tuple[str, str], ...] = ()
     geometry_basis: str = "type-only"
     geometry_digest: str | None = None
+    requires_value_encoding: bool = field(default=False, repr=False)
     _domain_verified: bool = field(default=False, init=False, repr=False, compare=False)
 
     def require_complete(self, expected_count: int) -> None:
@@ -66,7 +67,7 @@ class ClientWriteValidation:
     ) -> ClientWriteValidation:
         """Certify a total typed conversion without claiming to have scanned values."""
         message = "ClickHouse client domain validation requires complete frozen input."
-        if self.opaque_columns:
+        if self.opaque_columns or self.requires_value_encoding:
             raise ClientWriteValidationError(message)
         intermediate_types = intermediate_schema or dict(self.normalization_types)
         try:
@@ -217,7 +218,8 @@ def _logical_type(native_type: str) -> str:
 
 
 def _serializer_shape(native_type: str, driver: str) -> tuple[Any, ...]:
-    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 -- selected native grammar.
+    # Selected codec and native grammar cycle.
+    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415
         parse_native_type,
     )
 
@@ -269,7 +271,8 @@ def _scalar_serializer_shape(name: str) -> tuple[str]:
 def _declared_client_domain_fits(
     source: str | None, intermediate: str, target: str, driver: str
 ) -> bool:
-    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 -- exact domain proof.
+    # Selected codec and native grammar cycle.
+    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415
         declared_domain_fits,
     )
 
@@ -384,11 +387,14 @@ def _require_http_registered_types(native_type: str) -> None:
     from clickhouse_connect.datatypes.base import (  # noqa: PLC0415
         type_map,
     )
+
+    # Load only the selected optional SDK.
     from clickhouse_connect.datatypes.registry import (  # noqa: PLC0415
         parse_name,
     )
 
-    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 -- raw child declarations.
+    # Selected codec and native grammar cycle.
+    from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415
         parse_native_type,
     )
 
@@ -412,6 +418,7 @@ def _require_http_registered_types(native_type: str) -> None:
 
 def _require_http_writer(column: Any) -> None:
     # Construction alone does not certify SDK types marked as unsupported.
+    # Load only the selected optional SDK.
     from clickhouse_connect.datatypes.base import (  # noqa: PLC0415
         UnsupportedType,
     )
@@ -432,7 +439,8 @@ class _DiscardSocket:
 
 
 def _owned_value(value: Any) -> Any:
-    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 -- exact buffer/container copy.
+    # Selected codec and native grammar cycle.
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
         decode_value,
         encode_value,
     )
@@ -463,7 +471,8 @@ def _object_shapes(
     *,
     physical: bool = False,
 ) -> Iterable[tuple[tuple[int, ...], str]]:
-    from analytics_toolkit.sql.backends.nested_types import (  # noqa: PLC0415 -- recursive native domain.
+    # Selected codec and native grammar cycle.
+    from analytics_toolkit.sql.backends.nested_types import (  # noqa: PLC0415
         nested_descriptor,
     )
 
@@ -471,6 +480,8 @@ def _object_shapes(
     from analytics_toolkit.sql.backends.nested_values import (  # noqa: PLC0415
         row_items,
     )
+
+    # Selected codec and native grammar cycle.
     from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
         is_null,
     )
@@ -508,6 +519,7 @@ class _ClientCodecs:
     encoded: tuple[str, ...]
     opaque: tuple[str, ...]
     active_context: Any
+    requires_value_encoding: bool = False
 
 
 def _conversion_columns(
@@ -543,21 +555,38 @@ def _client_codecs(
     driver = client_write_driver(connection)
     try:
         encoded, opaque = _conversion_columns(schema, normalization)
-    except Exception:  # noqa: BLE001 -- malformed declarations cannot authorize a metadata probe.
+    except Exception:  # noqa: BLE001 - sanitize schema failures before publishing selected values.
         raise ClientWriteValidationError(_SCHEMA_ERROR) from None
     active = _active_native_context(connection) if driver == "native" else None
+    requires_values = False
     try:
         context = active or (_detached_native_context() if driver == "native" else None)
+        if driver == "native":
+            from .string_values import (  # noqa: PLC0415 - selected codec and native grammar cycle.
+                contains_string_type,
+                requires_string_value_encoding,
+            )
+
+            string_columns = tuple(name for name, native in schema if contains_string_type(native))
+            requires_values = bool(string_columns) and requires_string_value_encoding(
+                connection, context
+            )
+            if requires_values:
+                encoded = tuple(
+                    name for name, _native in schema if name in encoded or name in string_columns
+                )
         for _name, native in schema:
             if driver == "native":
                 _native_column(native, context)
             else:
                 _http_column(native, connection)
-    except Exception:  # noqa: BLE001 -- SDK errors can include literal declarations.
+    except Exception:  # noqa: BLE001 - selected SDK factories expose different exception classes.
         if not prospective_schema or (driver == "http" and writer_kind == "rows"):
             raise ClientWriteValidationError(_SCHEMA_ERROR) from None
     else:
-        return _ClientCodecs(connection, driver, schema, normalization, encoded, opaque, active)
+        return _ClientCodecs(
+            connection, driver, schema, normalization, encoded, opaque, active, requires_values
+        )
     # Resolve aliases using destination metadata only after a factory failure.
     from .client_schema import (  # noqa: PLC0415
         resolve_prospective_schema,
@@ -698,6 +727,7 @@ def _encode_prepared_batch(codecs: _ClientCodecs, rows: Sequence[Sequence[Any]])
 
 def _scalar_form(value: Any) -> str:
     # Temporal carriers preserve raw ticks before selecting an encoder form.
+    # Selected codec and native grammar cycle.
     from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
         ExactTemporal,
     )
@@ -724,12 +754,17 @@ def _encoding_forms(
     value: Any, native_type: str, path: tuple[int, ...] = ()
 ) -> Iterable[tuple[tuple[int, ...], str]]:
     # Compare runtime forms at logical leaves in declared field order.
+    # Selected codec and native grammar cycle.
     from analytics_toolkit.sql.backends.nested_types import (  # noqa: PLC0415
         nested_descriptor,
     )
+
+    # Selected codec and native grammar cycle.
     from analytics_toolkit.sql.backends.nested_values import (  # noqa: PLC0415
         row_items,
     )
+
+    # Selected codec and native grammar cycle.
     from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
         is_null,
     )
@@ -776,7 +811,7 @@ def _scan_rows(codecs: _ClientCodecs, rows: Iterable[Sequence[Any]]) -> tuple[in
                     forms[key] = form
         except ClientWriteValidationError:
             raise
-        except Exception:  # noqa: BLE001 -- SDK errors can contain actual data values.
+        except Exception:  # noqa: BLE001 - raw encoder errors must not expose selected values.
             raise ClientWriteValidationError(_VALUE_ERROR) from None
         count += 1
     return count, needs_geometry
@@ -794,7 +829,7 @@ def _scan_batches(codecs: _ClientCodecs, batches: Iterable[Any]) -> tuple[int, s
             digest.update(b"E")
         except ClientWriteValidationError:
             raise
-        except Exception:  # noqa: BLE001 -- SDK errors can contain actual data values.
+        except Exception:  # noqa: BLE001 - raw encoder errors must not expose selected values.
             raise ClientWriteValidationError(_VALUE_ERROR) from None
         count += len(prepared)
     return count, digest.hexdigest()
@@ -843,4 +878,5 @@ def validate_client_write_capabilities(  # noqa: PLR0913 -- internal selected-wr
         tuple(codecs.normalization.items()),
         geometry,
         geometry_digest,
+        codecs.requires_value_encoding,
     )

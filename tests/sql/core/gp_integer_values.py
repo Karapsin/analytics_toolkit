@@ -122,11 +122,28 @@ def test_gp_integer_text_rejects_one_step_past_declared_width(
         integer_policy.integer_text_value(str(value), native)
 
 
-@pytest.mark.parametrize("value", [True, 1, np.int64(1), 1.5, Decimal("1.2"), b"1"])
+@pytest.mark.parametrize("value", [True, 1, np.int64(1), 1.5, b"1"])
 def test_gp_integer_dispatch_keeps_nontext_values_for_existing_assignment(integer_policy, value):
     # This checks dispatch identity, without claiming those values bind as GP integers.
     assert integer_policy.integer_value(value, "BIGINT") is value
     assert integer_policy.normalize_authoritative_integer(value, "BIGINT") is value
+
+
+@pytest.mark.parametrize("value", [Decimal("42.000"), Decimal(2**63 - 1)])
+def test_gp_integer_dispatch_converts_exact_integral_decimal_without_float(integer_policy, value):
+    converted = integer_policy.integer_value(value, "BIGINT")
+    assert type(converted) is int
+    assert converted == int(value)
+    assert integer_policy.normalize_authoritative_integer(value, "BIGINT") == converted
+
+
+@pytest.mark.parametrize("value", [Decimal("1.2"), Decimal(2**63)])
+def test_gp_integer_dispatch_rejects_fractional_or_out_of_range_decimal(integer_policy, value):
+    before = value.as_tuple()
+    for converter in (integer_policy.integer_value, integer_policy.normalize_authoritative_integer):
+        with pytest.raises(integer_policy.GreenplumIntegerValueError):
+            converter(value, "BIGINT")
+    assert value.as_tuple() == before
 
 
 @pytest.mark.parametrize("value", [None, pd.NA, pd.NaT])

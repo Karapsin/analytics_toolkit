@@ -203,12 +203,16 @@ def test_load_df_clickhouse_dry_run_preserves_lifecycle_order_and_cluster() -> N
         ch_distributed_cluster="analytics",
     )
 
-    assert plan.statements[0].phase == "clear_target"
-    assert plan.sqls[0] == ("TRUNCATE TABLE IF EXISTS analytics.events_shard ON CLUSTER analytics")
-    assert plan.sqls[1] == "TRUNCATE TABLE IF EXISTS analytics.events"
-    assert plan.statements[2].phase == "create_target"
-    assert plan.sqls[2].startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
-    assert "ON CLUSTER analytics" in plan.sqls[2]
+    assert not any(step.phase in {"clear_target", "drop_target"} for step in plan.statements)
+    assert plan.options["pending_existing_layout_verification"] is True
+    assert plan.options["pending_resource_scope_resolution"] is True
+    assert plan.options["execution_requires"]
+    assert plan.metadata.statement_count is None
+    assert plan.statements[0].phase == "create_target"
+    assert plan.sqls[0].startswith("CREATE TABLE IF NOT EXISTS analytics.events_shard")
+    assert "ON CLUSTER analytics" in plan.sqls[0]
+    phases = [step.phase for step in plan.statements]
+    assert phases.index("create_target") < phases.index("load_data")
 
 
 def test_load_df_clickhouse_only_shard_dry_run_uses_local_target() -> None:
@@ -227,7 +231,11 @@ def test_load_df_clickhouse_only_shard_dry_run_uses_local_target() -> None:
     )
 
     assert plan.options["ch_only_shard"] is True
-    assert plan.sqls[0] == "TRUNCATE TABLE IF EXISTS analytics.events"
+    assert not any(step.phase in {"clear_target", "drop_target"} for step in plan.statements)
+    assert plan.options["pending_existing_layout_verification"] is True
+    assert plan.options["pending_resource_scope_resolution"] is True
+    assert plan.options["execution_requires"]
+    assert plan.metadata.statement_count is None
     create_sql = next(
         statement.sql for statement in plan.statements if statement.phase == "create_target"
     )

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 _VALUE_MAPPER = "_create_value_mapper"
 _REQUEST_FACTORY = "_create_request"
+_REQUEST_TIMEOUT = "_request_timeout"
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -51,6 +52,8 @@ def _requires_value_certification(native_type: str) -> bool:
 
 class _ExactReadError(ValueError):
     """An actionable decoding error whose message never contains cell values."""
+
+    analytics_toolkit_sql_retry_safe = False
 
 
 @dataclass(frozen=True)
@@ -107,6 +110,25 @@ class _ExactRequest:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._request, name)
 
+    def _limit_validation_request(self) -> None:
+        # Resolve probe context at the SDK boundary, after backend initialization.
+        from analytics_toolkit.sql.connection.validation import (  # noqa: PLC0415
+            validation_remaining,
+        )
+
+        remaining = validation_remaining()
+        if remaining is not None:
+            current = getattr(self._request, _REQUEST_TIMEOUT, remaining)
+            setattr(self._request, _REQUEST_TIMEOUT, min(current, remaining))
+
+    def post(self, *args: Any, **kwargs: Any) -> Any:
+        self._limit_validation_request()
+        return self._request.post(*args, **kwargs)
+
+    def get(self, *args: Any, **kwargs: Any) -> Any:
+        self._limit_validation_request()
+        return self._request.get(*args, **kwargs)
+
     def process(self, response: Any) -> Any:
         # Older SDKs call Response.json(), newer ones parse Response.text. Check
         # the same raw JSON before either implementation can coerce map keys.
@@ -121,6 +143,14 @@ class _ExactRequest:
         # Native status processing records the acknowledged cancellation URI.
         # It does not map or publish cells, including rejected raw map entries.
         status = self._request.process(response)
+        try:
+            self._limit_validation_request()
+        except TimeoutError:
+            # Cancellation is best effort and must not inherit another full
+            # request budget after the probe's deadline has expired.
+            setattr(self._request, _REQUEST_TIMEOUT, 0.001)
+            self._cancel_rejected(status)
+            raise
         if rejected is None and isinstance(status.rows, dict):
             message = (
                 "Exact Trino reads require direct JSON row pages. "
@@ -177,16 +207,36 @@ class _BinaryMapper:
             raise _ExactReadError(message) from None
 
 
+class _JsonMapper:
+    def map(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            message = "A native Trino JSON result requires an encoded document string."
+            raise _ExactReadError(message)
+        from analytics_toolkit.sql.backends.native_scalars import JsonDocument  # noqa: PLC0415
+
+        return JsonDocument(value)
+
+
 class _MapMapper:
-    def __init__(self, keys: Any, values: Any) -> None:
+    def __init__(self, keys: Any, values: Any, *, structural_keys: bool = False) -> None:
         self._keys = keys
         self._values = values
+        self._structural_keys = structural_keys
 
     def map(self, value: Any) -> Any:
         if value is None:
             return None
         result = {}
         for raw_key, raw_value in value.items():
+            if self._structural_keys and isinstance(raw_key, str):
+                message = (
+                    "Trino composite map key string carriers require a lossless, hashable Python "
+                    "representation; their structural representation is unverifiable. "
+                    "Project scalar keys in source SQL."
+                )
+                raise _ExactReadError(message)
             key = self._keys.map(raw_key)
             try:
                 duplicate = key in result
@@ -218,9 +268,15 @@ def _mapper_factory() -> Any:
             return _TemporalMapper(precision, with_timezone="with time zone" in native, clock=True)
         if native == "varbinary":
             return _BinaryMapper()
+        if native == "json":
+            return _JsonMapper()
         if native == "map":
             keys, values = (argument["value"] for argument in signature["arguments"])
-            return _MapMapper(self._create_value_mapper(keys), self._create_value_mapper(values))
+            return _MapMapper(
+                self._create_value_mapper(keys),
+                self._create_value_mapper(values),
+                structural_keys=keys["rawType"] in {"array", "row", "map"},
+            )
         return getattr(base, _VALUE_MAPPER)(self, signature)
 
     # Only this factory instance's subclass changes recursion. SDK classes and
@@ -330,6 +386,16 @@ def connect_exact(connect: Callable[..., Any], **kwargs: Any) -> Any:
         kwargs.pop("encoding", None)
     kwargs[interface.raw_flag] = interface.raw_value
     connection = connect(**kwargs)
+    try:
+        return _install_decoder(connection, interface)
+    except BaseException:
+        # The caller cannot close a connection that acquisition never returned.
+        with suppress(Exception):
+            connection.close()
+        raise
+
+
+def _install_decoder(connection: Any, interface: _SdkInterface) -> Any:
     request_factory = getattr(connection, _REQUEST_FACTORY, None)
     cursor_factory = getattr(connection, "cursor", None)
     if not callable(request_factory) or not callable(cursor_factory):

@@ -7,6 +7,7 @@ from copy import deepcopy
 
 from sqlglot import exp, parse_one
 
+from tests.sql._support.gp_relation_identity import RelationIdentityDatabase
 from tests.sql._support.gp_temporal_values import (
     TemporalConnection,
     TemporalCursor,
@@ -88,6 +89,44 @@ class _DateConnection(TemporalConnection):
         self.close_calls += 1
 
 
+class _NativeDateDatabase(RelationIdentityDatabase, DateDatabase):
+    """Owned DATE checkpoints use this fixture's existing UTC server session."""
+
+    def __init__(self):
+        super().__init__()
+        self.target.native_creation_oid = 10000
+        self._next_relation_oid = 10000
+        self.settings = {
+            "timezone": "UTC",
+            "datestyle": "ISO, MDY",
+            "timezone_abbreviations": "Default",
+            "intervalstyle": "postgres",
+        }
+
+    def metadata(self, statement, params):
+        if "current_setting" in statement.lower():
+            tree = parse_one(statement, read="postgres")
+            names = [
+                node.expressions[0].this.lower()
+                for node in tree.find_all(exp.Anonymous)
+                if node.name.lower() == "current_setting"
+            ]
+            return [tuple(self.settings[name] for name in names)]
+        return super().metadata(statement, params)
+
+    def _insert(self, tree, identity, params):
+        if isinstance(tree.expression, exp.Values):
+            return super()._insert(tree, identity, params)
+        assert params is None
+        names = [column.name for column in tree.this.expressions]
+        rows, _columns = self.select(tree.expression)
+        assert all(value is None or type(value) is dt.date for row in rows for value in row)
+        candidate = deepcopy(self.tables[identity])
+        candidate.insert(names, rows)
+        self.tables[identity] = candidate
+        return None
+
+
 class _DateCursor(TemporalCursor):
     def mogrify(self, template, values):
         wire = super().mogrify(template, values)
@@ -101,7 +140,7 @@ class _DateCursor(TemporalCursor):
 
 
 def date_target(monkeypatch):
-    database = DateDatabase()
+    database = _NativeDateDatabase()
 
     def connect(_alias):
         connection = _DateConnection(database)

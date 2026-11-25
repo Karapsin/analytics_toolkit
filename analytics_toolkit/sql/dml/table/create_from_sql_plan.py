@@ -128,6 +128,7 @@ def _build_create_table_from_sql_plan(  # noqa: PLR0913
             target_exists_before_drop=False,
         )
         create_kwargs["ch_replace_table"] = ch_replace_table
+        create_kwargs["if_not_exists"] = False
         add_create_table_steps(
             plan,
             _build_create_table_sqls(

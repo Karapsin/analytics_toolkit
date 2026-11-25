@@ -8,16 +8,20 @@ from analytics_toolkit.sql.backends.base import (
     BackendAdapter,
     BackendName,
     StageFinalizationRequest,
-    StageTargetTableRequest,
     _apply_query_label,
+)
+from analytics_toolkit.sql.backends.base import (
+    StageTargetTableRequest as _StageTargetTableRequest,
 )
 from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
 
 from . import column_names as _column_names
 from . import create_table_from_sql as _create_from_sql
+from . import identifiers as _identifiers
 from . import insert as _insert
 from . import key_literals as _key_literals
 from . import operations as _operations
+from . import partition_scope as _partition_scope
 from . import queries as _queries
 from . import reconfigure_proxy as _reconfigure
 from . import routing as _routing
@@ -29,6 +33,8 @@ from . import transfer_cleanup as _cleanup
 from . import upsert as _upsert
 from . import write_preflight as _write_preflight
 from .config import AIRFLOW_EXTRA_FIELDS, validate_connection
+
+StageTargetTableRequest = _StageTargetTableRequest
 
 
 class ClickHouseAdapter(BackendAdapter):
@@ -46,10 +52,12 @@ class ClickHouseAdapter(BackendAdapter):
     resolve_upsert_execution_options = _upsert.resolve_upsert_execution_options
     resolve_upsert_execution_sqls = _upsert.resolve_upsert_execution_sqls
     execute_upsert_command = _upsert.execute_upsert_command
+    prepare_upsert_target = _upsert.prepare_upsert_target
     backend: BackendName = "ch"
     display_name = "ClickHouse"
     sqlglot_dialect = "clickhouse"
     identifier_quote = "`"
+    quote_identifier = staticmethod(_identifiers.quote_identifier)
     supports_transactions = False
     supports_analyze = False
     supports_distributed_tables = True
@@ -242,6 +250,8 @@ class ClickHouseAdapter(BackendAdapter):
     postprocess_show_tables = _operations.postprocess_show_tables
     extract_table_ddl = _operations.extract_table_ddl
     build_drop_partitions_sqls = _operations.build_drop_partitions_sqls
+    execute_drop_partitions = _partition_scope.execute_drop_partitions
+    prepare_drop_partitions_plan = _partition_scope.prepare_drop_partitions_plan
     query_transfer_stage_table_names = _operations.query_transfer_stage_table_names
     qualify_transfer_stage_table_name = _operations.qualify_transfer_stage_table_name
     build_drop_tables_sqls = _operations.build_drop_tables_sqls
@@ -378,6 +388,7 @@ class ClickHouseAdapter(BackendAdapter):
     build_preserved_target_rows_insert_sql = _upsert.build_preserved_target_rows_insert_sql
     build_upsert_stage_placeholder_sqls = _upsert.build_upsert_stage_placeholder_sqls
     build_drop_upsert_partition_sqls = _upsert.build_drop_upsert_partition_sqls
+    build_upsert_partition_values_sql = _upsert.build_upsert_partition_values_sql
 
     def _build_delete_matching_stage_sql(
         self,
@@ -614,27 +625,7 @@ class ClickHouseAdapter(BackendAdapter):
 
     apply_target_write_mode = _target_create.apply_target_write_mode
 
-    def ensure_stage_target_table(self, request: StageTargetTableRequest) -> bool:
-        self.ensure_distributed_target_pair(
-            request.connection,
-            request.target_table,
-            request.sample_batch,
-            target_exists=False,
-            target_column_types=request.target_column_types,
-            insert_column_types=request.target_column_types,
-            gp_distributed_by_key=request.gp_distributed_by_key,
-            partition_by=request.partition_by,
-            order_by=request.order_by,
-            ch_engine=request.ch_engine,
-            ch_cluster=request.ch_cluster,
-            ch_sharding_key=request.ch_sharding_key,
-            query_label=request.query_label,
-            connection_key=request.connection_key,
-            ch_replace_table=False,
-            ch_only_shard=request.ch_only_shard,
-            ch_creation_policy=request.ch_creation_policy,
-        )
-        return True
+    ensure_stage_target_table = _target_create.ensure_stage_target_table
 
     def finalize_stage_table(self, request: StageFinalizationRequest) -> None:
         from .safe_replace import finalize_stage_table  # noqa: PLC0415

@@ -246,12 +246,12 @@ def test_insert_preserves_binary_strings_with_text_columns() -> None:
         "INSERT INTO `db`.`target` (`payload`, `label`, `row_id`) VALUES",
         (
             [
-                (b"\x00\xff", "Кириллица".encode(), 1),
-                (b"\x01\x80", b"", 2),
+                (b"\x00\xff", "Кириллица", 1),
+                (b"\x01\x80", "", 2),
                 (None, None, 3),
             ],
         ),
-        {"settings": {"strings_as_bytes": True}},
+        {},
     )
 
 

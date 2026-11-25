@@ -269,29 +269,41 @@ def _prepare_binary_string_insert(
     data: Sequence[Sequence[Any]],
     column_type_names: Sequence[str] | None,
 ) -> tuple[Sequence[Sequence[Any]], dict[str, bool] | None]:
-    if column_type_names is None:
+    from .string_values import (  # noqa: PLC0415 -- recursive declared String leaves.
+        contains_string_type,
+        iter_string_values,
+        map_string_values,
+    )
+
+    client_settings = getattr(client, "client_settings", {})
+    if column_type_names is None or not client_settings.get("strings_as_bytes", False):
         return data, None
     string_indexes = {
-        index for index, type_name in enumerate(column_type_names) if _is_string_type(type_name)
+        index
+        for index, type_name in enumerate(column_type_names)
+        if contains_string_type(type_name)
     }
     if not string_indexes or not any(
-        isinstance(row[index], (bytes, bytearray, memoryview))
+        isinstance(value, (bytes, bytearray, memoryview))
         for row in data
         for index in string_indexes
-        if row[index] is not None
+        for value in iter_string_values(row[index], column_type_names[index])
     ):
         return data, None
 
-    client_settings = getattr(client, "client_settings", {})
     encoding = client_settings.get("strings_encoding", "utf-8")
     byte_rows = [
         tuple(
-            _as_insert_bytes(value, encoding) if index in string_indexes else value
+            map_string_values(
+                value, column_type_names[index], lambda item: _as_insert_bytes(item, encoding)
+            )
+            if index in string_indexes
+            else value
             for index, value in enumerate(row)
         )
         for row in data
     ]
-    return byte_rows, {"strings_as_bytes": True}
+    return byte_rows, None
 
 
 def _is_string_type(type_name: str) -> bool:

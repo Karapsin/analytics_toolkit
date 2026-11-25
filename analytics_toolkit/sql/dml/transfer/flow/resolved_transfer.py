@@ -10,6 +10,7 @@ from analytics_toolkit.sql.backends.gp.native_assignment import native_assignmen
 from analytics_toolkit.sql.dml.transfer.runtime.models import TransferConnectionRefs
 from analytics_toolkit.sql.dml.transfer.runtime.retry import is_non_retryable_sql_error
 
+from .assignment_context import require_pending_assignment_context
 from .client_validation import require_client_write_certificate
 from .native_assignment import (
     certify_loaded_assignment,
@@ -17,6 +18,7 @@ from .native_assignment import (
     native_assignment_pending,
     restore_assignment_checkpoint,
 )
+from .storage_capabilities import require_storage_capabilities
 
 if TYPE_CHECKING:
     from analytics_toolkit.sql.dml.transfer.runtime.models import (
@@ -57,6 +59,8 @@ def run_resolved_checkpoint_transfer(
             adaptive.freeze_destination_timezone(
                 options.input_resolution, options.to_db_backend, ref["connection"]
             )
+            require_pending_assignment_context(options, ref["connection"])
+            require_storage_capabilities(options, state, ref["connection"])
             return operation(ref)
 
         return target_runner(role, checked)

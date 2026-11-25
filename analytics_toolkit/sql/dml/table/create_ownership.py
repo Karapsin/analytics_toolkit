@@ -4,12 +4,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from analytics_toolkit.sql.backends import creation_resources
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 from analytics_toolkit.sql.dml.transfer.runtime.retry import is_non_retryable_sql_error
 from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
 
 if TYPE_CHECKING:
+    from analytics_toolkit.sql.ddl.creation_resources import CreatedTableResource
     from analytics_toolkit.sql.ddl.ownership import CreationOwnership
+
+
+def query_cleanup_resources(
+    ownership: CreationOwnership, backend: str
+) -> list[str | CreatedTableResource]:
+    """Use generation-bound acknowledgements where native identity is available."""
+    return creation_resources.query_cleanup_resources(ownership, backend)
 
 
 def can_cleanup_created_target(ownership: CreationOwnership, error: Exception) -> bool:

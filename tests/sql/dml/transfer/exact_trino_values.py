@@ -8,6 +8,8 @@ import pandas as pd
 import pytest
 from analytics_toolkit.sql.core.exact_values import ExactTemporal, decode_value
 
+from tests.sql._support import adaptive_transfer as transfer_support
+from tests.sql._support import exact_trino_transfer as raw_transfer_support
 from tests.sql._support.adaptive_transfer import TransferSlice, track_spools
 from tests.sql._support.exact_trino_transfer import RawTransferSource, install_raw_trino_transfer
 from tests.sql._support.exact_trino_values import raw_type, timestamp_type
@@ -329,6 +331,40 @@ def test_exact_trino_transfer_ambiguous_late_wire_cannot_publish_a_partial_gener
 def test_exact_trino_transfer_late_plain_calendar_failure_cannot_publish_partial_input(
     monkeypatch, write_sql_connections, write_mode
 ):
+    metadata_queries = []
+
+    class Cursor:
+        def execute(self, statement, params=None):
+            metadata_queries.append((statement, params))
+            if "system.metadata.catalogs" in statement:
+                assert params == ["iceberg"]
+                self.rows = [("iceberg",)]
+            elif "SHOW CREATE TABLE" in statement:
+                self.rows = [
+                    (
+                        'CREATE TABLE "iceberg"."sandbox"."target" (stamp TIMESTAMP(9)) '
+                        "WITH (format_version = 3)",
+                    )
+                ]
+            else:
+                message = f"Unexpected Iceberg timestamp metadata query: {statement}"
+                raise AssertionError(message)
+
+        def fetchall(self):
+            return self.rows
+
+        def close(self):
+            pass
+
+    class Connection(transfer_support.Connection):
+        catalog = "iceberg"
+        schema = "sandbox"
+
+        def cursor(self):
+            return Cursor()
+
+    monkeypatch.setattr(transfer_support, "Connection", Connection)
+    monkeypatch.setattr(raw_transfer_support, "Connection", Connection)
     source = _source(
         9,
         (
@@ -343,11 +379,13 @@ def test_exact_trino_transfer_late_plain_calendar_failure_cannot_publish_partial
         source,
         write_mode=write_mode,
         full_retry_cnt=1,
+        regular_ddl_properties={"format_version": 3},
+        staging_ddl_properties={"format_version": 3},
     )
     scenario.existing_types = {"stamp": source.native_type}
     paths = track_spools(monkeypatch)
 
-    with pytest.raises(ValueError, match="project an ISO string in source SQL") as failure:
+    with pytest.raises(ValueError, match=r"Iceberg.*signed64 nanosecond.*range") as failure:
         scenario.run()
 
     assert "+10000" not in str(failure.value)
@@ -355,10 +393,11 @@ def test_exact_trino_transfer_late_plain_calendar_failure_cannot_publish_partial
     assert scenario.schemas == []
     assert "create_target" not in scenario.events
     assert "write_batch" not in scenario.events
-    assert f"complete:{QUERY}" not in scenario.events
+    assert f"complete:{QUERY}" in scenario.events
     assert scenario.finalizations == 0
     assert "spool" not in scenario.options.input_resolution
     assert paths
     assert all(not path.exists() for path in paths)
     assert source.calls == ["POST", "GET", "GET"]
     assert len(source.statements) == 1
+    assert any("system.metadata.catalogs" in statement for statement, _params in metadata_queries)

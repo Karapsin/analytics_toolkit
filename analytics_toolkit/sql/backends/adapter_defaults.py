@@ -77,15 +77,16 @@ def build_show_tables_query(
     raise NotImplementedError
 
 
-def postprocess_show_tables(
+def postprocess_show_tables(  # noqa: PLR0913 - preserve the cross-backend adapter hook signature.
     adapter: Any,
     connection_key: str,
     tables: Any,
     *,
     ch_distributed_table_stats: bool = False,
     read_sql: Callable[[str, str], Any] | None = None,
+    conditions: str | None = None,
 ) -> Any:
-    del adapter, connection_key, ch_distributed_table_stats, read_sql
+    del adapter, connection_key, ch_distributed_table_stats, read_sql, conditions
     return tables
 
 
@@ -644,8 +645,7 @@ def should_insert_create_table_from_sql_directly(
     source_key: str,
     target_key: str,
 ) -> bool:
-    del source_key, target_key
-    return source_backend == adapter.backend
+    return source_backend == adapter.backend and source_key == target_key
 
 
 def resolve_transfer_stage_column_types(

@@ -210,7 +210,11 @@ def test_client_validation_offline_plan_marks_nonempty_input_without_sdk_or_conn
     assert plan.metadata.source_rows == 1
     assert calls == []
     assert frame.loc[0, "payload"] == values[0]
-    assert any(statement.phase == "clear_target" for statement in plan.statements)
+    assert not any(statement.phase == "clear_target" for statement in plan.statements)
+    assert plan.options["pending_existing_layout_verification"] is True
+    assert plan.options["pending_resource_scope_resolution"] is True
+    assert plan.options["execution_requires"]
+    assert plan.metadata.statement_count is None
 
 
 def test_client_validation_empty_sql_only_creation_needs_no_unsupported_http_encoder(

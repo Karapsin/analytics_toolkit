@@ -49,7 +49,13 @@ def execute_sql(
 
 def _execute_and_consume(cursor: Any, statement: str) -> Any:
     result = cursor.execute(statement)
-    fetch = getattr(cursor, "fetchall", None)
+    fetch = getattr(cursor, "fetchmany", None)
     if callable(fetch):
-        fetch()
+        while fetch(1000):
+            pass
+    else:
+        # Compatibility with minimal DBAPI implementations exposing no batching.
+        fetch = getattr(cursor, "fetchall", None)
+        if callable(fetch):
+            fetch()
     return result

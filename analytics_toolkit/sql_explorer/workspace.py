@@ -78,6 +78,7 @@ class SqlExplorerWorkspace(Vertical):
         self.completion_epoch = 0
         self.completion_loading_notice: str | None = None
         self.metadata_incomplete_notice = False
+        self.metadata_notice_text: str | None = None
         self.find_notice_active = False
         self.completion_allow_empty_columns = False
         self.create_table_draft: dict[str, Any] = {}

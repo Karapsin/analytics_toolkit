@@ -12,6 +12,10 @@ import pandas as pd
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.creation_resources import (
+    require_created_resource,
+    supports_created_resource_identity,
+)
 from analytics_toolkit.sql.backends.gp.native_assignment import (
     NativeAssignmentCertificate,
     certify_assignment_checkpoint,
@@ -21,10 +25,19 @@ from analytics_toolkit.sql.backends.native_values import requires_native_assignm
 from analytics_toolkit.sql.backends.stage_ownership import drop_owned_resource
 from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.core.replay_spool import FrozenInputIdentity
+from analytics_toolkit.sql.ddl.creation_resources import (
+    CreatedTableResource,
+    configuration_digest,
+    execute_scoped_create,
+    scoped_creation_observer,
+)
 from analytics_toolkit.sql.dml.load.stage import (
     STAGE_TABLE_NAME_MAX_ATTEMPTS,
     build_stage_table_name,
     create_stage_table,
+)
+from analytics_toolkit.sql.dml.transfer.flow.assignment_context import (
+    require_pending_assignment_context,
 )
 from analytics_toolkit.sql.dml.transfer.flow.stage_ownership import stage_creation_callbacks
 from analytics_toolkit.sql.dml.transfer.runtime.models import (
@@ -117,6 +130,13 @@ def _certify(  # noqa: PLR0913 -- bind one physical checkpoint to its full nativ
     identity: FrozenInputIdentity,
 ) -> NativeAssignmentCertificate:
     _require_configuration(options)
+    context = require_pending_assignment_context(options, connection)
+    owned = cast("_OwnedQueryAssignment", options.input_resolution["query_native_assignment"])
+    for resource, logical_stage in owned.state.owned_stage_scoped_resources:
+        if logical_stage == stage:
+            require_created_resource(
+                get_backend_adapter(options.to_db_backend), connection, resource
+            )
     return certify_assignment_checkpoint(
         get_backend_adapter(options.to_db_backend),
         connection,
@@ -125,6 +145,7 @@ def _certify(  # noqa: PLR0913 -- bind one physical checkpoint to its full nativ
         expected_rows=count,
         input_identity=identity,
         query_label=options.query_label,
+        session_context=context,
     )
 
 
@@ -147,7 +168,7 @@ def _create_typed_stage(
             transfer_staging_schema=options.transfer_staging_schema,
             destination_hash=options.destination_hash,
             ddl_properties=options.staging_ddl_properties,
-            **stage_creation_callbacks(owned.state),
+            **stage_creation_callbacks(owned.state, options.to_db_backend),
         )
     _require_owned(owned, stage)
     return stage
@@ -156,6 +177,12 @@ def _create_typed_stage(
 def _require_owned(owned: _OwnedQueryAssignment, stage: str) -> None:
     if (stage, stage) not in owned.state.owned_stage_resources:
         message = "Native query assignment checkpoint has no acknowledged owned resource."
+        raise ValueError(message)
+    if owned.state.scoped_stage_ownership_requested and not any(
+        logical_stage == stage
+        for _resource, logical_stage in owned.state.owned_stage_scoped_resources
+    ):
+        message = "Native query assignment checkpoint has no scoped ownership certificate."
         raise ValueError(message)
 
 
@@ -175,13 +202,12 @@ def _materialize_native_query(
             continue
         owned.state.stage_table_candidates.append(stage)
         _require_configuration(options)
+        require_pending_assignment_context(options, connection)
         try:
-            adapter.execute_command(
-                connection,
-                adapter.build_materialize_transfer_source_sql(
-                    stage, options.source_sql, query_label=options.query_label
-                ),
+            sql = adapter.build_materialize_transfer_source_sql(
+                stage, options.source_sql, query_label=options.query_label
             )
+            _execute_owned_materialization(options, owned, connection, stage, sql)
         except Exception as error:
             sqlstate = getattr(error, "pgcode", None) or getattr(error, "sqlstate", None)
             if sqlstate == "42P07":
@@ -190,11 +216,34 @@ def _materialize_native_query(
             error.__dict__["analytics_toolkit_sql_stage_candidate"] = stage
             error.__dict__["analytics_toolkit_sql_acknowledged_resources"] = ()
             raise
-        owned.state.owned_stage_resources.append((stage, stage))
         owned.source_stage = stage
         return stage
     message = "Could not allocate a collision-free native query checkpoint."
     raise ValueError(message)
+
+
+def _execute_owned_materialization(
+    options: TransferOptions, owned: _OwnedQueryAssignment, connection: Any, stage: str, sql: str
+) -> None:
+    adapter = get_backend_adapter(options.to_db_backend)
+    if not supports_created_resource_identity(adapter):
+        adapter.execute_command(connection, sql)
+        owned.state.owned_stage_resources.append((stage, stage))
+        return
+    owned.state.scoped_stage_ownership_requested = True
+
+    def acknowledged(resource: CreatedTableResource) -> None:
+        owned.state.owned_stage_scoped_resources.append((resource, stage))
+        owned.state.owned_stage_resources.append((resource.name, stage))
+
+    resource = CreatedTableResource(
+        stage,
+        options.to_db_backend,
+        connection_key=options.to_db_key,
+        configuration_digest=configuration_digest(options.to_db_key),
+    )
+    with scoped_creation_observer(acknowledged):
+        execute_scoped_create(adapter, connection, sql, resource)
 
 
 def prepare_native_sql_assignment(
@@ -270,6 +319,9 @@ def prepare_python_query_assignment(
     if spool is None or not spool.certified:
         message = "Native query assignment requires a complete certified input checkpoint."
         raise ValueError(message)
+    owned.state.scoped_stage_ownership_requested = supports_created_resource_identity(
+        get_backend_adapter(options.to_db_backend)
+    )
     state = TransferStageState(
         target_exists=False,
         source_columns=list(prepared.columns),
@@ -277,11 +329,14 @@ def prepare_python_query_assignment(
         stage_column_types=schema,
         input_types_resolved=True,
         owned_stage_resources=owned.state.owned_stage_resources,
+        owned_stage_scoped_resources=owned.state.owned_stage_scoped_resources,
+        scoped_stage_ownership_requested=owned.state.scoped_stage_ownership_requested,
         stage_table_candidates=owned.state.stage_table_candidates,
     )
 
     def runner(_role: str, operation: Any) -> Any:
         _require_configuration(options)
+        require_pending_assignment_context(options, target_ref["connection"])
         return operation(target_ref)
 
     options.input_resolution["target_connection_runner"] = runner
@@ -321,10 +376,12 @@ def require_query_assignment_certificate(
         raise ValueError(message)
     owned = _owned_input(options, schema)
     certificate = cached.certificate
+    context = require_pending_assignment_context(options, connection_ref["connection"])
     _require_owned(owned, certificate.stage_table)
     if (
         certificate.input_identity != owned.identity
         or certificate.column_types != owned.destination_types
+        or certificate.session_context != context
     ):
         message = "Native query assignment certificate differs from the selected input or schema."
         raise ValueError(message)
@@ -381,34 +438,39 @@ def describe_query_assignment(prepared: PreparedQueryInput, metadata: SqlOperati
     return True
 
 
-def close_query_assignment(options: TransferOptions) -> None:
+def close_query_assignment(options: TransferOptions, *, retain_checkpoint: bool = False) -> None:
     owned = cast(
         "_OwnedQueryAssignment | None",
-        options.input_resolution.pop("query_native_assignment", None),
+        options.input_resolution.get("query_native_assignment"),
     )
     if owned is None:
         return
-    resources = owned.state.owned_stage_resources
-    unowned = set(owned.state.stage_table_candidates).difference(name for name, _ in resources)
+    names = owned.state.owned_stage_resources
+    unowned = set(owned.state.stage_table_candidates).difference(name for name, _ in names)
     if unowned:
         time_print(f"Retaining unacknowledged native query checkpoints: {sorted(unowned)}")
-    if preserve_recovery_artifacts():
-        time_print(
-            f"Retaining native query assignment checkpoints: {[name for name, _ in resources]}"
-        )
+    if retain_checkpoint or preserve_recovery_artifacts():
+        time_print(f"Retaining native query assignment checkpoints: {[name for name, _ in names]}")
         return
+    options.input_resolution.pop("query_native_assignment", None)
     primary = sys.exc_info()[1]
     first_error: Exception | None = None
-    seen: set[str] = set()
+    adapter = get_backend_adapter(options.to_db_backend)
+    identity_required = supports_created_resource_identity(adapter)
+    resources: list[tuple[Any, str]] = list(
+        owned.state.owned_stage_scoped_resources if identity_required else names
+    )
+    seen: set[Any] = set()
     for resource, stage in reversed(resources):
-        if resource in seen:
+        key = (resource.name, resource.scope) if identity_required else resource
+        if key in seen:
             continue
-        seen.add(resource)
+        seen.add(key)
         try:
             _require_configuration(options)
 
             def drop_checkpoint(
-                ref: dict[str, Any], resource: str = resource, stage: str = stage
+                ref: dict[str, Any], resource: Any = resource, stage: str = stage
             ) -> None:
                 drop_owned_resource(
                     get_backend_adapter(options.to_db_backend),

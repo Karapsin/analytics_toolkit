@@ -93,6 +93,8 @@ def test_manifest_references_exact_existing_unit_tests() -> None:
 def test_manifest_scenarios_match_collected_sql_scenarios(tmp_path: Path) -> None:
     manifest = load_manifest()
     environment = os.environ.copy()
+    # Enumerate every scenario independently of the parent's focused selection.
+    environment.pop("PYTEST_ADDOPTS", None)
     environment["SQL_INTEGRATION_ARTIFACT_DIR"] = str(tmp_path)
     completed = subprocess.run(
         [

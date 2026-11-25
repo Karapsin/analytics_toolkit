@@ -11,7 +11,7 @@ from analytics_toolkit import sql
 from analytics_toolkit.sql.dml.transfer.flow import staged_attempt
 from analytics_toolkit.sql.dml.transfer.flow.stage_identity import resolve_destination_identity
 
-from tests.sql.integration._support.backends import integration_table
+from tests.sql.integration._support.backends import backend_enabled, integration_table
 from tests.sql.integration._support.reconfiguration import (
     create_owned,
     label,
@@ -79,6 +79,8 @@ def test_changed_keyed_native_source_scope_cannot_publish_a_certified_checkpoint
     write_sql_connections,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if not backend_enabled("gp"):
+        pytest.skip("Greenplum is unavailable in this integration profile.")
     source, physical = _source(resource_registry)
     target = resource_registry.table("gp", integration_table("gp", "adaptive_scope_target"))
     # Existing BIGINT requires complete-value validation of the declared Int256

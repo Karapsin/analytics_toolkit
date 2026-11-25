@@ -34,7 +34,7 @@ from ...connection.errors import (
     sql_preview,
 )
 from ...connection.get_sql_connection import get_sql_connection
-from ...execution.labels import apply_query_label
+from ...execution.labels import apply_query_label, apply_statement_labels
 from ...execution.operation_runner import (
     timed_public_sql_function,
     tracked_sql_operation,
@@ -439,7 +439,7 @@ def _build_execute_sql_options(
         raise InvalidSqlInputError("Query string must not be empty.")
     validate_retry_options(retry_cnt, timeout_increment)
     _validate_progress(progress)
-    sql = apply_query_label(sql, query_label)
+    sql = apply_statement_labels(sql, query_label)
     sql = get_backend_adapter(backend).prepare_sql(config, sql)
     return ExecuteSqlOptions(
         connection_key=connection_key,

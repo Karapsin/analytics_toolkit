@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 import struct
 from copy import deepcopy
 from decimal import Decimal, localcontext
 
 import pytest
+from analytics_toolkit.sql.backends.native_scalars import NativeFloatNaN
 from analytics_toolkit.sql.backends.trino import numeric_text as numeric_text_codec
 from analytics_toolkit.sql.backends.type_resolution import ColumnProfile, validate_profile
-from analytics_toolkit.sql.core.exact_values import OrderedMapPairs
+from analytics_toolkit.sql.core.exact_values import OrderedMapPairs, is_null
 
 
 @pytest.fixture
@@ -117,8 +119,6 @@ def test_trino_hex_underflow_keeps_native_floating_zero_and_its_sign(
     [
         ("VARCHAR", "private-numeric-unsupported"),
         ("DOUBLE", "private-numeric-983"),
-        ("DOUBLE", "NaN"),
-        ("DOUBLE", "+Infinity"),
         ("DOUBLE", "1_2.5"),
         ("DOUBLE", "\u00a01.25"),
         ("DOUBLE", "\u0661.\u0662\u0665"),
@@ -146,6 +146,19 @@ def test_trino_numeric_text_rejects_invalid_nonfinite_or_inexact_inputs_privatel
     assert error.value.__cause__ is None
     assert error.value.analytics_toolkit_sql_retry_safe is False
     assert "CAST the source expression" in str(error.value)
+
+
+@pytest.mark.parametrize("native", ["REAL", "DOUBLE"])
+@pytest.mark.parametrize("text", ["NaN", "+Infinity", "-Infinity"])
+def test_trino_native_float_special_text_stays_distinct_from_sql_null(numeric_text, native, text):
+    result = numeric_text.numeric_text_value(text, native)
+    assert not is_null(result)
+    if text == "NaN":
+        assert isinstance(result, NativeFloatNaN)
+    else:
+        assert type(result) is float
+        assert math.isinf(result)
+        assert math.copysign(1.0, result) == (-1.0 if text.startswith("-") else 1.0)
 
 
 @pytest.mark.parametrize("native", ["REAL", "DOUBLE", "DECIMAL(6,2)"])

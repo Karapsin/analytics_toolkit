@@ -16,6 +16,7 @@ from analytics_toolkit.sql.backends.transfer_stage import is_transfer_stage_iden
 from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
 
 from .dialect import ClickHouseDialect, sql_string_literal
+from .metadata_values import decode_metadata_rows
 
 FACADE_METADATA_COLUMN_COUNT = 3
 CLUSTER_TABLE_METADATA_COLUMN_COUNT = 5
@@ -88,7 +89,7 @@ class ManagedPairResolver:
         database: str,
         table: str,
     ) -> ManagedTableRoute:
-        if database.lower() == "system" or is_transfer_stage_identifier(table):
+        if database == "system" or is_transfer_stage_identifier(table):
             self._validate_cluster_reachable(cluster)
             return ManagedTableRoute(database, table, "all_replicas")
 
@@ -154,7 +155,7 @@ class ManagedPairResolver:
             "LIMIT 1"
         )
         try:
-            rows = _query_rows(self._client, sql)
+            rows = _query_rows(self._client, sql, text_columns=(0, 1, 2))
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
                 f"Could not inspect ClickHouse relation {database}.{table}."
@@ -191,7 +192,7 @@ class ManagedPairResolver:
             f"  AND name = {sql_string_literal(table)}"
         )
         try:
-            rows = _query_rows(self._client, sql)
+            rows = _query_rows(self._client, sql, text_columns=(0, 1, 2, 3, 4))
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
                 f"Could not inspect {database}.{table} on every host of cluster {cluster_name!r}."
@@ -235,7 +236,7 @@ class ManagedPairResolver:
             f"WHERE cluster = {sql_string_literal(cluster_name)}"
         )
         try:
-            rows = _query_rows(self._client, sql)
+            rows = _query_rows(self._client, sql, text_columns=(2,))
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
                 f"Could not inspect ClickHouse cluster {cluster_name!r}."
@@ -264,6 +265,7 @@ class ManagedPairResolver:
                 self._client,
                 "SELECT hostName() FROM clusterAllReplicas("
                 f"{sql_string_literal(cluster_name)}, system, one)",
+                text_columns=(0,),
             )
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
@@ -294,7 +296,7 @@ class ManagedPairResolver:
             f"  AND table = {sql_string_literal(table)}"
         )
         try:
-            rows = _query_rows(self._client, sql)
+            rows = _query_rows(self._client, sql, text_columns=(0, 1, 2))
         except Exception as exc:
             raise ClickHouseClusterTopologyError(
                 f"Could not validate replicas for {database}.{table}."
@@ -374,7 +376,7 @@ def _normalized_definition(item: _ClusterObject) -> str:
             if isinstance(arguments[1], exp.Literal) and arguments[1].is_string:
                 arguments[1] = exp.Literal.string("<replica>")
                 engine.set("expressions", arguments)
-    return parsed.sql(dialect="clickhouse")
+    return parsed.sql(dialect=ClickHouseDialect)
 
 
 def _is_replicated_engine(engine: str) -> bool:
@@ -387,7 +389,9 @@ def _resolve_cluster_name(client: Any, cluster: str) -> str:
     match = re.fullmatch(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", normalized)
     if match is None:
         return normalized
-    rows = _query_rows(client, f"SELECT getMacro({sql_string_literal(match.group(1))})")
+    rows = _query_rows(
+        client, f"SELECT getMacro({sql_string_literal(match.group(1))})", text_columns=(0,)
+    )
     if not rows or not rows[0] or rows[0][0] is None:
         raise ClickHouseClusterTopologyError(
             f"Could not resolve ClickHouse cluster macro {normalized!r}."
@@ -420,9 +424,11 @@ def _query_count(client: Any, sql: str) -> int:
     return int(rows[0][0])
 
 
-def _query_rows(client: Any, sql: str) -> list[tuple[Any, ...]]:
+def _query_rows(
+    client: Any, sql: str, *, text_columns: tuple[int, ...] = ()
+) -> list[tuple[Any, ...]]:
     result = client.query(sql)
-    return list(getattr(result, "result_rows", None) or [])
+    return decode_metadata_rows(list(getattr(result, "result_rows", None) or []), text_columns)
 
 
 __all__ = ["ManagedPairResolver", "ManagedTableRoute", "RouteMode"]

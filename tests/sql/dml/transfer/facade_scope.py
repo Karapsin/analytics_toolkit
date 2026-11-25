@@ -11,13 +11,20 @@ from analytics_toolkit.general import set_connections_path
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
 from analytics_toolkit.sql.backends.ch.outage_statements import exchange_or_rename
-from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
+from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError, InvalidSqlInputError
 from sqlglot import exp, parse_one
 
 from tests.conftest import DEFAULT_SQL_CONNECTIONS
 from tests.sql._support.assertions import strip_query_label
 from tests.sql._support.ch_transfer_replacement import ReplacementScopeState
-from tests.sql._support.outage_gp import Connection, MemoryGreenplum
+from tests.sql._support.facade_cutover_faults import (
+    NativeCatalogPermissionError,
+    cutover_commands,
+    fail_before_first_cutover_wire,
+    retarget_after_physical_swap,
+)
+from tests.sql._support.outage_gp import Connection, Cursor, MemoryGreenplum
+from tests.sql._support.transfer_driver_boundary import install_fake_gp_cursor_boundary
 
 _TARGET = "analytics.events"
 _PHYSICAL = "analytics.events_shard"
@@ -30,6 +37,7 @@ def _source_values(shape):
 
 
 def _install_two_facades(monkeypatch, write_sql_connections, shape, desired_facade):
+    install_fake_gp_cursor_boundary(monkeypatch, Cursor)
     connections = deepcopy(DEFAULT_SQL_CONNECTIONS)
     connections["ch"].update(
         driver="http",
@@ -70,7 +78,7 @@ def _install_two_facades(monkeypatch, write_sql_connections, shape, desired_faca
     return source, state, rows, schema
 
 
-def _replace(schema, desired_facade):
+def _replace(schema, desired_facade, *, retry_cnt=1, full_retry_cnt=1):
     source_sql = (
         "SELECT id FROM db.source" if len(schema) == 1 else "SELECT id, payload FROM db.source"
     )
@@ -86,8 +94,8 @@ def _replace(schema, desired_facade):
         min_batch_size=1,
         max_batch_size=2,
         adaptive_batch_size=False,
-        retry_cnt=1,
-        full_retry_cnt=1,
+        retry_cnt=retry_cnt,
+        full_retry_cnt=full_retry_cnt,
         timeout_increment=0,
         full_timeout_increment=0,
         return_metadata=True,
@@ -194,4 +202,63 @@ def test_public_transfer_accepts_an_equivalent_complete_facade_scope_alias(
     assert after[state.remote][_PHYSICAL]["uuid"] != before[state.remote][_PHYSICAL]["uuid"]
     assert list(source.tables["db.source"].itertuples(index=False, name=None)) == rows
     assert state.opened
+    assert all(connection.closed for connection in state.opened)
+
+
+def test_public_facade_cutover_rejects_a_retargeted_physical_generation(
+    monkeypatch, write_sql_connections
+):
+    source, state, rows, schema = _install_two_facades(
+        monkeypatch, write_sql_connections, "type", "core_alias"
+    )
+    before = state.snapshot()
+    observed = retarget_after_physical_swap(monkeypatch, state)
+
+    with pytest.raises(AmbiguousSqlReplaceError) as caught:
+        _replace(schema, "core_alias")
+
+    assert observed["acknowledged_rows"] == rows
+    actual = state.snapshot()
+    assert actual[state.coordinator][_PHYSICAL] == before[state.coordinator][_PHYSICAL]
+    for host in (state.coordinator, state.remote):
+        assert actual[host][_TARGET] == before[host][_TARGET]
+    foreign = state.host_tables[state.remote][_PHYSICAL]
+    assert foreign.uuid == observed["uuid"]
+    assert foreign.rows == observed["rows"]
+    transitions = cutover_commands(state)
+    assert len(transitions) == 1
+    assert _PHYSICAL.rsplit(".", 1)[-1] in {table.name for table in transitions[0].expressions}
+    assert any(
+        table.rows == [(11,), (12,), (13,)]
+        for name, table in state.host_tables[state.remote].items()
+        if "__replace_guarded_" in name
+    )
+    assert caught.value.analytics_toolkit_sql_recovery_table_scopes
+    assert list(source.tables["db.source"].itertuples(index=False, name=None)) == rows
+    assert all(connection.closed for connection in state.opened)
+
+
+def test_public_facade_cutover_preserves_preflight_failure_before_submission(
+    monkeypatch, write_sql_connections
+):
+    source, state, rows, schema = _install_two_facades(
+        monkeypatch, write_sql_connections, "type", "core_alias"
+    )
+    before = state.snapshot()
+    failure = NativeCatalogPermissionError("Native identity catalog access denied")
+    observed = fail_before_first_cutover_wire(state, failure)
+
+    with pytest.raises(NativeCatalogPermissionError) as caught:
+        _replace(schema, "core_alias", retry_cnt=2, full_retry_cnt=2)
+
+    assert caught.value is failure
+    assert observed == {"proofs": 3, "raised": True}
+    assert cutover_commands(state) == []
+    actual = state.snapshot()
+    for host, tables in before.items():
+        for name, original in tables.items():
+            assert actual[host][name] == original
+    journal = getattr(failure, "analytics_toolkit_sql_cutover_journal", ())
+    assert not any(step.get("submitted") for step in journal)
+    assert list(source.tables["db.source"].itertuples(index=False, name=None)) == rows
     assert all(connection.closed for connection in state.opened)

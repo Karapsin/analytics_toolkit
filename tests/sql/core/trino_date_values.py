@@ -16,6 +16,7 @@ from analytics_toolkit.sql.backends.trino.date_values import (
     normalize_authoritative_date,
     validate_date_type_profile,
 )
+from analytics_toolkit.sql.backends.trino.type_declarations import TrinoTypeDeclarationError
 from analytics_toolkit.sql.backends.type_resolution import ColumnProfile, validate_profile
 from analytics_toolkit.sql.core.exact_values import ExactTemporal
 
@@ -80,7 +81,13 @@ def test_trino_date_invalid_declarations_reject_even_empty_profiles(native):
     with pytest.raises(TrinoDateValueError, match="unparameterized DATE"):
         is_date_type(native)
 
-    with pytest.raises(TrinoDateValueError, match="unparameterized DATE"):
+    error = TrinoDateValueError if native in {"DATE(3)", "DATE()"} else TrinoTypeDeclarationError
+    message = (
+        "unparameterized DATE"
+        if error is TrinoDateValueError
+        else "Invalid or unsupported Trino native type declaration"
+    )
+    with pytest.raises(error, match=message):
         validate_profile(ColumnProfile(), native, "trino")
 
 

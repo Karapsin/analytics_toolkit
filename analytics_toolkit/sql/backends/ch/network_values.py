@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .timestamp_keys import dataframe_key_identity, is_timestamp_key_type
+from .timestamp_keys import dataframe_key_identity
+from .timestamp_keys import is_timestamp_key_type as _is_timestamp_key_type
+
+is_timestamp_key_type = _is_timestamp_key_type
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
@@ -177,28 +180,38 @@ def key_validation_frames(
     schemas: Sequence[Mapping[str, str] | None],
     *,
     destination_timezone: str | None = None,
+    connection: Any = None,
 ) -> Iterator[pd.DataFrame]:
-    """Use native key equality in network/timestamp views without changing payloads."""
+    """Use declared native key equality without changing incoming payloads."""
     if not key_columns:
         return
-    import pandas as pd  # noqa: PLC0415 -- object series for native key identities.
+    import pandas as pd  # noqa: PLC0415 - construct key frames only when requested.
 
     seen: set[tuple[tuple[str, str], ...]] = set()
     for schema in schemas:
         types = schema or {}
         signature = tuple((name, types.get(name, "")) for name in key_columns)
-        if signature in seen or not any(
-            is_network_type(types.get(name, "")) or is_timestamp_key_type(types.get(name, ""))
-            for name in key_columns
-        ):
+        if signature in seen or not any(types.get(name) for name in key_columns):
             continue
         seen.add(signature)
+        from .string_values import (  # noqa: PLC0415 - selected writer and codec cycle.
+            contains_string_type,
+            writer_string_encoding,
+        )
+
+        encoding = (
+            writer_string_encoding(connection)
+            if any(contains_string_type(types[name]) for name in key_columns if name in types)
+            else "utf-8"
+        )
         validation = df.loc[:, list(key_columns)].copy()
         for name in key_columns:
             if name not in types:
                 continue
             identities = [
-                dataframe_key_identity(value, types[name], destination_timezone)
+                dataframe_key_identity(
+                    value, types[name], destination_timezone, string_encoding=encoding
+                )
                 for value in df[name]
             ]
             validation[name] = pd.Series(identities, index=df.index, dtype=object)

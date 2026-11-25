@@ -97,7 +97,7 @@ def test_invalid_offset_is_rejected_by_complete_profile_and_conversion(offset):
 
 
 @pytest.mark.parametrize(
-    "value", [dt.date(2026, 1, 1), dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc), "12:00", 1]
+    "value", [dt.date(2026, 1, 1), dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc), 1]
 )
 def test_wrong_native_family_is_rejected(value):
     with pytest.raises(TypeError, match="Trino TIME values"):

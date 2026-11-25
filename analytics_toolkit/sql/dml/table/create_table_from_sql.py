@@ -5,12 +5,12 @@ from collections.abc import Sequence
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, cast
 
-import sqlparse
-
 from analytics_toolkit.general import time_print
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from analytics_toolkit.sql.ddl.creation_resources import CreatedTableResource
 
 from analytics_toolkit.sql.dml.ddl_options import (
     resolve_cluster_routed_source_staging_ch_policy,
@@ -18,6 +18,7 @@ from analytics_toolkit.sql.dml.ddl_options import (
 )
 from analytics_toolkit.sql.dml.query_input import (
     cached_query_schema,
+    mark_query_input_mutation,
     prepare_generic_query_input,
     query_input_scope,
     replay_query_input,
@@ -29,7 +30,9 @@ from ...backends.source_script import commit_source_setup
 from ...backends.stage_ownership import drop_owned_resource
 from ...connection.config import get_connection_config
 from ...connection.errors import (
-    InvalidSqlInputError,
+    InvalidSqlInputError as _InvalidSqlInputError,
+)
+from ...connection.errors import (
     SqlOperationContext,
     annotate_sql_exception,
     sql_preview,
@@ -43,6 +46,7 @@ from ...ddl.api import (
 from ...ddl.ownership import (
     CreationOwnership,
     acknowledge_created_resource,
+    acknowledge_created_table_resource,
     capture_creation_ownership,
 )
 from ...ddl.schema import (
@@ -65,15 +69,24 @@ from ._basic_ops import (
 from ._basic_ops import (
     table_exists as table_exists,  # noqa: PLC0414
 )
+from .create_dispatch import call_create_table_from_sql_fast_path as _dispatch_query_create
 from .create_from_sql_plan import _build_create_table_from_sql_plan
 from .create_ownership import (
     can_cleanup_created_target,
+    query_cleanup_resources,
     record_target_recovery,
     require_created_target_acknowledgement,
     require_query_target_available,
 )
-from .create_skip import CONTINUE_CREATE, skip_existing_query_target
+from .create_skip import CONTINUE_CREATE
+from .create_skip import skip_existing_query_target as _skip_existing_query_target
+from .create_validation import normalize_single_query as _query_normalizer
+from .create_validation import normalize_table_name as _normalize_table_name
 from .models import CreateTableFromSqlOptions
+from .models import (
+    _UnsafeAttemptFailure as _UnsafeAttemptFailure,  # noqa: PLC0414 -- compatibility.
+)
+from .query_namespace import cached_query_target
 from .source_script import (
     build_script_plan,
     execute_script_attempt,
@@ -81,6 +94,11 @@ from .source_script import (
     validate_script_staging,
 )
 from .table_validation import normalize_key_columns
+
+InvalidSqlInputError = _InvalidSqlInputError
+_normalize_single_query = _query_normalizer
+skip_existing_query_target = _skip_existing_query_target
+_call_create_table_from_sql_fast_path = _dispatch_query_create
 
 
 def transfer_table(**kwargs: Any) -> int | SqlPlan | SqlOperationResult:
@@ -227,7 +245,11 @@ def create_table_from_sql(
         query_label=query_label,
         ddl_properties=ddl.regular_properties,
         ch_creation_policy=ch_policy,
-        input_resolution={"retry_cnt": retry_cnt, "timeout_increment": timeout_increment},
+        input_resolution={
+            "retry_cnt": retry_cnt,
+            "timeout_increment": timeout_increment,
+            "trino_insert_chunk_size": trino_insert_chunk_size,
+        },
     )
 
     if options.dry_run or options.return_sql:
@@ -312,52 +334,13 @@ def create_table_from_sql(
         return cast("int | None | SqlPlan | SqlOperationResult", result)
 
 
-class _UnsafeAttemptFailure:
-    def __init__(self, error: Exception, attempt: int) -> None:
-        self.error = error
-        self.attempt = attempt
-
-
-def _call_create_table_from_sql_fast_path(
-    *,
-    target_adapter: Any,
-    options: CreateTableFromSqlOptions,
-) -> tuple[bool, object]:
-    return cast(
-        "tuple[bool, object]",
-        target_adapter.create_table_from_sql_fast_path(
-            source_backend=options.source_backend,
-            source_key=options.source_key,
-            target_key=options.target_key,
-            target_table=options.target_table,
-            source_sql=options.source_sql,
-            partition_by=options.partition_by,
-            order_by=options.order_by,
-            ch_engine=options.ch_engine,
-            ch_cluster=options.ch_cluster,
-            ch_sharding_key=options.ch_sharding_key,
-            ch_only_shard=options.ch_only_shard,
-            ch_retry_per_host_drops=options.ch_retry_per_host_drops,
-            insert_data=options.insert_data,
-            drop_target_if_exists=options.drop_target_if_exists,
-            dry_run=options.dry_run,
-            return_sql=options.return_sql,
-            query_label=options.query_label,
-            return_metadata=options.return_metadata,
-            table_schema=options.table_schema,
-            ch_creation_policy=options.ch_creation_policy,
-            ch_replace_table=options.ch_replace_table,
-            input_resolution=options.input_resolution,
-        ),
-    )
-
-
 def _execute_create_table_from_sql_attempt(
     *,
     options: CreateTableFromSqlOptions,
     target_adapter: Any,
     attempt: int,
 ) -> object:
+    options = cached_query_target(options)
     if options.if_not_exists:
         skipped = skip_existing_query_target(
             options, get_sql_connection, table_exists, _close_connection_quietly, attempt=attempt
@@ -409,6 +392,11 @@ def _execute_create_table_from_sql_fast_path_attempt(
         existed=target_existed, target=options.target_table, replace=options.ch_replace_table
     )
     ownership = CreationOwnership()
+    options.input_resolution["native_population_retry"] = (
+        ownership,
+        options.input_resolution.get("retry_cnt", 1),
+        options.input_resolution.get("timeout_increment", 0),
+    )
     try:
         with capture_creation_ownership(ownership):
             fast_path_applied, fast_path_result = _call_create_table_from_sql_fast_path(
@@ -428,7 +416,7 @@ def _execute_create_table_from_sql_fast_path_attempt(
                 options=options,
                 target_adapter=target_adapter,
                 target_connection=None,
-                owned_resources=ownership.resources,
+                owned_resources=query_cleanup_resources(ownership, options.target_backend),
             )
         ):
             raise
@@ -534,6 +522,8 @@ def _execute_generic_create_table_from_sql_attempt(
             if prepared is not None:
                 target_column_types = prepared.schema
             mutation_started = options.drop_target_if_exists
+            if mutation_started:
+                mark_query_input_mutation(options.input_resolution)
             target_exists_before_drop = target_adapter.prepare_existing_target_for_create_from_sql(
                 target_connection,
                 options.target_table,
@@ -569,8 +559,10 @@ def _execute_generic_create_table_from_sql_attempt(
             # target must be acquired by plain CREATE, including replacement.
             create_kwargs["ch_replace_table"] = options.ch_replace_table
             create_kwargs["on_resource_created"] = acknowledge_created_resource
+            create_kwargs["on_scoped_resource_created"] = acknowledge_created_table_resource
 
             mutation_started = True
+            mark_query_input_mutation(options.input_resolution)
             with capture_creation_ownership(ownership):
                 _create_sql_table_with_connection(
                     options.target_backend,
@@ -619,7 +611,7 @@ def _execute_generic_create_table_from_sql_attempt(
                 options=options,
                 target_adapter=target_adapter,
                 target_connection=target_connection,
-                owned_resources=ownership.resources,
+                owned_resources=query_cleanup_resources(ownership, options.target_backend),
             )
         ):
             raise
@@ -687,7 +679,7 @@ def _execute_generic_create_table_from_sql_attempt(
                     options=options,
                     target_adapter=target_adapter,
                     target_connection=None,
-                    owned_resources=ownership.resources,
+                    owned_resources=query_cleanup_resources(ownership, options.target_backend),
                 )
             ):
                 raise
@@ -709,7 +701,7 @@ def _cleanup_attempt_target(
     options: CreateTableFromSqlOptions,
     target_adapter: Any,
     target_connection: Any | None,
-    owned_resources: Sequence[str] = (),
+    owned_resources: Sequence[str | CreatedTableResource] = (),
 ) -> bool:
     if not owned_resources:
         return False
@@ -761,7 +753,7 @@ def _drop_attempt_target(
     options: CreateTableFromSqlOptions,
     target_adapter: Any,
     target_connection: Any,
-    owned_resources: Sequence[str] = (),
+    owned_resources: Sequence[str | CreatedTableResource] = (),
 ) -> None:
     if not owned_resources:
         return
@@ -771,7 +763,11 @@ def _drop_attempt_target(
         backend=options.target_backend,
         phase="cleanup",
     )
-    for resource in reversed(list(dict.fromkeys(owned_resources))):
+    unique_resources: list[str | CreatedTableResource] = []
+    for resource in owned_resources:
+        if resource not in unique_resources:
+            unique_resources.append(resource)
+    for resource in reversed(unique_resources):
         drop_owned_resource(
             target_adapter,
             target_connection,
@@ -779,28 +775,6 @@ def _drop_attempt_target(
             logical_stage=options.target_table,
             creation_policy=options.ch_creation_policy,
         )
-
-
-def _normalize_table_name(table_name: str) -> str:
-    normalized = table_name.strip()
-    if not normalized:
-        raise InvalidSqlInputError("table_name must not be empty.")
-    return normalized
-
-
-def _normalize_single_query(query: str) -> str:
-    normalized = query.strip()
-    if not normalized:
-        raise InvalidSqlInputError("sql must not be empty.")
-
-    statements = [
-        statement.strip().rstrip(";").rstrip()
-        for statement in sqlparse.split(normalized)
-        if statement.strip()
-    ]
-    if len(statements) != 1:
-        raise InvalidSqlInputError("create_table_from_sql expects exactly one SQL statement.")
-    return statements[0]
 
 
 def _validate_source_columns(columns: Sequence[str]) -> None:

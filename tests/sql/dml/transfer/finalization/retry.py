@@ -15,6 +15,8 @@ from analytics_toolkit.sql.dml.transfer.runtime.models import (
     TransferStageState,
 )
 
+from tests.sql._support.transfer_clickhouse_protocol import TransferClickHouseClient
+
 
 def _options(*, write_mode: str = "append", retry_cnt: int = 2) -> TransferOptions:
     return TransferOptions(
@@ -146,11 +148,17 @@ def test_fresh_target_count_converges_without_rebuilding(
     finalized_policies: list[ClickHouseCreationPolicy] = []
     drops: list[str] = []
     analyses: list[str] = []
+    connection = TransferClickHouseClient()
+    cleanup = finalize.cleanup_failed_transfer_target
+
+    def record_cleanup(*args, **kwargs):
+        drops.append("target")
+        return cleanup(*args, **kwargs)
 
     monkeypatch.setattr(
         finalize,
         "_run_with_fresh_target_connection",
-        lambda _options, _role, operation: operation({"connection": object()}),
+        lambda _options, _role, operation: operation({"connection": connection}),
     )
     monkeypatch.setattr(finalize, "validate_stage_uniqueness", lambda **_kwargs: None)
     monkeypatch.setattr(finalize, "validate_stage_target_key_overlap", lambda **_kwargs: None)
@@ -168,8 +176,8 @@ def test_fresh_target_count_converges_without_rebuilding(
     monkeypatch.setattr(finalize.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         finalize,
-        "_drop_incomplete_fresh_target",
-        lambda _options, **_kwargs: drops.append("target"),
+        "cleanup_failed_transfer_target",
+        record_cleanup,
     )
     monkeypatch.setattr(
         finalize,
@@ -184,6 +192,7 @@ def test_fresh_target_count_converges_without_rebuilding(
     assert drops == []
     assert analyses == ["target"]
     assert state.target_created_by_operation is True
+    assert state.owned_target_resources
 
 
 def test_fresh_target_count_rebuilds_after_readiness_exhaustion(
@@ -194,11 +203,17 @@ def test_fresh_target_count_rebuilds_after_readiness_exhaustion(
     target_counts = iter([4, 5])
     finalized: list[str] = []
     drops: list[str] = []
+    connection = TransferClickHouseClient()
+    cleanup = finalize.cleanup_failed_transfer_target
+
+    def record_cleanup(*args, **kwargs):
+        drops.append("target")
+        return cleanup(*args, **kwargs)
 
     monkeypatch.setattr(
         finalize,
         "_run_with_fresh_target_connection",
-        lambda _options, _role, operation: operation({"connection": object()}),
+        lambda _options, _role, operation: operation({"connection": connection}),
     )
     monkeypatch.setattr(finalize, "validate_stage_uniqueness", lambda **_kwargs: None)
     monkeypatch.setattr(finalize, "validate_stage_target_key_overlap", lambda **_kwargs: None)
@@ -220,8 +235,8 @@ def test_fresh_target_count_rebuilds_after_readiness_exhaustion(
     )
     monkeypatch.setattr(
         finalize,
-        "_drop_incomplete_fresh_target",
-        lambda _options, **_kwargs: drops.append("target"),
+        "cleanup_failed_transfer_target",
+        record_cleanup,
     )
     monkeypatch.setattr(finalize, "analyze_table", lambda **_kwargs: None)
 
@@ -229,6 +244,7 @@ def test_fresh_target_count_rebuilds_after_readiness_exhaustion(
 
     assert finalized == ["target", "target"]
     assert drops == ["target"]
+    assert state.owned_target_resources
 
 
 def test_fresh_target_count_query_error_can_converge(

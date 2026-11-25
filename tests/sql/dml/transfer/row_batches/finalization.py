@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
+from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.dml.transfer.flow import stage_ownership, target_ownership
+
 from tests.sql._support.row_batches import (
     Any,
     SimpleNamespace,
@@ -10,6 +15,20 @@ from tests.sql._support.row_batches import (
     pd,
     pytest,
 )
+from tests.sql._support.transfer_ownership import acknowledge_stage, acknowledge_target
+
+
+def _owned_cleanup_state(options, stage="stage.ready"):
+    state = models_module.TransferStageState(
+        target_exists=False,
+        target_existed_at_start=False,
+        stage_table=stage,
+        stage_table_created=True,
+        stage_external_location="s3://bucket/stage",
+    )
+    acknowledge_stage(state, stage, options.to_db_backend)
+    acknowledge_target(state, options.target_table, options.to_db_backend)
+    return state
 
 
 def test_ensure_final_upsert_stage_guard_matrix(
@@ -161,10 +180,12 @@ def test_finalize_existing_target_schema_and_cleanup_precedence(
     assert "target_metadata" in roles
 
     cleaned: list[str] = []
+    for name in ("stage.one", "stage.final"):
+        acknowledge_stage(state, name, options.to_db_backend)
     monkeypatch.setattr(
-        finalize_module,
-        "cleanup_stage_table_with_retry",
-        lambda *_args, **_k: cleaned.append(_args[3]),
+        stage_ownership,
+        "drop_owned_resource",
+        lambda *_args, **_k: cleaned.append(_args[2].name),
     )
     remote_error = RuntimeError("remote")
     monkeypatch.setattr(
@@ -179,7 +200,7 @@ def test_finalize_existing_target_schema_and_cleanup_precedence(
             state,
             1,
         )
-    assert cleaned == ["stage.one", "stage.final"]
+    assert sorted(cleaned) == ["stage.final", "stage.one"]
 
 
 def test_finalize_loaded_stage_handles_empty_and_invalid_stage_state(
@@ -284,9 +305,9 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
         lambda **_k: events.append("overlap"),
     )
     monkeypatch.setattr(
-        finalize_module,
-        "get_backend_adapter",
-        lambda _b: SimpleNamespace(uses_partition_replacement_upsert=lambda: False),
+        get_backend_adapter(options.to_db_backend),
+        "uses_partition_replacement_upsert",
+        lambda: False,
     )
     monkeypatch.setattr(finalize_module, "finalize_stage_table", lambda *_a, **_k: None)
     monkeypatch.setattr(finalize_module, "analyze_table", lambda **_k: None)
@@ -302,12 +323,7 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
         )
     ) == ["stage.single", "stage.final"]
 
-    cleanup_state = models_module.TransferStageState(
-        target_exists=False,
-        target_existed_at_start=False,
-        target_created_by_operation=True,
-        stage_external_location="s3://bucket/stage",
-    )
+    cleanup_state = _owned_cleanup_state(options)
     messages: list[str] = []
     monkeypatch.setattr(
         finalize_module,
@@ -315,14 +331,18 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
         lambda _location: (_ for _ in ()).throw(RuntimeError("remote")),
     )
     monkeypatch.setattr(
-        finalize_module,
-        "cleanup_stage_table_with_retry",
+        target_ownership,
+        "drop_owned_resource",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("target")),
     )
+    monkeypatch.setattr(stage_ownership, "drop_owned_resource", lambda *_a, **_k: None)
     monkeypatch.setattr(
         general_module,
         "time_print",
         lambda message, **_k: messages.append(message),
+    )
+    monkeypatch.setattr(
+        finalize_module, "time_print", lambda message, **_k: messages.append(message)
     )
     with pytest.raises(RuntimeError, match="remote"):
         finalize_module.cleanup_stage(
@@ -334,6 +354,10 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
         )
     assert any("remote Parquet" in message for message in messages)
 
+    # Each branch models a separate operation; a failed cleanup is retained
+    # within its own operation and must not be submitted repeatedly.
+    options = replace(options, input_resolution={})
+    cleanup_state = _owned_cleanup_state(options)
     cleanup_state.stage_external_location = None
     with pytest.raises(RuntimeError, match="target"):
         finalize_module.cleanup_stage(
@@ -344,12 +368,11 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
             drop_created_target=True,
         )
 
-    cleanup_state.stage_table = "stage.failed"
-    cleanup_state.stage_table_created = True
-    cleanup_state.stage_external_location = "s3://bucket/stage"
+    options = replace(options, input_resolution={})
+    cleanup_state = _owned_cleanup_state(options, "stage.failed")
     monkeypatch.setattr(
-        finalize_module,
-        "cleanup_stage_table_with_retry",
+        stage_ownership,
+        "drop_owned_resource",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("stage")),
     )
     messages.clear()
@@ -361,5 +384,5 @@ def test_finalize_no_types_upsert_overlap_and_cleanup_error_matrix(
             1,
             drop_created_target=True,
         )
-    assert any("Remote Parquet" in message for message in messages)
+    assert any("Retaining" in message and "Parquet" in message for message in messages)
     assert any("Target cleanup" in message for message in messages)

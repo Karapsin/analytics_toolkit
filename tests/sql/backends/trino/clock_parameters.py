@@ -14,6 +14,7 @@ from analytics_toolkit.sql.backends.trino.time_values import (
     time_parameter_value,
 )
 from analytics_toolkit.sql.core.exact_values import ExactClock
+from sqlglot import exp, parse_one
 
 from tests.sql._support.trino_binary_buffers import use_actual_formatter
 from tests.sql._support.trino_parameters import DriverParameterConnection, render_parameter
@@ -76,14 +77,23 @@ def test_typed_clock_parameters_preserve_wall_offset_rounding_and_server_policy(
 
     statement, parameters, rendered = connection.statements[0]
     assert f"CAST(? AS {native})" in statement
-    assert parameters == [expected]
-    assert type(parameters[0]) is type(expected)
-    assert rendered == [render_parameter(expected)]
+    typed_naive = (
+        isinstance(value, dt.time) and value.utcoffset() is None and "WITH TIME ZONE" in native
+    )
+    expected_parameter = value if typed_naive else expected
+    assert parameters == [expected_parameter]
+    assert type(parameters[0]) is type(expected_parameter)
+    assert rendered == [render_parameter(expected_parameter)]
     if value is None:
         assert time_parameter_value(value, native) is None
         assert literal(value, native) == "NULL"
     else:
-        assert literal(value, native) == f"CAST('{expected}' AS {native})"
+        if typed_naive:
+            assert parameters[0].tzinfo is None
+            assert parameters[0].fold == value.fold
+            assert literal(value, native) == f"CAST(TIME '{expected}' AS {native})"
+        else:
+            assert literal(value, native) == f"CAST('{expected}' AS {native})"
         semantic = convert_time_value(value, native)
         if isinstance(value, ExactClock):
             assert semantic.offset_minutes == value.offset_minutes
@@ -91,6 +101,25 @@ def test_typed_clock_parameters_preserve_wall_offset_rounding_and_server_policy(
             assert semantic.utcoffset() == value.utcoffset()
             assert semantic.fold == value.fold
     assert value == original
+    assert connection.cursor_close_calls == 1
+
+
+@pytest.mark.parametrize("sdk", ["minimum-0.320", "installed"])
+def test_naive_picosecond_clock_uses_a_typed_session_cast_in_binding_and_literal(monkeypatch, sdk):
+    use_actual_formatter(monkeypatch, sdk)
+    value = ExactClock(1, 12)
+    native = "TIME(12) WITH TIME ZONE"
+    text = "00:00:00.000000000001"
+
+    connection = submit(value, native)
+
+    statement, parameters, rendered = connection.statements[0]
+    assert f"CAST(CAST(? AS TIME(12)) AS {native})" in statement
+    assert parameters == [text]
+    assert rendered == [f"'{text}'"]
+    assert literal(value, native) == f"CAST(CAST('{text}' AS TIME(12)) AS {native})"
+    assert value == ExactClock(1, 12)
+    assert value.offset_minutes is None
     assert connection.cursor_close_calls == 1
 
 
@@ -145,9 +174,26 @@ def test_recursive_clock_parameters_use_compatible_native_casts_without_mutating
     connection = submit(source, native)
 
     statement, parameters, rendered = connection.statements[0]
-    assert f"CAST(? AS {native})" in statement
-    assert parameters == [expected]
-    assert rendered == [render_parameter(expected)]
+    if kind == "mixed_awareness":
+        tree = parse_one(statement, read="trino")
+        array = tree.find(exp.Array)
+        assert array is not None
+        assert len(array.expressions) == len(source)
+        for element in array.expressions:
+            assert isinstance(element, exp.Cast)
+            assert element.args["to"].sql(dialect="trino") == "TIME(6) WITH TIME ZONE"
+            assert isinstance(element.this, exp.Placeholder)
+        assert isinstance(array.parent, exp.Cast)
+        assert array.parent.args["to"].sql(dialect="trino") == native
+        expected_parameters = [expected[0], dt.time(1, 2, 3, 123456), None]
+        assert parameters == expected_parameters
+        assert type(parameters[1]) is dt.time
+        assert parameters[1].tzinfo is None
+        assert rendered == [render_parameter(item) for item in expected_parameters]
+    else:
+        assert f"CAST(? AS {native})" in statement
+        assert parameters == [expected]
+        assert rendered == [render_parameter(expected)]
     assert source == original
     assert first.fold == 1
     assert first.utcoffset() == dt.timedelta(minutes=330)

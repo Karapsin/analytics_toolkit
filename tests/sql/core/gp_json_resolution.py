@@ -149,7 +149,8 @@ def test_json_preparation_does_not_change_unrelated_native_paths(backend, schema
 def test_json_registration_does_not_whitelist_unknown_or_other_backend_types(backend, native):
     profile = ColumnProfile()
     profile.add({"x": 1})
-    with pytest.raises(ValueError, match="Cannot certify"):
+    message = "Invalid or unsupported Trino native type" if backend == "trino" else "Cannot certify"
+    with pytest.raises(ValueError, match=message):
         validate_profile(profile, native, backend)
 
 

@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 import sqlparse
 from analytics_toolkit.sql.backends import get_backend_adapter
+from psycopg2 import extensions
 from sqlglot import ErrorLevel, exp, parse_one
 
 
@@ -18,8 +19,25 @@ class MemoryGreenplum:
         }
         self.commands: list[str] = []
         self.closed = 0
+        self.relation_oids = {name: 10001 + index for index, name in enumerate(self.tables)}
+        self.next_oid = 10001 + len(self.tables)
+
+    def register_relation(self, name: str) -> None:
+        if name not in self.relation_oids:
+            self.relation_oids[name] = self.next_oid
+            self.next_oid += 1
 
     def install(self, monkeypatch: Any) -> None:
+        register_type = extensions.register_type
+
+        def register(caster: Any, scope: Any = None) -> Any:
+            if isinstance(scope, Cursor):
+                for oid in caster.values:  # noqa: PD011 - psycopg2 typecaster OIDs, not pandas data.
+                    scope.casters[oid] = caster
+                return None
+            return register_type(caster, scope)
+
+        monkeypatch.setattr(extensions, "register_type", register)
         adapter = get_backend_adapter("gp")
         monkeypatch.setattr(adapter, "open_connection", lambda *args, **kwargs: Connection(self))
         monkeypatch.setattr(
@@ -106,9 +124,32 @@ class Cursor:
         self.store = store
         self.frame = pd.DataFrame()
         self.description: list[Any] = []
+        self.casters: dict[int, Any] = {}
+
+    def _relation_identity(self, sql: str, args: Any) -> bool:
+        if "pg_catalog.to_regclass(%s)" not in sql:
+            return False
+        assert len(args) == 1
+        assert len(args[0]) == 1
+        target = parse_one(args[0][0], read="postgres", into=exp.Table)
+        name = target.sql(dialect="postgres").replace('"', "")
+        columns = ["database", "server_address", "server_port", "oid", "relfilenode", "namespace"]
+        rows = []
+        if name in self.store.tables:
+            self.store.register_relation(name)
+            oid = self.store.relation_oids[name]
+            rows.append(("gp_test", "127.0.0.1", 5432, oid, oid + 100000, 2200))
+        self.frame = pd.DataFrame(rows, columns=columns)
+        self.description = [
+            (name, oid, None, None, None, None, None)
+            for name, oid in zip(columns, [25, 25, 23, 20, 20, 20])
+        ]
+        return True
 
     def execute(self, sql: str, *args: Any) -> None:
         self.store.commands.append(sql)
+        if self._relation_identity(sql, args):
+            return
         parsed = sqlparse.parse(sql)[0]
         if parsed.get_type() == "CREATE":
             tokens = []
@@ -127,6 +168,7 @@ class Cursor:
                 item.name for item in statement.this.expressions if isinstance(item, exp.ColumnDef)
             ]
             self.store.tables.setdefault(name, pd.DataFrame(columns=columns))
+            self.store.register_relation(name)
         elif isinstance(statement, exp.Insert):
             table = (
                 statement.this.this if isinstance(statement.this, exp.Schema) else statement.this
@@ -139,10 +181,12 @@ class Cursor:
             )
         elif isinstance(statement, exp.Drop):
             table = statement.this or statement.args["tables"][0]
-            self.store.tables.pop(table.sql(dialect="postgres").replace('"', ""), None)
+            name = table.sql(dialect="postgres").replace('"', "")
+            self.store.tables.pop(name, None)
+            self.store.relation_oids.pop(name, None)
         elif isinstance(statement, exp.Select):
             self.frame = self.store.select(statement)
-        self.description = [(name, 20, None, None, None, None) for name in self.frame.columns]
+        self.description = [(name, 20, None, None, None, None, None) for name in self.frame.columns]
 
     def fetchmany(self, size: int) -> list[Any]:
         batch = self.frame.head(size)

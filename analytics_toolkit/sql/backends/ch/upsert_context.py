@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from sqlglot import exp, parse_one
+from sqlglot.errors import SqlglotError
 
+from analytics_toolkit.sql.execution.upsert_replay import current_upsert_replay
+
+from .coordinator_database import _coordinator_identity
 from .dialect import ClickHouseDialect
 
 if TYPE_CHECKING:
@@ -65,3 +69,48 @@ def verified_local_partition_alter(connection: object, statement: exp.Expr) -> b
     if not actions:
         return False
     return all(isinstance(action, exp.DropPartition) for action in actions)
+
+
+def _partition_drop(statement: exp.Expr) -> bool:
+    return (
+        isinstance(statement, exp.Alter)
+        and statement.args.get("kind") == "TABLE"
+        and bool(statement.args.get("actions"))
+        and all(isinstance(action, exp.DropPartition) for action in statement.args["actions"])
+    )
+
+
+def _canonical(statement: exp.Expr) -> str:
+    statement = statement.copy()
+    for node in statement.walk():
+        node.comments = None
+        if isinstance(node, exp.Identifier):
+            node.set("quoted", value=False)
+    return statement.sql(dialect=ClickHouseDialect)
+
+
+def certified_partition_rebuild_alter(connection: object, statement: exp.Expr) -> bool:
+    """Authorize only the exact partition drops of this connection's frozen payload."""
+    context = current_upsert_replay()
+    if (
+        context is None
+        or context.backend != "ch"
+        or not _partition_drop(statement)
+        or _coordinator_identity(context.connection) != _coordinator_identity(connection)
+    ):
+        return False
+    allowed = context.backend_cache.get("ch_partition_drop_sqls")
+    if not isinstance(allowed, frozenset):
+        statements = []
+        try:
+            for sql in context.replay_sqls:
+                parsed = ClickHouseDialect().parse(sql)
+                if len(parsed) != 1 or parsed[0] is None:
+                    return False
+                if _partition_drop(parsed[0]):
+                    statements.append(_canonical(parsed[0]))
+        except SqlglotError:
+            return False
+        allowed = frozenset(statements)
+        context.backend_cache["ch_partition_drop_sqls"] = allowed
+    return _canonical(statement) in allowed

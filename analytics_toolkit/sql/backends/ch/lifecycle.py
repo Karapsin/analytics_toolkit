@@ -194,7 +194,7 @@ def drop_ch_distributed_table_pair(
     ch_retry_per_host_drops: bool = True,
     per_host_connection_factory: Callable[[str], Any] | None = None,
 ) -> None:
-    from .drop_execution import (  # noqa: PLC0415 - adapter/lifecycle initialization cycle.
+    from .drop_execution import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
         DropExecutionOptions,
         execute_verified_drop,
     )
@@ -234,10 +234,10 @@ def drop_ch_distributed_table_pair_bounded(
     from .drop_bounded import (  # noqa: PLC0415 - adapter/lifecycle initialization cycle.
         execute_bounded_verified_drop,
     )
-    from .drop_execution import (  # noqa: PLC0415 - adapter initialization cycle.
+    from .drop_execution import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
         DropExecutionOptions,
     )
-    from .drop_layout import (  # noqa: PLC0415 - adapter/lifecycle initialization cycle.
+    from .drop_layout import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
         DropIntent,
         VerifiedDropLayout,
         certify_existing_drop,
@@ -297,6 +297,32 @@ def _drop_pair_on_bounded_hosts(
     host_connection_runner: Callable[[str, Callable[[Any], Any]], Any],
     per_host_drop_workers: int,
 ) -> None:
+    names = [str(host) for host in hosts]
+    ambiguous = {name for name in names if names.count(name) > 1}
+    for host in hosts:
+        if str(host) not in ambiguous:
+            continue
+        native = host_connection_runner(
+            host, lambda connection: bool(getattr(connection, "is_native_transport", False))
+        )
+        if not native:
+            from analytics_toolkit.sql.execution.backend_options import (  # noqa: PLC0415
+                current_backend_operation,
+            )
+
+            state = current_backend_operation()
+            if state is not None:
+                state.preserve_recovery = True
+            endpoints = ", ".join(endpoint_identity(endpoint) for endpoint in hosts)
+            message = (
+                "HTTP recovery cannot distinguish multiple native instances on the same hostname; "
+                "cleanup is incomplete and recovery artifacts are retained. "
+                f"Tables: {pair.distributed_table} / {pair.shard_table}; endpoints: {endpoints}."
+            )
+            error = TimeoutError(message)
+            cast("Any", error).analytics_toolkit_sql_retry_safe = False
+            raise error
+
     def drop_on_host(host: str) -> None:
         host_connection_runner(
             host,
@@ -322,10 +348,10 @@ def _drop_pair_on_bounded_hosts(
         future_to_host = {executor.submit(drop_on_host, host): host for host in hosts}
         for future in as_completed(future_to_host):
             host = future_to_host[future]
-            error = future.exception()
-            if error is not None:
+            future_error = future.exception()
+            if future_error is not None:
                 identity = endpoint_identity(host)
-                error_by_host[identity] = f"{identity}: {error!r}"
+                error_by_host[identity] = f"{identity}: {future_error!r}"
     if error_by_host:
         errors = [
             error_by_host[endpoint_identity(host)]
@@ -351,11 +377,11 @@ def drop_ch_table(
     wait_timeout_seconds: int = 300,
     wait_poll_interval_seconds: float = 1,
 ) -> None:
-    from .drop_execution import (  # noqa: PLC0415 - adapter/lifecycle initialization cycle.
+    from .drop_execution import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
         DropExecutionOptions,
         execute_verified_drop,
     )
-    from .drop_layout import (  # noqa: PLC0415 - adapter/lifecycle initialization cycle.
+    from .drop_layout import (  # noqa: PLC0415 - adapter and lifecycle certificate cycle.
         certify_explicit_drop,
     )
 
@@ -540,6 +566,7 @@ def _drop_ch_distributed_table_pair_on_cluster_hosts(
 
     names = [str(host) for host in hosts]
     if not getattr(connection, "is_native_transport", False) and len(set(names)) != len(names):
+        # Adapter and lifecycle certificate cycle.
         from analytics_toolkit.sql.execution.backend_options import (  # noqa: PLC0415
             current_backend_operation,
         )

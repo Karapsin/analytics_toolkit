@@ -266,7 +266,11 @@ def test_naive_time_to_zoned_time_leaves_session_timezone_to_native_cast(monkeyp
 
     assert load(frame, write_mode="append") == 1
 
-    assert database.statements[-1][2] == ["'12:30:45.123456'"]
+    assert database.statements[-1][2] == ["TIME '12:30:45.123456'"]
+    bound = database.statements[-1][1][0]
+    assert type(bound) is dt.time
+    assert bound == value
+    assert bound.tzinfo is None
     assert f"CAST(? AS {native})" in database.statements[-1][0]
     assert frame.iloc[0, 0] is value
 
@@ -305,18 +309,30 @@ def test_clock_retry_reuses_captured_offset_after_lost_insert_acknowledgement(mo
     assert clock.tzinfo is zone
 
 
+def test_inferred_naive_clock_column_keeps_exact_native_time_and_sql_null(monkeypatch):
+    database = native_time_target(monkeypatch, "VARCHAR", exists=False)
+    value = dt.time(1, 2, 3, 4)
+    frame = pd.DataFrame({"payload": pd.Series([None, value, None], dtype=object)})
+
+    assert load(frame) == 3
+
+    assert database.native_type == "TIME(6)"
+    assert database.rows == [None, value, None]
+    assert type(database.rows[1]) is dt.time
+    inserts = [wire for statement, _params, wire in database.statements if "INSERT" in statement]
+    assert inserts == [["NULL", "'01:02:03.000004'"], ["NULL"]]
+    assert frame.iloc[1, 0] is value
+
+
 @pytest.mark.parametrize(
     "value",
     [
-        dt.time(1, 2, 3, 4),
         dt.time(1, 2, 3, 4, tzinfo=dt.timezone(dt.timedelta(hours=18))),
         dt.time(1, 2, 3, 4, tzinfo=dt.timezone(dt.timedelta(seconds=30))),
         dt.time(1, 2, 3, 4, tzinfo=ZoneInfo("America/New_York")),
     ],
 )
-def test_inferred_clock_column_uses_exact_typed_text_without_native_time_upgrade(
-    monkeypatch, value
-):
+def test_inferred_unsupported_clock_offsets_keep_exact_typed_text(monkeypatch, value):
     database = native_time_target(monkeypatch, "VARCHAR", exists=False)
     frame = pd.DataFrame({"payload": pd.Series([None, value, None], dtype=object)})
 

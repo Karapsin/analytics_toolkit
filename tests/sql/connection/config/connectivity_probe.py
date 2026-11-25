@@ -15,6 +15,7 @@ from analytics_toolkit.sql.backends.ch import config as ch_config
 from analytics_toolkit.sql.backends.ch import native_client
 from analytics_toolkit.sql.backends.gp import connectivity
 from analytics_toolkit.sql.backends.trino import config as trino_config
+from analytics_toolkit.sql.connection import validation as validation_module
 from analytics_toolkit.sql.connection.validation import (
     validating,
     validation_scope,
@@ -32,6 +33,13 @@ from tests.sql._support.connection_config import (
 _PRIVATE_ERROR = "private-password-in-driver-error"
 _NETWORK_FORBIDDEN = "Network access is forbidden"
 _CLOSE_ERROR = "close"
+
+
+@pytest.fixture
+def probe_clock(monkeypatch):
+    clock = types.SimpleNamespace(now=100.0)
+    monkeypatch.setattr(validation_module.time, "monotonic", lambda: clock.now)
+    return clock
 
 
 @pytest.mark.parametrize("backend", ["gp", "trino", "ch"])
@@ -121,7 +129,8 @@ def test_close_failure_does_not_invalidate_completed_probe(monkeypatch):
 
 
 @pytest.mark.parametrize(("configured", "expected"), [(None, 5), (17, 5), (2, 2)])
-def test_trino_validation_budget_and_no_retry(configured, expected, monkeypatch):
+def test_trino_validation_budget_and_no_retry(configured, expected, monkeypatch, probe_clock):
+    del probe_clock
     calls = []
     _install_fake_trino(monkeypatch, calls)
     with validation_scope():
@@ -138,7 +147,8 @@ def test_trino_validation_budget_and_no_retry(configured, expected, monkeypatch)
 
 
 @pytest.mark.parametrize("driver", ["http", "native"])
-def test_clickhouse_validation_has_bounded_driver_timeouts(driver, monkeypatch):
+def test_clickhouse_validation_has_bounded_driver_timeouts(driver, monkeypatch, probe_clock):
+    del probe_clock
     captured = []
 
     class Client:
@@ -161,10 +171,11 @@ def test_clickhouse_validation_has_bounded_driver_timeouts(driver, monkeypatch):
     assert captured[0]["send_receive_timeout"] == 5
     if driver == "http":
         assert captured[0]["query_retries"] == 0
-    assert captured[0]["settings"]["max_execution_time"] == 5
+    assert captured[0].get("settings") == config.settings
 
 
-def test_greenplum_validation_uses_bounded_async_polling(monkeypatch):
+def test_greenplum_validation_uses_bounded_async_polling(monkeypatch, probe_clock):
+    del probe_clock
 
     events = []
     calls = []
@@ -208,6 +219,87 @@ def test_greenplum_validation_timeout_is_finite_and_closes(monkeypatch):
     assert "TimeoutError" in result.error
     assert events == ["close"]
     assert 0 < budgets[0] <= 5
+
+
+def test_greenplum_validation_shares_budget_across_open_and_probe(monkeypatch, probe_clock):
+    events = []
+    states = iter([2, 0, 2, 0])
+    budgets = []
+
+    def execute(statement):
+        events.append(statement)
+        probe_clock.now += 0.75
+
+    cursor = types.SimpleNamespace(
+        execute=execute,
+        fetchall=lambda: events.append("fetch") or [(1,)],
+        close=lambda: events.append("cursor-close"),
+    )
+    driver = types.SimpleNamespace(
+        async_=True,
+        cursor=lambda: cursor,
+        poll=lambda: next(states),
+        fileno=lambda: 123,
+        close=lambda: events.append("connection-close"),
+    )
+
+    def connect(**_kwargs):
+        probe_clock.now += 1.25
+        return driver
+
+    def select_ready(read, write, _error, timeout):
+        budgets.append(timeout)
+        probe_clock.now += 0.5
+        return read, write, []
+
+    monkeypatch.setattr(psycopg2, "connect", connect)
+    monkeypatch.setattr(connectivity.select, "select", select_ready)
+    result = sql.validate_connections(["gp"], connect=True)[0]
+
+    assert result.connected is True
+    assert budgets == [3.75, 2.5]
+    assert events == ["SELECT 1", "fetch", "cursor-close", "connection-close"]
+
+
+@pytest.mark.parametrize("phase", ["open", "execute", "fetch"])
+def test_greenplum_validation_rejects_expired_ready_result(phase, monkeypatch, probe_clock):
+    events = []
+
+    def advance_if_expired(current):
+        if phase == current:
+            probe_clock.now += 5
+
+    def execute(statement):
+        events.append(statement)
+        advance_if_expired("execute")
+
+    def fetchall():
+        events.append("fetch")
+        advance_if_expired("fetch")
+        return [(1,)]
+
+    cursor = types.SimpleNamespace(
+        execute=execute, fetchall=fetchall, close=lambda: events.append("cursor-close")
+    )
+    driver = types.SimpleNamespace(
+        async_=True,
+        cursor=lambda: cursor,
+        poll=lambda: 0,
+        close=lambda: events.append("connection-close"),
+    )
+
+    def connect(**_kwargs):
+        advance_if_expired("open")
+        return driver
+
+    monkeypatch.setattr(psycopg2, "connect", connect)
+    result = sql.validate_connections(["gp"], connect=True)[0]
+
+    assert result.connected is False
+    assert "TimeoutError" in result.error
+    assert events.count("SELECT 1") == (phase != "open")
+    assert events.count("cursor-close") == (phase != "open")
+    assert events.count("connection-close") == 1
 
 
 @pytest.mark.parametrize("state", [1, 2])
@@ -267,7 +359,8 @@ def test_validation_rejects_unexpected_probe_results(
     assert result.error == "Connectivity probe failed (RuntimeError)."
 
 
-def test_validation_scope_resets_after_error_and_retains_tighter_timeout():
+def test_validation_scope_resets_after_error_and_retains_tighter_timeout(probe_clock):
+    del probe_clock
 
     assert not validating()
     assert validation_timeout(None) is None
@@ -284,6 +377,22 @@ def test_validation_scope_resets_after_error_and_retains_tighter_timeout():
         fail_in_scope()
     assert not validating()
     assert validation_timeout(8) == 8
+
+
+@pytest.mark.parametrize("configured", [None, 0, -1, 25])
+def test_validation_scope_shares_elapsed_budget_without_restarting(configured, probe_clock):
+    with validation_scope():
+        probe_clock.now += 1.25
+        assert validation_timeout(configured) == 3.75
+        with validation_scope():
+            probe_clock.now += 1
+            assert validation_timeout(configured) == 2.75
+            assert validation_timeout(2) == 2
+        probe_clock.now += 2.75
+        with pytest.raises(TimeoutError, match="validation budget"):
+            validation_timeout(configured)
+    assert not validating()
+    assert validation_timeout(configured) == configured
 
 
 def test_validation_sanitizes_unexpected_configuration_errors(monkeypatch):

@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from .type_resolution import ResolvedColumn
 
 
 def infer_gp_dataframe_column_type(adapter: Any, series: pd.Series) -> str:
@@ -24,6 +29,14 @@ def infer_ch_dataframe_column_type(adapter: Any, series: pd.Series) -> str:
 def _infer_column_type(
     series: pd.Series, backend: str, *, destination_timezone: str | None = None
 ) -> str:
+    return resolve_dataframe_column(
+        series, backend, destination_timezone=destination_timezone
+    ).target_type
+
+
+def resolve_dataframe_column(
+    series: pd.Series, backend: str, *, destination_timezone: str | None = None
+) -> ResolvedColumn:
     from analytics_toolkit.sql.core.type_resolution import (  # noqa: PLC0415 - avoid backend registry import cycles
         ColumnProfile,
         resolve_profile,
@@ -52,7 +65,27 @@ def _infer_column_type(
         source_type=declared,
         source_backend="ch",
         destination_timezone=destination_timezone,
-    ).target_type
+    )
+
+
+def inferred_dataframe_values(
+    frame: pd.DataFrame, resolutions: Sequence[ResolvedColumn]
+) -> pd.DataFrame:
+    """Apply the certified inference policy once while retaining caller identity."""
+    if len(frame.columns) != len(resolutions):
+        message = "Inferred dataframe columns differ from the certified conversion plan."
+        raise ValueError(message)
+    columns = {
+        position: pd.Series(
+            [resolution.convert(value) for value in frame.iloc[:, position]],
+            index=frame.index,
+            dtype=object,
+        )
+        for position, resolution in enumerate(resolutions)
+    }
+    result = pd.DataFrame(columns, index=frame.index)
+    result.columns = frame.columns.copy()
+    return result
 
 
 def _infer_common_sql_type(series: pd.Series) -> str:

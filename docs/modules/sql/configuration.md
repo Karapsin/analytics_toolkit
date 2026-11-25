@@ -327,11 +327,22 @@ how many additional `timeout_increment` readiness intervals each finalization
 attempt receives. The transfer argument
 `ch_ddl_ready_timeout_extension_cnt` takes precedence over the connection.
 The optional `ch_ddl_wait_policy` selects which created relations must pass
-readiness checks: `wait_all` (default) waits for shard and Distributed tables,
+readiness checks. Without an explicit function or connection value, the default
+is `wait_shard` when the resolved shard-table cluster is specified, and
+`wait_all` otherwise. `wait_all` waits for shard and Distributed tables,
 `wait_shard` waits only for physical/shard tables, `wait_distr` waits only for
 Distributed facades, and `wait_none` skips post-create waiting. An explicit
 function argument takes precedence over the connection value. For a single
 physical table, only `wait_all` and `wait_shard` wait.
+
+With the contextual `wait_shard` default, unavailable hosts in other facade
+deployment clusters produce a `ClickHouseDegradedClusterWarning` and do not
+block physical-table creation. The facade is created only on verified reachable
+hosts; no DDL is queued for excluded hosts, and an entirely unavailable optional
+facade scope is skipped. The shard cluster remains required. An absent/local
+shard-cluster setting retains the existing requirement for all participating
+clusters. Explicit `wait_all` or `wait_distr` still requires facade availability.
+Actual selected data coverage and destructive-operation checks remain enforced.
 Templates accept `{cluster}`, `{database}`,
 `{shard_table}`, and `{sharding_key}`. The actual target database and generated
 shard relation always replace template positions. Explicit
@@ -452,7 +463,10 @@ remains enabled.
 
 Both transports preserve `DateTime64` fractional ticks at scales 0 through 9,
 including nested values, using `pandas.Timestamp` when Python `datetime` would
-lose precision. Dataframe reads use positional column blocks and preserve
+lose precision. A declared timezone keeps its default timezone-aware result,
+including an explicit `UTC` zone. HTTP per-column timezone overrides follow the
+selected SDK query context, including its UTC-naive policy; integer read formats
+return the original ticks. Dataframe reads use positional column blocks and preserve
 duplicate labels, nullable large integers, decimals and nested values. Streaming
 native reads consume the driver's metadata header once and batch subsequent
 rows locally; HTTP streaming uses non-NumPy column blocks so intermediate
@@ -548,20 +562,24 @@ supported DDL receives `ON CLUSTER` automatically.
 Managed shard/Distributed pairs receive additional routing. When the named
 table is a local `Distributed(...)` facade that points to the same-database
 `<table>_shard` relation, the toolkit checks that physical shard on every
-replica of the effective routing cluster. Full coverage routes reads directly
-through `cluster(..., <table>_shard)` and routes SQL, dataframe, load, and
-transfer inserts through the physical shard table function. Explicit INSERT
-column lists are preserved. If full coverage cannot be proved, including when
-the topology probe fails, both reads and writes use the local Distributed
-facade instead. A similarly named table that is not an exact managed pair keeps
-the normal routing behavior.
+replica of the effective routing cluster. Verified coverage routes reads and
+writes through the physical shard table function. Replicated data uses one
+usable replica per shard; independent replica data uses `clusterAllReplicas`
+so every host contributes. Explicit INSERT column lists are preserved. Failed
+topology probes stop the operation. The default outage policy rejects missing
+required coverage; `healthy_shards` uses only verified available coverage and
+reports incomplete data when that coverage is partial. A local Distributed
+facade may be used only after its physical destination has been verified; it
+does not bypass a failed probe or an incomplete-coverage error. A similarly
+named table does not establish ownership of a managed pair.
 
 This makes `ch_ddl_wait_policy="wait_shard"` compatible with a fully deployed
 managed shard on the routing cluster because ordinary data operations do not
-depend on Distributed-facade readiness. The incomplete-coverage fallback still
-requires the facade on the connected host to exist and be usable; `wait_shard`
-does not promise facade readiness. Route decisions are cached per connection
-and cleared by table DDL.
+depend on Distributed-facade readiness when routing directly to verified
+storage. A verified route that uses a local facade still requires that facade
+to exist and be usable; `wait_shard` does not promise facade readiness. Topology
+membership is scoped to the operation, and table metadata is inspected again
+as needed.
 
 `sql.transfer` uses non-replicated scratch tables with cluster routing. Keep the
 staging policy on a single physical `MergeTree` and do not create a Distributed

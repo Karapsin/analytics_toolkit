@@ -8,7 +8,9 @@ from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
 
 from .native_values import (
     canonical_native_type,
+    pending_native_assignment,
     requires_native_assignment,
+    supports_native_assignment,
     validate_transport_value,
 )
 from .type_resolution import validate_profile
@@ -31,7 +33,7 @@ def validate_converted_rows(
         resolution.native_assignment_required
         and (
             resolution.target_backend != backend
-            or not requires_native_assignment(resolution.target_type, backend)
+            or not supports_native_assignment(resolution.target_type, backend)
         )
         for resolution in resolutions
     ):
@@ -58,6 +60,14 @@ def validate_converted_rows(
     for profile, resolution in zip(profiles, resolutions):
         if resolution.native_assignment_required and requires_native_assignment(
             resolution.target_type, backend
+        ):
+            continue
+        if resolution.native_assignment_required and pending_native_assignment(
+            profile,
+            resolution.target_type,
+            backend,
+            allow_timestamp_precision_loss=resolution.native_assignment_precision_loss,
+            destination_timezone=resolution.destination_timezone or destination_timezone,
         ):
             continue
         validate_profile(

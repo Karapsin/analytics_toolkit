@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from analytics_toolkit.sql.backends.gp.native_assignment import NativeAssignmentCertificate
+    from analytics_toolkit.sql.ddl.creation_resources import CreatedTableResource
     from analytics_toolkit.sql.dml.empty_source import EmptySourcePolicy
 
 
@@ -75,3 +76,10 @@ class LoadState:
     native_assignment_source_checkpoint: NativeAssignmentCertificate | None = field(
         default=None, repr=False
     )
+    owned_stage_scoped_resources: list[CreatedTableResource] = field(default_factory=list)
+    owned_target_scoped_resources: list[CreatedTableResource] = field(default_factory=list)
+    owned_target_resources: list[str] = field(default_factory=list)
+    uncertain_stage_resources: list[tuple[str, str | None]] = field(default_factory=list)
+    retained_resource_messages: list[str] = field(default_factory=list)
+    scoped_stage_ownership_requested: bool = False
+    scoped_target_ownership_requested: bool = False

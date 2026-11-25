@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import struct
 from copy import deepcopy
-from decimal import Decimal, localcontext
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from sqlglot import exp
 
@@ -42,10 +42,20 @@ def _numeric_input_origin(node):
     return numeric_cast or not (isinstance(node, exp.Literal) and node.is_string)
 
 
+def _native_special(value, native):
+    if native in {"REAL", "FLOAT4", "DOUBLEPRECISION", "FLOAT8"}:
+        return float(value)
+    if value.is_qnan():
+        return Decimal("NaN")
+    message = "Native numeric assignment requires a finite value."
+    raise ValueError(message)
+
+
 class NumericDatabase(DateDatabase):
     def __init__(self, native_type, *, exists):
         super().__init__()
         self.target.schema = {"payload": native_type}
+        self.target.native_creation_oid = 10000
         seed = Decimal("101.25") if native_type.startswith("NUMERIC") else 101.25
         self.target.rows = [{"payload": seed}]
         self.old_rows = deepcopy(self.target.rows) if exists else []
@@ -72,8 +82,7 @@ class NumericDatabase(DateDatabase):
             return text
         value = Decimal(text)
         if not value.is_finite():
-            message = "Native numeric assignment requires a finite value."
-            raise ValueError(message)
+            return _native_special(value, native)
         if native in {"REAL", "FLOAT4", "DOUBLEPRECISION", "FLOAT8"}:
             # PostgreSQL parses untyped -0.0 as NUMERIC, whose zero is positive.
             # Quoted float typinput ('-0.0'::REAL/FLOAT8) preserves its IEEE sign.
@@ -92,7 +101,7 @@ class NumericDatabase(DateDatabase):
             precision, scale = map(int, native.partition("(")[2].rstrip(")").split(","))
             with localcontext() as context:
                 context.prec = max(precision + scale + 2, len(value.as_tuple().digits) + scale + 2)
-                value = value.quantize(Decimal(1).scaleb(-scale))
+                value = value.quantize(Decimal(1).scaleb(-scale), rounding=ROUND_HALF_UP)
             if _shape(value)[0] > precision - scale:
                 message = "Native numeric assignment exceeds its integral typmod."
                 raise ValueError(message)

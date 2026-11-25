@@ -42,6 +42,28 @@ _SCALAR_NAMES = {
 }
 
 
+def catalog_column_type_sql() -> str:
+    """Render actual catalog identity before applying local built-in aliases."""
+    return (
+        "CASE WHEN tn.nspname = 'pg_catalog' AND t.typtype <> 'd' THEN "
+        "pg_catalog.format_type(a.atttypid, a.atttypmod) "
+        "|| pg_catalog.repeat('[]', GREATEST(a.attndims - 1, 0)) "
+        "WHEN t.typtype <> 'd' AND t.typinput = 'pg_catalog.array_in'::pg_catalog.regproc THEN "
+        "pg_catalog.quote_ident(en.nspname) || '.' || pg_catalog.quote_ident(et.typname) "
+        "|| pg_catalog.repeat('[]', GREATEST(a.attndims, 1)) "
+        "ELSE pg_catalog.quote_ident(tn.nspname) || '.' || pg_catalog.quote_ident(t.typname) END"
+    )
+
+
+def catalog_type_joins_sql() -> str:
+    return (
+        "JOIN pg_catalog.pg_type AS t ON t.oid = a.atttypid "
+        "JOIN pg_catalog.pg_namespace AS tn ON tn.oid = t.typnamespace "
+        "LEFT JOIN pg_catalog.pg_type AS et ON et.oid = t.typelem "
+        "LEFT JOIN pg_catalog.pg_namespace AS en ON en.oid = et.typnamespace "
+    )
+
+
 def get_table_column_types(
     adapter: Any, connection: Any, table_name: str, *, connection_key: str
 ) -> dict[str, str]:
@@ -54,12 +76,12 @@ def get_table_column_types(
     cursor = connection.cursor()
     try:
         cursor.execute(
-            "SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod) "
-            "|| pg_catalog.repeat('[]', GREATEST(a.attndims - 1, 0)) AS formatted_type "
+            "SELECT a.attname, " + catalog_column_type_sql() + " AS formatted_type "
             "FROM pg_catalog.pg_attribute AS a "
             "JOIN pg_catalog.pg_class AS c ON c.oid = a.attrelid "
             "JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace "
-            "WHERE n.nspname = %s AND c.relname = %s "
+            + catalog_type_joins_sql()
+            + "WHERE n.nspname = %s AND c.relname = %s "
             "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
             (schema, relation),
         )

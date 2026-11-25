@@ -9,10 +9,11 @@ from sqlglot import exp
 from tests.sql._support.gp_booleans import BooleanDatabase
 from tests.sql._support.gp_dates import DateDatabase, _DateConnection
 from tests.sql._support.gp_integers import IntegerDatabase
+from tests.sql._support.gp_relation_identity import RelationIdentityDatabase
 from tests.sql._support.load_table import load_df_module
 
 
-class _KeyPublication:
+class _KeyPublication(RelationIdentityDatabase):
     def select(self, tree, outer=None):
         joins = tree.args.get("joins")
         if not joins:

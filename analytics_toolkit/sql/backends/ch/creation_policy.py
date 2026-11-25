@@ -147,7 +147,11 @@ def resolve_clickhouse_creation_policy(
         ready_timeout,
         ready_timeout_extension_cnt,
         0.0,
-        resolve_ch_ddl_wait_policy(ch_ddl_wait_policy, connection_ddl_wait_policy),
+        resolve_ch_ddl_wait_policy(
+            ch_ddl_wait_policy,
+            connection_ddl_wait_policy,
+            shard_on_cluster=resolved_shard_cluster,
+        ),
     )
 
 

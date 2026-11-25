@@ -53,7 +53,7 @@ def test_native_authoritative_values_dispatch_exact_text_through_registered_back
             "gp",
             "DOUBLE PRECISION",
             GreenplumNumericTextValueError,
-            r"^Greenplum numeric input requires finite ASCII decimal text",
+            r"^Greenplum numeric input requires supported ASCII numeric text",
         ),
         (
             "trino",

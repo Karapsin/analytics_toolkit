@@ -8,7 +8,10 @@ from typing import Any
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
 from .reconfigure_facade import FacadeMutation, validate_facade_destination
+from .reconfigure_facade_scope import inspect_facade_scope
+from .reconfigure_routes import require_desired_facade_routing
 from .reconfigure_support import cluster_hosts, resolve_optional_cluster, table_exists_on_cluster
+from .scope_identity import grouped_scope_identity
 
 
 def endpoints(connection: Any, cluster: str) -> set[tuple[str, int]]:
@@ -37,6 +40,7 @@ class DestinationTopology:
     facade_cluster: str | None = None
     facade_mutation: bool = False
     source_facade_ddl: str | None = None
+    connection_key: str | None = None
 
 
 def validate_destination(connection: Any, topology: DestinationTopology) -> None:
@@ -81,6 +85,13 @@ def validate_destination(connection: Any, topology: DestinationTopology) -> None
             "replacement storage endpoints."
         )
         raise InvalidSqlInputError(message)
+    physical_scope = inspect_facade_scope(connection, target_cluster, coordinator_required=False)
+    routing_scope = inspect_facade_scope(
+        connection, distributed_cluster, coordinator_required=False
+    )
+    if grouped_scope_identity(physical_scope) != grouped_scope_identity(routing_scope):
+        message = "Distributed copy routing must preserve the verified storage shard groups."
+        raise InvalidSqlInputError(message)
     if (
         cross_cluster
         and source_cluster is not None
@@ -88,6 +99,7 @@ def validate_destination(connection: Any, topology: DestinationTopology) -> None
     ):
         message = "Replacement copy routing reaches original source storage."
         raise InvalidSqlInputError(message)
+    require_desired_facade_routing(connection, topology, physical_scope)
 
 
 __all__ = ["validate_destination"]

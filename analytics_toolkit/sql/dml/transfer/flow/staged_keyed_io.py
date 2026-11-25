@@ -17,8 +17,13 @@ from ....dml.io.read_sql import _read_backend
 from ...load.load_sql_table import insert_rows_batch
 from ...load.stage import build_stage_table_name, cleanup_stage_table, create_stage_table
 from ...table._basic_ops import table_exists
-from ..runtime.models import RowBatch
-from ..runtime.retry import replace_connection, rollback_quietly, run_with_retry
+from ..runtime.models import RowBatch  # noqa: TC001 - preserve the compatibility helper import.
+from ..runtime.retry import (
+    is_non_retryable_sql_error,
+    replace_connection,
+    rollback_quietly,
+    run_with_retry,
+)
 from .range_scheduler import OrdinalRange
 from .row_counts import best_effort_transfer_target_count
 from .source_snapshot import (
@@ -29,6 +34,7 @@ from .source_snapshot import (
 from .stage_ownership import stage_creation_callbacks
 from .stage_validation import validate_transfer_stage_slice
 from .staged_keyed_logging import slice_tag
+from .staged_source_read import exact_staged_source_connection, normalize_staged_source_result
 from .staged_target import prepare_shared_parquet_stage, write_source_staged_batch
 
 if TYPE_CHECKING:
@@ -226,51 +232,33 @@ def read_key_batch(
     def read_once(_attempt: int) -> RowBatch:
         connection = ensure_connection_ref(options.from_db_key, source_ref)
         try:
+            read_connection = exact_staged_source_connection(
+                options, connection, dict(metadata.source_column_types)
+            )
             with sql_log_context(f"{task.tag} ", suppress_sql=True):
                 result = _read_backend(
                     options.from_db_backend,
-                    connection,
+                    read_connection,
                     sql,
                     print_queries=False,
                     output_type="dict",
                     action_name="source-batch reading",
                     phase="read_source_batch",
                 )
-        except Exception:
+        except Exception as exc:
             rollback_quietly(connection)
-            _replace_managed_connection(options.from_db_key, source_ref)
+            if not is_non_retryable_sql_error(exc):
+                _replace_managed_connection(options.from_db_key, source_ref)
             raise
         rollback_quietly(connection)
-        result_row_count = len(result.columns[0]) if result.columns else 0
-        if any(len(column) != result_row_count for column in result.columns):
-            message = f"{task.tag} Source batch columns have unequal lengths."
-            raise RuntimeError(message)
-        if result_row_count > row_limit:
-            message = (
-                f"{task.tag} Source batch returned {result_row_count} row(s); "
-                f"scheduled limit is {row_limit}."
-            )
-            raise RuntimeError(message)
-        batch = RowBatch(
-            columns=list(result.column_names),
-            rows=list(zip(*result.columns)),
+        return normalize_staged_source_result(
+            options,
+            connection,
+            result,
+            dict(metadata.source_column_types),
+            row_limit=row_limit,
+            log_prefix=f"{task.tag} ",
         )
-        normalized = cast(
-            "RowBatch",
-            get_backend_adapter(
-                options.from_db_backend,
-            ).normalize_transfer_source_batch(
-                batch,
-                dict(metadata.source_column_types),
-            ),
-        )
-        if normalized.row_count > row_limit:
-            message = (
-                f"{task.tag} Normalized source batch returned "
-                f"{normalized.row_count} row(s); scheduled limit is {row_limit}."
-            )
-            raise RuntimeError(message)
-        return normalized
 
     return cast(
         "RowBatch",
@@ -306,7 +294,11 @@ def create_target_writer_stage(
     log_prefix: str = "",
 ) -> str:
 
-    callbacks = stage_creation_callbacks(ownership_state) if ownership_state is not None else {}
+    callbacks = (
+        stage_creation_callbacks(ownership_state, options.to_db_backend)
+        if ownership_state is not None
+        else {}
+    )
     original_candidate = callbacks.get("on_stage_candidate")
 
     def register_candidate(name: str) -> None:

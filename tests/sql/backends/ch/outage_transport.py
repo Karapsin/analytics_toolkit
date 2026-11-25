@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from typing import Any
 
 import pytest
 from analytics_toolkit import sql
-from analytics_toolkit.sql.backends.ch import outage_client as client_module
+from analytics_toolkit.sql.backends.ch import outage_metadata as metadata_module
 from analytics_toolkit.sql.backends.ch.outage_context import internal_io
 from analytics_toolkit.sql.backends.ch.outage_session import OutageSession
 from analytics_toolkit.sql.backends.ch.outage_statements import exchange_or_rename
@@ -71,13 +72,16 @@ def test_outage_owned_private_cleanup_remains_host_local(outage: Any) -> None:
     cluster.alive.remove("h2")
     client = sql.get_sql_connection("ch")
     table = "db.x__replace_owned"
-    with backend_operation("healthy_shards"):
+    with backend_operation("healthy_shards") as state:
         with pytest.warns(sql.ClickHouseDegradedClusterWarning):
             client.command(
                 f"CREATE TABLE {table} ON CLUSTER core (id UInt64) ENGINE=MergeTree ORDER BY id"
             )
-        with pytest.warns(sql.ClickHouseDegradedClusterWarning):
+        with warnings.catch_warnings(record=True) as observed:
+            warnings.simplefilter("always")
             client.command(f"DROP TABLE {table} ON CLUSTER core")
+        assert not observed
+        assert state.partial is True
     assert ("h1", table) not in cluster.tables
     assert all("ON CLUSTER" not in query for _, query, _ in cluster.commands)
 
@@ -123,7 +127,7 @@ def test_outage_metadata_parser_failure_does_not_run_unscoped_query(
     session = OutageSession(client._client, client._config, BackendOperationState())
     query = "SELECT name FROM system.tables WHERE name='events'"
     statement = parse_one(query, read=_RoutingClickHouse)
-    monkeypatch.setattr(client_module, "parse_one", lambda *args, **kwargs: exp.Select())
+    monkeypatch.setattr(metadata_module, "parse_one", lambda *args, **kwargs: exp.Select())
     with local_sql(), pytest.raises(sql.ClickHouseClusterTopologyError, match="metadata"):
         client._metadata_scope_sql(session, statement, query)
 
@@ -216,13 +220,16 @@ def test_outage_only_newly_owned_private_inserts_are_safe_to_discard(
             )
         if failure:
             cluster.failure = ConnectionError("private stage acknowledgement lost")
-            with pytest.warns(sql.ClickHouseDegradedClusterWarning), pytest.raises(ConnectionError):
+            with pytest.raises(ConnectionError):
                 client.insert(table, [(9,)], column_names=["id"])
         else:
-            with pytest.warns(sql.ClickHouseDegradedClusterWarning):
+            with warnings.catch_warnings(record=True) as observed:
+                warnings.simplefilter("always")
                 client.insert(table, [(9,)], column_names=["id"])
+            assert not observed
         assert state.live_submitted is False
         assert state.preserve_recovery is False
+        assert state.partial is True
 
 
 def test_outage_if_not_exists_cannot_claim_existing_private_named_data(outage: Any) -> None:

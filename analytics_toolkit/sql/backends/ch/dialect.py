@@ -63,6 +63,17 @@ def _parse_insert_function(self: Any, *args: Any, **kwargs: Any) -> Any:
     return self._parse_schema(this=function) if function_target else function
 
 
+def _identifier_sql(self: Any, expression: exp.Identifier) -> str:
+    # Supported SQLGlot generators differ in whether identifier escapes are
+    # applied natively. Retain their quoting and normalization decisions while
+    # supplying the missing escape on older generator interfaces only.
+    escapes = getattr(self, "_identifier_escaped_sequences", {})
+    if "\\" in expression.name and "\\" not in escapes:
+        expression = expression.copy()
+        expression.set("this", expression.name.replace("\\", "\\\\"))
+    return str(super(ClickHouseDialect.generator_class, self).identifier_sql(expression))
+
+
 class ClickHouseDialect(ClickHouse):
     """Preserve integer rand(), which is distinct from randCanonical()."""
 
@@ -91,6 +102,7 @@ class ClickHouseDialect(ClickHouse):
         "Generator",
         (ClickHouse.generator_class,),
         {
+            "identifier_sql": _identifier_sql,
             "TYPE_MAPPING": {
                 **ClickHouse.generator_class.TYPE_MAPPING,
                 exp.DataType.Type.DATE: "Date",

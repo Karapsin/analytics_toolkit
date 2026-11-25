@@ -515,8 +515,22 @@ def test_network_key_views_use_frozen_destination_timezone_and_preserve_caller_v
 @pytest.mark.parametrize("keys", [None, [], ["other"]])
 def test_no_declared_network_key_keeps_ordinary_key_validation_unchanged(keys):
     frame = pd.DataFrame({"ip": [_SECRET], "other": [1]})
-    assert list(key_validation_frames(frame, keys, [{"ip": "IPv4", "other": "Int64"}])) == []
-    assert list(key_validation_frames(frame, ["ip"], [None, {"ip": "String"}])) == []
+    original = frame.copy(deep=True)
+    ordinary = list(key_validation_frames(frame, keys, [{"ip": "IPv4", "other": "Int64"}]))
+    if not keys:
+        assert ordinary == []
+    else:
+        assert len(ordinary) == 1
+        pd.testing.assert_frame_equal(ordinary[0], frame[["other"]].astype(object))
+    assert list(key_validation_frames(frame, ["ip"], [None])) == []
+    # Every declared key family has a native identity view. A String declaration
+    # preserves its encoded bytes without guessing an IP type from its name.
+    strings = list(key_validation_frames(frame, ["ip"], [None, {"ip": "String"}]))
+    assert len(strings) == 1
+    assert strings[0].columns.tolist() == ["ip"]
+    assert strings[0].ip.tolist() == [_SECRET.encode("utf-8")]
+    assert strings[0].ip.dtype == object
+    pd.testing.assert_frame_equal(frame, original)
 
 
 def test_empty_network_key_views_keep_object_dtype_and_native_null_identity():

@@ -11,6 +11,7 @@ from sqlglot import exp
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 
 from .dialect import ClickHouseDialect
+from .metadata_values import decode_metadata_rows
 from .outage_context import internal_io
 from .reconfigure_ddl import distributed_table_parts
 from .reconfigure_support import resolve_optional_cluster
@@ -41,10 +42,10 @@ class FacadeScope:
     membership: tuple[tuple[int, int, str], ...] = ()
 
 
-def read_rows(connection: Any, statement: str) -> list[Any]:
+def read_rows(connection: Any, statement: str, *, text_columns: tuple[int, ...] = ()) -> list[Any]:
     with internal_io():
         result = query_local(connection, statement, settings={"skip_unavailable_shards": 0})
-    return list(getattr(result, "result_rows", None) or [])
+    return decode_metadata_rows(list(getattr(result, "result_rows", None) or []), text_columns)
 
 
 def cluster_table(cluster: str, table: str) -> exp.Table:
@@ -69,7 +70,7 @@ def _configured_endpoints(
         .where(exp.column("cluster").eq(exp.Literal.string(cluster)))
         .order_by("shard_num", "replica_num")
     )
-    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect))
+    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect), text_columns=(2, 3))
     message = "Cannot verify complete facade endpoint coverage."
     if not rows or any(len(row) != _MEMBERSHIP_FIELDS for row in rows):
         raise InvalidSqlInputError(message)
@@ -118,13 +119,13 @@ def inspect_facade_scope(
         )
     endpoints, membership = _configured_endpoints(connection, resolved)
     message = "Facade execution scope does not contain the verified coordinator endpoint."
-    local = read_rows(connection, "SELECT serverUUID(), tcpPort()")
+    local = read_rows(connection, "SELECT serverUUID(), tcpPort()", text_columns=(0,))
     query = exp.select(
         exp.column("_shard_num"),
         exp.Anonymous(this="serverUUID"),
         exp.Anonymous(this="tcpPort"),
     ).from_(cluster_table(resolved, "one"))
-    probe = read_rows(connection, query.sql(dialect=ClickHouseDialect))
+    probe = read_rows(connection, query.sql(dialect=ClickHouseDialect), text_columns=(1,))
     if len(local) != 1 or any(len(row) != _PROBE_FIELDS for row in probe):
         raise InvalidSqlInputError(message)
     try:
@@ -162,7 +163,7 @@ def occupied_definitions(connection: Any, table: str, scope: FacadeScope) -> dic
             exp.column("name").eq(exp.Literal.string(relation)),
         )
     )
-    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect))
+    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect), text_columns=(1,))
     message = "Cannot verify facade destination table coverage."
     if any(len(row) != _DEFINITION_FIELDS or not isinstance(row[1], str) for row in rows):
         raise InvalidSqlInputError(message)

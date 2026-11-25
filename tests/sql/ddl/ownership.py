@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.creation_policy import ClickHouseCreationPolicy
@@ -24,6 +26,12 @@ class Client:
         self.commands.append(sql)
         if self.error is not None:
             raise self.error
+
+    def query(self, sql, **_kwargs):
+        # The cluster CREATE has a coordinator companion already. An IF NOT
+        # EXISTS acknowledgement cannot acquire that existing local table.
+        assert sql == "EXISTS TABLE db.physical"
+        return SimpleNamespace(result_rows=[(1,)])
 
 
 def test_clustered_create_acknowledges_owned_names_but_never_if_not_exists_collisions():

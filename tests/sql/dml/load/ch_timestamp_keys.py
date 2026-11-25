@@ -63,8 +63,11 @@ class _TimestampKeyStore(ClientStore):
             return
         before = set(self.schemas)
         super().execute(statement, params)
+        submitted_uuid = tree.find(exp.UuidProperty) if isinstance(tree, exp.Create) else None
         for identity in set(self.schemas) - before:
-            self.table_uuids[identity] = uuid4()
+            self.table_uuids[identity] = (
+                UUID(submitted_uuid.this.this) if submitted_uuid is not None else uuid4()
+            )
         if isinstance(tree, exp.Drop):
             for identity in before - set(self.schemas):
                 self.table_uuids.pop(identity)
@@ -85,6 +88,15 @@ class _TimestampKeyConnection(ClientConnection):
                 identity = _table_identity(source.this)
                 if identity == ("system", "tables"):
                     return self._table_metadata(tree)
+                if identity == ("system", "databases"):
+                    assert [column.name for column in tree.expressions] == ["engine"]
+                    names = [
+                        condition.right.this
+                        for condition in tree.find_all(exp.EQ)
+                        if condition.left.name == "name"
+                    ]
+                    assert names == ["sandbox"]
+                    return SimpleNamespace(result_rows=[("Atomic",)])
                 if tree.args.get("joins"):
                     join = tree.args["joins"][0]
                     target = _table_identity(join.this)

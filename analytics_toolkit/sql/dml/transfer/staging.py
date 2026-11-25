@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import re
 import warnings
-from typing import Any
-from typing import Sequence
+from typing import Any, Sequence
 
 from ...backends import get_backend_adapter
 from ...connection.config import get_connection_config
@@ -70,9 +69,7 @@ def cleanup_stale_stage_tables_with_connection(
     transfer_staging_username = _sanitize_transfer_staging_username(config.user)
 
     if clean_all and stage_tables is not None:
-        raise InvalidSqlInputError(
-            "clean_all=True cannot be combined with explicit stage_tables."
-        )
+        raise InvalidSqlInputError("clean_all=True cannot be combined with explicit stage_tables.")
 
     if clean_all:
         if transfer_staging_schema is None:
@@ -166,7 +163,7 @@ def _find_all_user_transfer_stage_tables(
     )
 
     return [
-        _qualify_staging_table_name(
+        _qualify_discovered_staging_table_name(
             db_key=db_key,
             transfer_backend=config.backend,
             transfer_staging_schema=transfer_staging_schema,
@@ -219,7 +216,7 @@ def _find_matching_transfer_stage_tables(
         )
 
     return [
-        _qualify_staging_table_name(
+        _qualify_discovered_staging_table_name(
             db_key=db_key,
             transfer_backend=config.backend,
             transfer_staging_schema=transfer_staging_schema,
@@ -237,18 +234,35 @@ def _query_transfer_stage_table_names(
     transfer_staging_schema: str,
     table_pattern: str,
 ) -> list[str]:
-    return get_backend_adapter(backend).query_transfer_stage_table_names(
+    names = get_backend_adapter(backend).query_transfer_stage_table_names(
         connection["connection"],
         connection_key=db_key,
         transfer_staging_schema=transfer_staging_schema,
         table_pattern=table_pattern,
     )
+    return [str(name) for name in names]
 
 
 def _is_fully_qualified_stage_table_name(
     table_name: str,
 ) -> bool:
     return "." in table_name.strip()
+
+
+def _qualify_discovered_staging_table_name(
+    db_key: str,
+    transfer_backend: str,
+    transfer_staging_schema: str,
+    table_name: str,
+) -> str:
+    """A catalog table name is one exact component, including embedded dots."""
+    return str(
+        get_backend_adapter(transfer_backend).qualify_transfer_stage_table_name(
+            db_key,
+            transfer_staging_schema,
+            table_name,
+        )
+    )
 
 
 def _qualify_staging_table_name(
@@ -260,14 +274,14 @@ def _qualify_staging_table_name(
     if _is_fully_qualified_stage_table_name(table_name):
         return table_name.strip()
     if transfer_staging_schema is None:
-        raise InvalidSqlInputError(
-            "Unqualified stage table names require transfer_staging_schema."
-        )
+        raise InvalidSqlInputError("Unqualified stage table names require transfer_staging_schema.")
 
-    return get_backend_adapter(transfer_backend).qualify_transfer_stage_table_name(
-        db_key,
-        transfer_staging_schema,
-        table_name,
+    return str(
+        get_backend_adapter(transfer_backend).qualify_transfer_stage_table_name(
+            db_key,
+            transfer_staging_schema,
+            table_name,
+        )
     )
 
 

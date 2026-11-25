@@ -79,6 +79,21 @@ def create_replacement_physical(
         ch_replace_table=False,
         if_not_exists=False,
     )[0]
+    from .ddl import build_ch_shard_table_name  # noqa: PLC0415 - backend registry cycle.
+    from .replication_isolation import certify_replication_isolation  # noqa: PLC0415
+
+    source = (
+        request.target_table
+        if request.ch_only_shard
+        else build_ch_shard_table_name(request.target_table)
+    )
+    sql = certify_replication_isolation(
+        request.connection,
+        source,
+        policy.shard_on_cluster,
+        sql,
+        connection_key=request.connection_key,
+    )
     # Every load/count/cutover explicitly addresses the configured storage scope.
     # A coordinator shadow is unnecessary and may be an unrelated local table.
     resource = ReplacementCreate(

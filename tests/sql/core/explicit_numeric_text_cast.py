@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict
 from decimal import Decimal
 
@@ -15,9 +16,12 @@ from analytics_toolkit.sql.backends.explicit_numeric_text_cast import (
 )
 from analytics_toolkit.sql.backends.gp.numeric_text import GreenplumNumericTextValueError
 from analytics_toolkit.sql.backends.models import SourceColumn
+from analytics_toolkit.sql.backends.native_scalars import NativeDecimalNaN, NativeFloatNaN
+from analytics_toolkit.sql.backends.native_values import pending_native_assignment
 from analytics_toolkit.sql.backends.trino.numeric_text import TrinoNumericTextValueError
 from analytics_toolkit.sql.backends.type_resolution import ColumnProfile, ResolvedColumn
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
+from analytics_toolkit.sql.core.exact_values import is_null
 from analytics_toolkit.sql.core.replay_spool import ReplaySpool
 from analytics_toolkit.sql.dml.transfer.flow.conversion_validation import (
     resolve_final_conversions,
@@ -200,20 +204,40 @@ def test_numeric_cast_view_preserves_native_range_scale_and_syntax_rejections(
 
 @pytest.mark.parametrize(("backend", "stage_type", "target", "family"), _CASES)
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "private-numeric-cast"])
-def test_numeric_cast_view_rejects_nonfinite_and_private_strings_before_null_handling(
+def test_numeric_cast_view_preserves_supported_special_values_and_rejects_invalid_text(
     backend, stage_type, target, family, value
 ):
-    del family
-    validator = explicit_text_numeric_validation(
-        stage_resolution(backend, stage_type), target, backend
-    )
+    stage = stage_resolution(backend, stage_type)
+    original = asdict(stage)
+    validator = explicit_text_numeric_validation(stage, target, backend)
     assert isinstance(validator, ResolvedColumn)
 
-    with pytest.raises(_ERRORS[backend]) as failure:
-        validator.convert(value)
-
-    assert value not in str(failure.value)
-    assert failure.value.analytics_toolkit_sql_retry_safe is False
+    supported = value != "private-numeric-cast" and (
+        backend == "gp" or (backend == "trino" and family == "float")
+    )
+    if supported:
+        converted = validator.convert(value)
+        assert not is_null(converted)
+        if backend == "gp" and family == "decimal" and value != "NaN":
+            assert converted is value
+            profile = ColumnProfile()
+            profile.add(value)
+            assert pending_native_assignment(profile, target, backend)
+        elif value == "NaN":
+            assert isinstance(
+                converted, NativeDecimalNaN if family == "decimal" else NativeFloatNaN
+            )
+        else:
+            assert type(converted) is float
+            assert math.isinf(converted)
+            assert math.copysign(1.0, converted) == (-1.0 if value.startswith("-") else 1.0)
+    else:
+        with pytest.raises(_ERRORS[backend]) as failure:
+            validator.convert(value)
+        assert value not in str(failure.value)
+        assert failure.value.analytics_toolkit_sql_retry_safe is False
+    assert stage.convert(value) == value
+    assert asdict(stage) == original
 
 
 @pytest.mark.parametrize(

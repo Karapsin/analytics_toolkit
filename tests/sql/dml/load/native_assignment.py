@@ -75,7 +75,7 @@ def test_local_known_validation_and_conversion_preserve_opaque_native_object_ide
     assert frame["amount"].tolist() == [123.0, None]
 
 
-def test_fully_known_schema_keeps_exact_normal_conversion_and_timestamp_policy():
+def test_known_timestamp_precision_waits_for_native_assignment_without_altering_exact_payload():
     stamp = dt.datetime(2025, 1, 1, 12, 34, 56, 123456, tzinfo=dt.timezone.utc)
     frame = pd.DataFrame({"id": pd.Series([2**53 + 1], dtype=object), "at": [stamp]})
 
@@ -84,9 +84,13 @@ def test_fully_known_schema_keeps_exact_normal_conversion_and_timestamp_policy()
     )
 
     assert converted["id"].tolist() == [2**53 + 1]
-    assert converted.iloc[0, 1] == stamp.replace(microsecond=123000)
+    assert converted.iloc[0, 1] == stamp
     assert frame.iloc[0, 1].microsecond == 123456
     assert [item["column"] for item in metadata] == ["id", "at"]
+    assert metadata[0]["certified_input_count"] == 1
+    assert metadata[1]["reason"] == "native_assignment_pending"
+    assert metadata[1]["native_assignment_required"]
+    assert metadata[1]["certified_input_count"] == 0
 
 
 @pytest.mark.parametrize(("native", "bad"), [("SMALLINT", 32768), ("BIGINT", 1.5)])

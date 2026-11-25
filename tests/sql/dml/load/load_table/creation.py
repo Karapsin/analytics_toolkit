@@ -5,7 +5,6 @@ from tests.sql._support.load_table import (
     TEST_CH_SHARD_TABLE,
     TEST_CH_TABLE,
     Decimal,
-    FakeClickHouseClient,
     SimpleNamespace,
     ch_wait_module,
     create_sql_table_module,
@@ -14,6 +13,7 @@ from tests.sql._support.load_table import (
     pd,
     pytest,
 )
+from tests.sql._support.load_table_creation import LoadTableCreationClient
 
 
 def test_build_create_table_sqls_clickhouse_only_shard_creates_local_target() -> None:
@@ -395,7 +395,7 @@ def test_load_df_rejects_invalid_empty_source_policy() -> None:
 
 
 def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch) -> None:
-    client = FakeClickHouseClient()
+    client = LoadTableCreationClient()
     batch = pd.DataFrame(
         {
             "month_date": [date(2024, 2, 1)],
@@ -426,12 +426,10 @@ def test_load_df_clickhouse_creates_pair_and_loads_distributed_table(monkeypatch
     assert not any(command.startswith("DROP TABLE") for command in client.commands)
     assert "SETTINGS index_granularity" not in "\n".join(client.commands)
     assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_SHARD_TABLE}")
-        for command in client.commands
+        command.startswith(f"CREATE TABLE {TEST_CH_SHARD_TABLE}") for command in client.commands
     )
     assert any(
-        command.startswith(f"CREATE TABLE IF NOT EXISTS {TEST_CH_TABLE}")
-        and "ON CLUSTER '{cluster}'" in command
+        command.startswith(f"CREATE TABLE {TEST_CH_TABLE}") and "ON CLUSTER '{cluster}'" in command
         for command in client.commands
     )
     assert any(

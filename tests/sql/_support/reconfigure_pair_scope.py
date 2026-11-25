@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from importlib import import_module
 
 from analytics_toolkit.general import set_connections_path
 from analytics_toolkit.sql.backends.ch.cluster_functions import cluster_arguments
@@ -54,6 +55,10 @@ def configure_pair_scope(write_sql_connections, facade_scope):
 
 
 def connect_pair_scope(monkeypatch, raw):
+    import_module("tests.sql._support.reconfigure_host_view").install_conversion_host_views(
+        monkeypatch, raw
+    )
+
     def connect(key):
         wrapped = OutageClient(observed_connection(raw), get_connection_config(key))
         raw.wrappers.append(wrapped)
@@ -155,6 +160,13 @@ class PairScopeClient(ConversionScopeClient):
         ]
         if any(isinstance(item, exp.Count) for item in select.expressions):
             return [(len(records),)]
+        if all(isinstance(item, exp.Sum) for item in select.expressions):
+            return [
+                tuple(
+                    sum(_metadata_project(item.this, record) for record in records)
+                    for item in select.expressions
+                )
+            ]
         return [
             tuple(_metadata_project(item, record) for item in select.expressions)
             for record in records

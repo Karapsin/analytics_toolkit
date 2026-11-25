@@ -360,7 +360,7 @@ def test_finalize_empty_transfer_reuses_existing_empty_stage(
     assert state.stage_table_created is False
 
 
-def test_preclear_failure_is_preserved_and_incomplete_target_cleanup_runs(
+def test_preclear_failure_preserves_existing_target_without_claiming_creation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     options = replace(
@@ -403,5 +403,7 @@ def test_preclear_failure_is_preserved_and_incomplete_target_cleanup_runs(
     finalize_module._drop_incomplete_fresh_target(
         options,
         target_connection_runner=runner,
+        stage_state=state,
     )
-    assert cleanup_calls == ["cleanup"]
+    assert cleanup_calls == []
+    assert state.target_created_by_operation is False

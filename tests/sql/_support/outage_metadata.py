@@ -51,14 +51,22 @@ def _origins(client, source):
         port = _native_port(client, client.host)
         return [(1, client.host, port)]
     name, _database, _relation, _trailing = cluster_arguments(source.this, "db")
-    return [
+    members = _members(client, name)
+    origins = [
         (position, row[2], row[3])
-        for position, row in enumerate(_members(client, name), 1)
+        for position, row in enumerate(members, 1)
         if isinstance(row, (tuple, list))
         and len(row) >= 4
         and row[2] in client.cluster.alive
         and row[3] == _native_port(client, row[2])
     ]
+    if source.this.name.casefold() == "cluster":
+        chosen = {}
+        for position, host, port in origins:
+            chosen.setdefault(members[position - 1][0], (host, port))
+        shards = sorted({member[0] for member in members})
+        return [(index, *chosen[shard]) for index, shard in enumerate(shards, 1) if shard in chosen]
+    return origins
 
 
 def _cluster_names(statement):
@@ -120,6 +128,67 @@ def _table_definition(value):
     }
 
 
+def _replica_records(client, origins):
+    records = []
+    for position, host, port in origins:
+        members = [*_members(client, "core")]
+        member = next((item for item in members if item[2:4] == (host, port)), (1, 1, host, port))
+        for (resource_host, _name), table in client.cluster.tables.items():
+            if resource_host != host or not table.engine.startswith("Replicated"):
+                continue
+            definition = _table_definition(table)
+            records.append(
+                {
+                    "_shard_num": position,
+                    "database": definition["database"],
+                    "table": definition["name"],
+                    "replica_name": host,
+                    "zookeeper_path": f"/tables/{table.uuid}/{member[0]}",
+                    "zookeeper_name": getattr(client.cluster, "host_keeper_names", {}).get(
+                        host, ""
+                    ),
+                    "is_readonly": int(host in client.cluster.replica_readonly),
+                    "is_session_expired": int(host in client.cluster.replica_expired),
+                }
+            )
+    return records
+
+
+def _keeper_records(client, origins):
+    members = _members(client, "core")
+    available = [
+        (index, member[2], member[3])
+        for index, member in enumerate(members, 1)
+        if member[2] in client.cluster.alive
+    ]
+    replicas = _replica_records(client, available)
+    domains = getattr(client.cluster, "keeper_domains", {})
+    records = []
+    for position, observer, _port in origins:
+        for replica in replicas:
+            owner = replica["replica_name"]
+            if domains.get(observer, "shared") != domains.get(owner, "shared"):
+                continue
+            native_port = _native_port(client, owner)
+            identity = _instance(owner, native_port)["serverUUID"]
+            session = uuid5(NAMESPACE_URL, repr((domains.get(owner, "shared"), owner))).int % (
+                2**63
+            )
+            records.append(
+                {
+                    "_shard_num": position,
+                    "name": "is_active",
+                    "value": f"UUID_'{identity}'",
+                    "ephemeralOwner": session or 1,
+                    "path": f"{replica['zookeeper_path']}/replicas/{owner}",
+                    "zookeeperName": getattr(client.cluster, "host_keeper_names", {}).get(
+                        observer, ""
+                    ),
+                }
+            )
+    return records
+
+
 def _macro_records(client, origins):
     records = []
     for position, host, _port in origins:
@@ -144,31 +213,70 @@ def _macro_records(client, origins):
     return records
 
 
+def _cluster_metadata_records(client, statement, origins):
+    names = _cluster_names(statement)
+    if any(
+        not isinstance(row, (tuple, list)) or len(row) != 4
+        for name in names
+        for row in _members(client, name)
+    ):
+        return None
+    return _cluster_records(client, origins, names)
+
+
+def _queue_records(client, origins):
+    return [
+        {
+            "_shard_num": position,
+            "database": database,
+            "table": relation,
+            "data_files": counters[0],
+            "broken_data_files": counters[1],
+        }
+        for position, host, _port in origins
+        for (endpoint, database, relation), counters in client.cluster.distribution_queues.items()
+        if endpoint == host
+    ]
+
+
+def _database_records(client, origins):
+    names = {"db"} | {
+        _table_definition(value)["database"] for value in client.cluster.tables.values()
+    }
+    return [
+        {"_shard_num": position, "name": name, "engine": client.cluster.database_engine}
+        for position, _host, _port in origins
+        for name in sorted(names)
+    ]
+
+
+def _one_metadata_records(client, statement, origins, settings):
+    if isinstance(statement.args["from_"].this.this, exp.Anonymous):
+        client.cluster.probe_requests.append(dict(settings or {}))
+        if client.cluster.probe_failure:
+            raise client.cluster.probe_failure
+    return [
+        {**_instance(host, port), "_shard_num": position}
+        for position, host, port in origins
+        if port is not None
+    ]
+
+
 def _metadata_records(client, statement, table, origins, settings):
     if table == "clusters":
-        names = _cluster_names(statement)
-        if any(
-            not isinstance(row, (tuple, list)) or len(row) != 4
-            for name in names
-            for row in _members(client, name)
-        ):
-            return None
-        return _cluster_records(client, origins, names)
-    if table == "tables":
-        return _table_records(client, origins)
-    if table == "macros":
-        return _macro_records(client, origins)
+        return _cluster_metadata_records(client, statement, origins)
     if table == "one":
-        if isinstance(statement.args["from_"].this.this, exp.Anonymous):
-            client.cluster.probe_requests.append(dict(settings or {}))
-            if client.cluster.probe_failure:
-                raise client.cluster.probe_failure
-        return [
-            {**_instance(host, port), "_shard_num": position}
-            for position, host, port in origins
-            if port is not None
-        ]
-    return None
+        return _one_metadata_records(client, statement, origins, settings)
+    readers = {
+        "tables": _table_records,
+        "distribution_queue": _queue_records,
+        "databases": _database_records,
+        "replicas": _replica_records,
+        "zookeeper": _keeper_records,
+        "macros": _macro_records,
+    }
+    reader = readers.get(table)
+    return reader(client, origins) if reader is not None else None
 
 
 def metadata_rows(client, statement, *, settings=None):
@@ -208,7 +316,16 @@ def _system_source(source):
         _cluster, database, table, _trailing = cluster_arguments(source.this, "db")
     else:
         database, table = source.db, source.name
-    if database != "system" or table not in {"clusters", "one", "tables", "macros"}:
+    if database != "system" or table not in {
+        "clusters",
+        "one",
+        "tables",
+        "databases",
+        "macros",
+        "replicas",
+        "zookeeper",
+        "distribution_queue",
+    }:
         return None
     return source, table, remote
 
@@ -219,6 +336,13 @@ def _project_rows(statement, records):
         records = [record for record in records if _matches(where.this, record)]
     if len(statement.expressions) == 1 and isinstance(statement.expressions[0], exp.Count):
         return [(len(records),)]
+    if all(isinstance(item, exp.Sum) for item in statement.expressions):
+        return [
+            tuple(
+                sum(_project(item.this, record) for record in records)
+                for item in statement.expressions
+            )
+        ]
     order = statement.args.get("order")
     if order is not None:
         records.sort(

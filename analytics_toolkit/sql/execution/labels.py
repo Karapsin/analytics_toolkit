@@ -4,6 +4,7 @@ from collections.abc import Mapping
 import re
 from typing import Any
 
+from analytics_toolkit._sql_statements import split_statements
 from analytics_toolkit.sql.execution.cancellation import cancellation_query_comments
 
 
@@ -42,6 +43,16 @@ def apply_query_label(sql: str, query_label: str | None) -> str:
     if not missing_prefixes:
         return sql
     return "\n".join([*missing_prefixes, sql])
+
+
+def apply_statement_labels(sql: str, query_label: str | None) -> str:
+    """Label each executable statement before a backend splits the script."""
+    if not normalize_query_label(query_label) and not cancellation_query_comments():
+        return sql
+    statements = split_statements(sql)
+    if len(statements) <= 1:
+        return apply_query_label(sql, query_label)
+    return ";\n".join(apply_query_label(statement, query_label) for statement in statements)
 
 
 def airflow_query_label(

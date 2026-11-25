@@ -494,8 +494,10 @@ def test_public_drop_rejects_nil_native_table_uuid_before_any_ddl(
     with pytest.raises(InvalidSqlInputError, match="UUID") as error:
         _drop(_TARGET)
 
-    assert "nonzero" in str(error.value)
-    assert "Atomic" in str(error.value)
+    assert str(error.value) == (
+        "Cannot certify stable ClickHouse table UUID ownership before drop; "
+        "zero table UUIDs require verified Ordinary database metadata."
+    )
     assert observed
     _assert_no_drop_mutation(state, before)
     assert state.rows(state.coordinator, _TARGET) == [(11,), (12,), (13,)]

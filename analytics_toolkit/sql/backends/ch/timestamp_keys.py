@@ -58,7 +58,9 @@ def _timestamp_identity(value: Any, native_type: str, destination_timezone: str 
     return timestamp_ticks(value, timestamp_scale(native_type), zone)
 
 
-def _converted_key_identity(value: Any, native_type: str, zone: str | None) -> Any:
+def _converted_key_identity(
+    value: Any, native_type: str, zone: str | None, *, string_encoding: str = "utf-8"
+) -> Any:
     from analytics_toolkit.sql.backends.map_values import (  # noqa: PLC0415 -- existing non-temporal key domains.
         _key_identity,
     )
@@ -73,24 +75,37 @@ def _converted_key_identity(value: Any, native_type: str, zone: str | None) -> A
     )
 
     from .storage_types import logical_storage_type  # noqa: PLC0415 -- raw alias domains.
+    from .string_values import string_key_bytes  # noqa: PLC0415 -- selected writer byte equality.
 
     logical = logical_storage_type(native_type)
     if value is not None:
         kind, fields = nested_descriptor(logical)
         if kind == "array":
-            return tuple(_converted_key_identity(item, fields[0][1], zone) for item in value)
+            return tuple(
+                _converted_key_identity(item, fields[0][1], zone, string_encoding=string_encoding)
+                for item in value
+            )
         if kind in {"row", "tuple"}:
             return tuple(
-                _converted_key_identity(item, child, zone)
+                _converted_key_identity(item, child, zone, string_encoding=string_encoding)
                 for item, (_name, child) in zip(row_items(value, fields), fields)
             )
-        if parse_native_type(logical).base.name in {"datetime", "datetime64"}:
+        native = parse_native_type(logical).base
+        if native.name == "string":
+            return string_key_bytes(value, string_encoding)
+        if native.name == "fixedstring":
+            return string_key_bytes(value, string_encoding, width=int(native.arguments[0]))
+        if native.name in {"datetime", "datetime64"}:
             return _timestamp_identity(value, logical, zone)
-    return _key_identity(value, native_type, "ch", zone)
+    return _key_identity(value, native_type, "ch", zone, allow_null_components=True)
 
 
 def dataframe_key_identity(
-    value: Any, native_type: str, destination_timezone: str | None = None
+    value: Any,
+    native_type: str,
+    destination_timezone: str | None = None,
+    *,
+    string_encoding: str = "utf-8",
 ) -> Any:
     """Preserve ordinary key domains and normalize supported timestamp cells."""
     from analytics_toolkit.sql.backends.type_resolution import (  # noqa: PLC0415 -- explicit conversion grammar.
@@ -100,7 +115,9 @@ def dataframe_key_identity(
     value = ResolvedColumn(
         native_type, target_backend="ch", destination_timezone=destination_timezone
     ).convert(value)
-    return _converted_key_identity(value, native_type, destination_timezone)
+    return _converted_key_identity(
+        value, native_type, destination_timezone, string_encoding=string_encoding
+    )
 
 
 def _source_key_value(value: Any) -> Any:

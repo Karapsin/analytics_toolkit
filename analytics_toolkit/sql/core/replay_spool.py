@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 _MAGIC = b"ATK-ROWS\x01\n"
 _FRAME = struct.Struct(">Q")
 _MANIFEST_VERSION = 1
+_VERIFY_CHUNK_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -135,7 +136,35 @@ class ReplaySpool:
         if not self.certified or self.closed:
             msg = "Only a certified complete input can be replayed."
             raise ValueError(msg)
+        self._verify_digest_before_replay()
         yield from self._read_rows()
+
+    def _verify_digest_before_replay(self) -> None:
+        """Reject a damaged generation before any row can reach a target writer."""
+        digest = hashlib.sha256()
+        with self.path.open("rb") as stream:
+            if stream.read(len(_MAGIC)) != _MAGIC:
+                message = "Unsupported exact replay spool version."
+                raise ValueError(message)
+            while True:
+                header = stream.read(_FRAME.size)
+                if not header:
+                    break
+                if len(header) != _FRAME.size:
+                    message = "Truncated replay frame length."
+                    raise ValueError(message)
+                digest.update(header)
+                remaining = _FRAME.unpack(header)[0]
+                while remaining:
+                    block = stream.read(min(remaining, _VERIFY_CHUNK_BYTES))
+                    if not block:
+                        message = "Truncated replay frame payload."
+                        raise ValueError(message)
+                    digest.update(block)
+                    remaining -= len(block)
+        if digest.hexdigest() != self.digest:
+            message = "Replay checkpoint digest did not validate."
+            raise ValueError(message)
 
     def iter_batches(self, batch_size: int) -> Iterator[Any]:
         from analytics_toolkit.sql.dml.transfer.runtime.models import (  # noqa: PLC0415 - avoid backend registry import cycles

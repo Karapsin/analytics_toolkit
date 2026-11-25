@@ -7,14 +7,19 @@ from collections.abc import Sequence
 from typing import Any
 
 from ...ddl.identifiers import (
-    _add_table_identifier_suffix,
+    _add_table_identifier_suffix as _legacy_add_table_identifier_suffix,
+)
+from ...ddl.identifiers import (
     _identifier_name,
     _parse_table_name,
     quote_identifier,
 )
 from ..registry import get_backend_adapter
 from .dialect import sql_string_literal
+from .identifiers import add_table_suffix
 from .storage_clauses import physical_storage_clauses
+
+_add_table_identifier_suffix = _legacy_add_table_identifier_suffix
 
 
 def _build_ch_create_table_sqls(
@@ -160,7 +165,7 @@ def build_ch_local_create_table_sql(
 
 
 def build_ch_shard_table_name(table_name: str) -> str:
-    return _add_table_identifier_suffix(table_name, "_shard", "clickhouse")
+    return add_table_suffix(table_name, "_shard")
 
 
 def split_ch_table_name_for_distributed_engine(table_name: str) -> tuple[str, str]:

@@ -45,19 +45,22 @@ class Protocol:
     closed_sessions: list[requests.Session] = field(default_factory=list)
 
 
-def install_protocol(
+def install_protocol(  # noqa: PLR0913 -- preserve explicit shared HTTP fault and response controls.
     monkeypatch: pytest.MonkeyPatch,
     pages: list[bytes],
     *,
     request_error: requests.exceptions.RequestException | None = None,
     delete_status: int = 204,
     response_status: int = 200,
+    statement_pages: dict[str, list[bytes]] | None = None,
 ) -> Protocol:
     """Intercept only transport I/O and observe genuine session disposal."""
     protocol = Protocol()
     close = requests.Session.close
+    active_pages = pages
 
     def request(_session: Any, method: str, url: str, **kwargs: Any) -> requests.Response:
+        nonlocal active_pages
         method = method.upper()
         protocol.methods.append(method)
         protocol.timeouts.append(kwargs.get("timeout"))
@@ -68,10 +71,12 @@ def install_protocol(
         if method == "POST":
             assert url == _STATEMENT
             protocol.statements.append(kwargs["data"].decode("utf-8"))
-            content = pages[0]
+            if statement_pages is not None:
+                active_pages = statement_pages[protocol.statements[-1]]
+            content = active_pages[0]
         elif method == "GET":
             assert url.startswith(_QUERY)
-            content = pages[int(url.removeprefix(_QUERY))]
+            content = active_pages[int(url.removeprefix(_QUERY))]
         else:
             assert method == "DELETE"
             assert url.startswith(_QUERY)

@@ -1680,18 +1680,12 @@ def _session_workflow_result(
     action: str,
     sha: str | None,
     pr: int | None,
+    review_plan_path: str | None = None,
 ) -> dict[str, Any]:
     if action == "start":
         return sessions.start(root, sha)
-    if action == "review":
-        from agent_tools import local_review  # noqa: PLC0415
-
-        receipt = local_review.review(root)
-        return {
-            "status": "reviewed",
-            "head": receipt["payload"]["head"],
-            "reviewer_id": receipt["payload"]["reviewer_id"],
-        }
+    if action in {"review", "discover", "review-plan"}:
+        return _source_review_workflow_result(root, action, review_plan_path)
     if action == "feedback":
         return sessions.feedback(root, sha, pr) if pr else sessions.feedback(root, sha)
     if action == "refresh":
@@ -1699,6 +1693,26 @@ def _session_workflow_result(
     if action == "handoff":
         return sessions.handoff(root)
     return sessions.synchronize(root)
+
+
+def _source_review_workflow_result(
+    root: Path, action: str, review_plan_path: str | None
+) -> dict[str, Any]:
+    from agent_tools import local_review  # noqa: PLC0415 - MCP/reviewer dependency cycle.
+
+    if action == "review-plan":
+        if review_plan_path is None:
+            msg = "review_plan_path is required for review-plan"
+            raise ValueError(msg)
+        return local_review.plan_review(root, Path(review_plan_path))
+    if action == "discover":
+        return local_review.discover(root)
+    receipt = local_review.review(root)
+    return {
+        "status": "reviewed",
+        "head": receipt["payload"]["head"],
+        "reviewer_id": receipt["payload"]["reviewer_id"],
+    }
 
 
 def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinator.
@@ -1712,6 +1726,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
     detail: str = "summary",
     validation_waiver: str | None = None,
     pr: int | None = None,
+    review_plan_path: str | None = None,
 ) -> dict[str, Any]:
     """Run repository git workflow actions with structured blockers."""
     root_path = _resolve_root(root)
@@ -1726,6 +1741,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
         "detail": detail,
         "validation_waiver": validation_waiver,
         "pr": pr,
+        "review_plan_path": review_plan_path,
     }
     if detail not in DETAIL_LEVELS:
         return _tool_output(
@@ -1743,12 +1759,38 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             summary="Invalid GitHub check wait interval.",
             blockers=[{"phase": "validate", "message": "wait_seconds must be positive"}],
         )
-    if action in {"start", "review", "feedback", "refresh", "sync", "handoff"}:
+    if action == "review-plan" and (review_plan_path is None or not review_plan_path.strip()):
+        return _tool_output(
+            "git_workflow",
+            input_summary,
+            ok=False,
+            summary="Review plan path is required.",
+            blockers=[
+                {"phase": "validate", "message": "review_plan_path is required for review-plan"}
+            ],
+        )
+    if action in {
+        "start",
+        "review",
+        "discover",
+        "review-plan",
+        "feedback",
+        "refresh",
+        "sync",
+        "handoff",
+    }:
         try:
-            result = _session_workflow_result(root_path, action, sha, pr)
-            return _tool_output(
-                "git_workflow", input_summary, summary="Session workflow completed.", result=result
+            result = (
+                _session_workflow_result(root_path, action, sha, pr, review_plan_path)
+                if action == "review-plan"
+                else _session_workflow_result(root_path, action, sha, pr)
             )
+            summary = (
+                str(result.get("summary") or result.get("message") or "Review plan installed.")
+                if action == "review-plan"
+                else "Session workflow completed."
+            )
+            return _tool_output("git_workflow", input_summary, summary=summary, result=result)
         except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
             return _tool_output(
                 "git_workflow",
@@ -1766,7 +1808,7 @@ def git_workflow(  # noqa: C901, PLR0911, PLR0912, PLR0913 - workflow coordinato
             blockers=[
                 {
                     "phase": "validate",
-                    "message": "action must be checks, commit, push, start, review, feedback, refresh, sync, or handoff",
+                    "message": "action must be checks, commit, push, start, review, discover, review-plan, feedback, refresh, sync, or handoff",
                 }
             ],
         )
@@ -2636,6 +2678,8 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             "push",
             "start",
             "review",
+            "discover",
+            "review-plan",
             "feedback",
             "refresh",
             "sync",
@@ -2645,6 +2689,11 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
     git_parser.add_argument("--message")
     git_parser.add_argument("--path", dest="paths", action="append")
     git_parser.add_argument("--sha")
+    git_parser.add_argument(
+        "--review-plan",
+        dest="review_plan_path",
+        help="Author-assigned JSON review manifest to validate and install without reviewing",
+    )
     git_parser.add_argument(
         "--pr", type=int, help="Explicit PR target for optional read-only feedback"
     )
@@ -2671,6 +2720,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - CLI mirro
             paths=args.paths,
             sha=args.sha,
             pr=args.pr,
+            review_plan_path=args.review_plan_path,
             validation_waiver=args.validation_waiver,
             check_timeout_seconds=args.check_timeout_seconds,
             wait_seconds=args.wait_seconds,
@@ -4426,7 +4476,7 @@ def _push_readiness(root: Path) -> dict[str, Any]:
 def _visual_review_is_deferred(root: Path) -> bool:
     if not sessions.load(root):
         return False
-    from agent_tools import local_review  # noqa: PLC0415 - session/reviewer import cycle.
+    from agent_tools import local_review  # noqa: PLC0415 - MCP/reviewer dependency cycle.
 
     return local_review.visual_review_order(root) is not None
 
@@ -4434,7 +4484,7 @@ def _visual_review_is_deferred(root: Path) -> bool:
 def _push_dev_result(root: Path) -> dict[str, Any]:
     if sessions.load(root):
         try:
-            from agent_tools import local_review  # noqa: PLC0415
+            from agent_tools import local_review  # noqa: PLC0415 - MCP/reviewer dependency cycle.
 
             deferred = _visual_review_is_deferred(root)
             source_review = {}

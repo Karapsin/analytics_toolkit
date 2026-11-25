@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import json
+import struct
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -16,6 +17,9 @@ from uuid import UUID
 import numpy as np
 import pandas as pd
 
+from . import owned_frames
+from .exact_calendar import format_timestamp
+from .exact_input import array_values, validate_real_value
 from .temporal_zones import canonical_named_zone
 
 if TYPE_CHECKING:
@@ -33,6 +37,8 @@ _LEGACY_DATETIME_FIELDS = 2
 _DAY_SECONDS = 86400
 _DAY_MINUTES = 1440
 _INVALID_IP_ENCODING = "Invalid exact IP address encoding."
+
+freeze_dataframe_values = owned_frames.freeze_dataframe_values
 
 
 def integer_text(value: int) -> str:
@@ -117,7 +123,14 @@ class ExactTemporal:
         try:
             value = pd.Timestamp(ticks * 10 ** (unit_scale - scale), unit=unit)
         except (ValueError, OverflowError):
-            return self.calendar_datetime() if scale <= _PYTHON_TEMPORAL_SCALE else self
+            if scale <= _PYTHON_TEMPORAL_SCALE:
+                try:
+                    return self.calendar_datetime()
+                except OverflowError:
+                    pass
+            return self
+        if value is pd.NaT:
+            return self
         if self.timezone:
             value = value.tz_localize("UTC").tz_convert(canonical_named_zone(self.timezone))
             return value.tz_localize(None) if self.offset_naive else value
@@ -150,13 +163,8 @@ class ExactTemporal:
         return converted.replace(tzinfo=None) if self.offset_naive else converted
 
     def isoformat(self, *, utc: bool = False) -> str:
-        value = self.calendar_datetime(utc=utc)
-        fraction = self.ticks % 10**self.scale
-        base = value.date().isoformat() + value.strftime("T%H:%M:%S")
-        suffix = value.strftime("%z")
-        if suffix:
-            suffix = suffix[:3] + ":" + suffix[3:5] + (":" + suffix[5:] if suffix[5:] else "")
-        return base + (f".{fraction:0{self.scale}d}" if self.scale else "") + suffix
+        _validate_exact_scale(self.scale)
+        return format_timestamp(self, utc=utc)
 
 
 def _validate_exact_scale(scale: int) -> None:
@@ -185,7 +193,7 @@ class ExactClock:
 
     def __post_init__(self) -> None:
         _validate_exact_scale(self.scale)
-        if not 0 <= self.ticks < _DAY_SECONDS * 10**self.scale:
+        if not 0 <= self.ticks <= _DAY_SECONDS * 10**self.scale:
             msg = "Exact clock ticks must identify a time within one day."
             raise ValueError(msg)
         if (
@@ -202,6 +210,8 @@ class ExactClock:
         return _rescale_ticks(self.ticks, self.scale, scale)
 
     def time(self) -> dt.time | ExactClock:
+        if self.ticks == _DAY_SECONDS * 10**self.scale:
+            return self
         if self.scale > _PYTHON_TEMPORAL_SCALE and self.ticks % 10 ** (
             self.scale - _PYTHON_TEMPORAL_SCALE
         ):
@@ -241,9 +251,29 @@ def unwrap_enum(value: Any) -> Any:
     return value
 
 
+def is_native_float_nan(value: Any) -> bool:
+    """Distinguish a certified native NaN from ordinary dataframe missing values."""
+    from analytics_toolkit.sql.backends.native_scalars import (  # noqa: PLC0415 -- native carriers are loaded after adapter initialization.
+        NativeFloatNaN,
+    )
+
+    return isinstance(value, NativeFloatNaN)
+
+
+def is_native_decimal_nan(value: Any) -> bool:
+    """Keep certified native NUMERIC NaN distinct from pandas missing cells."""
+    from analytics_toolkit.sql.backends.native_scalars import (  # noqa: PLC0415 -- native carriers are loaded after adapter initialization.
+        NativeDecimalNaN,
+    )
+
+    return isinstance(value, NativeDecimalNaN)
+
+
 def is_null(value: Any) -> bool:
     if value is None or value is pd.NA or value is pd.NaT:
         return True
+    if is_native_float_nan(value) or is_native_decimal_nan(value):
+        return False
     if isinstance(value, (list, tuple, dict, OrderedMap, bytes, bytearray, memoryview)):
         return False
     try:
@@ -382,27 +412,63 @@ def _decode_time(payload: Any) -> dt.time:
 
 def _encode_datetime(value: dt.datetime | pd.Timestamp) -> list[Any]:
     offset, label = value.utcoffset(), value.tzname()
-    wall = pd.Timestamp(
-        year=value.year,
-        month=value.month,
-        day=value.day,
-        hour=value.hour,
-        minute=value.minute,
-        second=value.second,
-        microsecond=value.microsecond,
-        nanosecond=value.nanosecond if isinstance(value, pd.Timestamp) else 0,
+    calendar = dt.datetime.combine(
+        value.date(),
+        dt.time(value.hour, value.minute, value.second, value.microsecond, fold=value.fold),
     )
-    calendar = wall.to_pydatetime(warn=False).replace(fold=value.fold)
+    wall = calendar.isoformat()
+    if isinstance(value, pd.Timestamp) and value.nanosecond:
+        wall = (
+            calendar.isoformat(timespec="seconds")
+            + f".{value.microsecond:06d}{value.nanosecond:03d}"
+        )
     descriptor = _encode_time_zone(value.tzinfo, calendar, offset, label)
-    return ["datetime", wall.isoformat(), descriptor, value.fold]
+    return ["datetime", wall, descriptor, value.fold]
 
 
-def _decode_datetime(payload: Any) -> pd.Timestamp:
-    value = pd.Timestamp(payload[0])
+def _decode_wall_datetime(text: str) -> dt.datetime | pd.Timestamp:
+    try:
+        return pd.Timestamp(text)
+    except (ValueError, OverflowError):
+        clock = text.partition("T")[2] or text.partition(" ")[2]
+        fraction = clock.partition(".")[2]
+        digits = ""
+        for character in fraction:
+            if character not in "0123456789":
+                break
+            digits += character
+        if len(digits) > _PYTHON_TEMPORAL_SCALE and any(
+            digit != "0" for digit in digits[_PYTHON_TEMPORAL_SCALE:]
+        ):
+            message = (
+                "A decoded datetime requires an exact sub-microsecond calendar representation."
+            )
+            raise ValueError(message) from None
+        try:
+            return dt.datetime.fromisoformat(text)
+        except ValueError:
+            message = "Invalid exact datetime calendar encoding."
+            raise ValueError(message) from None
+
+
+def _datetime_zone(value: dt.datetime | pd.Timestamp, zone: dt.tzinfo) -> Any:
+    if value.utcoffset() is None:
+        message = "Timestamp timezone has no verifiable UTC offset."
+        raise ValueError(message)
+    return value.tz_convert(zone) if isinstance(value, pd.Timestamp) else value.astimezone(zone)
+
+
+def _decode_datetime(payload: Any) -> dt.datetime | pd.Timestamp:
+    value = _decode_wall_datetime(payload[0])
     descriptor = payload[1]
     if not isinstance(descriptor, str):
         fold = int(payload[2]) if len(payload) > _LEGACY_DATETIME_FIELDS else value.fold
-        return pd.Timestamp(
+        if not isinstance(value, pd.Timestamp):
+            return value.replace(
+                tzinfo=_decode_time_zone(descriptor) if descriptor is not None else value.tzinfo,
+                fold=fold,
+            )
+        timestamp = pd.Timestamp(
             year=value.year,
             month=value.month,
             day=value.day,
@@ -414,19 +480,25 @@ def _decode_datetime(payload: Any) -> pd.Timestamp:
             tzinfo=_decode_time_zone(descriptor) if descriptor is not None else value.tzinfo,
             fold=fold,
         )
+        # Some pandas versions omit submicroseconds while localizing a fold.
+        # Restore the remainder after selecting the zone, without timedelta
+        # arithmetic that can reset fold or fractional-second fixed offsets.
+        if timestamp.nanosecond != value.nanosecond:
+            timestamp = timestamp.replace(nanosecond=value.nanosecond, fold=fold)
+        return timestamp
     # Version-one generations stored a display string in the timezone slot.
     # Trust a resolvable name only when it agrees with the encoded ISO offset.
-    try:
-        candidate = value.tz_convert(canonical_named_zone(descriptor))
-    except ValueError:
-        candidate = None
-    if candidate is not None and candidate.utcoffset() == value.utcoffset():
-        return candidate
     offset = value.utcoffset()
     if offset is None:
         msg = "Legacy datetime timezone label has no encoded UTC offset."
         raise ValueError(msg)
-    return value.tz_convert(dt.timezone(offset, descriptor))
+    try:
+        candidate = _datetime_zone(value, canonical_named_zone(descriptor))
+    except ValueError:
+        candidate = None
+    if candidate is not None and candidate.utcoffset() == value.utcoffset():
+        return candidate
+    return _datetime_zone(value, dt.timezone(offset, descriptor))
 
 
 def _decode_calendar_value(tag: str, payload: Any) -> Any:
@@ -443,9 +515,38 @@ def _decode_calendar_value(tag: str, payload: Any) -> Any:
 
 def encode_value(value: Any) -> Any:  # noqa: C901, PLR0911, PLR0912 - tagged scalar codec
     """Tagged JSON tree; SQL NULL and nested containers retain their identity."""
+    from analytics_toolkit.sql.backends.native_scalars import (  # noqa: PLC0415 -- adapter initialization must finish before native carrier imports.
+        ExactArray,
+        ExactInterval,
+        JsonDocument,
+        NativeDecimalNaN,
+        NativeFloatNaN,
+    )
+
     value = unwrap_enum(value)
+    validate_real_value(value)
+    if isinstance(value, JsonDocument):
+        return ["json_document", str(value)]
+    if isinstance(value, NativeFloatNaN):
+        return ["native_float_nan", struct.pack(">d", value).hex()]
+    if isinstance(value, NativeDecimalNaN):
+        return ["native_decimal_nan", str(value)]
+    if isinstance(value, ExactInterval):
+        return [
+            "native_interval",
+            integer_text(value.months),
+            integer_text(value.days),
+            integer_text(value.microseconds),
+        ]
+    if isinstance(value, ExactArray):
+        return [
+            "native_array",
+            [encode_value(item) for item in value.values],  # noqa: PD011 -- ExactArray.values is its immutable flat tuple, not pandas.
+            list(value.dimensions),
+            list(value.lower_bounds),
+        ]
     if isinstance(value, np.ndarray):
-        return encode_value(value.tolist())
+        return encode_value(array_values(value))
     if isinstance(value, Real) and not isinstance(value, (Integral, bool, np.bool_)):
         return ["float", float(value).hex()]
     if isinstance(value, Decimal):
@@ -529,8 +630,37 @@ def _decode_identity_value(tag: str, value: Any) -> Any:
     raise ValueError(_INVALID_IP_ENCODING)
 
 
+def _decode_native_value(tag: str, payload: list[Any]) -> tuple[bool, Any]:
+    from analytics_toolkit.sql.backends.native_scalars import (  # noqa: PLC0415 -- adapter initialization must finish before native carrier imports.
+        ExactArray,
+        ExactInterval,
+        JsonDocument,
+        NativeDecimalNaN,
+        NativeFloatNaN,
+    )
+
+    if tag == "json_document":
+        return True, JsonDocument(payload[0])
+    if tag == "native_float_nan":
+        return True, NativeFloatNaN(struct.unpack(">d", bytes.fromhex(payload[0]))[0])
+    if tag == "native_decimal_nan":
+        return True, NativeDecimalNaN(Decimal(payload[0]))
+    if tag == "native_interval":
+        return True, ExactInterval(*(_parse_integer_text(item) for item in payload))
+    if tag == "native_array":
+        return True, ExactArray(
+            tuple(decode_value(item) for item in payload[0]),
+            tuple(payload[1]),
+            tuple(payload[2]),
+        )
+    return False, None
+
+
 def decode_value(encoded: Any) -> Any:  # noqa: C901, PLR0911 - tagged scalar codec
     tag, *payload = encoded
+    native, value = _decode_native_value(tag, payload)
+    if native:
+        return value
     if tag == "null":
         return None
     if tag in {"bool", "str"}:
@@ -565,7 +695,43 @@ def decode_value(encoded: Any) -> Any:  # noqa: C901, PLR0911 - tagged scalar co
     raise ValueError(msg)
 
 
-def typed_text(  # noqa: C901, PLR0911 - scalar-family encoding
+def _datetime_text(value: dt.datetime | pd.Timestamp, fractional_scale: int | None) -> str:
+    try:
+        timestamp = _datetime_zone(value, dt.timezone.utc) if value.tzinfo is not None else value
+    except OverflowError:
+        offset = value.utcoffset() or dt.timedelta(0)
+        days = (value.date() - dt.date(1970, 1, 1)).days
+        ticks = (
+            (days * _DAY_SECONDS + value.hour * 3600 + value.minute * 60 + value.second)
+            - (offset.days * _DAY_SECONDS + offset.seconds)
+        ) * 10**9
+        ticks += (value.microsecond - offset.microseconds) * 1000 + getattr(value, "nanosecond", 0)
+        scale = (
+            fractional_scale
+            if fractional_scale is not None
+            else (
+                9
+                if getattr(value, "nanosecond", 0)
+                else 6
+                if value.microsecond or offset.microseconds
+                else 0
+            )
+        )
+        return ExactTemporal(_rescale_ticks(ticks, 9, scale), scale, "UTC").isoformat()
+    if fractional_scale is None:
+        return str(timestamp.isoformat())
+    date_part = timestamp.date().isoformat() + timestamp.strftime("T%H:%M:%S")
+    fraction = f"{timestamp.microsecond * 1000 + getattr(timestamp, 'nanosecond', 0):09d}"[
+        :fractional_scale
+    ].ljust(fractional_scale, "0")
+    return (
+        date_part
+        + ("." + fraction if fractional_scale else "")
+        + ("+00:00" if timestamp.tzinfo is not None else "")
+    )
+
+
+def typed_text(  # noqa: PLR0911 - scalar-family encoding
     value: Any,
     *,
     source_backend: str = "",
@@ -583,20 +749,7 @@ def typed_text(  # noqa: C901, PLR0911 - scalar-family encoding
     if isinstance(value, ExactTemporal):
         return value.isoformat(utc=True)
     if isinstance(value, (dt.datetime, pd.Timestamp)):
-        timestamp = pd.Timestamp(value)
-        if timestamp.tz is not None:
-            timestamp = timestamp.tz_convert("UTC")
-        if fractional_scale is not None:
-            date_part = timestamp.date().isoformat() + timestamp.strftime("T%H:%M:%S")
-            fraction = f"{timestamp.microsecond * 1000 + timestamp.nanosecond:09d}"[
-                :fractional_scale
-            ]
-            return str(
-                date_part
-                + ("." + fraction if fractional_scale else "")
-                + ("+00:00" if timestamp.tz else "")
-            )
-        return str(timestamp.isoformat())
+        return _datetime_text(value, fractional_scale)
     if isinstance(value, (dt.date, UUID, IPv4Address, IPv6Address)):
         return str(value)
     if isinstance(value, (bytes, bytearray, memoryview)):

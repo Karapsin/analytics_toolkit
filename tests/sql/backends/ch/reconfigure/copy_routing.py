@@ -17,10 +17,12 @@ from tests.sql._support.reconfigure import (
     sql,
 )
 from tests.sql._support.reconfigure_conversion_scope import _scope_sql
+from tests.sql._support.reconfigure_host_view import install_conversion_host_views
 from tests.sql._support.reconfigure_pair_scope import PairScopeClient
 
 
 def _public_client(monkeypatch, client):
+    install_conversion_host_views(monkeypatch, client)
     monkeypatch.setattr(
         reconfigure_api,
         "get_connection_config",
@@ -96,16 +98,20 @@ def test_same_physical_rebuild_accepts_verified_endpoint_aliases_and_macros(monk
 def test_plans_without_physical_copy_only_inspect_required_source_ownership_scopes(
     monkeypatch, wrapper_only
 ):
+    def guard_query(statement):
+        if "system.clusters" in statement or "system, clusters" in statement:
+            if not wrapper_only:
+                pytest.fail("A no-op must not inspect unused endpoint coverage")
+            if "archive" in statement:
+                pytest.fail("A facade-only change must not inspect copy-route endpoints")
+
     class NoCopyRouteClient(PairScopeClient):
         def query(self, statement, settings=None):
-            if "system.clusters" in statement or "system, clusters" in statement:
-                if not wrapper_only:
-                    pytest.fail("A no-op must not inspect unused endpoint coverage")
-                if "archive" in statement:
-                    pytest.fail("A facade-only change must not inspect copy-route endpoints")
+            guard_query(statement)
             return super().query(statement, settings=settings)
 
     client = NoCopyRouteClient(managed_remote_facade=True)
+    client.host_query_guard = guard_query
     client.clusters["archive"] = (client.remote,)
     physical_before = client.snapshot()[client.remote]["analytics.events_shard"]
     _public_client(monkeypatch, client)
@@ -144,8 +150,11 @@ def test_plans_without_physical_copy_only_inspect_required_source_ownership_scop
         assert all(_scope_sql(statement)[0] == "core" for statement in cutover)
         assert result.metadata.source_rows == result.metadata.staged_rows == 3
         assert result.metadata.final_target_rows == 3
+        assert client.host_views
     else:
         assert client.commands == []
+        assert client.host_views == []
+    assert all(view.closed and view.close_calls == 1 for view in client.host_views)
     assert client.closed
 
 
@@ -204,6 +213,9 @@ def test_physical_cluster_aliases_use_resolved_endpoints_not_dns_labels(
     )
     assert result.data["strategy"] == strategy
     assert any(statement.startswith("CREATE TABLE") for statement in client.commands)
+    if len(source_hosts) > 1:
+        assert client.host_views
+    assert all(view.closed and view.close_calls == 1 for view in client.host_views)
     assert client.closed
 
 

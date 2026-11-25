@@ -7,9 +7,33 @@ from copy import deepcopy
 
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.dml.transfer.runtime import retry as transfer_retry
 
 from tests.conftest import DEFAULT_SQL_CONNECTIONS
-from tests.sql._support.transfer_not_null import install_transfer_database
+from tests.sql._support import transfer_not_null
+from tests.sql._support.gp_relation_identity import RelationIdentityDatabase
+
+
+class _NativeCatalogTransferDatabase(RelationIdentityDatabase, transfer_not_null.TransferDatabase):
+    """Native generation belongs to each actual stored relation object."""
+
+
+def install_transfer_database(monkeypatch, backend, **settings):
+    if backend == "gp":
+        monkeypatch.setattr(transfer_not_null, "TransferDatabase", _NativeCatalogTransferDatabase)
+    database = transfer_not_null.install_transfer_database(monkeypatch, backend, **settings)
+    monkeypatch.setattr(
+        transfer_retry,
+        "get_sql_connection",
+        lambda _key: transfer_not_null.TransferConnection(database),
+    )
+
+    def unexpected_connect(*_args, **_kwargs):
+        message = "NOT NULL transfer test escaped its fake connection boundary."
+        raise AssertionError(message)
+
+    monkeypatch.setattr("psycopg2.connect", unexpected_connect)
+    return database
 
 
 def transfer(backend, **options):

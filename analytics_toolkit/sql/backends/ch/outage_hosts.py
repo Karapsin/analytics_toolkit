@@ -3,18 +3,36 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator, Protocol
 
 from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
 
 from .outage_context import internal_io
 
 if TYPE_CHECKING:
-    from .outage_topology import ClusterScope, Host
+    from collections.abc import Sequence
+
+    from analytics_toolkit.sql.execution.backend_options import BackendOperationState
+
+    from .outage_topology import Host
+
+
+class HostConnectionScope(Protocol):
+    @property
+    def config(self) -> Any: ...
+
+    @property
+    def client(self) -> Any: ...
+
+    @property
+    def hosts(self) -> Sequence[Host]: ...
+
+    @property
+    def state(self) -> BackendOperationState: ...
 
 
 @contextmanager
-def host_connection(scope: ClusterScope, host: Host) -> Iterator[Any]:
+def host_connection(scope: HostConnectionScope, host: Host) -> Iterator[Any]:
     if (
         scope.config.driver != "native"
         and len({item.port for item in scope.hosts if item.name == host.name}) > 1

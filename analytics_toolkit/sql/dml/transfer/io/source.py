@@ -5,12 +5,18 @@ from typing import Any, cast
 
 import pandas as pd
 
-from ....backends import get_backend_adapter
-from ....connection.errors import sql_preview
-from ....execution.labels import apply_query_label
 from analytics_toolkit.general import time_print
-from ..runtime.models import RowBatch
-from ..runtime.retry import replace_connection, run_with_retry
+from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+from analytics_toolkit.sql.backends.source_codecs import execute_exact_source_query
+from analytics_toolkit.sql.connection.errors import sql_preview
+from analytics_toolkit.sql.dml.transfer.runtime.models import RowBatch
+from analytics_toolkit.sql.dml.transfer.runtime.retry import (
+    is_non_retryable_sql_error,
+    replace_connection,
+    run_with_retry,
+)
+from analytics_toolkit.sql.execution.labels import apply_query_label
 
 
 class TransferSourceStreamReadError(RuntimeError):
@@ -137,7 +143,7 @@ def _iter_dbapi_batches(
         )
         raise
     finally:
-        cursor.close()
+        close_cursor(cursor, backend=connection_backend)
 
 
 def _iter_clickhouse_batches(
@@ -221,11 +227,20 @@ def _start_dbapi_query_with_retry(
     def operation(attempt: int) -> tuple[Any, list[str]]:
         cursor = connection_ref["connection"].cursor()
         try:
-            cursor.execute(query)
+            cursor = execute_exact_source_query(
+                connection_backend,
+                connection_ref["connection"],
+                cursor,
+                query,
+                source_columns=connection_ref.get("exact_source_columns"),
+                source_description=connection_ref.get("exact_source_description"),
+            )
             columns = [column[0] for column in cursor.description or []]
             return cursor, columns
-        except Exception:
-            cursor.close()
+        except Exception as error:
+            close_cursor(cursor, backend=connection_backend)
+            if is_non_retryable_sql_error(error):
+                raise
             get_backend_adapter(connection_backend).rollback_quietly(connection_ref["connection"])
             replace_connection(connection_key, connection_ref)
             raise
@@ -259,24 +274,26 @@ def _start_clickhouse_stream_with_retry(
             connection.query_limit = 0
         try:
             context_manager = connection.query_df_stream(query)
+            try:
+                stream = context_manager.__enter__()
+                iterator = iter(stream)
+                while True:
+                    try:
+                        block = next(iterator)
+                    except StopIteration:
+                        return context_manager, iterator, None
+                    if block.empty:
+                        continue
+                    return context_manager, iterator, block
+            except Exception as error:
+                context_manager.__exit__(None, None, None)
+                if is_non_retryable_sql_error(error):
+                    raise
+                replace_connection(connection_key, connection_ref)
+                raise
         finally:
             if should_restore_query_limit:
                 connection.query_limit = original_query_limit
-        try:
-            stream = context_manager.__enter__()
-            iterator = iter(stream)
-            while True:
-                try:
-                    block = next(iterator)
-                except StopIteration:
-                    return context_manager, iterator, None
-                if block.empty:
-                    continue
-                return context_manager, iterator, block
-        except Exception:
-            context_manager.__exit__(None, None, None)
-            replace_connection(connection_key, connection_ref)
-            raise
 
     return run_with_retry(
         operation_name=f"starting source query on {connection_key} (ch)",

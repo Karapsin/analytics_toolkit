@@ -10,6 +10,9 @@ from analytics_toolkit.sql.backends.client_validation import (
     validate_client_write_capabilities,
 )
 from analytics_toolkit.sql.dml.transfer.flow.frozen_retry import frozen_input_retry
+from analytics_toolkit.sql.dml.transfer.flow.storage_capabilities import (
+    require_storage_capabilities,
+)
 
 guarded_query_retry = frozen_input_retry
 
@@ -64,12 +67,20 @@ def validate_query_client_input(
     connection_ref: dict[str, Any],
     *,
     python_consumer: bool,
+    created_target: bool = False,
 ) -> None:
     """Validate the actual SDK factory and the same frozen rows used by replay.
 
     Ordinary native INSERT SELECT routes never touch a client encoder. A lazy
     client route can retain its metadata proof, with an unknown selected count.
     """
+    require_storage_capabilities(
+        prepared.options,
+        prepared.state,
+        connection_ref["connection"],
+        query_input=True,
+        created_target=created_target,
+    )
     if not python_consumer:
         return
     options = prepared.options

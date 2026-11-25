@@ -20,7 +20,6 @@ _FACTORIES = {
     "CHAR": "string",
     "TEXT": "string",
     "UUID": "string",
-    "JSON": "string",
     "BINARY": "binary",
     "VARBINARY": "binary",
     "BOOLEAN": "bool_",

@@ -79,6 +79,12 @@ across hosts. `ch_distributed_table_stats=True` additionally resolves Distribute
 facades from their underlying storage; the flag does not change ordinary local
 table aggregation. Counts are metadata estimates rather than transactional counts.
 
+`conditions` applies to the final logical totals, after replica selection and
+aggregation. Unknown counts or sizes remain NULL, including unsupported view
+estimates. Replicated totals require a usable representative and verified
+shared replication identity; independent Keeper namespaces cannot be silently
+counted as copies of one shard.
+
 Incomplete collection never certifies a partial total as complete. Inspect
 `tables.attrs["data_complete"]` and `tables.attrs["ch_cluster_status"]` for coverage;
 unavailable facade statistics keep their existing unknown/default values with

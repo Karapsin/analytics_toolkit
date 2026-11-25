@@ -182,17 +182,26 @@ def _normalize_typed_scalar(  # noqa: C901, PLR0911 - exact recursive native typ
     if parsed.name.startswith("decimal"):
         return Decimal(str(value))
     if parsed.name.startswith("float"):
-        return float(value)
-    if parsed.name == "string":
-        from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - avoid backend registry import cycles
-            typed_text,
+        # Exact-value and adapter initialization cycle.
+        from analytics_toolkit.sql.backends.native_scalars import (  # noqa: PLC0415
+            NativeFloatNaN,
         )
 
-        if isinstance(value, (memoryview, bytearray)):
-            value = bytes(value)
-        elif not isinstance(value, (bytes, str)):
-            value = typed_text(value)
+        if isinstance(value, NativeFloatNaN):
+            return value
+        return float(value)
+    if parsed.name == "string":
+        value = _normalize_string_scalar(value)
     return value
+
+
+def _normalize_string_scalar(value: Any) -> Any:
+    # Exact-value and adapter initialization cycle.
+    from analytics_toolkit.sql.core.exact_values import typed_text  # noqa: PLC0415
+
+    if isinstance(value, (memoryview, bytearray)):
+        return bytes(value)
+    return value if isinstance(value, (bytes, str)) else typed_text(value)
 
 
 def _normalize_terminal_value(
@@ -230,7 +239,7 @@ def _normalize_terminal_value(
 
 
 def _http_string_bytes(value: Any) -> bytes | None:
-    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 -- exact explicit String conversions.
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - avoid backend registry import cycles
         typed_text,
     )
 
@@ -266,7 +275,8 @@ def _normalize_tuple_value(
         nested_descriptor,
     )
 
-    from .storage_types import storage_fields  # noqa: PLC0415 -- retain raw child codecs.
+    # Exact-value and adapter initialization cycle.
+    from .storage_types import storage_fields  # noqa: PLC0415
 
     fields = storage_fields(raw.original) or nested_descriptor(logical.original)[1]
     if isinstance(value, dict):
@@ -307,7 +317,8 @@ def _normalize_nested_rows(
 
 
 def normalize_scalar(value: object) -> object:
-    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - avoid backend registry import cycles
+    # Exact-value and adapter initialization cycle.
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
         OrderedMapPairs,
         unwrap_enum,
     )
@@ -361,7 +372,8 @@ def _normalize_nullable_scalar(value: Any) -> Any:
 
 
 def _is_null_like(value: Any) -> bool:
-    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - avoid backend registry import cycles
+    # Exact-value and adapter initialization cycle.
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
         is_null,
     )
 

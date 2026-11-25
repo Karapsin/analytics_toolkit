@@ -149,24 +149,70 @@ Restoring context does not transfer owner approval from the source PR.
 5. Run focused checks and `version_bump(...)` (creates a unique fragment).
 6. Run mandatory `run_checks(level="precommit")`, then workflow status.
 7. Commit explicit paths with `git_workflow(action="commit", ...)`. Before any
-   publication this starts a fresh independent read-only local reviewer of the
-   session's CLI (`ATK_LOCAL_REVIEWER=codex|claude` overrides it; the receipt
-   records `reviewer_runtime`). Rejected candidates stay local for correction and
-   another fresh review. At least two completed independent iterations are
-   required: later reviewers search for previously missed defects and verify
-   earlier findings are resolved. Concrete findings stop for local correction;
-   incomplete-only attempts do not advance the round. The durable task journal
-   resumes interrupted work without converting intermediate results into
-   approval. Only a complete aligned current-head iteration with no new or
-   unresolved issues produces the final source receipt; there is no retry cap.
-   `review` retries review of a committed candidate; `push`
-   retries publication after approval. This signed local review is the only
-   source review the PR ever receives. Review and `refresh` advance the recorded
-   dev base to the newest merged `origin/dev` commit contained in HEAD (with a
-   revalidation receipt), and SQL Explorer changes automatically attach the
+   publication, fresh independent read-only local reviewers use the session's
+   CLI (`ATK_LOCAL_REVIEWER=codex|claude` overrides it; the receipt records
+   `reviewer_runtime`). Every task uses frozen-candidate discovery batches with
+   parallel scoped review cycles. The author assigns bounded component chunks
+   and bounded cross-component integration checks in a frozen coverage plan.
+   Validate exhaustive coverage of the immutable inventory and its interactions;
+   every candidate item and required interaction needs an assignment. Each
+   fresh isolated reviewer uses the selected CLI with high reasoning and
+   enforced read-only access, completes its assigned scope and interacting
+   context, and reports ALL novel current issues. Record bounded worker
+   concurrency, scope and resource budgets in the plan instead of sending the
+   whole candidate to every reviewer.
+   Collect ALL active-cycle results. Retire each component or integration scope
+   immediately after its completed result reports zero new issues. Keep it
+   retired for the same frozen candidate and assignment, even when another
+   scope finds issues. Later cycles run only scopes whose latest result found
+   new issues, failed, was incomplete or remains missing. Failed, incomplete,
+   tool-failed or uncertain results cannot retire scopes. One clean chunk is
+   never aggregate approval.
+   Bind the coverage plan and every result to all six subject fields:
+   `repository`, `head`, `base`, `tree`, `task_digest` and `producer_id`. Resume
+   interrupted cycles and reuse retired-scope proof only while every subject
+   field and the plan binding match. Keep the original signed result and
+   reviewer identity; reuse does not create a fresh review. An explicit
+   non-approving, procedure-only migration may reuse completed zero-new-issue
+   reports for the unchanged head, tree, dev base and assignments only
+   after validating original signed bindings and exhaustive coverage. Record
+   the transition to the current subject and plan; migration itself cannot
+   approve source or publication.
+   Later cycles exclude only OPEN issues in the current frozen batch, including
+   rewordings. Do not fix code or retest during discovery. Discovery closes
+   when ALL component and integration scopes have retired; unresolved issues
+   still block approval. Only then fix ALL current-batch OPEN issues as one
+   batch, run focused and mandatory checks, and start every scope's first pass
+   on the changed candidate with EMPTY findings history. Do not send repaired
+   findings/fix summaries or request prior-fix verification. A still-broken old
+   issue rediscovered there is a new finding, not an exclusion. The append-only
+   audit and durable task journal stay private. Changes to any subject field
+   or the plan binding invalidate scope clearances and resume eligibility
+   unless an explicit non-approving migration validates their reuse. A changed
+   head, tree or dev base always resets ALL scope clearances and starts empty
+   finding history. Unchanged head/tree/base retains current OPEN exclusions
+   across replanning and task-only policy corrections; neither change clears
+   the known blockers.
+   Final aggregate approval needs one complete clean signed result for EVERY
+   component and integration scope on the exact current subject and plan, no
+   OPEN issues, and all approval gates. Retired-scope results count through
+   their validated original proof. There is no minimum cycle count, second
+   clean pass or retry cap. Initial feature validation and commit guards remain
+   mandatory; diagnostic discovery of immutable committed HEAD with dirty
+   procedure work can never produce approval. Final approval still needs a
+   clean candidate and current exact checks/task binding.
+   Reviewers receive only the current task/specification, assigned scope and
+   purpose, plan/inventory digests and interacting context, current checks and
+   original image evidence, plus current-batch OPEN exclusions in later cycles.
+   Never forward historical author NAV or repaired finding history; retain it
+   internally without using it as review guidance. This signed aggregate local
+   review is the only source review the PR ever receives. Review and `refresh`
+   advance the recorded dev base to the newest merged `origin/dev` commit
+   contained in HEAD (with a revalidation receipt), and SQL Explorer changes
+   automatically attach the
    current completed visual-review receipt. An explicit recorded user decision
-   may instead require source approval before visual checks, using the
-   task-bound sequencing evidence described in
+   may instead require final aggregate source approval before visual checks,
+   using the task-bound sequencing evidence described in
    [the agent workflow guide](../agent_tools/README.md). In that mode commit and
    source review proceed first, but publication remains blocked until a fresh
    complete visual receipt passes. Visual completion alone does not change the

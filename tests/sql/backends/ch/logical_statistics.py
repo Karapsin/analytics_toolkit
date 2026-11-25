@@ -16,6 +16,8 @@ from analytics_toolkit.sql.backends.ch.outage_context import logical_statistics
 from analytics_toolkit.sql.backends.ch.routing import ChClusterRouting, route_sql
 from sqlglot import exp, parse_one
 
+from tests.sql._support.ch_metadata_sqlite import MetadataServer
+
 show_tables_module = importlib.import_module("analytics_toolkit.sql.metadata.show_tables")
 
 
@@ -55,15 +57,30 @@ def test_routed_show_tables_deduplicates_exact_identity_and_keeps_case(
 
 def test_logical_statistics_counts_replicated_shards_and_independent_hosts() -> None:
     query = build_clickhouse_shard_stats_query(
-        "core", {ClickHouseShardTable("core", "db", "events")}
+        "core",
+        {
+            ClickHouseShardTable("core", "db", "replicated"),
+            ClickHouseShardTable("core", "db", "independent"),
+        },
     )
     tree = parse_one(query, read="clickhouse")
     assert len(list(tree.find_all(exp.ArgMin))) == 2
-    assert "host_scope.shard_num" in query
-    assert "startsWith(engine, 'Replicated')" in query
-    assert "startsWith(engine, 'Shared')" in query
-    assert "sum(ifNull(total_rows, 0))" in query
-    assert "ORDER BY shard_num, replica_num" in query
+    server = MetadataServer(
+        [(1, 1), (1, 2)],
+        [
+            (1, "db", "replicated", 5, 50, "ReplicatedMergeTree", "ReplicatedMergeTree"),
+            (2, "db", "replicated", 5, 50, "ReplicatedMergeTree", "ReplicatedMergeTree"),
+            (1, "db", "independent", 7, 70, "MergeTree", "MergeTree"),
+            (2, "db", "independent", 11, 110, "MergeTree", "MergeTree"),
+        ],
+    )
+    try:
+        totals = server.read("ch", query).set_index("shard_table")
+        assert totals.row_count.to_dict() == {"replicated": 5, "independent": 18}
+        assert totals.table_size_bytes.to_dict() == {"replicated": 50, "independent": 180}
+        assert all(totals.statistics_complete.tolist())
+    finally:
+        server.close()
     with logical_statistics():
         assert route_sql(query, routing=ChClusterRouting("other"), database="default") == query
     # The statistics intent does not affect an ordinary user wrapper.

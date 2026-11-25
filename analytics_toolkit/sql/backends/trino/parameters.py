@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from dataclasses import replace
 from decimal import Decimal
 from enum import Enum
 from functools import lru_cache
@@ -207,7 +208,10 @@ def _temporal_parameter(value: Any, target_type: str | None, family: str) -> Any
         return timestamp_text(value, precision)
     truncated = exact.truncate_temporal(value, precision)
     if isinstance(truncated, exact.ExactTemporal):
-        truncated = truncated.calendar_datetime(utc=True)
+        try:
+            truncated = truncated.calendar_datetime(utc=True)
+        except (ValueError, OverflowError):
+            return timestamp_text(truncated, precision)
     return truncated.astimezone(dt.timezone.utc) if truncated.tzinfo is not None else truncated
 
 
@@ -218,7 +222,7 @@ def _submicrosecond(value: Any) -> bool:
             value.scale > _MICROSECOND_PRECISION
             and value.ticks % 10 ** (value.scale - _MICROSECOND_PRECISION)
         )
-    return bool(pd.Timestamp(value).nanosecond)
+    return bool(getattr(value, "nanosecond", 0))
 
 
 def timestamp_text(value: Any, precision: int) -> str:
@@ -227,18 +231,20 @@ def timestamp_text(value: Any, precision: int) -> str:
         value = pd.Timestamp(value)
     value = exact.truncate_temporal(value, precision)
     if isinstance(value, exact.ExactTemporal):
-        calendar = value.calendar_datetime(utc=True)
-        fraction = value.ticks % 10**value.scale
-        digits = f"{fraction:0{value.scale}d}" if value.scale else ""
-    else:
-        calendar = (
-            value.tz_convert("UTC")
-            if isinstance(value, pd.Timestamp) and value.tzinfo is not None
-            else value
-        )
-        if calendar.tzinfo is not None:
-            calendar = calendar.astimezone(dt.timezone.utc)
-        digits = f"{calendar.microsecond:06d}{getattr(calendar, 'nanosecond', 0):03d}"
+        if value.scale < precision:
+            value = replace(
+                value, ticks=value.ticks * 10 ** (precision - value.scale), scale=precision
+            )
+        text = cast("str", value.isoformat(utc=True)).replace("T", " ")
+        return text[:-6] + " UTC" if text.endswith("+00:00") else text
+    calendar = (
+        value.tz_convert("UTC")
+        if isinstance(value, pd.Timestamp) and value.tzinfo is not None
+        else value
+    )
+    if calendar.tzinfo is not None:
+        calendar = calendar.astimezone(dt.timezone.utc)
+    digits = f"{calendar.microsecond:06d}{getattr(calendar, 'nanosecond', 0):03d}"
     digits = digits[:precision].ljust(precision, "0")
     base = str(calendar.date().isoformat()) + str(calendar.strftime(" %H:%M:%S"))
     return (
@@ -332,7 +338,12 @@ def _clock_literal(value: Any, target_type: str | None) -> str:
     native = target_type or (
         f"TIME({value.scale})" + (" WITH TIME ZONE" if value.offset_minutes is not None else "")
     )
-    converted = cast("str", time_parameter_value(value, native))
+    converted = time_parameter_value(value, native)
+    if isinstance(converted, dt.time):
+        return f"CAST(TIME '{converted.isoformat()}' AS {native})"
+    _nested, _types, exact = _policies()
+    if isinstance(converted, exact.ExactClock):
+        return f"CAST(CAST('{converted.isoformat()}' AS TIME({converted.scale})) AS {native})"
     return f"CAST('{converted}' AS {native})"
 
 

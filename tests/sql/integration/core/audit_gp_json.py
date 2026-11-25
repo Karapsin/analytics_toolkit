@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 from analytics_toolkit import sql
 from analytics_toolkit.sql.backends import get_backend_adapter
+from psycopg2.extras import Json
 
 from tests.sql.integration._support.backends import backend_enabled, integration_table
 from tests.sql.integration._support.identity import query_label
@@ -83,13 +84,20 @@ def _check_matrix(alias: str, table: str, first: str, last: str) -> None:
         f"payload[1][1] = {first_json}::jsonb AS first_equal, "
         "payload[1][2] IS NULL AS sql_null_element, "
         "payload[2][1] IS NOT NULL AND payload[2][1] = 'null'::jsonb AS json_null_element, "
-        f"payload[2][2] = {last_json}::jsonb AS last_equal FROM {table} WHERE row_id = 1",
+        "payload[2][2] IS NOT NULL AND payload[2][2] = '\"null\"'::jsonb AS string_null_element, "
+        f"payload[2][3] = {last_json}::jsonb AS last_equal FROM {table} WHERE row_id = 1",
         retry_cnt=1,
         query_label=_label("gp-json-matrix-check"),
     )
     assert len(result) == 1
     assert int(result.iloc[0]["dimensions"]) == 2
-    for column in ("first_equal", "sql_null_element", "json_null_element", "last_equal"):
+    for column in (
+        "first_equal",
+        "sql_null_element",
+        "json_null_element",
+        "string_null_element",
+        "last_equal",
+    ):
         assert not pd.isna(result.iloc[0][column])
         assert bool(result.iloc[0][column])
     assert sql.read(
@@ -109,7 +117,14 @@ def _assert_native_jsonb_matrix(alias: str, resource_registry: ResourceRegistry)
             {
                 "row_id": [1, 2],
                 "payload": pd.Series(
-                    [[[{"key": first}, None], ["null", {"key": last}]], None], dtype=object
+                    [
+                        [
+                            [{"key": first}, None, {"extra": "cell"}],
+                            [Json(None), "null", {"key": last}],
+                        ],
+                        None,
+                    ],
+                    dtype=object,
                 ),
             }
         )

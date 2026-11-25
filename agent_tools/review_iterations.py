@@ -13,24 +13,35 @@ if TYPE_CHECKING:
 
 from agent_tools import task_context
 
-MINIMUM_ROUNDS = 2
+MINIMUM_ROUNDS = 1
+PROCEDURE = "discovery-chunks-v4"
+PARALLEL_PROCEDURES = {"discovery-chunks-v3", PROCEDURE}
 SUBJECT_KEYS = ("repository", "head", "base", "tree", "task_digest", "producer_id")
 INSTRUCTIONS = (
-    "Start a fresh independent review of the complete current source and original task. "
-    "For iteration 2 and later, explicitly search for issues NOT found in earlier iterations. "
-    "Independently verify every previously reported issue is resolved; repeated unresolved issues "
-    "still block approval. Prior findings are evidence to investigate, not prior approval or "
-    "transferred inspection. All source pages, interactions and task obligations remain required. "
-    "Continue through the complete immutable inventory in bounded groups, semantically assessing "
-    "each diff page and relevant interacting source before moving on; recover truncated reads. "
+    "Review your complete ASSIGNED component or integration scope and relevant interacting source. "
+    "This bounded parallel assignment supersedes any older prefix asking each worker to read "
+    "the whole candidate. Do not blanket-scan every diff; read EVERY assigned diff page. "
+    "No individual chunk can approve the whole feature; the coordinator aggregates ALL chunks. "
+    "A completed zero-new scope retires for this frozen candidate and assignment; only scopes "
+    "with new issues or incomplete results are scheduled again. Exclude only the "
+    "supplied OPEN finding IDs for this exact frozen candidate; alternative wording or examples "
+    "of the same current issue are not novel. A new candidate starts with EMPTY finding history. "
+    "All assigned pages, interacting source and relevant current task obligations remain required. "
+    "Continue through the complete assigned immutable scope in bounded groups, semantically "
+    "assessing each assigned diff page and relevant interacting source; recover truncated reads. "
     "Before a final no-findings verdict, complete that inspection rather than stopping merely "
-    "after a small initial sample or a size estimate while work can continue. Concrete findings "
-    "may still stop a round for repair. Actual tool failures, unresolved uncertainty or genuinely "
+    "after a small initial sample or a size estimate while work can continue. Collect ALL novel "
+    "issues without stopping for repair. The candidate stays frozen between discovery rounds. "
+    "Exclude current OPEN IDs and semantic duplicates from novel findings. "
+    "Findings contains only novel [P0..P3] issues. Current open issues require approved=false "
+    "and alignment=not_aligned; complete zero-novel discovery closes the batch for repair, "
+    "never approval. A changed candidate restarts full discovery without historical findings. "
+    "Actual tool failures, unresolved uncertainty or genuinely "
     "incomplete inspection still require rejection; never pressure approval or relax coverage. "
-    "Put every unresolved concrete defect in findings, prefixed [P0], [P1], [P2] or [P3]. "
+    "Put every additional concrete defect in findings, prefixed [P0], [P1], [P2] or [P3]. "
     "Describe incomplete inspection in summary; never approve it. Only return approved=true, "
-    "alignment=aligned and findings=[] after complete inspection finds no new issues and verifies "
-    "all prior issues resolved. There is no retry cap."
+    "alignment=aligned and findings=[] only for a completely inspected assigned scope with "
+    "no open issues; this is never whole-feature approval. There is no retry cap."
 )
 
 
@@ -66,9 +77,25 @@ def history(root: Path) -> dict[str, Any]:
     if value.get("version") != 1 or not isinstance(value.get("attempts"), list):
         msg = "Invalid independent review history"
         raise ValueError(msg)
+    previous: list[dict[str, Any]] = []
     for attempt in value["attempts"]:
         if "result" in attempt:
-            verify_round(root, attempt["result"])
+            payload = verify_round(root, attempt["result"])
+            if any(payload[key] != attempt["subject"][key] for key in SUBJECT_KEYS) or payload[
+                "previous_rounds_sha256"
+            ] != findings_digest(previous):
+                msg = "Independent review history does not follow its signed previous chain"
+                raise ValueError(msg)
+            iteration = attempt["iteration"]
+            expected_findings = (
+                _findings(previous, attempt["subject"])
+                if iteration.get("procedure") in PARALLEL_PROCEDURES
+                else iteration.get("prior_findings", _findings(previous))
+            )
+            if payload["prior_findings_sha256"] != findings_digest(expected_findings):
+                msg = "Independent review history changed its signed previous findings"
+                raise ValueError(msg)
+            previous.append(attempt["result"])
     return value
 
 
@@ -111,9 +138,30 @@ def verify_round(root: Path, receipt: dict[str, Any]) -> dict[str, Any]:
         or not isinstance(p.get("coverage_complete"), bool)
         or not re.fullmatch(r"[0-9a-f]{64}", str(p.get("prior_findings_sha256", "")))
         or not re.fullmatch(r"[0-9a-f]{64}", str(p.get("previous_rounds_sha256", "")))
+        or (
+            p.get("review_procedure") is not None
+            and (
+                p["review_procedure"]
+                not in {"discovery-batch-v1", "discovery-batch-v2", *PARALLEL_PROCEDURES}
+                or not isinstance(p.get("discovery_only"), bool)
+                or not re.fullmatch(r"[0-9a-f]{64}", str(p.get("recorded_findings_sha256", "")))
+            )
+        )
     ):
         msg = "Invalid independent review round provenance"
         raise ValueError(msg)
+    if p.get("review_procedure") in PARALLEL_PROCEDURES:
+        if (
+            p.get("review_scope") not in {"chunk", "wave"}
+            or not re.fullmatch(r"[0-9a-f]{64}", str(p.get("plan_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{32}", str(p.get("wave_id", "")))
+        ):
+            msg = "Parallel review scope provenance is required"
+            raise ValueError(msg)
+        if p["review_scope"] == "wave":
+            from agent_tools import review_waves  # noqa: PLC0415 - aggregate provenance validation.
+
+            review_waves.verify_wave(root, receipt)
     return p
 
 
@@ -121,7 +169,13 @@ def _scope(payload: dict[str, Any], subject: dict[str, str]) -> bool:
     return all(payload[k] == subject[k] for k in ("repository", "task_digest", "base"))
 
 
-def _findings(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _same_candidate(payload: dict[str, Any], subject: dict[str, Any]) -> bool:
+    return all(payload[key] == subject[key] for key in SUBJECT_KEYS if key != "task_digest")
+
+
+def _findings(
+    results: list[dict[str, Any]], subject: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     return [
         {
             "subject": {k: r["payload"][k] for k in SUBJECT_KEYS},
@@ -130,6 +184,7 @@ def _findings(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for r in results
         if r["payload"]["verdict"].get("findings")
+        and (subject is None or _same_candidate(r["payload"], subject))
     ]
 
 
@@ -137,6 +192,83 @@ def findings_digest(findings: list[dict[str, Any]]) -> str:
     return hashlib.sha256(
         json.dumps(findings, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def recorded_findings(
+    results: list[dict[str, Any]], subject: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Assign stable IDs without rewriting any signed historical verdict."""
+    known: dict[str, dict[str, Any]] = {}
+    for result in results:
+        payload = result["payload"]
+        if subject is not None and not _same_candidate(payload, subject):
+            continue
+        for finding in payload["verdict"].get("findings", []):
+            if not isinstance(finding, str) or not re.match(r"^\[P[0-3]\]\s", finding):
+                continue
+            identity = "finding:" + hashlib.sha256(finding.encode("utf-8")).hexdigest()
+            item = known.setdefault(identity, {"id": identity, "finding": finding, "origins": []})
+            origin = {
+                "subject": {key: payload[key] for key in SUBJECT_KEYS},
+                "reviewer_id": payload["reviewer_id"],
+            }
+            if origin not in item["origins"]:
+                item["origins"].append(origin)
+    return list(known.values())
+
+
+def _current_findings(known: list[dict[str, Any]], subject: dict[str, Any]) -> list[dict[str, Any]]:
+    keys = tuple(key for key in SUBJECT_KEYS if key != "task_digest")
+    return [
+        item
+        for item in known
+        if any(
+            all(origin["subject"][key] == subject[key] for key in keys)
+            for origin in item["origins"]
+        )
+    ]
+
+
+def _complete_discovery(payload: dict[str, Any], known: list[dict[str, Any]]) -> bool:
+    verdict = payload.get("verdict", {})
+    if (
+        not isinstance(verdict, dict)
+        or not isinstance(verdict.get("approved"), bool)
+        or not isinstance(verdict.get("summary"), str)
+        or not verdict["summary"].strip()
+        or not isinstance(verdict.get("change_summary"), str)
+        or not isinstance(verdict.get("findings"), list)
+        or not all(isinstance(finding, str) for finding in verdict["findings"])
+        or payload.get("coverage_complete") is not True
+        or verdict.get("alignment") not in {"aligned", "not_aligned"}
+        or not all(re.match(r"^\[P[0-3]\]\s", finding) for finding in verdict.get("findings", []))
+    ):
+        return False
+    if any(
+        "finding:" + hashlib.sha256(finding.encode("utf-8")).hexdigest()
+        in {item["id"] for item in known}
+        for finding in verdict["findings"]
+    ):
+        return False
+    if verdict["findings"] or known:
+        return verdict.get("approved") is False and verdict.get("alignment") == "not_aligned"
+    return _local()._complete_verdict(verdict)  # noqa: SLF001 - shared verdict contract.
+
+
+class DiscoveryBatchError(RuntimeError):
+    """A complete discovery batch requires aggregate author repair, not approval."""
+
+    def __init__(self, batch: dict[str, Any]) -> None:
+        self.batch = batch
+        findings = "\n".join(item["id"] + " " + item["finding"] for item in batch["findings"])
+        super().__init__(
+            "Local review rejected; discovery batch complete and requires fixes: "
+            + str(batch["finding_count"])
+            + " issues; full signed history: "
+            + batch["history_path"]
+            + "\n"
+            + findings
+        )
 
 
 def record(root: Path, attempt_id: str, receipt: dict[str, Any]) -> None:
@@ -147,14 +279,42 @@ def record(root: Path, attempt_id: str, receipt: dict[str, Any]) -> None:
         msg = "Review round changed its candidate binding"
         raise ValueError(msg)
     other = [x["result"] for x in state["attempts"] if x["id"] != attempt_id and "result" in x]
-    if any(x["payload"]["reviewer_id"] == payload["reviewer_id"] for x in other):
+    if any(
+        x["payload"]["reviewer_id"] == payload["reviewer_id"]
+        and not (
+            payload.get("review_scope") == "wave"
+            and x["payload"].get("review_scope") == "wave"
+            and (
+                payload.get("review_procedure") == PROCEDURE
+                or (
+                    payload.get("wave_id") == x["payload"].get("wave_id")
+                    and payload.get("plan_sha256") == x["payload"].get("plan_sha256")
+                )
+            )
+        )
+        for x in other
+    ):
         msg = "Every independent review iteration requires a fresh reviewer identity"
         raise ValueError(msg)
     if payload["previous_rounds_sha256"] != findings_digest(other):
         msg = "Review iteration does not follow the actual previous round history"
         raise ValueError(msg)
-    if payload["prior_findings_sha256"] != findings_digest(_findings(other)):
+    iteration = attempt["iteration"]
+    active_subject = (
+        attempt["subject"]
+        if iteration.get("procedure") in {"discovery-batch-v2", *PARALLEL_PROCEDURES}
+        else None
+    )
+    if payload["prior_findings_sha256"] != findings_digest(_findings(other, active_subject)):
         msg = "Review round does not bind the actual previous findings"
+        raise ValueError(msg)
+    if iteration.get("procedure") == PROCEDURE and (
+        payload.get("review_procedure") != PROCEDURE
+        or payload.get("discovery_only") is not iteration["discovery_only"]
+        or payload.get("recorded_findings_sha256")
+        != findings_digest(iteration["recorded_findings"])
+    ):
+        msg = "Review round does not bind its discovery procedure and known findings"
         raise ValueError(msg)
     if "result" in attempt and attempt["result"] != receipt:
         msg = "Independent review outcome is immutable"
@@ -163,86 +323,64 @@ def record(root: Path, attempt_id: str, receipt: dict[str, Any]) -> None:
     _save(root, state)
 
 
-def run(
+def run(  # noqa: PLR0913 - keep trusted execution, signing and coverage callbacks explicit.
     root: Path,
     subject: dict[str, str],
     request: dict[str, Any],
     execute: Callable[[str], dict[str, Any]],
+    *,
+    sign_wave: Callable[[dict[str, Any]], dict[str, Any]],
+    verify_wave: Callable[[dict[str, Any], dict[str, Path]], None],
 ) -> list[dict[str, Any]]:
-    """Resume the next pending iteration; only a complete current round can converge."""
-    while True:
-        state = history(root)
-        results = [x["result"] for x in state["attempts"] if "result" in x]
-        usable = [
-            r
-            for r in results
-            if _scope(r["payload"], subject) and classification(r["payload"]) != "incomplete"
-        ]
-        if usable and len(usable) >= MINIMUM_ROUNDS:
-            final = usable[-1]["payload"]
-            if (
-                all(final[k] == subject[k] for k in SUBJECT_KEYS)
-                and classification(final) == "clean"
-            ):
-                return usable
-        attempt_id = uuid.uuid4().hex
-        iteration = {
-            "attempt_id": attempt_id,
-            "number": len(usable) + 1,
-            "minimum_completed_rounds": MINIMUM_ROUNDS,
-            "instructions": INSTRUCTIONS,
-            "prior_findings": _findings(results),
-            "previous_rounds_sha256": findings_digest(results),
-        }
-        state["attempts"].append({"id": attempt_id, "subject": subject, "iteration": iteration})
-        _save(root, state)
-        receipt = execute(json.dumps({**request, "iteration": iteration}, ensure_ascii=False))
-        record(root, attempt_id, receipt)
-        outcome = classification(receipt["payload"])
-        if outcome == "issues":
-            verdict = receipt["payload"]["verdict"]
-            concrete = [x for x in verdict["findings"] if re.match(r"^\[P[0-3]\]\s", x)]
-            msg = (
-                "Local review rejected; concrete source issues require correction: "
-                + "\n".join(x[:1200] for x in concrete[:2])
-                + "\nReviewer summary: "
-                + verdict["summary"][:500]
-            )
-            raise RuntimeError(msg)
-        if outcome != "clean":
-            msg = (
-                "Local review rejected; incomplete inspection or complete diff coverage missing: "
-                + str(receipt["payload"]["verdict"].get("summary", outcome))
-            )
-            raise RuntimeError(msg)
+    """Complete discovery before either aggregate repair or exact-candidate approval."""
+    from agent_tools import review_waves  # noqa: PLC0415 - scoped wave orchestration.
+
+    batch = review_waves.run_batch(
+        root,
+        subject,
+        request,
+        execute,
+        discovery_only=False,
+        sign_wave=sign_wave,
+        verify_coverage=verify_wave,
+    )
+    if batch["status"] == "needs_fixes":
+        raise DiscoveryBatchError(batch)
+    return cast("list[dict[str, Any]]", batch["rounds"])
+
+
+def discover(  # noqa: PLR0913 - match the approval orchestrator's explicit trusted callbacks.
+    root: Path,
+    subject: dict[str, str],
+    request: dict[str, Any],
+    execute: Callable[[str], dict[str, Any]],
+    *,
+    sign_wave: Callable[[dict[str, Any]], dict[str, Any]],
+    verify_wave: Callable[[dict[str, Any], dict[str, Path]], None],
+) -> dict[str, Any]:
+    """Inspect immutable source without issuing or reusing a publication approval."""
+    from agent_tools import review_waves  # noqa: PLC0415 - scoped wave orchestration.
+
+    return review_waves.run_batch(
+        root,
+        subject,
+        request,
+        execute,
+        discovery_only=True,
+        sign_wave=sign_wave,
+        verify_coverage=verify_wave,
+    )
+
+
+def compact_proof(
+    root: Path, waves: list[dict[str, Any]], subject: dict[str, str]
+) -> dict[str, Any]:
+    from agent_tools import review_waves  # noqa: PLC0415 - private proof retention.
+
+    return review_waves.build_proof(root, waves, subject)
 
 
 def validate_convergence(root: Path, payload: dict[str, Any]) -> None:
-    proof = payload.get("review_iterations")
-    if not isinstance(proof, dict) or proof.get("version") != 1:
-        msg = "Converged independent review iterations are required before publication"
-        raise ValueError(msg)
-    rounds = proof.get("rounds")
-    if not isinstance(rounds, list) or len(rounds) < MINIMUM_ROUNDS:
-        msg = "At least two completed independent review iterations are required"
-        raise ValueError(msg)
-    identities = set()
-    for receipt in rounds:
-        p = verify_round(root, receipt)
-        if (
-            not _scope(p, payload)
-            or classification(p) == "incomplete"
-            or p["reviewer_id"] in identities
-        ):
-            msg = "Independent review iteration proof is incomplete or inconsistent"
-            raise ValueError(msg)
-        identities.add(p["reviewer_id"])
-    final = rounds[-1]["payload"]
-    if (
-        any(final[k] != payload[k] for k in SUBJECT_KEYS)
-        or classification(final) != "clean"
-        or payload["reviewer_id"] != final["reviewer_id"]
-        or payload["execution_sha256"] != final["execution_sha256"]
-    ):
-        msg = "Final independent review does not cleanly approve this exact candidate"
-        raise ValueError(msg)
+    from agent_tools import review_waves  # noqa: PLC0415 - signed aggregate proof validation.
+
+    review_waves.validate_proof(root, payload)

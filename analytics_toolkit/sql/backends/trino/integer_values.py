@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import lru_cache
 from numbers import Integral
 from typing import Any
@@ -89,7 +90,13 @@ def integer_value(value: Any, native_type: str) -> int:
     bits = _INTEGER_BITS[native]
     minimum, maximum = -(2 ** (bits - 1)), 2 ** (bits - 1) - 1
     try:
-        if native == "bigint" or isinstance(value, (Integral, bool, np.bool_)):
+        if native == "bigint":
+            result = int(value)
+        elif isinstance(value, Decimal):
+            if not value.is_finite() or value != value.to_integral_value():
+                raise TrinoIntegerValueError(_INVALID_VALUE)
+            result = int(value)
+        elif isinstance(value, (Integral, bool, np.bool_)):
             result = int(value)
         elif isinstance(value, str):
             result = integer_text_value(value, native_type)
@@ -107,7 +114,7 @@ def convert_integer_value(value: Any, native_type: str) -> tuple[bool, Any]:
     if not is_integer_type(native_type):
         return False, value
     if native_type.strip().casefold() == "bigint" or isinstance(
-        value, (str, Integral, bool, np.bool_)
+        value, (str, Integral, Decimal, bool, np.bool_)
     ):
         return True, integer_value(value, native_type)
     return False, value

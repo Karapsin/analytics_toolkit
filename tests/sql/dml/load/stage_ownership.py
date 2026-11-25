@@ -6,34 +6,51 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
 from analytics_toolkit.sql.connection.errors import SqlTableReadinessError
+from analytics_toolkit.sql.ddl.ownership import execute_owned_create_sqls
 from analytics_toolkit.sql.dml.load.models import LoadOptions, LoadState
+from sqlglot import exp, parse_one
 
+from tests.sql._support.assertions import strip_query_label
+from tests.sql._support.ch_lifecycle import install_lifecycle
 from tests.sql._support.load_table import load_df_module
 from tests.sql._support.transfer_schema import stage_module
 
 
-def test_load_readiness_failure_cleans_acknowledged_partial_pair_only(monkeypatch):
+def test_load_readiness_failure_cleans_acknowledged_partial_pair_only(
+    monkeypatch, write_sql_connections
+):
+    server = install_lifecycle(monkeypatch, write_sql_connections, driver="http")
+    before = server.snapshot()
     options = LoadOptions(
         connection_key="ch",
         connection_backend="ch",
-        destination_table="db.target",
+        destination_table="analytics.target",
         append=True,
         write_mode="append",
         key_columns=["id"],
     )
     state = LoadState(target_exists=True, original_target_exists=True)
-    monkeypatch.setattr(stage_module, "build_stage_table_name", lambda *_a, **_k: "db.stage")
+    stage, physical = "analytics.stage", "analytics.stage_shard"
+    monkeypatch.setattr(stage_module, "build_stage_table_name", lambda *_a, **_k: stage)
     monkeypatch.setattr(stage_module, "table_exists", lambda *_a, **_k: False)
-    commands = []
+    client = load_df_module.get_sql_connection("ch")
 
     def create(*_args, **kwargs):
-        kwargs["on_resource_created"]("db.stage_shard")
+        execute_owned_create_sqls(
+            get_backend_adapter("ch"),
+            client,
+            [f"CREATE TABLE {physical} (id Int64) ENGINE=MergeTree ORDER BY id"],
+            kwargs["on_resource_created"],
+            on_scoped_resource_created=kwargs["on_scoped_resource_created"],
+            connection_key="ch",
+        )
         message = "created shard is not ready"
         raise SqlTableReadinessError(message)
 
     monkeypatch.setattr(stage_module, "_create_sql_table_with_connection", create)
-    client = SimpleNamespace(command=commands.append)
     monkeypatch.setattr(
         load_df_module,
         "_run_load_target_action",
@@ -42,9 +59,26 @@ def test_load_readiness_failure_cleans_acknowledged_partial_pair_only(monkeypatc
     with pytest.raises(SqlTableReadinessError):
         load_df_module._load_dataframe(options, state, pd.DataFrame({"id": [1]}))
     assert state.overlap_stage_table is None
-    assert state.owned_stage_resources == [("db.stage_shard", "db.stage", None)]
+    assert state.owned_stage_resources == [(physical, stage, None)]
+    assert len(state.owned_stage_scoped_resources) == 1
+    (resource,) = state.owned_stage_scoped_resources
+    assert resource.name == physical
+    assert resource.certificate is not None
+    assert resource.scope.kind == "local"
     load_df_module._cleanup_load(options, state)
-    assert commands == ["DROP TABLE IF EXISTS `db`.`stage_shard`"]
+    dropped = [
+        table
+        for statement in server.commands
+        if isinstance(
+            (tree := parse_one(strip_query_label(statement), read=ClickHouseDialect)), exp.Drop
+        )
+        for table in tree.find_all(exp.Table)
+    ]
+    assert len(dropped) == 1
+    assert dropped[0].db == "analytics"
+    assert dropped[0].name == "stage_shard"
+    assert server.snapshot() == before
+    client.close()
 
 
 def test_collision_and_ambiguous_candidates_never_become_owned(monkeypatch):

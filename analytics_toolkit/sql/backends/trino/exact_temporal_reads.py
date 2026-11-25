@@ -66,6 +66,31 @@ def _calendar(match: re.Match[str], digits: str) -> dt.datetime:
         raise ValueError(message) from None
 
 
+def _wide_timestamp(match: re.Match[str], digits: str, precision: int) -> ExactTemporal:
+    from analytics_toolkit.sql.backends.calendar_ticks import days_from_civil  # noqa: PLC0415
+
+    year, month, day, hour, minute, second = (int(part) for part in match.groups()[:6])
+    try:
+        dt.time(hour, minute, second)
+        seconds = days_from_civil(year, month, day) * 86400 + hour * 3600 + minute * 60 + second
+    except (ValueError, OverflowError):
+        message = "Trino timestamp response has invalid Gregorian calendar fields."
+        raise ValueError(message) from None
+    zone = match[8]
+    if zone is not None:
+        if zone.startswith(("+", "-")):
+            seconds -= _offset_minutes(zone) * 60
+        elif zone not in {"UTC", "GMT", "Z", "Etc/UTC", "Etc/GMT"}:
+            message = (
+                "Trino expanded-year timestamps require UTC or a fixed offset; "
+                "project UTC in source SQL for named timezone rules."
+            )
+            raise ValueError(message)
+    return ExactTemporal(
+        seconds * 10**precision + int("0" + digits), precision, zone, wall_time=zone is None
+    )
+
+
 def _offset_minutes(zone_name: str) -> int:
     fixed = _FIXED_ZONE.fullmatch(zone_name)
     if (
@@ -123,7 +148,8 @@ def _precise_result(
                 unit="ns",
                 tz="UTC" if wall.tzinfo is not None else None,
             )
-            return stamp.tz_convert(wall.tzinfo) if wall.tzinfo is not None else stamp
+            if stamp is not pd.NaT:
+                return stamp.tz_convert(wall.tzinfo) if wall.tzinfo is not None else stamp
         except (ValueError, OverflowError):
             # A Python-supported calendar can fall outside pandas' nanosecond range.
             pass
@@ -149,9 +175,15 @@ def decode_timestamp(
         message = "Trino timestamp response does not match its declared timezone family."
         raise ValueError(message)
     digits = _fraction_digits(match[7], precision)
+    if not dt.MINYEAR <= int(match[1]) <= dt.MAXYEAR:
+        return _wide_timestamp(match, digits, precision)
     wall = _calendar(match, digits)
     if zone_name is not None:
         wall = _with_zone(wall, zone_name)
+        try:
+            wall.astimezone(dt.timezone.utc)
+        except (ValueError, OverflowError):
+            return _wide_timestamp(match, digits, precision)
     if precision <= _PYTHON_PRECISION:
         return wall
     return _precise_result(wall, digits, precision, zone_name)

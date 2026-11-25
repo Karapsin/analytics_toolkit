@@ -9,6 +9,7 @@ import sqlglot.tokens as sqlglot_tokens
 from sqlglot import exp, parse
 from sqlglot.errors import SqlglotError
 
+from analytics_toolkit.sql.connection.errors import ClickHouseClusterTopologyError
 from analytics_toolkit.sql.execution.backend_options import backend_operation
 
 from .cluster_functions import static_name
@@ -132,6 +133,8 @@ def read_clickhouse_shard_stats(
     *,
     read_sql: Callable[[str, str], Any],
 ) -> dict[ClickHouseShardTable, tuple[object, object]]:
+    from .metadata_values import decode_metadata_frame  # noqa: PLC0415
+
     stats = _LogicalStats()
     refs_by_cluster: dict[str, set[ClickHouseShardTable]] = {}
     original_refs_by_resolved_ref: dict[
@@ -154,17 +157,28 @@ def read_clickhouse_shard_stats(
 
     for cluster, cluster_refs in refs_by_cluster.items():
         query = build_clickhouse_shard_stats_query(cluster, cluster_refs)
+        targets = tuple(sorted((ref.cluster, ref.database, ref.table) for ref in cluster_refs))
         try:
-            with logical_statistics(), backend_operation() as state:
+            with logical_statistics(targets=targets), backend_operation() as state:
                 result = cast("pd.DataFrame", read_sql(connection_key, query))
-                result.attrs["data_complete"] = not state.partial
+                result = decode_metadata_frame(result, ("shard_database", "shard_table"))
+                result.attrs["data_complete"] = (
+                    result.attrs.get("data_complete", True) and not state.partial
+                )
                 result.attrs["ch_cluster_status"] = list(state.statuses.values())
+        except ClickHouseClusterTopologyError:
+            # An unverified replication group cannot produce a certified logical
+            # estimate. Preserve deterministic topology failure semantics.
+            raise
         except Exception:
             stats.data_complete = False
             continue
         stats.data_complete = stats.data_complete and result.attrs.get("data_complete", True)
         stats.cluster_status.extend(result.attrs.get("ch_cluster_status", []))
         for _, row in result.iterrows():
+            complete = row.get("statistics_complete", False)
+            if complete is None or pd.isna(complete) or not bool(complete):
+                stats.data_complete = False
             database = row.get("shard_database")
             table = row.get("shard_table")
             if not isinstance(database, str) or not isinstance(table, str):
@@ -190,42 +204,9 @@ def build_clickhouse_shard_stats_query(
     cluster: str,
     shard_refs: set[ClickHouseShardTable],
 ) -> str:
-    table_filters = ", ".join(
-        f"({sql_string_literal(shard_ref.database)}, {sql_string_literal(shard_ref.table)})"
-        for shard_ref in sorted(
-            shard_refs,
-            key=lambda value: (value.database, value.table),
-        )
-    )
-    return f"""
-WITH host_scope AS (
-    SELECT row_number() OVER (ORDER BY shard_num, replica_num) AS position, shard_num
-    FROM system.clusters
-    WHERE cluster = {sql_string_literal(cluster)}
-)
-SELECT
-    database AS shard_database,
-    name AS shard_table,
-    sum(row_count) AS row_count,
-    sum(table_size_bytes) AS table_size_bytes
-FROM (
-    SELECT database, name, host_scope.shard_num, engine,
-        if(startsWith(engine, 'Replicated') OR startsWith(engine, 'Shared'),
-           tupleElement(argMin(tuple(ifNull(total_rows, 0), ifNull(total_bytes, 0)),
-                               _shard_num), 1),
-           sum(ifNull(total_rows, 0))) AS row_count,
-        if(startsWith(engine, 'Replicated') OR startsWith(engine, 'Shared'),
-           tupleElement(argMin(tuple(ifNull(total_rows, 0), ifNull(total_bytes, 0)),
-                               _shard_num), 2),
-           sum(ifNull(total_bytes, 0))) AS table_size_bytes
-    FROM clusterAllReplicas({sql_string_literal(cluster)}, system, tables)
-    INNER JOIN host_scope ON _shard_num = host_scope.position
-    WHERE (database, name) IN ({table_filters})
-    GROUP BY database, name, host_scope.shard_num, engine
-)
-GROUP BY database, name
-ORDER BY database, name
-""".strip()
+    from .statistics_query import build_shard_statistics_query  # noqa: PLC0415
+
+    return build_shard_statistics_query(cluster, shard_refs)
 
 
 def resolve_clickhouse_cluster_macro(
@@ -249,7 +230,9 @@ def resolve_clickhouse_cluster_macro(
     value = result.iloc[0]["cluster_name"]
     if pd.isna(value):
         return cluster
-    resolved = str(value).strip()
+    from .metadata_values import metadata_text  # noqa: PLC0415
+
+    resolved = metadata_text(value).strip()
     return resolved or cluster
 
 
@@ -372,22 +355,9 @@ def _distributed_arguments(value: str) -> list[exp.Expression] | None:
         or tokens[-1].token_type is not _TOKEN_TYPE.R_PAREN
     ):
         return None
-    depth = 0
-    start = tokens[1].end + 1
-    arguments = []
-    for token in tokens[1:]:
-        if token.token_type is _TOKEN_TYPE.L_PAREN:
-            depth += 1
-        elif token.token_type is _TOKEN_TYPE.R_PAREN:
-            depth -= 1
-            if depth == 0 and token is not tokens[-1]:
-                return None
-        elif token.token_type is _TOKEN_TYPE.COMMA and depth == 1:
-            arguments.append(value[start : token.start])
-            start = token.end + 1
-    if depth:
+    arguments = _argument_slices(value[tokens[1].end + 1 : tokens[-1].start])
+    if arguments is None:
         return None
-    arguments.append(value[start : tokens[-1].start])
     expressions = [
         exp.Anonymous(this="currentDatabase")
         if _is_zero_argument_database_call(argument)
@@ -483,44 +453,38 @@ def find_matching_paren(sql: str, open_paren: int) -> int | None:
     return None
 
 
-def split_top_level_args(args_sql: str) -> list[str]:
-    args: list[str] = []
-    depth = 0
-    quote: str | None = None
+def _argument_slices(args_sql: str) -> list[str] | None:
+    try:
+        tokens = ClickHouseDialect().tokenize(args_sql)
+    except SqlglotError:
+        return None
+    delimiters = {
+        _TOKEN_TYPE.L_PAREN: _TOKEN_TYPE.R_PAREN,
+        _TOKEN_TYPE.L_BRACKET: _TOKEN_TYPE.R_BRACKET,
+        _TOKEN_TYPE.L_BRACE: _TOKEN_TYPE.R_BRACE,
+    }
+    closing = set(delimiters.values())
+    stack = []
+    arguments = []
     start = 0
-    index = 0
-    while index < len(args_sql):
-        char = args_sql[index]
-        if quote is not None:
-            if char == quote:
-                if index + 1 < len(args_sql) and args_sql[index + 1] == quote:
-                    index += 2
-                    continue
-                quote = None
-            elif char == "\\" and quote == "'" and index + 1 < len(args_sql):
-                index += 2
-                continue
-            index += 1
-            continue
-        if char in {"'", '"', "`"}:
-            quote = char
-            index += 1
-            continue
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth = max(depth - 1, 0)
-        elif char == "," and depth == 0:
-            arg = args_sql[start:index].strip()
-            if arg:
-                args.append(arg)
-            start = index + 1
-        index += 1
+    for token in tokens:
+        kind = token.token_type
+        if kind in delimiters:
+            stack.append(delimiters[kind])
+        elif kind in closing:
+            if not stack or stack.pop() != kind:
+                return None
+        elif kind is _TOKEN_TYPE.COMMA and not stack:
+            arguments.append(args_sql[start : token.start].strip())
+            start = token.end + 1
+    if stack:
+        return None
+    arguments.append(args_sql[start:].strip())
+    return arguments
 
-    arg = args_sql[start:].strip()
-    if arg:
-        args.append(arg)
-    return args
+
+def split_top_level_args(args_sql: str) -> list[str]:
+    return [argument for argument in (_argument_slices(args_sql) or []) if argument]
 
 
 def skip_whitespace(sql: str, position: int) -> int:

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from html import escape
 from importlib import import_module
 from typing import Any
+from uuid import UUID
 
 from analytics_toolkit.sql.connection.errors import (
     ClickHouseClusterTopologyError,
@@ -21,13 +22,16 @@ from analytics_toolkit.sql.execution.backend_options import (
 )
 from analytics_toolkit.sql.execution.labels import apply_query_label
 
+from .availability import optional_cluster, warn_optional_availability
 from .dialect import sql_string_literal
 from .managed_routing import _ClusterObject, _normalized_definition, _resolve_cluster_name
+from .metadata_values import decode_metadata_rows
 
-_PROBE_FIELDS = 2
+_PROBE_FIELDS = 4
 _HOST_FIELDS = 4
 _TABLE_FIELDS = 5
 _REPLICA_FIELDS = 5
+_MAX_TCP_PORT = 65535
 
 PROBE_SETTINGS = {
     "skip_unavailable_shards": 1,
@@ -72,10 +76,16 @@ class TableObject:
     uuid: str
 
 
-def query_rows(client: Any, sql: str, *, settings: dict[str, Any] | None = None) -> list[Any]:
+def query_rows(
+    client: Any,
+    sql: str,
+    *,
+    settings: dict[str, Any] | None = None,
+    text_columns: tuple[int, ...] = (),
+) -> list[Any]:
     sql = apply_query_label(sql, current_backend_query_label())
     result = client.query(sql, **({"settings": settings} if settings is not None else {}))
-    return list(result.result_rows)
+    return decode_metadata_rows(list(result.result_rows), text_columns)
 
 
 def _probe_settings(client: Any) -> tuple[dict[str, Any], dict[str, tuple[str, bool]]]:
@@ -87,6 +97,7 @@ def _probe_settings(client: Any) -> tuple[dict[str, Any], dict[str, tuple[str, b
     rows = query_rows(
         client,
         f"SELECT name, value, readonly FROM system.settings WHERE name IN ({names})",  # noqa: S608 - fixed setting names escaped as SQL literals
+        text_columns=(0, 1),
     )
     available = {str(name): (str(value), bool(int(readonly))) for name, value, readonly in rows}
     required: dict[str, Any] = {"skip_unavailable_shards": 1}
@@ -214,6 +225,7 @@ class ClusterScope:
             client,
             "SELECT shard_num, replica_num, host_name, port, is_local FROM system.clusters "  # noqa: S608 - escaped literals or parsed SQL identifiers
             f"WHERE cluster = {literal} ORDER BY shard_num, replica_num",
+            text_columns=(2,),
         )
         try:
             self.hosts = [
@@ -242,13 +254,24 @@ class ClusterScope:
         self.probe_settings, self.setting_metadata = _probe_settings(client)
         reached = query_rows(
             client,
-            f"SELECT _shard_num, hostName() FROM clusterAllReplicas({literal}, system, one)",  # noqa: S608 - escaped literals or parsed SQL identifiers
+            f"SELECT _shard_num, hostName(), toString(serverUUID()), tcpPort() "  # noqa: S608 - escaped literals or parsed SQL identifiers
+            f"FROM clusterAllReplicas({literal}, system, one)",
             settings=self.probe_settings,
+            text_columns=(1, 2),
         )
         try:
             positions = [int(row[0]) for row in reached]
             if any(len(row) < _PROBE_FIELDS or not row[1] for row in reached):
                 msg = "Incomplete cluster reachability response."
+                raise ClickHouseClusterTopologyError(msg)
+            self.observed_instances = {
+                int(row[0]): (str(UUID(str(row[2]))), int(row[3])) for row in reached
+            }
+            if any(
+                not UUID(server).int or not 0 < port <= _MAX_TCP_PORT
+                for server, port in self.observed_instances.values()
+            ):
+                msg = "Incomplete observed server instance identity."
                 raise ClickHouseClusterTopologyError(msg)
         except (IndexError, TypeError, ValueError) as exc:
             msg = "Incomplete cluster reachability response."
@@ -258,10 +281,17 @@ class ClusterScope:
         ):
             msg = "Unexpected cluster probe positions."
             raise ClickHouseClusterTopologyError(msg)
+        if len(set(self.observed_instances.values())) != len(self.observed_instances):
+            msg = "Configured cluster endpoints resolve to one server instance more than once."
+            raise ClickHouseClusterTopologyError(msg)
         self.reachable = [host for host in self.hosts if host.position in positions]
-        if not self.reachable:
+        if not self.reachable and not self.availability_optional:
             msg = f"No hosts of {self.cluster!r} are reachable."
             raise ClickHouseClusterUnavailableError(msg)
+
+    @property
+    def availability_optional(self) -> bool:
+        return optional_cluster(self)
 
     def record(
         self,
@@ -310,6 +340,13 @@ class ClusterScope:
             )
             raise ClickHouseClusterUnavailableError(msg)
 
+    def require_available(self, selected: list[Host], reason: str) -> None:
+        """Deployment availability may be advisory; selected data coverage is not."""
+        if self.availability_optional:
+            warn_optional_availability(self, reason)
+        else:
+            self.require_all(selected, reason)
+
     def objects(self, database: str, table: str) -> list[TableObject]:
         sql = (
             "SELECT _shard_num, engine, engine_full, create_table_query, toString(uuid) "  # noqa: S608 - escaped literals or parsed SQL identifiers
@@ -317,7 +354,7 @@ class ClusterScope:
             f"WHERE database = {sql_string_literal(database)} "
             f"AND name = {sql_string_literal(table)}"
         )
-        rows = query_rows(self.client, sql, settings=self.probe_settings)
+        rows = query_rows(self.client, sql, settings=self.probe_settings, text_columns=(1, 2, 3, 4))
         objects: list[TableObject] = []
         for row in rows:
             if len(row) < _TABLE_FIELDS:
@@ -361,7 +398,7 @@ class ClusterScope:
         )
         raise ClickHouseClusterUnavailableError(msg)
 
-    def usable(  # noqa: C901 - one verified coverage and replica decision boundary
+    def usable(
         self,
         objects: list[TableObject],
         table: str,
@@ -386,36 +423,22 @@ class ClusterScope:
             self._require_ready_replicas(selected, table)
             replica_rows = query_rows(
                 self.client,
-                "SELECT _shard_num, zookeeper_path, replica_name, is_readonly, is_session_expired "  # noqa: S608 - escaped literals or parsed SQL identifiers
+                "SELECT _shard_num, zookeeper_path, replica_name, is_readonly, is_session_expired, "  # noqa: S608 - escaped literals or parsed SQL identifiers
+                "zookeeper_name "
                 f"FROM clusterAllReplicas({sql_string_literal(self.cluster)}, system, replicas) "
                 f"WHERE database = {sql_string_literal(database)} "
                 f"AND table = {sql_string_literal(relation)}",
                 settings=self.probe_settings,
+                text_columns=(1, 2, 5),
             )
             # Shared engines have different coordination metadata.
             if objects[0].engine.lower().startswith("replicated"):
                 by_position = {
                     int(row[0]): row for row in replica_rows if len(row) >= _REPLICA_FIELDS
                 }
-                paths: dict[str, int] = {}
-                shard_paths: dict[int, str] = {}
-                names: set[tuple[str, str]] = set()
-                for host in selected:
-                    row = by_position.get(host.position)
-                    if row is None:
-                        msg = f"Missing replica metadata for {table}."
-                        raise ClickHouseClusterTopologyError(msg)
-                    path, replica = str(row[1]), str(row[2])
-                    if (
-                        (path in paths and paths[path] != host.shard)
-                        or (host.shard in shard_paths and shard_paths[host.shard] != path)
-                        or (path, replica) in names
-                    ):
-                        msg = f"Unsafe replica identities for {table}."
-                        raise ClickHouseClusterTopologyError(msg)
-                    paths[path] = host.shard
-                    shard_paths[host.shard] = path
-                    names.add((path, replica))
+                from .replication_identity import require_replica_layout  # noqa: PLC0415
+
+                require_replica_layout(selected, by_position, table)
                 usable = [
                     host
                     for host in selected
@@ -430,6 +453,9 @@ class ClusterScope:
                         "replication metadata; cluster routing cannot exclude it safely."
                     )
                     raise ClickHouseClusterUnavailableError(msg)
+                from .replication_identity import certify_replication_identity  # noqa: PLC0415
+
+                certify_replication_identity(self, selected, by_position)
         if not selected:
             msg = f"No usable hosts for {table}."
             raise ClickHouseClusterUnavailableError(msg)

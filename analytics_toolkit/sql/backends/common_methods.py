@@ -20,6 +20,7 @@ class DataframePreparationPolicy:
     """Default policies leave dataframe payloads and execution previews alone."""
 
     load_execution_preview_requires_schema: bool = False
+    query_input_requires_ddl: bool = False
     accepts_unparameterized_decimal_floats: bool = False
 
     def canonical_native_type(self, native_type: str) -> str:
@@ -104,7 +105,9 @@ def get_table_column_names(
         cursor.fetchall()  # Consume at most one row; never retain or display its values.
         return names
     finally:
-        cursor.close()
+        from analytics_toolkit.sql.backends.execution_outcome import close_cursor  # noqa: PLC0415
+
+        close_cursor(cursor, backend=self.backend)
 
 
 def get_writable_table_column_types(
@@ -122,6 +125,12 @@ def resolve_upsert_execution_options(
 ) -> dict[str, Any]:
     del self, connection, table_name
     return options
+
+
+def prepare_upsert_target(
+    self: Any, connection: Any, table_name: str, *, partition_column: str | None
+) -> None:
+    del self, connection, table_name, partition_column
 
 
 def resolve_upsert_execution_sqls(

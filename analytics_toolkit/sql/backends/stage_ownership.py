@@ -7,6 +7,12 @@ from copy import copy
 from dataclasses import is_dataclass, replace
 from typing import Any
 
+from analytics_toolkit.sql.ddl.creation_resources import (
+    CreatedResourceChangedError,
+    CreatedTableResource,
+    resource_retention_message,
+)
+
 
 def single_resource_policy(policy: Any) -> Any:
     """Snapshot stages never own a Distributed companion."""
@@ -22,11 +28,25 @@ def single_resource_policy(policy: Any) -> Any:
 def drop_owned_resource(
     adapter: Any,
     connection: Any,
-    resource: str,
+    resource: str | CreatedTableResource,
     *,
     logical_stage: str,
     creation_policy: Any = None,
 ) -> None:
+    if isinstance(resource, CreatedTableResource):
+        if resource.backend != adapter.backend:
+            raise CreatedResourceChangedError(resource_retention_message(resource))
+        if resource.backend == "gp":
+            from .gp.creation_identity import drop_created_resource  # noqa: PLC0415
+
+            drop_created_resource(adapter, connection, resource)
+            return
+        if resource.backend == "ch":
+            from .ch.created_resources import drop_created_resource  # noqa: PLC0415
+
+            drop_created_resource(adapter, connection, resource)
+            return
+        raise CreatedResourceChangedError(resource_retention_message(resource))
     from analytics_toolkit.sql.core.identifiers import (  # noqa: PLC0415 -- registry cycle.
         TableIdentifier,
     )

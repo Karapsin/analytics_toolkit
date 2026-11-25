@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.native_values import supports_native_assignment
 from analytics_toolkit.sql.backends.query_source_binding import query_may_read_target
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
@@ -20,7 +21,6 @@ from analytics_toolkit.sql.dml.destination_context import freeze_destination_tim
 from analytics_toolkit.sql.dml.load.load_sql_table import insert_rows_batch
 from analytics_toolkit.sql.dml.query_client_validation import (
     describe_query_client_validation,
-    guarded_query_retry,
     query_validation_connection,
     validate_query_client_input,
 )
@@ -33,6 +33,7 @@ from analytics_toolkit.sql.dml.query_native_assignment import (
     replay_query_assignment,
     requires_query_assignment,
 )
+from analytics_toolkit.sql.dml.query_replay import replay_query_batches
 from analytics_toolkit.sql.dml.table.table_validation import validate_key_columns_in_columns
 from analytics_toolkit.sql.dml.transfer.flow.adaptive_input import (
     AdaptiveTransferContext,
@@ -42,7 +43,6 @@ from analytics_toolkit.sql.dml.transfer.flow.adaptive_input import (
     remove_configuration_guard,
     require_frozen_configuration,
     resolve_adaptive_input,
-    resolved_source_batches,
 )
 from analytics_toolkit.sql.dml.transfer.flow.stage_identity import (
     resolve_destination_identity,
@@ -53,12 +53,14 @@ from analytics_toolkit.sql.dml.transfer.runtime.models import (
     TransferOptions,
     TransferStageState,
 )
-from analytics_toolkit.sql.dml.transfer.runtime.retry import run_with_retry
 from analytics_toolkit.sql.dml.transfer.schema import (
     inspect_source_query_schema,
     map_source_schema_to_target,
 )
-from analytics_toolkit.sql.execution.backend_options import backend_operation
+from analytics_toolkit.sql.execution.backend_options import (
+    backend_operation,
+    clear_data_replay_retention,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -87,6 +89,8 @@ class PreparedQueryInput:
     schema: dict[str, str]
     columns: list[str]
     frozen: bool
+    mutation_started: bool = False
+    publication_succeeded: bool = False
 
     def describe(self, metadata: SqlOperationMetadata) -> None:
         if not self.frozen:
@@ -124,7 +128,10 @@ def prepare_query_input(
             (target_connection_ref or connection_ref)["connection"],
             prepared.schema,
         )
-        if requires_query_assignment(prepared.schema, prepared.options.to_db_backend):
+        if requires_query_assignment(prepared.schema, prepared.options.to_db_backend) or any(
+            item.native_assignment_required
+            for item in prepared.options.input_resolution.get("resolutions", ())
+        ):
             _prepare_assignment(
                 prepared, connection_ref, target_connection_ref or connection_ref, cache
             )
@@ -159,6 +166,9 @@ def prepare_query_input(
         source_schema, target_backend, source_backend=request.backend
     )
     pending_native = requires_query_assignment(target_types, target_backend)
+    allow_native = any(
+        supports_native_assignment(native, target_backend) for native in target_types.values()
+    )
     native_sql_copy = get_backend_adapter(
         target_backend
     ).should_insert_create_table_from_sql_directly(
@@ -166,7 +176,12 @@ def prepare_query_input(
     )
     python_source = request.source_values_in_python and not native_sql_copy
     resolution["query_python_consumer"] = python_source
-    target_ddl = resolve_operation_ddl(target_config) if pending_native else None
+    target_ddl = (
+        resolve_operation_ddl(target_config)
+        if allow_native
+        or getattr(get_backend_adapter(target_backend), "query_input_requires_ddl", False)
+        else None
+    )
     options = TransferOptions(
         from_db_key=request.alias,
         from_db_backend=request.backend,
@@ -183,8 +198,10 @@ def prepare_query_input(
         batch_size=10_000,
         retry_cnt=cache.get("retry_cnt", 5),
         timeout_increment=cache.get("timeout_increment", 5),
+        trino_insert_chunk_size=cache.get("trino_insert_chunk_size"),
         source_transfer_staging_schema=config.transfer_staging_schema,
         transfer_staging_schema=target_config.transfer_staging_schema,
+        regular_ddl_properties=target_ddl.regular_properties if target_ddl is not None else None,
         staging_ddl_properties=target_ddl.staging_properties if target_ddl is not None else None,
         staging_ch_policy=target_ddl.staging_ch_policy if target_ddl is not None else None,
         source_staging_ch_policy=(
@@ -221,7 +238,7 @@ def prepare_query_input(
         options.retry_cnt,
         force_freeze=request.force_freeze or pending_native,
         source_values_in_python=python_source,
-        allow_pending_native_assignment=pending_native,
+        allow_pending_native_assignment=allow_native,
     )
     with query_validation_connection(options, target_connection_ref or connection_ref):
         frozen = resolve_adaptive_input(
@@ -236,7 +253,9 @@ def prepare_query_input(
     prepared = PreparedQueryInput(options, state, state.stage_column_types or {}, columns, frozen)
     if frozen:
         cache["prepared_query_input"] = prepared
-    if pending_native:
+    if pending_native or any(
+        item.native_assignment_required for item in resolution.get("resolutions", ())
+    ):
         _prepare_assignment(
             prepared, connection_ref, target_connection_ref or connection_ref, cache
         )
@@ -289,14 +308,10 @@ def prepare_generic_query_input(
 ) -> PreparedQueryInput | None:
     if not options.insert_data:
         return None
-    overlap = (
-        options.source_key == options.target_key
-        and options.drop_target_if_exists
-        and query_may_read_target(
-            options.source_sql,
-            options.target_table,
-            options.source_backend,
-        )
+    overlap = options.drop_target_if_exists and query_may_read_target(
+        options.source_sql,
+        options.target_table,
+        options.source_backend,
     )
     return prepare_query_input(
         QueryInputRequest(
@@ -333,6 +348,13 @@ def cached_query_schema(cache: dict[str, Any]) -> list[Any] | None:
     )
 
 
+def mark_query_input_mutation(cache: dict[str, Any]) -> None:
+    """Keep certified replacement input until publication acknowledges success."""
+    prepared = cache.get("prepared_query_input")
+    if prepared is not None and prepared.frozen:
+        prepared.mutation_started = True
+
+
 def replay_query_input(
     prepared: PreparedQueryInput,
     connection_ref: dict[str, Any],
@@ -340,7 +362,7 @@ def replay_query_input(
 ) -> int:
     options = prepared.options
     total = 0
-    validate_query_client_input(prepared, connection_ref, python_consumer=True)
+    validate_query_client_input(prepared, connection_ref, python_consumer=True, created_target=True)
     if requires_query_assignment(prepared.schema, options.to_db_backend) or any(
         getattr(resolution, "native_assignment_required", False)
         for resolution in options.input_resolution.get("resolutions", [])
@@ -349,32 +371,16 @@ def replay_query_input(
         prepared.describe(metadata)
         metadata.inserted_rows = metadata.affected_rows = total
         metadata.data_write_replay_possible = options.retry_cnt > 1
+        prepared.publication_succeeded = True
+        clear_data_replay_retention()
         return total
-    for batch in resolved_source_batches(options, iter):
-        require_frozen_configuration(options)
-        freeze_destination_timezone(
-            options.input_resolution,
-            options.to_db_backend,
-            connection_ref["connection"],
-            prepared.schema,
-        )
-        total += insert_rows_batch(
-            options.to_db_backend,
-            connection_ref,
-            options.target_table,
-            batch.columns,
-            batch.rows,
-            retry_fn=guarded_query_retry(options, run_with_retry),
-            retry_cnt=options.retry_cnt,
-            timeout_increment=options.timeout_increment,
-            target_column_types=prepared.schema,
-            connection_key=options.to_db_key,
-            query_label=options.query_label,
-        )
+    total = replay_query_batches(prepared, connection_ref, insert_fn=insert_rows_batch)
     prepared.describe(metadata)
     metadata.inserted_rows = total
     metadata.affected_rows = total
     metadata.data_write_replay_possible = options.retry_cnt > 1
+    prepared.publication_succeeded = True
+    clear_data_replay_retention()
     return total
 
 
@@ -400,7 +406,17 @@ def query_input_scope(cache: dict[str, Any], configs: list[Any]) -> Iterator[Non
         try:
             yield
         finally:
-            if operation.preserve_recovery or operation.structural_replay_blocked:
+            prepared = cache.get("prepared_query_input")
+            failed_mutation = (
+                prepared is not None
+                and prepared.mutation_started
+                and not prepared.publication_succeeded
+            )
+            if (
+                failed_mutation
+                or operation.preserve_recovery
+                or operation.structural_replay_blocked
+            ):
                 cache["retain_checkpoint"] = True
             close_query_input(cache)
 
@@ -440,6 +456,6 @@ def close_query_input(cache: dict[str, Any]) -> None:
             phase="recovery",
         )
     try:
-        close_query_assignment(options)
+        close_query_assignment(options, retain_checkpoint=bool(cache.get("retain_checkpoint")))
     finally:
         close_frozen_input(options)

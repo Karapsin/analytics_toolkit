@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 import pandas as pd
 
 from analytics_toolkit.sql.backends.execution_outcome import close_cursor
+from analytics_toolkit.sql.backends.native_scalars import ExactArray, ExactInterval
 
 from .float_parameters import normalize_float_parameters
 from .json_values import JsonArray, JsonDocument
@@ -91,8 +93,10 @@ def insert_rows(
     on_page_success: Callable[[float, int], None] | None = None,
     target_column_types: dict[str, str] | None = None,
 ) -> None:
-    row_tuples = normalize_insert_rows(adapter, rows)
-    row_tuples = normalize_json_columns(columns, row_tuples, target_column_types)
+    # JSON array identity must be resolved while exact array carriers still
+    # retain their topology; native parameter normalization renders them later.
+    row_tuples = normalize_json_columns(columns, rows, target_column_types)
+    row_tuples = normalize_insert_rows(adapter, row_tuples)
     row_tuples = normalize_float_parameters(columns, row_tuples, target_column_types)
     if not row_tuples:
         return
@@ -184,7 +188,9 @@ def normalize_json_columns(
 
     return [
         tuple(
-            Json(value)
+            value
+            if isinstance(value, ExactArray)
+            else Json(value)
             if index in json_indexes and isinstance(value, (dict, list))
             else _normalize_json_array(value, json_arrays[index])
             if index in json_arrays
@@ -196,6 +202,19 @@ def normalize_json_columns(
 
 
 def _normalize_uuid_scalar(value: Any) -> Any:
+    from .source_arrays import array_transport, interval_transport  # noqa: PLC0415
+
+    if isinstance(value, ExactArray):
+        return array_transport(value)
+    if isinstance(value, ExactInterval):
+        return interval_transport(value)
+    if isinstance(value, Decimal) and value.is_infinite():
+        # psycopg2's Decimal adapter otherwise rewrites Infinity to NUMERIC NaN.
+        return str(value)
+    return _normalize_temporal_scalar(value)
+
+
+def _normalize_temporal_scalar(value: Any) -> Any:
     from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - backend import cycle
         MAX_EXACT_SCALE,
         ExactClock,
@@ -209,7 +228,7 @@ def _normalize_uuid_scalar(value: Any) -> Any:
                 "resolve the schema conversion first."
             )
             raise ValueError(msg)
-        return value.time()
+        return value.isoformat() if value.ticks == 86400 * 10**value.scale else value.time()
     if isinstance(value, ExactTemporal):
         if not 0 <= value.scale <= MAX_EXACT_SCALE or value.ticks % 10 ** max(0, value.scale - 6):
             msg = (
@@ -224,15 +243,9 @@ def _normalize_uuid_scalar(value: Any) -> Any:
 
 
 def _is_null_like(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, (list, tuple, dict)):
-        return False
-    try:
-        missing = pd.isna(value)
-        return bool(missing) if getattr(missing, "ndim", 0) == 0 else False
-    except (TypeError, ValueError):
-        return False
+    from analytics_toolkit.sql.core import exact_values  # noqa: PLC0415 -- registry cycle.
+
+    return exact_values.is_null(value)
 
 
 def _normalize_nested_scalar(value: Any) -> Any:

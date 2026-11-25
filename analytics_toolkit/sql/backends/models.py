@@ -76,6 +76,8 @@ class StageTargetTableRequest:
     gp_partitions: Any = None
     ch_only_shard: bool = False
     ch_creation_policy: Any = None
+    on_resource_created: Any = None
+    on_scoped_resource_created: Any = None
 
 
 @dataclass(frozen=True)

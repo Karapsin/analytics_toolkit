@@ -74,6 +74,7 @@ def test_database_function_facade_can_reconfigure_its_verified_managed_relations
         assert result.data["cleanup_complete"] is True
         assert result.metadata.source_rows == result.metadata.final_target_rows == 3
         assert result.metadata.row_count_validated is True
+        assert raw.host_views
         assert all(
             set(raw.host_tables[host]) == set(original[host])
             for host in (raw.coordinator, raw.remote)
@@ -84,6 +85,7 @@ def test_database_function_facade_can_reconfigure_its_verified_managed_relations
     assert raw.rows(raw.remote, "analytics.events_shard") == [(1,), (2,), (3,)]
     assert raw.rows(raw.coordinator, raw.source_table) == [(1,), (2,), (3,)]
     assert raw.rows(raw.remote, raw.source_table) == [(1,), (2,), (3,)]
+    assert all(view.closed and view.close_calls == 1 for view in raw.host_views)
     assert raw.closed
 
 

@@ -17,7 +17,6 @@ from .reconfigure_ddl import (
     engine_name,
     engine_sql,
     parse_create_table,
-    require_merge_tree,
 )
 from .reconfigure_support import (
     qualify_with_database,
@@ -99,7 +98,9 @@ def _inspect_existing_layout_local(
         raise InvalidSqlInputError(message)
     physical_ddl = show_create_table_on_cluster(connection, physical, cluster)
     physical_create = parse_create_table(physical_ddl, physical)
-    require_merge_tree(physical_create, physical)
+    if not _is_direct_storage(physical_create):
+        message = f"Cannot verify directly stored ClickHouse data for {physical}."
+        raise InvalidSqlInputError(message)
     owns_physical = owns_physical and _column_identity(create) == _column_identity(physical_create)
     if require_owned and not owns_physical:
         message = f"ClickHouse table {table} is not a managed Distributed/_shard pair."
@@ -124,6 +125,11 @@ def _column_identity(create: exp.Create) -> tuple[str, ...]:
         for item in schema.expressions
         if isinstance(item, exp.ColumnDef)
     )
+
+
+def _is_direct_storage(create: exp.Create) -> bool:
+    """Engine capabilities do not determine ownership of a referenced table."""
+    return engine_name(create).lower() != "distributed"
 
 
 def inspect_existing_layout(

@@ -10,9 +10,11 @@ from struct import pack
 from types import MethodType
 from typing import Any
 
+from analytics_toolkit.sql.connection.validation import validation_remaining
 from analytics_toolkit.sql.dml.io.dataframes import dataframe_from_columns
 
 from .exact_temporal import datetime_from_seconds, timestamp_from_ticks, timestamp_ticks
+from .float_values import decoded_float_values
 from .temporal_context import timezone_name
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,8 +46,14 @@ def _datetime_column(
     ticks = source.read_array("q", count)
     if getattr(datatype, "_atk_exact_source_values", False):
         return _raw_temporal_values(ticks, datatype.scale)
+    if datatype.read_format(context) == "int":
+        return ticks
     active = context.active_tz
-    timezone = datatype.tzinfo or (active(datatype.tzinfo) if callable(active) else active)
+    timezone = active(datatype.tzinfo) if callable(active) else (active or datatype.tzinfo)
+    if timezone is None and datatype.tzinfo is not None and not getattr(context, "column_tz", None):
+        # Preserve the toolkit's declared-zone awareness. A selected column
+        # override still follows its query context, including UTC-naive output.
+        timezone = datatype.tzinfo
     return [timestamp_from_ticks(tick, datatype.scale, timezone) for tick in ticks]
 
 
@@ -76,6 +84,10 @@ def _raw_temporal_values(ticks: Any, scale: int) -> list[Any]:
 
 def _raw_column_finalizer(_datatype: Any, column: Any, _context: Any) -> Any:
     return column
+
+
+def _float_column_finalizer(datatype: Any, column: Any, context: Any) -> Any:
+    return datatype._atk_float_finalizer(decoded_float_values(column), context)  # noqa: SLF001 -- per-type original SDK finalizer.
 
 
 def _timestamp_write_values(datatype: Any, values: Any, scale: int) -> list[int]:
@@ -139,9 +151,17 @@ def exact_http_type(
 ) -> Any:
     """Clone registry types before customizing so unrelated clients are untouched."""
     from clickhouse_connect.datatypes.container import Map  # noqa: PLC0415
+    from clickhouse_connect.datatypes.numeric import Float  # noqa: PLC0415
     from clickhouse_connect.datatypes.temporal import DateTime, DateTime64  # noqa: PLC0415
 
     datatype = copy(datatype)
+    if isinstance(datatype, Float):
+        datatype._atk_float_finalizer = getattr(  # noqa: SLF001 -- retain SDK format/context behavior.
+            datatype,
+            "_atk_float_finalizer",
+            datatype._finalize_column,  # noqa: SLF001
+        )
+        datatype._finalize_column = MethodType(_float_column_finalizer, datatype)  # noqa: SLF001
     if isinstance(datatype, (DateTime, DateTime64)):
         datatype._atk_default_timezone = default_timezone  # noqa: SLF001 -- per-client implicit zone
         datatype._atk_exact_source_values = exact_source_values  # noqa: SLF001 -- connection-local source policy
@@ -192,6 +212,15 @@ class ExactHTTPTransform:
         ]
         return self._original.build_insert(context)
 
+    def _response_timezone(self, context: Any) -> str | None:
+        active = context.active_tz
+        read_zone = active(None) if callable(active) else active
+        return (
+            "UTC"
+            if self.exact_source_values
+            else (timezone_name(read_zone) if read_zone is not None else "UTC")
+        )
+
     def parse_response(self, source: Any, context: Any) -> Any:  # noqa: C901 -- native block framing owns decode errors and cleanup
         from clickhouse_connect.datatypes.registry import get_from_name  # noqa: PLC0415
         from clickhouse_connect.driver import transform  # noqa: PLC0415
@@ -204,13 +233,7 @@ class ExactHTTPTransform:
         if context.use_numpy:
             message = "Toolkit exact ClickHouse reads require non-NumPy column blocks."
             raise ValueError(message)
-        active = context.active_tz
-        read_zone = active(None) if callable(active) else active
-        self.read_timezone = (
-            "UTC"
-            if self.exact_source_values
-            else (timezone_name(read_zone) if read_zone is not None else "UTC")
-        )
+        self.read_timezone = self._response_timezone(context)
         names, types = [], []
         first = True
         owned_source = _SafeHTTPSource(source)
@@ -218,6 +241,7 @@ class ExactHTTPTransform:
         def block() -> Any:
             nonlocal first
             try:
+                validation_remaining()
                 try:
                     if context.block_info:
                         source.read_bytes(8)
@@ -246,6 +270,7 @@ class ExactHTTPTransform:
                     context.start_column(name)
                     columns.append(types[index].read_column(source, rows, context) if rows else ())
                 first = False
+                validation_remaining()
             except BaseException:
                 owned_source.close()
                 raise
@@ -292,6 +317,14 @@ class ExactHTTPClient:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._client, name)
+
+    @property
+    def query_limit(self) -> Any:
+        return self._client.query_limit
+
+    @query_limit.setter
+    def query_limit(self, value: Any) -> None:
+        self._client.query_limit = value
 
     @property
     def effective_write_timezone(self) -> str | None:

@@ -47,13 +47,18 @@ def test_recorded_explicit_order_allows_source_review_without_claiming_visual_pa
 ):
     ordered_candidate(candidate, prompt)
     calls = capture_review(monkeypatch)
-    local_review.review(candidate)
-    assert len(calls) == 2
-    call = calls[0]
-    evidence = call["request"]["evidence"]
-    assert local_review.VISUAL_EVIDENCE_KEY not in evidence
-    assert evidence["visual_review_order"]["user_prompt"] == prompt
-    assert evidence["visual_review_order"]["visual_review_required_before_publication"] is True
+    receipt = local_review.review(candidate)
+    assert local_review.review(candidate) == receipt
+    assert len(calls) == 1
+    assert len({call["request"]["review_chunk"]["wave_id"] for call in calls}) == 1
+    for call in calls:
+        assignment = call["request"]["review_chunk"]
+        assert "analytics_toolkit/sql_explorer/app.py" in assignment["chunk"]["paths"]
+        assert assignment["plan_sha256"]
+        evidence = call["request"]["evidence"]
+        assert local_review.VISUAL_EVIDENCE_KEY not in evidence
+        assert evidence["visual_review_order"]["user_prompt"] == prompt
+        assert evidence["visual_review_order"]["visual_review_required_before_publication"] is True
 
 
 @pytest.mark.parametrize(
@@ -86,13 +91,20 @@ def test_unrelated_recorded_user_message_is_not_visual_order_authorization(candi
     assert calls == []
 
 
-def test_absent_order_keeps_default_completed_visual_requirement(candidate, monkeypatch):
+@pytest.mark.parametrize("missing", ["file", "field"])
+def test_recorded_order_still_blocks_capture_when_private_order_is_missing(candidate, missing):
     path = ordered_candidate(candidate)
-    path.unlink()
-    calls = capture_review(monkeypatch)
-    with pytest.raises(RuntimeError, match="Completed SQL Explorer visual review"):
-        local_review.review(candidate)
-    assert calls == []
+    if missing == "file":
+        path.unlink()
+    else:
+        data = json.loads(path.read_text())
+        data.pop("visual_review_order")
+        path.write_text(json.dumps(data))
+    order = local_review.visual_review_order(candidate)
+    assert order is not None
+    assert order["user_prompt"] == DIRECTIVE
+    with pytest.raises(sql_explorer_visual.VisualReviewError, match="Final source approval"):
+        sql_explorer_visual.start_review(candidate, "blocked-without-source-approval")
 
 
 def test_order_is_bound_to_current_task_and_source_receipt(candidate):
@@ -163,7 +175,15 @@ def test_commit_can_create_review_candidate_but_cannot_publish_without_visuals(
         paths=["analytics_toolkit/sql_explorer/app.py"],
         root=str(candidate),
     )
-    assert len(calls) == 2
+    assert len(calls) == 1
+    assert len({call["request"]["review_chunk"]["wave_id"] for call in calls}) == 1
+    reviewed_head = git(candidate, "rev-parse", "HEAD")
+    local_review.verified(candidate, reviewed_head)
+    assert len(calls) == 1
+    assert all(
+        "analytics_toolkit/sql_explorer/app.py" in call["request"]["review_chunk"]["chunk"]["paths"]
+        for call in calls
+    )
     assert result["ok"] is False
     assert result["blockers"][0]["phase"] == "visual_review"
     assert git(candidate, "log", "-1", "--format=%s") == "Review before visual checks"

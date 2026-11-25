@@ -53,12 +53,15 @@ a pre-existing target.
 | Backend/finalization | Failure contract |
 | --- | --- |
 | Greenplum transactional finalization | rolls back to the exact original target |
-| Trino/Iceberg partition replacement | target is either exactly original or exactly committed; partial/mixed state is never reported as success |
-| ClickHouse partition replacement | target is either exactly original or exactly committed; partial/mixed state is never reported as success |
+| Trino/Iceberg partition replacement | failed publication can leave affected partitions missing or partly rebuilt; the certified payload is retained for recovery, and partial finalization remains an error |
+| ClickHouse partition replacement | failed publication can leave affected partitions missing or partly rebuilt; the certified payload is retained for recovery, and partial finalization remains an error |
 | destructive replace/truncate on a non-transactional backend | no preservation promise after the destructive statement; failure remains contextual and stages are cleaned |
 
 Staged load and transfer retry-safe phases reopen a connection and start from a
 clean attempt; their existing finalization and ambiguity safeguards still apply.
+Partition deletion and publication are separate operations. If publication
+retries are exhausted or interrupted after deletion, recovery uses the retained
+complete payload; staging does not make that partition replacement atomic.
 `execute`, `insert`, `execute_insert`, and `execute_create` retry the whole
 operation on transient failures with fresh connections, including after mutation
 submission or a lost commit acknowledgement. Replays can repeat already committed

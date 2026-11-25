@@ -37,6 +37,7 @@ def transform_create_table(
     ch_settings: Mapping[str, str | int | float | bool | None] | None,
     ch_reset_partition_by: bool,
     ch_reset_order_by: bool,
+    defer_replication_isolation: bool = False,
 ) -> exp.Create:
     transformed = retarget_create(create, table_name, execution_cluster)
     if ch_engine is not None:
@@ -59,7 +60,8 @@ def transform_create_table(
         )
     if ch_settings:
         _apply_settings_to_create(transformed, ch_settings)
-    _validate_replicated_path(transformed)
+    if not defer_replication_isolation:
+        _validate_replicated_path(transformed)
     return transformed
 
 
@@ -250,6 +252,19 @@ def comparable_create_sql(create: exp.Create) -> str:
         "expressions",
         [item for item in properties.expressions if not _is_transient_create_property(item)],
     )
+    engine = comparable.find(exp.EngineProperty)
+    if engine is not None and isinstance(engine.this, exp.Anonymous):
+        name = engine.this.name.casefold()
+        arguments = list(engine.this.expressions)
+        if (
+            name.startswith("replicated")
+            and name.endswith("mergetree")
+            and len(arguments) >= 2
+            and isinstance(arguments[1], exp.Literal)
+            and arguments[1].is_string
+        ):
+            arguments[1] = exp.Literal.string("<replica>")
+            engine.this.set("expressions", arguments)
     return comparable.sql(dialect="clickhouse")
 
 

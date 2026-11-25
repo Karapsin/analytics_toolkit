@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field
 from decimal import Decimal
+from ipaddress import IPv4Address, IPv6Address
 from math import gcd
 from numbers import Integral, Real
 from typing import Any
@@ -13,6 +14,7 @@ from uuid import UUID
 import numpy as np
 import pandas as pd
 
+from analytics_toolkit.sql.core.exact_input import validate_real_value
 from analytics_toolkit.sql.core.exact_values import (
     ExactTemporal,
     OrderedMap,
@@ -26,6 +28,12 @@ from analytics_toolkit.sql.core.exact_values import (
 
 from .decimal_values import minimal_fractional_scale, required_fractional_scale
 from .nested_values import array_item
+from .numeric_profiles import (
+    merge_numeric_facts,
+    observe_decimal_float_domain,
+    observe_float_decimal_domain,
+    observe_integer_float_domain,
+)
 
 _MAP_ARGUMENT_COUNT = 2
 _GP_MAX_ARRAY_DIMENSIONS = 6
@@ -81,13 +89,27 @@ class ColumnProfile:
     native_constraints_valid: bool = True
     text_encoding_valid: bool = True
     interval_days_nonzero: bool = False
+    interval_months_nonzero: bool = False
+    interval_months_gcd: int = 0
     interval_time_gcd: int = 0
     time_zone_unresolved: bool = False
     minimal_nonzero_fractional_scale: int | None = None
     trino_time_constraints_valid: bool = True
+    native_array_nondefault_bounds: bool = False
+    timestamp_calendar_outside_python: bool = False
+    integers_fit_float64: bool = True
+    decimals_fit_float64: bool = True
+    floating_values_finite: bool = True
+    float_negative_zero: bool = False
+    float_integral_digits: int = 0
+    float_fractional_digits: int = 0
+    float_minimal_fractional_scale: int = 0
+    network_scope_present: bool = False
+    numeric_special_text: bool = False
 
     def add(self, value: Any) -> None:  # noqa: C901, PLR0912, PLR0915 - family profile dispatch
         value = array_item(value)
+        validate_real_value(value)
         self.count += 1
         if is_null(value):
             self.null_count += 1
@@ -149,6 +171,7 @@ class ColumnProfile:
             self.maximum_text_length = max(self.maximum_text_length, text_length)
         if family == "integer":
             integer = int(value)
+            observe_integer_float_domain(self, integer)
             self.minimum_integer = (
                 integer if self.minimum_integer is None else min(self.minimum_integer, integer)
             )
@@ -162,6 +185,7 @@ class ColumnProfile:
                 self.maximum_numeric_magnitude, Decimal(abs(integer))
             )
         elif family == "decimal":
+            observe_decimal_float_domain(self, value)
             try:
                 integral, scale = decimal_digits(value)
             except ValueError:
@@ -176,10 +200,24 @@ class ColumnProfile:
                     self.maximum_numeric_magnitude, value.copy_abs()
                 )
         elif family == "float":
+            observe_float_decimal_domain(self, value)
             magnitude = Decimal.from_float(abs(float(value)))
             if magnitude.is_finite():
                 self.maximum_numeric_magnitude = max(self.maximum_numeric_magnitude, magnitude)
+        elif family == "ipv6":
+            self.network_scope_present |= getattr(value, "scope_id", None) is not None
         elif family == "string":
+            self.numeric_special_text |= value.strip(" \t\n\r\v\f").lower() in {
+                "nan",
+                "+nan",
+                "-nan",
+                "inf",
+                "+inf",
+                "-inf",
+                "infinity",
+                "+infinity",
+                "-infinity",
+            }
             self.text_has_nul |= "\x00" in value
             try:
                 self.maximum_byte_length = max(self.maximum_byte_length, len(value.encode("utf-8")))
@@ -192,44 +230,12 @@ class ColumnProfile:
         elif family == "binary":
             self.maximum_byte_length = max(self.maximum_byte_length, len(value))
         elif family == "timestamp":
-            self._observe_temporal(value)
-            exact = isinstance(value, ExactTemporal)
-            stamp = value.calendar_datetime() if exact else value
-            self.aware |= stamp.tzinfo is not None
-            self.naive |= stamp.tzinfo is None
-            fraction = (
-                value.ticks % 10**value.scale
-                if exact
-                else stamp.microsecond * 1000 + getattr(stamp, "nanosecond", 0)
+            # Recursive value-profile certification.
+            from .timestamp_profiles import (  # noqa: PLC0415
+                observe_timestamp,
             )
-            scale = value.scale if exact else 9
-            while scale and fraction % 10 == 0:
-                fraction //= 10
-                scale -= 1
-            self.temporal_scale = max(self.temporal_scale, scale)
-            if exact:
-                ticks = value.ticks_floor(9)
-                stamp = value.calendar_datetime(utc=True)
-            else:
-                if stamp.tzinfo is not None:
-                    stamp = stamp.astimezone(dt.timezone.utc)
-                days = (stamp.date() - dt.date(1970, 1, 1)).days
-                ticks = (
-                    (days * 86400 + stamp.hour * 3600 + stamp.minute * 60 + stamp.second) * 10**9
-                    + stamp.microsecond * 1000
-                    + getattr(stamp, "nanosecond", 0)
-                )
-            self.minimum_timestamp_ns = (
-                ticks
-                if self.minimum_timestamp_ns is None
-                else min(self.minimum_timestamp_ns, ticks)
-            )
-            self.maximum_timestamp_ns = (
-                ticks
-                if self.maximum_timestamp_ns is None
-                else max(self.maximum_timestamp_ns, ticks)
-            )
-            self._add_date(stamp.date())
+
+            observe_timestamp(self, value)
         elif family in {"time", "interval"}:
             from .gp.temporal_values import (  # noqa: PLC0415 -- backend native clock facts.
                 observe_temporal_value,
@@ -252,7 +258,18 @@ class ColumnProfile:
             )
             self._add_date(value)
         elif family in {"array", "tuple"}:
-            values = list(value)
+            # Recursive value-profile certification.
+            from analytics_toolkit.sql.backends.native_scalars import (  # noqa: PLC0415
+                ExactArray,
+            )
+
+            if isinstance(value, ExactArray):
+                self.native_array_nondefault_bounds |= any(
+                    lower != 1 for lower in value.lower_bounds
+                )
+                values = value.nested_values()
+            else:
+                values = list(value)
             if family == "array":
                 self.gp_array_compatible &= _array_shape(values) is not None
                 if self.array_leaves is None:
@@ -316,7 +333,9 @@ class ColumnProfile:
                             from .map_values import (  # noqa: PLC0415 -- native clock equality.
                                 profile_map_key_identity,
                             )
-                            from .type_resolution import (  # noqa: PLC0415 - backend recursive type policies
+
+                            # Recursive value-profile certification.
+                            from .type_resolution import (  # noqa: PLC0415
                                 ResolvedColumn,
                             )
 
@@ -339,13 +358,15 @@ class ColumnProfile:
                     self.children[1].add(item)
 
     def _destination_child(self, index: int) -> str | None:
-        from .nested_types import nested_descriptor  # noqa: PLC0415 - destination schema context
+        # Recursive value-profile certification.
+        from .nested_types import nested_descriptor  # noqa: PLC0415
 
         fields = nested_descriptor(self.temporal_type or "")[1]
         return fields[index][1] if index < len(fields) else None
 
     def _destination_leaf(self) -> str | None:
-        from .nested_types import nested_descriptor  # noqa: PLC0415 - destination schema context
+        # Recursive value-profile certification.
+        from .nested_types import nested_descriptor  # noqa: PLC0415
 
         native = self.temporal_type or ""
         while nested_descriptor(native)[0] in {"array", "gp_array"}:
@@ -361,6 +382,8 @@ class ColumnProfile:
         self.minimum_date = value if self.minimum_date is None else min(self.minimum_date, value)
         self.maximum_date = value if self.maximum_date is None else max(self.maximum_date, value)
 
+    observe_temporal = _observe_temporal
+    add_date = _add_date
     observe = add
 
     def merge(self, other: ColumnProfile) -> ColumnProfile:  # noqa: C901 - complete aggregate merge
@@ -411,18 +434,18 @@ class ColumnProfile:
         self.temporal_scale = max(self.temporal_scale, other.temporal_scale)
         self.aware |= other.aware
         self.naive |= other.naive
+        self.timestamp_calendar_outside_python |= other.timestamp_calendar_outside_python
+        self.network_scope_present |= other.network_scope_present
+        self.numeric_special_text |= other.numeric_special_text
+        merge_numeric_facts(self, other)
         self.maximum_numeric_magnitude = max(
             self.maximum_numeric_magnitude, other.maximum_numeric_magnitude
         )
-        self.all_uuid_strings &= other.all_uuid_strings
-        self.maximum_text_length = max(self.maximum_text_length, other.maximum_text_length)
-        self.text_encoding_valid &= other.text_encoding_valid
-        self.maximum_byte_length = max(self.maximum_byte_length, other.maximum_byte_length)
-        self.text_has_nul |= other.text_has_nul
-        self.utf8_valid &= other.utf8_valid
+        self._merge_text_facts(other)
         self.native_constraints_valid &= other.native_constraints_valid
         self._merge_clock_facts(other)
         self.gp_array_compatible &= other.gp_array_compatible
+        self.native_array_nondefault_bounds |= other.native_array_nondefault_bounds
         self.map_duplicate_keys |= other.map_duplicate_keys
         self.map_null_keys |= other.map_null_keys
         self.map_comparable_keys &= other.map_comparable_keys
@@ -446,16 +469,33 @@ class ColumnProfile:
             self.tuple_width = other.tuple_width
         return self
 
+    def _merge_text_facts(self, other: ColumnProfile) -> None:
+        self.all_uuid_strings &= other.all_uuid_strings
+        self.maximum_text_length = max(self.maximum_text_length, other.maximum_text_length)
+        self.text_encoding_valid &= other.text_encoding_valid
+        self.maximum_byte_length = max(self.maximum_byte_length, other.maximum_byte_length)
+        self.text_has_nul |= other.text_has_nul
+        self.utf8_valid &= other.utf8_valid
+
     def _merge_clock_facts(self, other: ColumnProfile) -> None:
         self.interval_days_nonzero |= other.interval_days_nonzero
+        self.interval_months_nonzero |= other.interval_months_nonzero
+        self.interval_months_gcd = gcd(self.interval_months_gcd, other.interval_months_gcd)
         self.interval_time_gcd = gcd(self.interval_time_gcd, other.interval_time_gcd)
         self.time_zone_unresolved |= other.time_zone_unresolved
         self.trino_time_constraints_valid &= other.trino_time_constraints_valid
 
 
 def _family(value: Any) -> str:  # noqa: C901, PLR0911 - ordered scalar-family dispatch
+    # Recursive value-profile certification.
+    from analytics_toolkit.sql.backends.native_scalars import (  # noqa: PLC0415
+        ExactArray,
+    )
+
     from .gp.temporal_values import temporal_family  # noqa: PLC0415 -- native value markers.
 
+    if isinstance(value, ExactArray):
+        return "array"
     temporal = temporal_family(value)
     if temporal is not None:
         return temporal
@@ -471,10 +511,9 @@ def _family(value: Any) -> str:  # noqa: C901, PLR0911 - ordered scalar-family d
         return "timestamp"
     if isinstance(value, dt.date):
         return "date"
-    if isinstance(value, UUID):
-        return "uuid"
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return "binary"
+    scalar_family = _object_scalar_family(value)
+    if scalar_family is not None:
+        return scalar_family
     if isinstance(value, (dict, OrderedMap, OrderedMapPairs)):
         return "map"
     if isinstance(value, tuple):
@@ -482,6 +521,18 @@ def _family(value: Any) -> str:  # noqa: C901, PLR0911 - ordered scalar-family d
     if isinstance(value, list):
         return "array"
     return "string" if isinstance(value, str) else "unsupported"
+
+
+def _object_scalar_family(value: Any) -> str | None:
+    if isinstance(value, UUID):
+        return "uuid"
+    if isinstance(value, IPv4Address):
+        return "ipv4"
+    if isinstance(value, IPv6Address):
+        return "ipv6"
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return "binary"
+    return None
 
 
 def _array_shape(value: list[Any]) -> tuple[int, ...] | None:

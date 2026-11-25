@@ -5,9 +5,11 @@ from dataclasses import replace
 import pytest
 from analytics_toolkit.sql.dml.table.upsert_checkpoint import UpsertCheckpoint
 from analytics_toolkit.sql.dml.transfer.flow import finalize, staged_keyed_io
+from analytics_toolkit.sql.dml.transfer.flow.target_ownership import target_creation_callbacks
 from analytics_toolkit.sql.dml.transfer.runtime.models import TransferConnectionRefs
 
 from tests.sql._support.staged_keyed import _metadata, _state
+from tests.sql._support.transfer_ownership import acknowledge_stage
 from tests.sql.dml.transfer.finalization.retry import _options, _stage_state
 
 
@@ -62,11 +64,11 @@ def test_uncertain_transfer_cleanup_preserves_all_recovery_resources(monkeypatch
 
 
 @pytest.mark.parametrize("storage_options", [None, {"endpoint_url": "http://run-owned.invalid"}])
-def test_owned_cleanup_failure_preserves_first_error_and_still_cleans_remote_data(
+def test_owned_cleanup_failure_preserves_first_error_and_retains_remote_data(
     monkeypatch, storage_options
 ):
     state = _stage_state(target_exists=True)
-    state.owned_stage_resources = [("sandbox.stage", "sandbox.stage")]
+    acknowledge_stage(state, "sandbox.stage", _options().to_db_backend)
     state.stage_external_location = "s3://run-owned/stage"
     message = "owned stage drop failed"
     failure = RuntimeError(message)
@@ -89,14 +91,20 @@ def test_owned_cleanup_failure_preserves_first_error_and_still_cleans_remote_dat
             1,
         )
     assert raised.value is failure
-    expected = {} if storage_options is None else {"storage_options": storage_options}
-    assert cleaned == [("s3://run-owned/stage", expected)]
+    assert cleaned == []
 
 
 def test_fresh_clickhouse_creation_policy_uses_configured_retry_extension(monkeypatch):
     options = replace(_options(), timeout_increment=17)
     state = _stage_state(target_exists=False)
     calls = []
+    ensured = []
+
+    def ensure(current, _refs, current_state, *_args, **_kwargs):
+        ensured.append(current.regular_ch_policy)
+        target_creation_callbacks(current_state)["on_resource_created"](current.target_table)
+
+    monkeypatch.setattr(finalize, "ensure_transfer_target_table", ensure)
     monkeypatch.setattr(
         finalize, "finalize_stage_table", lambda *_a, **kwargs: calls.append(kwargs)
     )
@@ -110,6 +118,7 @@ def test_fresh_clickhouse_creation_policy_uses_configured_retry_extension(monkey
         target_connection_runner=lambda _role, operation: operation({"connection": object()}),
     )
     assert calls[0]["ch_creation_policy"].ddl_ready_timeout_increment_seconds == 17
+    assert ensured[0].ddl_ready_timeout_increment_seconds == 17
     assert options.regular_ch_policy.ddl_ready_timeout_increment_seconds != 17
     assert state.target_created_by_operation is True
 

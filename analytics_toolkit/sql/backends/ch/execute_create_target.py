@@ -7,6 +7,7 @@ from typing import Any
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 from analytics_toolkit.sql.execution.backend_options import backend_operation
 
+from .availability import bind_creation_availability
 from .outage_context import internal_io
 from .routing import query_local
 
@@ -14,6 +15,7 @@ from .routing import query_local
 def execute_create_target_exists(adapter: Any, connection: Any, options: Any) -> bool:
     """Check the named logical target without adopting a deterministic companion."""
     del adapter
+    bind_creation_availability(connection, options.ch_creation_policy)
     with internal_io():
         result = query_local(connection, f"EXISTS TABLE {options.table_name}")
     rows = result.result_rows
@@ -50,7 +52,7 @@ def execute_create_target_exists(adapter: Any, connection: Any, options: Any) ->
         scope = session.scope(cluster)
         status = scope.record(scope.reachable, f"{database}.{relation}")
         if session.policy == "stop":
-            scope.require_all(scope.reachable, "Creation target preflight")
+            scope.require_available(scope.reachable, "Creation target preflight")
         elif not status["complete"]:
             warn_degraded(state, session.config, status, "check creation target")
         return bool(scope.objects(database, relation))

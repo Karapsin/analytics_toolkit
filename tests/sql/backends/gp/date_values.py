@@ -80,9 +80,7 @@ def test_gp_date_native_calendar_objects_and_arrays_preserve_caller_ownership():
     assert values[1][0] is stamp
 
 
-@pytest.mark.parametrize(
-    "value", ["2024-02-30", "private-date-value", "01/02/2024", 1, True, Decimal("1.5")]
-)
+@pytest.mark.parametrize("value", ["2024-02-30", 1, True, Decimal("1.5")])
 def test_gp_invalid_date_inputs_fail_deterministically_without_echoing_private_values(value):
     with pytest.raises(GreenplumDateValueError) as error:
         date_value(value)
@@ -90,6 +88,18 @@ def test_gp_invalid_date_inputs_fail_deterministically_without_echoing_private_v
     assert error.value.analytics_toolkit_sql_retry_safe is False
     assert "private-date-value" not in str(error.value)
     assert "CAST the source expression AS DATE" in str(error.value)
+
+
+@pytest.mark.parametrize("value", ["private-date-value", "01/02/2024"])
+def test_gp_noncanonical_date_text_is_preserved_for_native_session_assignment(value):
+    assert date_value(value) is value
+    assert normalize_authoritative_date(value, "DATE") is value
+    profile = ColumnProfile()
+    profile.add(value)
+    # The local DATE profile remains strict; only the owned native checkpoint
+    # may certify these session-dependent strings before target publication.
+    with pytest.raises(GreenplumDateValueError):
+        validate_date_profile(profile, "DATE")
 
 
 def test_gp_date_profile_retains_valid_native_timestamp_parameters_without_a_timezone_guess():

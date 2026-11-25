@@ -166,7 +166,7 @@ def route_sql(
             ),
             has_explicit_cluster=explicit_cluster is not None,
         )
-        routed.append(statement.sql(dialect="clickhouse"))
+        routed.append(statement.sql(dialect=_RoutingClickHouse))
     return ";\n".join(routed)
 
 
@@ -225,7 +225,8 @@ def prepare_plan_sql(
         return sql
     routing = getattr(config, "cluster_routing", None)
     if (
-        routing is None
+        _LOCAL_SQL_EXECUTION.get()
+        or routing is None
         or _PLAN_PLACEHOLDER_RE.search(sql)
         or _is_local_create_fallback(sql, previous_sqls)
     ):
@@ -523,7 +524,7 @@ def _rewrite_query_sources(
     *,
     managed_pair_resolver: ManagedPairResolver | None = None,
 ) -> None:
-    preserve_source_bindings(statement)
+    preserve_source_bindings(statement, database)
     _normalize_explicit_cluster_tables(
         statement,
         cluster,
@@ -587,7 +588,7 @@ def _normalize_explicit_cluster_tables(
                 db=exp.to_identifier(database),
             )
         else:
-            sharding_key = trailing[0].sql(dialect="clickhouse") if trailing else None
+            sharding_key = trailing[0].sql(dialect=_RoutingClickHouse) if trailing else None
             replacement = _cluster_table(
                 managed_route.cluster or explicit_function_cluster,
                 managed_route.database,
@@ -749,7 +750,7 @@ def _route_function_name(
 ) -> str:
     if route is not None and route.mode == "all_replicas":
         return "clusterAllReplicas"
-    if route is None and (database.lower() == "system" or is_transfer_stage_identifier(relation)):
+    if route is None and (database == "system" or is_transfer_stage_identifier(relation)):
         return "clusterAllReplicas"
     return "cluster"
 
@@ -764,7 +765,7 @@ def _table_name_with_route(table: exp.Table, route: ManagedTableRoute) -> str:
             quoted=bool(identifier.args.get("quoted")),
         ),
     )
-    return routed.sql(dialect="clickhouse")
+    return routed.sql(dialect=_RoutingClickHouse)
 
 
 def _changes_table_metadata(statement: exp.Expression) -> bool:
@@ -820,7 +821,7 @@ def _cluster_function_sql(
         table,
         sharding_key=sharding_key,
         function_name=function_name,
-    ).sql(dialect="clickhouse")
+    ).sql(dialect=_RoutingClickHouse)
 
 
 def _add_create_on_cluster(statement: exp.Create, cluster: str) -> None:
@@ -857,7 +858,7 @@ def _create_target(sql: str) -> tuple[str | None, bool]:
         target = target.this
     if not isinstance(target, exp.Table):
         return None, False
-    return target.sql(dialect="clickhouse"), statement.find(exp.OnCluster) is not None
+    return target.sql(dialect=_RoutingClickHouse), statement.find(exp.OnCluster) is not None
 
 
 def _parse_table_name(table_name: str) -> exp.Table:

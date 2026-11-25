@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Tuple
 
 if TYPE_CHECKING:
@@ -29,6 +30,13 @@ class MetadataListing(Tuple[str, ...]):  # noqa: SLOT001 -- tuple coverage attri
 
 class IncompleteMetadataError(RuntimeError):
     """The last complete snapshot remains authoritative during an outage."""
+
+
+def listing_failure(exc: Exception) -> Exception:
+    """Identify recoverable listing notices without exposing their scope or values."""
+    with suppress(AttributeError, TypeError):
+        exc.analytics_toolkit_metadata_listing_failure = True  # type: ignore[attr-defined]
+    return exc
 
 
 def listing_result(values: Iterable[str]) -> MetadataListing:

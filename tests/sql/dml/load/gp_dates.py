@@ -8,6 +8,8 @@ from copy import deepcopy
 import pandas as pd
 import pytest
 from analytics_toolkit import sql
+from analytics_toolkit.sql.backends.gp.date_values import GreenplumDateValueError
+from analytics_toolkit.sql.backends.gp.native_assignment import NativeAssignmentError
 
 from tests.sql._support.gp_dates import date_target
 
@@ -100,14 +102,22 @@ def test_gp_invalid_late_date_rejects_before_target_clear(monkeypatch, explicit,
     frame = pd.DataFrame({"payload": pd.Series(["2024-02-29", bad], dtype=object)})
     original = frame.copy(deep=True)
 
-    with pytest.raises(ValueError, match=r"date|DATE"):
+    expected_error = GreenplumDateValueError if bad == "2024-02-30" else NativeAssignmentError
+    with pytest.raises(expected_error) as error:
         _load(frame, explicit=explicit)
 
-    assert database.target is original_target
+    assert error.value.analytics_toolkit_sql_retry_safe is False
+    assert bad not in str(error.value)
+    assert database.target.native_creation_oid == original_target.native_creation_oid
     assert database.target.rows == before
     assert database.target.schema == {"payload": "DATE"}
     assert database.live_mutations == []
-    assert database.bound_rows == []
+    if bad == "2024-02-30":
+        assert database.bound_rows == []
+    else:
+        # Native syntax is parsed in an owned DATE checkpoint, before any live
+        # target action; failed private parameter binding is observable.
+        assert database.bound_rows == [(dt.date(2024, 2, 29),), (bad,)]
     assert database.wire_rows == []
     assert set(database.tables) == {("sandbox", "events")}
     pd.testing.assert_frame_equal(frame, original)

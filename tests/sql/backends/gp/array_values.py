@@ -322,7 +322,7 @@ def test_gp_writable_catalog_keeps_default_columns_and_exact_array_types_when_cl
     result = adapter.get_writable_table_column_types(
         SimpleNamespace(cursor=lambda: cursor), '"schema.dot"."table.dot"', connection_key="gp"
     )
-    assert result == {"id": "bigint", "default value": "text", "amounts": "numeric(30,9)[][]"}
+    assert result == {"id": "BIGINT", "default value": "TEXT", "amounts": "NUMERIC(30, 9)[][]"}
     statement, params = statements[0]
     assert params == ("schema.dot", "table.dot")
     assert "format_type(a.atttypid, a.atttypmod)" in statement

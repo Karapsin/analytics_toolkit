@@ -502,6 +502,11 @@ def test_create_table_target_replace_helper_uses_backend_adapter(
     events: list[tuple[object, ...]] = []
 
     class FakeAdapter:
+        def preflight_create_table_replacement(
+            self, connection: object, options: CreateSqlTableOptions
+        ) -> None:
+            events.append(("preflight", connection, options))
+
         def build_drop_target_sqls(
             self,
             table_name: str,
@@ -553,8 +558,10 @@ def test_create_table_target_replace_helper_uses_backend_adapter(
     )
 
     assert events[0][0:2] == ("build", "mart.target")
-    assert events[1][0:3] == ("drop", connection, "mart.target")
-    assert events[1][3]["drop_target_if_exists"] is True
-    assert events[1][3]["connection_key"] == "gp_alias"
+    assert events[1][0:2] == ("preflight", connection)
+    assert events[1][2] is replace_options
+    assert events[2][0:3] == ("drop", connection, "mart.target")
+    assert events[2][3]["drop_target_if_exists"] is True
+    assert events[2][3]["connection_key"] == "gp_alias"
     assert metadata.retry_attempts == 2
     assert metadata.operation_status == "success"

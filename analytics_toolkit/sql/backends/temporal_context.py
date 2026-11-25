@@ -72,8 +72,19 @@ def _localize_exact_wall(value: Any, zone: str | None) -> Any:
         return value
     from analytics_toolkit.sql.core.exact_values import ExactTemporal  # noqa: PLC0415
 
-    selected = localize_wall(value.calendar_datetime().replace(tzinfo=None), timezone_info(zone))
-    offset = selected.utcoffset() or dt.timedelta(0)
+    selected_zone = timezone_info(zone)
+    try:
+        selected = localize_wall(value.calendar_datetime().replace(tzinfo=None), selected_zone)
+    except OverflowError:
+        offset = selected_zone.utcoffset(None)
+        if offset is None:
+            msg = (
+                "Exact timestamp timezone cannot be resolved outside Python's calendar; "
+                "project UTC in source SQL."
+            )
+            raise ValueError(msg) from None
+    else:
+        offset = selected.utcoffset() or dt.timedelta(0)
     offset_us = (offset.days * 86400 + offset.seconds) * 10**6 + offset.microseconds
     scale = value.scale
     offset_ticks = (
@@ -86,7 +97,8 @@ def _localize_exact_wall(value: Any, zone: str | None) -> Any:
 
 def context_ticks(value: Any, zone: str | None) -> int:
     """Localize wall time without overflowing pandas' nanosecond container."""
-    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - value cycle
+    # Recursive exact temporal profile policy.
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
         ExactTemporal,
     )
 
@@ -116,7 +128,8 @@ def context_ticks(value: Any, zone: str | None) -> int:
 
 
 def observe_context(profile: ColumnProfile, value: Any) -> None:
-    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415 - exact value cycle
+    # Recursive exact temporal profile policy.
+    from analytics_toolkit.sql.core.exact_values import (  # noqa: PLC0415
         ExactTemporal,
     )
 

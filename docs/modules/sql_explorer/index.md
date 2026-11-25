@@ -477,7 +477,8 @@ listing, is marked scanned. Partial cluster results never replace or prune compl
 snapshots or mark a scan successful. The last complete names remain available
 with an incomplete notice. Partial scans release their lease and retry with
 bounded backoff, even without another usage event; a complete recovery clears
-the notice. Relaunching, reopening tabs, or switching back to a connection
+its own notice while preserving newer operation or file notices. Failed or partial
+status survives relaunch during retry backoff. Relaunching, reopening tabs, or switching back to a connection
 resumes incomplete discovery without rescanning completed namespaces.
 
 Successful user queries update a separate metadata ledger using the query
@@ -499,7 +500,9 @@ Names, scan state, query-use times, and journal replay checkpoints are stored tr
 `.sql_explorer/metadata.sqlite3`, beside the selected `.connections` file.
 Snapshots and scan state are isolated by connection configuration and namespace; changing the
 connection configuration prevents reuse of its old snapshots. Credentials, SQL
-text, and query results are not stored. Unavailable or corrupt storage produces
+text, and query results are not stored. Configuration changes rebind every tab
+sharing the connection, and stale or cancelled workers cannot publish names or notices.
+Unavailable or corrupt storage produces
 a notice while Explorer continues with in-memory metadata.
 
 The metadata identity is versioned. Upgrading from older, potentially normalized

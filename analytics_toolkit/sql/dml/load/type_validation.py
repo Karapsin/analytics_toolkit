@@ -11,7 +11,10 @@ import pandas as pd
 
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.conversion_profiles import validate_converted_rows
-from analytics_toolkit.sql.backends.native_values import normalize_authoritative_value
+from analytics_toolkit.sql.backends.native_values import (
+    normalize_authoritative_value,
+    pending_native_assignment,
+)
 from analytics_toolkit.sql.core.exact_values import unwrap_enum
 from analytics_toolkit.sql.core.type_resolution import (
     ColumnProfile,
@@ -118,16 +121,21 @@ def _validated_dataframe_profiles(
         )
         for value in df.iloc[:, index]:
             profile.add(_schema_value(value, schema[str(name)], backend))
-        validate_profile(
+        resolution = _profile_binding_resolution(
             profile,
             schema[str(name)],
             backend,
-            allow_timestamp_precision_loss=allow_timestamp_precision_loss,
             destination_timezone=destination_timezone,
+            allow_timestamp_precision_loss=allow_timestamp_precision_loss,
         )
-        resolution = ResolvedColumn(
-            schema[str(name)], target_backend=backend, destination_timezone=destination_timezone
-        )
+        if not resolution.native_assignment_required:
+            validate_profile(
+                profile,
+                schema[str(name)],
+                backend,
+                allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+                destination_timezone=destination_timezone,
+            )
         profiles[str(name)] = validate_converted_rows(
             ((_schema_value(value, schema[str(name)], backend),) for value in df.iloc[:, index]),
             [resolution],
@@ -149,10 +157,10 @@ def convert_dataframe_schema(
     metadata = []
     for index, name in enumerate(df.columns):
         native_type = schema[str(name)]
-        resolution = ResolvedColumn(
+        resolution = _binding_resolution(
+            df.iloc[:, index],
             native_type,
-            certified_input_count=len(df),
-            target_backend=backend or "",
+            backend or "",
             destination_timezone=destination_timezone,
         )
         columns.append(
@@ -169,3 +177,54 @@ def convert_dataframe_schema(
     result.columns = df.columns
     result.index = df.index
     return result, metadata
+
+
+def _binding_resolution(
+    values: Any,
+    native_type: str,
+    backend: str,
+    *,
+    destination_timezone: str | None,
+    allow_timestamp_precision_loss: bool = True,
+) -> ResolvedColumn:
+    profile = ColumnProfile(
+        native_type=native_type,
+        source_backend=backend,
+        destination_timezone=destination_timezone,
+        temporal_type=native_type,
+    )
+    for value in values:
+        profile.add(_schema_value(value, native_type, backend))
+    return _profile_binding_resolution(
+        profile,
+        native_type,
+        backend,
+        destination_timezone=destination_timezone,
+        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+    )
+
+
+def _profile_binding_resolution(
+    profile: ColumnProfile,
+    native_type: str,
+    backend: str,
+    *,
+    destination_timezone: str | None,
+    allow_timestamp_precision_loss: bool = True,
+) -> ResolvedColumn:
+    pending = pending_native_assignment(
+        profile,
+        native_type,
+        backend,
+        allow_timestamp_precision_loss=allow_timestamp_precision_loss,
+        destination_timezone=destination_timezone,
+    )
+    return ResolvedColumn(
+        native_type,
+        certified_input_count=0 if pending else profile.count,
+        target_backend=backend,
+        destination_timezone=destination_timezone,
+        native_assignment_required=pending,
+        native_assignment_precision_loss=allow_timestamp_precision_loss,
+        reason="native_assignment_pending" if pending else "native",
+    )

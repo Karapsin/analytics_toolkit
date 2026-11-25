@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -54,6 +54,16 @@ class NativeAssignmentError(ValueError):
 
 
 @dataclass(frozen=True)
+class NativeAssignmentContext:
+    """Actual session settings governing one server-owned assignment."""
+
+    timezone: str
+    datestyle: str
+    timezone_abbreviations: str
+    intervalstyle: str
+
+
+@dataclass(frozen=True)
 class NativeAssignmentCertificate:
     """Facts about one completely populated, caller-owned native assignment stage."""
 
@@ -63,11 +73,67 @@ class NativeAssignmentCertificate:
     key_columns: tuple[str, ...]
     null_columns: tuple[str, ...]
     input_identity: FrozenInputIdentity | None = None
+    session_context: NativeAssignmentContext | None = None
+
+
+def capture_native_assignment_context(
+    adapter: Any, connection: Any, *, query_label: str | None = None
+) -> NativeAssignmentContext:
+    """Read actual assignment policy without choosing or changing any settings."""
+    del adapter
+    query = apply_query_label(
+        "SELECT current_setting('TimeZone'), current_setting('DateStyle'), "
+        "current_setting('timezone_abbreviations'), current_setting('IntervalStyle')",
+        query_label,
+    )
+    with native_assignment_errors("validation"):
+        raise_if_cancelled()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(query)
+            rows = cursor.fetchall()
+        finally:
+            close_cursor(cursor, backend="gp")
+        if (
+            len(rows) != 1
+            or len(rows[0]) != len(fields(NativeAssignmentContext))
+            or not all(isinstance(value, str) for value in rows[0])
+        ):
+            message = "Cannot resolve the native assignment session context."
+            raise NativeAssignmentError(message)
+        raise_if_cancelled()
+        return NativeAssignmentContext(*rows[0])
+
+
+def require_native_assignment_context(
+    adapter: Any,
+    connection: Any,
+    expected: NativeAssignmentContext,
+    *,
+    query_label: str | None = None,
+) -> None:
+    """Reject a changed assignment policy before applying selected values."""
+    actual = capture_native_assignment_context(adapter, connection, query_label=query_label)
+    if actual != expected:
+        message = "Native assignment session context differs from the certified input."
+        raise NativeAssignmentError(message)
 
 
 def requires_native_assignment(native_type: str) -> bool:
     """Leave nonlocal types to server assignment, retaining their exact SQL identity."""
     return canonical_builtin_type(native_type) is None
+
+
+def requires_assignment_session_context(native_type: str) -> bool:
+    """Whether a selected pending built-in depends on GP temporal settings.
+
+    Callers apply this only to actually deferred columns, rather than every
+    typed sibling of an opaque native assignment.
+    """
+    native = canonical_builtin_type(native_type) or ""
+    while native.endswith("[]"):
+        native = native[:-2].rstrip()
+    return native == "DATE" or native.startswith(("TIMESTAMP", "TIME", "INTERVAL"))
 
 
 def requires_keyed_append_assignment(
@@ -78,7 +144,11 @@ def requires_keyed_append_assignment(
     final_schema: Mapping[str, str] | None = None,
 ) -> bool:
     """Bind explicit-to-final GP key equality to actual native assignment."""
-    if backend != "gp" or write_mode != "append" or not key_columns:
+    if backend != "gp" or not key_columns:
+        return False
+    if write_mode == "upsert":
+        return True
+    if write_mode != "append":
         return False
     if final_schema is None:
         # Offline plans cannot inspect the existing destination's native types.
@@ -295,6 +365,7 @@ def certify_assignment_checkpoint(  # noqa: PLR0913 -- private certificate binds
     key_columns: Sequence[str] | None = None,
     input_identity: FrozenInputIdentity | None = None,
     query_label: str | None = None,
+    session_context: NativeAssignmentContext | None = None,
 ) -> NativeAssignmentCertificate:
     """Check actual stored values after every native assignment INSERT was acknowledged.
 
@@ -304,6 +375,10 @@ def certify_assignment_checkpoint(  # noqa: PLR0913 -- private certificate binds
     """
     with native_assignment_errors("validation"):
         raise_if_cancelled()
+        if session_context is not None:
+            require_native_assignment_context(
+                adapter, connection, session_context, query_label=query_label
+            )
         schema = tuple(column_types.items())
         types = dict(schema)
         if (
@@ -342,6 +417,7 @@ def certify_assignment_checkpoint(  # noqa: PLR0913 -- private certificate binds
             key_columns=keys,
             null_columns=null_columns,
             input_identity=input_identity,
+            session_context=session_context,
         )
 
 

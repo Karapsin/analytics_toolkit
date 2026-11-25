@@ -10,6 +10,7 @@ from analytics_toolkit.sql.backends.base import _apply_query_label
 from analytics_toolkit.sql.backends.execution_outcome import close_cursor
 
 from . import parameters as _parameters
+from .bindings import parameterized_values
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -67,14 +68,10 @@ def insert_rows(
     try:
         row_iterator = iter_row_values(columns, rows, target_column_types)
         for row_chunk in _chunk_rows(row_iterator, chunk_size):
-            params = [value for row in row_chunk for value in row]
-            sql = build_typed_insert_sql(
-                adapter,
-                table_name,
-                columns,
-                target_column_types,
-                row_count=len(row_chunk),
-                query_label=query_label,
+            values, params = parameterized_values(columns, row_chunk, target_column_types)
+            sql = _apply_query_label(
+                f"INSERT INTO {table_name} ({adapter.column_list_sql(columns)}) VALUES {values}",  # noqa: S608 -- identifier SQL; values remain bound.
+                query_label,
             )
             time_print(
                 prefix_sql_log_message(f"Writing {len(row_chunk)} row(s) to table {table_name}"),

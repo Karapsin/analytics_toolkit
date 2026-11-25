@@ -11,6 +11,7 @@ import pandas as pd
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from analytics_toolkit.sql.ddl.creation_resources import CreatedTableResource
     from analytics_toolkit.sql.dml.empty_source import EmptySourcePolicy
     from analytics_toolkit.sql.dml.table.upsert_checkpoint import UpsertCheckpoint
 
@@ -526,6 +527,12 @@ class TransferStageState:
     internal_columns: TransferInternalColumns | None = None
     transfer_id: str | None = None
     canonical_destination_identity: str | None = None
+    acknowledged_target_names: list[str] = field(default_factory=list)
+    owned_target_resources: list[CreatedTableResource] = field(default_factory=list)
+    owned_stage_scoped_resources: list[tuple[CreatedTableResource, str]] = field(
+        default_factory=list
+    )
+    scoped_stage_ownership_requested: bool = False
 
 
 @dataclass

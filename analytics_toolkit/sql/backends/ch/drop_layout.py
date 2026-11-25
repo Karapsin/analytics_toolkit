@@ -18,11 +18,13 @@ from analytics_toolkit.sql.execution.cancellation import raise_if_cancelled
 
 from .ddl import build_ch_shard_table_name
 from .dialect import ClickHouseDialect
-from .layout import _column_identity
+from .drop_definition import drop_definition_signature as _physical_signature
+from .drop_definition import is_view_definition, parse_drop_definition
+from .layout import _column_identity, _is_direct_storage
 from .metadata import extract_clickhouse_distributed_shard_table
 from .outage_context import internal_io
 from .outage_session import configured_cluster
-from .reconfigure_ddl import engine_name, engine_sql, parse_create_table, require_merge_tree
+from .reconfigure_ddl import engine_name, engine_sql, parse_create_table
 from .reconfigure_execution import cluster_clause
 from .reconfigure_facade_relationship import (
     _resolved_names,
@@ -42,9 +44,10 @@ from .reconfigure_support import (
     resolve_required_cluster,
     unquoted_table_name,
 )
-from .replacement_scope import _physical_signature
 
 if TYPE_CHECKING:
+    from typing import Literal
+
     from .reconfigure_facade_scope import FacadeScope, ServerIdentity
 
 
@@ -74,6 +77,13 @@ class VerifiedDropResource:
 class VerifiedDropLayout:
     resources: tuple[VerifiedDropResource, ...]
     config: ChConfig
+
+
+@dataclass(frozen=True)
+class ResourceInspection:
+    allow_absence: bool = False
+    operation: Literal["DROP", "TRUNCATE"] = "DROP"
+    sqls: tuple[str, ...] = ()
 
 
 def verified_drop_resource_identity(resource: VerifiedDropResource) -> tuple[object, ...]:
@@ -128,7 +138,7 @@ def require_drop_configuration(plan: VerifiedDropLayout) -> None:
 
 
 def coordinator_identity(connection: Any) -> ServerIdentity:
-    rows = read_rows(connection, "SELECT serverUUID(), tcpPort()")
+    rows = read_rows(connection, "SELECT serverUUID(), tcpPort()", text_columns=(0,))
     message = "Cannot verify the coordinator identity before dropping ClickHouse resources."
     if len(rows) != 1:
         raise InvalidSqlInputError(message)
@@ -154,14 +164,20 @@ def require_drop_scope(connection: Any, resource: VerifiedDropResource) -> None:
         raise InvalidSqlInputError(message)
 
 
-def require_drop_resource(connection: Any, resource: VerifiedDropResource) -> None:
+def require_drop_resource(
+    connection: Any,
+    resource: VerifiedDropResource,
+    *,
+    operation: Literal["DROP", "TRUNCATE"] = "DROP",
+    sqls: tuple[str, ...] = (),
+) -> None:
     require_drop_scope(connection, resource)
-    current = _resource(
+    current = inspect_resource(
         connection,
         resource.table,
         resource.scope.cluster if resource.scope else None,
         resource.role,
-        allow_absence=True,
+        ResourceInspection(allow_absence=True, operation=operation, sqls=sqls),
     )
     if (
         current is None
@@ -227,16 +243,27 @@ def unacknowledged_drop_positions(
     )
 
 
-def remaining_drop_positions(connection: Any, resource: VerifiedDropResource) -> tuple[int, ...]:
+def remaining_drop_positions(
+    connection: Any, resource: VerifiedDropResource, *, sqls: tuple[str, ...] = ()
+) -> tuple[int, ...]:
     """Permit acknowledged removals while rejecting new or replaced table identities."""
     require_drop_scope(connection, resource)
-    current = _resource(
-        connection,
-        resource.table,
-        resource.scope.cluster if resource.scope else None,
-        resource.role,
-        allow_absence=True,
-    )
+    if sqls:
+        current = inspect_resource(
+            connection,
+            resource.table,
+            resource.scope.cluster if resource.scope else None,
+            resource.role,
+            ResourceInspection(allow_absence=True, sqls=sqls),
+        )
+    else:
+        current = _resource(
+            connection,
+            resource.table,
+            resource.scope.cluster if resource.scope else None,
+            resource.role,
+            allow_absence=True,
+        )
     if current is None:
         return ()
     expected = dict(resource.table_identities)
@@ -280,7 +307,7 @@ def _local_definition(connection: Any, table: str) -> str | None:
             exp.column("name").eq(exp.Literal.string(parsed.name)),
         )
     )
-    rows = read_rows(connection, statement.sql(dialect=ClickHouseDialect))
+    rows = read_rows(connection, statement.sql(dialect=ClickHouseDialect), text_columns=(0,))
     if not rows:
         return None
     if len(rows) != 1 or len(rows[0]) != 1 or not isinstance(rows[0][0], str) or not rows[0][0]:
@@ -303,10 +330,12 @@ def _table_identities(
         exp.column("database").eq(exp.Literal.string(parsed.db)),
         exp.column("name").eq(exp.Literal.string(parsed.name)),
     )
-    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect))
+    rows = read_rows(
+        connection, query.sql(dialect=ClickHouseDialect), text_columns=(1 if scope else 0,)
+    )
     message = (
         "Cannot certify stable ClickHouse table UUID ownership before drop; "
-        "use tables with nonzero native UUIDs (for example an Atomic database)."
+        "zero table UUIDs require verified Ordinary database metadata."
     )
     fields = 2 if scope is not None else 1
     if any(len(row) != fields for row in rows):
@@ -315,20 +344,66 @@ def _table_identities(
         identities = {int(row[0]) if scope is not None else 1: UUID(str(row[-1])) for row in rows}
     except (TypeError, ValueError, IndexError) as exc:
         raise InvalidSqlInputError(message) from exc
-    if len(identities) != len(rows) or any(not identity.int for identity in identities.values()):
+    if len(identities) != len(rows):
         raise InvalidSqlInputError(message)
     expected = set(scope.identities) if scope is not None else {1}
     if not set(identities) <= expected:
         message = "Cannot verify complete selected ClickHouse table UUID coverage before drop."
         raise InvalidSqlInputError(message)
+    zero_positions = {position for position, identity in identities.items() if not identity.int}
+    if zero_positions:
+        engines = _database_engines(connection, parsed.db, scope)
+        if any(engines.get(position, "").lower() != "ordinary" for position in zero_positions):
+            raise InvalidSqlInputError(message)
     return tuple(sorted(identities.items()))
+
+
+def _database_engines(connection: Any, database: str, scope: FacadeScope | None) -> dict[int, str]:
+    source = (
+        cluster_table(scope.cluster, "databases")
+        if scope is not None
+        else exp.to_table("system.databases")
+    )
+    query = exp.select("_shard_num", "engine") if scope is not None else exp.select("engine")
+    query = query.from_(source).where(exp.column("name").eq(exp.Literal.string(database)))
+    rows = read_rows(
+        connection, query.sql(dialect=ClickHouseDialect), text_columns=(1 if scope else 0,)
+    )
+    fields = 2 if scope is not None else 1
+    expected = set(scope.identities) if scope is not None else {1}
+    message = "Cannot verify the selected ClickHouse database engines for zero-UUID ownership."
+    if any(len(row) != fields or not isinstance(row[-1], str) for row in rows):
+        raise InvalidSqlInputError(message)
+    try:
+        engines = {int(row[0]) if scope is not None else 1: row[-1] for row in rows}
+    except (TypeError, ValueError, IndexError) as exc:
+        raise InvalidSqlInputError(message) from exc
+    if len(engines) != len(rows) or not set(engines) <= expected:
+        raise InvalidSqlInputError(message)
+    return engines
 
 
 def _resource(
     connection: Any, table: str, cluster: str | None, role: str, *, allow_absence: bool = False
 ) -> VerifiedDropResource | None:
+    return inspect_resource(
+        connection, table, cluster, role, ResourceInspection(allow_absence=allow_absence)
+    )
+
+
+def inspect_resource(
+    connection: Any,
+    table: str,
+    cluster: str | None,
+    role: str,
+    inspection: ResourceInspection,
+) -> VerifiedDropResource | None:
     raise_if_cancelled()
-    preflight_sql_statements(connection, [f"DROP TABLE IF EXISTS {table}{cluster_clause(cluster)}"])
+    operation = inspection.operation
+    preflight_sql_statements(
+        connection,
+        inspection.sqls or [f"{operation} TABLE IF EXISTS {table}{cluster_clause(cluster)}"],
+    )
     if cluster is None:
         table_ids = _table_identities(connection, table, None)
         if not table_ids:
@@ -352,8 +427,10 @@ def _resource(
     if set(definitions) != expected:
         message = "The selected ClickHouse table changed during drop certification."
         raise InvalidSqlInputError(message)
-    if not allow_absence and expected != set(scope.identities):
-        preflight_sql_statements(connection, [f"DROP TABLE {table}{cluster_clause(cluster)}"])
+    if not inspection.allow_absence and expected != set(scope.identities):
+        preflight_sql_statements(
+            connection, inspection.sqls or [f"{operation} TABLE {table}{cluster_clause(cluster)}"]
+        )
         message = "Dropping without IF EXISTS requires selected table readiness on every endpoint."
         raise ClickHouseClusterUnavailableError(message)
     ddl = definitions[min(definitions)]
@@ -385,7 +462,9 @@ def _require_managed_relationship(
 ) -> None:
     facade_create = parse_create_table(facade.ddl, facade.table)
     physical_create = parse_create_table(physical.ddl, physical.table)
-    require_merge_tree(physical_create, physical.table)
+    if not _is_direct_storage(physical_create):
+        message = "The referenced physical table is not directly stored ClickHouse data."
+        raise InvalidSqlInputError(message)
     if _column_identity(facade_create) != _column_identity(physical_create):
         message = "The referenced physical table is not a verified owned companion."
         raise InvalidSqlInputError(message)
@@ -425,9 +504,9 @@ def _physical_resource(
         this=exp.to_identifier(reference.table, quoted=True),
         db=exp.to_identifier(reference.database, quoted=True),
     ).sql(dialect=ClickHouseDialect)
-    managed = unquoted_table_name(physical_table) == unquoted_table_name(
-        intent.physical_table or build_ch_shard_table_name(facade.table)
-    )
+    candidate = intent.physical_table or build_ch_shard_table_name(facade.table)
+    candidate = _qualified_table(connection, candidate, None)
+    managed = unquoted_table_name(physical_table) == unquoted_table_name(candidate)
     if not managed:
         if not intent.drop_distributed:
             message = "External physical storage must be named explicitly to authorize its removal."
@@ -457,6 +536,10 @@ def certify_existing_drop(connection: Any, table: str, intent: DropIntent) -> Ve
         table = _qualified_table(connection, table, config.database)
         cluster = configured_cluster(config) if config.cluster_routing else None
         named = _resource(connection, table, cluster, "named", allow_absence=intent.if_exists)
+        if named is None and cluster is not None:
+            # A facade may be placed only on the coordinator, independently of
+            # the cluster used for its physical storage and automatic routing.
+            named = _resource(connection, table, None, "named", allow_absence=intent.if_exists)
         if named is None and cluster is None and intent.cluster is not None:
             hint = resolve_required_cluster(connection, intent.cluster)
             named = _resource(connection, table, hint, "named", allow_absence=intent.if_exists)
@@ -466,7 +549,9 @@ def certify_existing_drop(connection: Any, table: str, intent: DropIntent) -> Ve
             message = f"ClickHouse table {table} does not exist in the selected scope."
             raise InvalidSqlInputError(message)
         named = _require_local_intent(named, intent)
-        create = parse_create_table(named.ddl, named.table)
+        create = parse_drop_definition(named.ddl, named.table)
+        if is_view_definition(create):
+            return VerifiedDropLayout((named,), config)
         if engine_name(create).casefold() != "distributed":
             return VerifiedDropLayout((named,), config)
         facade = replace(named, role="facade")

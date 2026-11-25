@@ -8,6 +8,10 @@ import sqlglot
 from sqlglot import TokenType, exp
 from sqlglot.errors import SqlglotError
 
+from analytics_toolkit.sql.backends.ch.identifiers import (
+    quote_identifier as quote_clickhouse_identifier,
+)
+
 _DIALECTS = {"gp": "postgres", "ch": "clickhouse", "clickhouse": "clickhouse", "trino": "trino"}
 
 
@@ -22,6 +26,8 @@ def quote_completion_name(name: str, backend: str) -> str:
         )
     except SqlglotError:
         simple = False
+    if not simple and backend in {"ch", "clickhouse"}:
+        return quote_clickhouse_identifier(name)
     return exp.to_identifier(name, quoted=not simple).sql(dialect=dialect)
 
 

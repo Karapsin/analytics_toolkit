@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-# ruff: noqa: BLE001, C901, EM101, EM102, F401, PERF203, PLR0913, PLR0915, S101, S112, S608, TRY003, TRY301
+# ruff: noqa: BLE001, C901, EM101, EM102, F401, PLR0913, PLR0915, S101, S608, TRY003, TRY301
 import uuid
 from typing import TYPE_CHECKING, Any
 
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
-from analytics_toolkit.sql.execution.backend_options import preserve_recovery_artifacts
 
 if TYPE_CHECKING:
     from sqlglot import exp
@@ -40,6 +39,7 @@ from .reconfigure_ddl import (
 from .reconfigure_ddl import (
     transform_distributed_create as _transform_distributed_create,
 )
+from .reconfigure_execution import execute_reconfiguration_phase
 from .reconfigure_execution import execute_reconfiguration_sqls as _execute_sqls
 from .reconfigure_models import ChReconfiguration, ChReconfigureOptions
 from .reconfigure_physical import prepare_physical_execution
@@ -50,6 +50,10 @@ from .reconfigure_physical_io import (
     validate_staged_row_counts,
 )
 from .reconfigure_policy import resolve_desired_reconfigure_policy
+from .reconfigure_readiness import (
+    require_empty_facade_queues,
+    synchronize_reconfiguration_replicas,
+)
 from .reconfigure_source import inspect_reconfigure_source as _inspect_reconfigure_source
 from .reconfigure_support import (
     add_sqls as _add_sqls,
@@ -118,7 +122,8 @@ from .reconfigure_support import (
     unquoted_table_name as _unquoted_table_name,
 )
 from .reconfigure_topology import DestinationTopology, validate_destination
-from .reconfigure_wait import wait_for_created_replacements
+from .reconfigure_wait import wait_for_cleanup, wait_for_created_replacements
+from .recovery_inventory import cleanup_created_resources, recover_reconfiguration_failure
 from .wait import (
     _wait_for_ch_table,
     _wait_for_ch_table_absence,
@@ -146,6 +151,9 @@ def plan_ch_table_reconfiguration(
 ) -> ChReconfiguration:
     change = _plan_ch_table_reconfiguration(adapter, connection, options)
     prepare_physical_execution(connection, options, change)
+    from .replication_isolation import certify_reconfiguration_replication  # noqa: PLC0415
+
+    certify_reconfiguration_replication(connection, change, options.connection_key)
     return change
 
 
@@ -235,6 +243,7 @@ def _plan_ch_table_reconfiguration(
         ch_settings=None,
         ch_reset_partition_by=options.reset_partition_by,
         ch_reset_order_by=options.reset_order_by,
+        defer_replication_isolation=True,
     )
     desired_shard = _transform_create_table(
         desired_structural_shard,
@@ -246,6 +255,7 @@ def _plan_ch_table_reconfiguration(
         ch_settings=options.ch_settings,
         ch_reset_partition_by=False,
         ch_reset_order_by=False,
+        defer_replication_isolation=True,
     )
     desired_table = (
         _transform_distributed_create(
@@ -308,6 +318,7 @@ def _plan_ch_table_reconfiguration(
             facade_cluster=policy.distributed_on_cluster,
             facade_mutation=topology_change or cross_cluster or (source_pair and wrapper_effective),
             source_facade_ddl=source.layout.ddl,
+            connection_key=options.connection_key,
         ),
     )
 
@@ -450,10 +461,12 @@ def _execute_ch_table_reconfiguration(
     metadata.source_rows = source_count
     cutover_started = False
     try:
+        require_empty_facade_queues(connection, reconfiguration)
         create_replacements(adapter, connection, reconfiguration)
         _wait_for_created_replacement(connection, reconfiguration)
         if not copy_physical_data(adapter, connection, reconfiguration):
             _execute_phase(adapter, connection, reconfiguration.plan, "copy_data")
+        synchronize_reconfiguration_replicas(connection, reconfiguration)
 
         if stage is not None:
             replacement_count = count_reconfiguration_rows(
@@ -471,6 +484,7 @@ def _execute_ch_table_reconfiguration(
             source_count, stable_source_count, replacement_count, enabled=validate_row_count
         )
 
+        require_empty_facade_queues(connection, reconfiguration)
         cutover_started = True
         execute_cutover(adapter, connection, reconfiguration)
         final_count = count_reconfiguration_rows(
@@ -483,15 +497,16 @@ def _execute_ch_table_reconfiguration(
                 "ClickHouse row count changed during cutover; the original table will be restored."
             )
         metadata.row_count_validated = validate_row_count
-    except Exception as exc:
-        if isinstance(exc, StructuralCutoverError) or preserve_recovery_artifacts():
-            raise
-        if cutover_started and reconfiguration.cutover_journal:
-            try:
-                rollback_cutover(adapter, connection, reconfiguration)
-            except StructuralCutoverError as rollback_exc:
-                raise rollback_exc from exc
-        _best_effort_cleanup(adapter, connection, reconfiguration)
+    except BaseException as exc:
+        recover_reconfiguration_failure(
+            exc,
+            reconfiguration,
+            uncertain=isinstance(exc, StructuralCutoverError),
+            rollback=(lambda: rollback_cutover(adapter, connection, reconfiguration))
+            if cutover_started and reconfiguration.cutover_journal
+            else None,
+            cleanup=lambda: _best_effort_cleanup(adapter, connection, reconfiguration),
+        )
         raise
 
     try:
@@ -856,36 +871,23 @@ def _plan_rebuild(
 
 
 def _execute_phase(adapter: Any, connection: Any, plan: SqlPlan, phase: str) -> None:
-    _execute_sqls(
-        adapter,
-        connection,
-        [statement.sql for statement in plan.statements if statement.phase == phase],
-    )
+    execute_reconfiguration_phase(adapter, connection, plan, phase, _execute_sqls)
 
 
 def _wait_for_cleanup(connection: Any, reconfiguration: ChReconfiguration) -> None:
-    for table_name, cluster in reconfiguration.cleanup_tables:
-        if cluster is None:
-            _wait_for_ch_table_absence(connection, table_name)
-        else:
-            _wait_for_ch_table_absence_on_cluster(
-                connection,
-                table_name,
-                ch_cluster=cluster,
-            )
+    wait_for_cleanup(
+        connection,
+        reconfiguration,
+        (_wait_for_ch_table_absence, _wait_for_ch_table_absence_on_cluster),
+    )
 
 
 def _best_effort_cleanup(
     adapter: Any,
     connection: Any,
     reconfiguration: ChReconfiguration,
-) -> None:
-    scopes = reconfiguration.owned_table_scopes
-    for table_name, cluster in scopes:
-        try:
-            adapter.execute_command(connection, _drop_table_sql(table_name, cluster))
-        except Exception:
-            continue
+) -> list[Exception]:
+    return cleanup_created_resources(adapter, connection, reconfiguration)
 
 
 __all__ = [

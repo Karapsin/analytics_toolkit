@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from functools import lru_cache
 from typing import Any
 
@@ -13,7 +14,8 @@ _WIDTHS = {"SMALLINT": 16, "INTEGER": 32, "BIGINT": 64}
 _ASCII_WHITESPACE = " \t\r\n\v\f"
 _DECIMAL_INTEGER = re.compile(r"[+-]?[0-9]+", flags=re.ASCII)
 _INVALID_INTEGER = (
-    "Greenplum integer input requires ASCII signed decimal text within the declared "
+    "Greenplum integer input requires exact integral values or ASCII signed decimal text "
+    "within the declared "
     "SMALLINT, INTEGER or BIGINT range. For other conversions, CAST the source expression "
     "AS the destination integer type in from_sql."
 )
@@ -53,8 +55,21 @@ def integer_text_value(value: str, native_type: str) -> int:
 
 
 def integer_value(value: Any, native_type: str) -> Any:
-    """Normalize only text; preserve existing numeric and integral-value paths."""
-    return integer_text_value(value, native_type) if isinstance(value, str) else value
+    """Normalize exact native integral values without accepting fractional loss."""
+    if isinstance(value, str):
+        return integer_text_value(value, native_type)
+    if isinstance(value, Decimal):
+        bits = _WIDTHS.get(canonical_builtin_type(native_type) or "")
+        if bits is None:
+            return value
+        if (
+            not value.is_finite()
+            or not -(2 ** (bits - 1)) <= value < 2 ** (bits - 1)
+            or value != value.to_integral_value()
+        ):
+            raise GreenplumIntegerValueError(_INVALID_INTEGER)
+        return int(value)
+    return value
 
 
 @lru_cache(maxsize=1024)

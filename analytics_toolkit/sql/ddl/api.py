@@ -406,6 +406,7 @@ def _create_sql_table_from_sql_source(
             get_sql_connection_fn=get_sql_connection,
             ch_creation_policy=policy,
             ch_replace_table=ch_replace_table,
+            if_not_exists=if_not_exists,
         )
 
     from ..dml.table.create_table_from_sql import create_table_from_sql
@@ -473,6 +474,7 @@ def _create_sql_table_with_connection(
     ddl_properties: Mapping[str, Any] | None = None,
     ch_creation_policy: Any = None,
     on_resource_created: Any = None,
+    on_scoped_resource_created: Any = None,
 ) -> SqlPlan | SqlOperationResult | None:
     resolved_backend = resolve_connection_backend(backend)
     resolved_key = connection_key or resolved_backend
@@ -518,7 +520,7 @@ def _create_sql_table_with_connection(
         drop_target_if_exists=False,
         if_not_exists=(
             False
-            if on_resource_created is not None
+            if on_resource_created is not None or on_scoped_resource_created is not None
             else getattr(
                 get_backend_adapter(resolved_backend), "default_create_if_not_exists", False
             )
@@ -531,7 +533,11 @@ def _create_sql_table_with_connection(
         ch_creation_policy=ch_creation_policy,
         option_owner="connection",
     )
-    options = replace(options, on_resource_created=on_resource_created)
+    options = replace(
+        options,
+        on_resource_created=on_resource_created,
+        on_scoped_resource_created=on_scoped_resource_created,
+    )
     create_sqls = _build_create_sql_table_sqls(options, option_owner="connection")
     metadata, plan = _build_create_table_plan(options, [], create_sqls)
 
@@ -729,12 +735,20 @@ def _execute_create_sql_table(
         preflight = getattr(adapter, "preflight_create_table_replacement", None)
         if callable(preflight):
             preflight(connection, options)
-        if options.on_resource_created is None:
+        scoped_callback = getattr(options, "on_scoped_resource_created", None)
+        if options.on_resource_created is None and scoped_callback is None:
             adapter.execute_commands(connection, create_sqls)
         else:
             from .ownership import execute_owned_create_sqls
 
-            execute_owned_create_sqls(adapter, connection, create_sqls, options.on_resource_created)
+            execute_owned_create_sqls(
+                adapter,
+                connection,
+                create_sqls,
+                options.on_resource_created,
+                on_scoped_resource_created=scoped_callback,
+                connection_key=options.connection_key,
+            )
         try:
             adapter.after_create_table(
                 connection,

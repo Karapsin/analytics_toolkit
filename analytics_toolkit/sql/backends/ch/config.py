@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Any, Callable, Literal
 
 from analytics_toolkit.sql.connection.errors import SqlConfigError
-from analytics_toolkit.sql.connection.validation import validating, validation_timeout
+from analytics_toolkit.sql.connection.validation import (
+    validating,
+    validation_remaining,
+    validation_timeout,
+)
 from analytics_toolkit.sql.execution.backend_options import validate_ch_unavailable_shards
 from analytics_toolkit.sql.execution.observation import observed_connection
 
@@ -249,13 +253,6 @@ def _open_http_connection(
         client_kwargs["send_receive_timeout"] = read_timeout
     if config.settings is not None:
         client_kwargs["settings"] = config.settings
-    if validating():
-        client_kwargs["settings"] = {
-            **(config.settings or {}),
-            "max_execution_time": min(
-                float((config.settings or {}).get("max_execution_time", 5) or 5), 5
-            ),
-        }
     if config.interface is not None:
         client_kwargs["interface"] = config.interface
     if config.query_limit is not None:
@@ -267,7 +264,17 @@ def _open_http_connection(
 
     from .http_codec import ExactHTTPClient  # noqa: PLC0415
 
-    return ExactHTTPClient(clickhouse_connect.get_client(**client_kwargs))
+    client = clickhouse_connect.get_client(**client_kwargs)
+    try:
+        validation_remaining()
+        return ExactHTTPClient(client)
+    except BaseException:
+        from analytics_toolkit.sql.execution.operation_runner import (  # noqa: PLC0415 -- backend initialization cycle.
+            _close_connection,
+        )
+
+        _close_connection({"connection": client}, config.connection_key, backend="ch")
+        raise
 
 
 def _open_native_connection(
@@ -309,13 +316,6 @@ def _open_native_connection(
         client_kwargs["send_receive_timeout"] = read_timeout
     if config.settings is not None:
         client_kwargs["settings"] = config.settings
-    if validating():
-        client_kwargs["settings"] = {
-            **(config.settings or {}),
-            "max_execution_time": min(
-                float((config.settings or {}).get("max_execution_time", 5) or 5), 5
-            ),
-        }
     if config.client_name is not None:
         client_kwargs["client_name"] = config.client_name
     if validating():
@@ -341,8 +341,10 @@ def _parse_ch_verify(raw_config: dict[str, Any], connection_key: str) -> str | N
 def validate_connection(adapter: Any, connection: Any) -> None:
     del adapter
     with internal_io():
+        validation_remaining()
         result = connection.query("SELECT 1")
         rows = result.result_rows
+        validation_remaining()
         if not rows or rows[0][0] != 1:
             message = "Connectivity probe returned an unexpected result."
             raise RuntimeError(message)

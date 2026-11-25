@@ -9,6 +9,7 @@ from . import adapter_defaults as _adapter_defaults
 from . import common_methods as _common_methods
 from . import key_literals as _key_literals
 from . import source_count as _source_count
+from . import target_acquisition as _target_acquisition
 from . import upsert as _upsert
 from . import validation as _validation
 from .models import (
@@ -137,6 +138,7 @@ class BackendAdapter(_common_methods.DataframePreparationPolicy):
     resolve_upsert_execution_options = _common_methods.resolve_upsert_execution_options
     resolve_upsert_execution_sqls = _common_methods.resolve_upsert_execution_sqls
     execute_upsert_command = _common_methods.execute_upsert_command
+    prepare_upsert_target = _common_methods.prepare_upsert_target
     _read_dataframe_impl = _common_methods.read_dataframe_impl
 
     def table_exists(
@@ -578,28 +580,7 @@ class BackendAdapter(_common_methods.DataframePreparationPolicy):
             return False
         raise ValueError("replace_existing_non_ch must be one of: clear, drop.")
 
-    def ensure_stage_target_table(self, request: StageTargetTableRequest) -> bool:
-        from ..ddl.api import _create_sql_table_with_connection
-
-        create_kwargs: dict[str, Any] = {}
-        if request.partition_by is not None:
-            create_kwargs["partition_by"] = request.partition_by
-        if request.gp_partitions is not None:
-            create_kwargs["gp_partitions"] = request.gp_partitions
-        if request.order_by is not None:
-            create_kwargs["order_by"] = request.order_by
-        _create_sql_table_with_connection(
-            self.backend,
-            request.connection,
-            request.target_table,
-            None if request.target_column_types is not None else request.sample_batch,
-            connection_key=request.connection_key or self.backend,
-            table_schema=request.target_column_types,
-            gp_distributed_by_key=request.gp_distributed_by_key,
-            query_label=request.query_label,
-            **create_kwargs,
-        )
-        return True
+    ensure_stage_target_table = _target_acquisition.ensure_stage_target_table
 
     def finalize_stage_table(self, request: StageFinalizationRequest) -> None:
         from .safe_replace import finalize_existing_stage_replace  # noqa: PLC0415

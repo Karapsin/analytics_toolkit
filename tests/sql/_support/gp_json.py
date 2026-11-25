@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from dataclasses import dataclass
+from decimal import Decimal
 from typing import ClassVar
 
 from analytics_toolkit.sql.dml.transfer.runtime import retry as transfer_retry
 from sqlglot import exp, parse_one
 from sqlglot.dialects.postgres import Postgres
 
+from tests.sql._support.created_gp_relations import locked_relation
+from tests.sql._support.gp_relation_identity import RelationIdentityDatabase
 from tests.sql._support.load_encoded_values import _EncodedCursor
 from tests.sql._support.load_table import load_df_module
 from tests.sql._support.transfer_not_null import (
@@ -30,6 +34,14 @@ class _UndefinedFixtureTypeError(ValueError):
     pgcode = "42704"
 
 
+@dataclass(frozen=True)
+class StoredJsonNull:
+    """A non-NULL JSON document whose JSON value is null."""
+
+
+JSON_NULL = StoredJsonNull()
+
+
 def _json_catalog_type_exists(native):
     if native.this == exp.DataType.Type.ARRAY:
         return _json_catalog_type_exists(native.expressions[0])
@@ -43,7 +55,7 @@ def _json_catalog_type_exists(native):
     return names in {("json",), ("jsonb",), ("pg_catalog", "json"), ("pg_catalog", "jsonb")}
 
 
-class JsonDatabase(TransferDatabase):
+class JsonDatabase(RelationIdentityDatabase, TransferDatabase):
     def __init__(self, native_type, *, exists):
         super().__init__(
             "gp", columns=("payload",), not_null=(), target_types={"payload": native_type}
@@ -59,6 +71,8 @@ class JsonDatabase(TransferDatabase):
         self.rejected_type_creates = []
 
     def execute(self, connection, statement, params=None):
+        if locked_relation(statement) is not None:
+            return super().execute(connection, statement, params)
         tree = parse_one(self._ddl_schema_prefix(statement), read=self.dialect)
         if isinstance(tree, exp.Create) and any(
             not _json_catalog_type_exists(column.kind) for column in tree.this.expressions
@@ -80,20 +94,7 @@ class JsonDatabase(TransferDatabase):
             for values in expressions
         ]
         candidate = deepcopy(self.tables[identity])
-        required = candidate.not_null
-        if any(
-            name in required and isinstance(uncast(value), exp.Null)
-            for values in expressions
-            for name, value in zip(names, values)
-        ):
-            message = "Server rejected SQL NULL in a NOT NULL JSON column."
-            raise ValueError(message)
-        # Decoding the non-NULL JSON document 'null' also yields Python None.
-        # Apply the server constraint from SQL syntax before that distinction is
-        # lost, while the ordinary store still checks omitted required columns.
-        candidate.not_null = required - set(names)
         candidate.insert(names, rows)
-        candidate.not_null = required
         self.tables[identity] = candidate
         self.serialized_rows.extend(
             tuple(value.this if isinstance(value, exp.Literal) else None for value in values)
@@ -112,11 +113,18 @@ class JsonDatabase(TransferDatabase):
             return self.decode_array(node, native_type.rstrip("[]"))
         assert isinstance(node, exp.Literal)
         assert node.is_string
-        value = json.loads(node.this, parse_constant=reject_nonfinite)
-        if native_type.lower() == "jsonb" and contains_nul(value):
-            message = "Server rejected a NUL escape in JSONB."
-            raise ValueError(message)
-        return value
+        value = json.loads(
+            node.this,
+            parse_int=_exact_integer,
+            parse_float=Decimal,
+            parse_constant=reject_nonfinite,
+        )
+        if _is_jsonb(native_type):
+            _validate_jsonb_numbers(value)
+            if contains_nul(value):
+                message = "Server rejected a NUL escape in JSONB."
+                raise ValueError(message)
+        return JSON_NULL if value is None else value
 
     def decode_array(self, node, native_type, *, literal_array=True):
         node = uncast(node)
@@ -144,6 +152,38 @@ def uncast(node):
 def reject_nonfinite(_value):
     message = "Server rejected a non-finite JSON number."
     raise ValueError(message)
+
+
+def _exact_integer(value):
+    # Native JSON has no dependency on Python's decimal-string digit limit.
+    return int(Decimal(value))
+
+
+def _is_jsonb(native_type):
+    native = exp.DataType.build(native_type, dialect="postgres")
+    if native.this == exp.DataType.Type.JSONB:
+        return True
+    if native.this == exp.DataType.Type.JSON:
+        return False
+    identity = native.args.get("kind")
+    parts = [identity.this, identity.expression] if isinstance(identity, exp.Dot) else [identity]
+    return _json_catalog_type_exists(native) and parts[-1].name.lower() == "jsonb"
+
+
+def _validate_jsonb_numbers(value):
+    if isinstance(value, dict):
+        for item in value.values():
+            _validate_jsonb_numbers(item)
+    elif isinstance(value, list):
+        for item in value:
+            _validate_jsonb_numbers(item)
+    elif isinstance(value, Decimal) or type(value) is int:
+        numeric = Decimal(value)
+        digits, exponent = len(numeric.as_tuple().digits), numeric.as_tuple().exponent
+        integral = 0 if numeric.is_zero() else max(0, digits + exponent)
+        if integral > 131072 or max(0, -exponent) > 16383:
+            message = "JSONB numeric value exceeds the PostgreSQL NUMERIC storage domain."
+            raise ValueError(message)
 
 
 def contains_nul(value):
@@ -182,7 +222,10 @@ class JsonCursor(TransferCursor):
     def execute(self, statement, params=None):
         text = statement.decode("utf-8") if isinstance(statement, bytes) else statement
         super().execute(text, params)
-        self.connection.insert_pending = isinstance(parse_one(text, read="postgres"), exp.Insert)
+        self.connection.insert_pending = locked_relation(text) is None and isinstance(
+            parse_one(self.connection.database._ddl_schema_prefix(text), read="postgres"),
+            exp.Insert,
+        )
 
 
 def json_target(monkeypatch, native_type, *, exists=True):

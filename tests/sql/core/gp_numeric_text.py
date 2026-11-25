@@ -12,11 +12,13 @@ import numpy as np
 import pandas as pd
 import pytest
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.native_scalars import NativeDecimalNaN, NativeFloatNaN
 from analytics_toolkit.sql.backends.type_resolution import (
     ColumnProfile,
     declared_domain_fits,
     validate_profile,
 )
+from analytics_toolkit.sql.core.exact_values import is_null
 
 
 @pytest.fixture
@@ -87,10 +89,7 @@ def test_gp_numeric_text_floating_aliases_have_finite_native_values(numeric_poli
     [
         "",
         " \t\r\n\v\f",
-        "NaN",
         "sNaN",
-        "Infinity",
-        "-inf",
         "1_000",
         "1 2",
         "0x1p2",
@@ -101,7 +100,7 @@ def test_gp_numeric_text_floating_aliases_have_finite_native_values(numeric_poli
         "private-invalid-numeric",
     ],
 )
-def test_gp_numeric_text_invalid_or_nonfinite_strings_reject_privately(numeric_policy, native, raw):
+def test_gp_numeric_text_invalid_strings_reject_privately(numeric_policy, native, raw):
     with pytest.raises(numeric_policy.GreenplumNumericTextValueError) as error:
         numeric_policy.numeric_text_value(raw, native)
 
@@ -110,6 +109,28 @@ def test_gp_numeric_text_invalid_or_nonfinite_strings_reject_privately(numeric_p
     assert error.value.__cause__ is None
     assert "CAST" in str(error.value)
     assert "from_sql" in str(error.value)
+
+
+@pytest.mark.parametrize("native", ["REAL", "DOUBLE PRECISION", "NUMERIC(38,9)"])
+@pytest.mark.parametrize("raw", ["NaN", "Infinity", "-inf"])
+def test_gp_numeric_special_text_keeps_nonnull_values_and_defers_numeric_infinity(
+    numeric_policy, native, raw
+):
+    handled, result = numeric_policy.convert_numeric_text(raw, native)
+    assert handled
+    assert not is_null(result)
+    if native.startswith("NUMERIC") and raw != "NaN":
+        assert result is raw
+        profile = ColumnProfile()
+        profile.add(raw)
+        assert numeric_policy.pending_numeric_assignment(profile, native)
+    elif raw == "NaN":
+        expected = NativeDecimalNaN if native.startswith("NUMERIC") else NativeFloatNaN
+        assert isinstance(result, expected)
+    else:
+        assert type(result) is float
+        assert math.isinf(result)
+        assert math.copysign(1.0, result) == (-1.0 if raw.startswith("-") else 1.0)
 
 
 @pytest.mark.parametrize(

@@ -20,24 +20,36 @@ import numpy as np
 from analytics_toolkit.sql.core.exact_values import (
     ExactTemporal,
     integer_text,
+    is_native_float_nan,
     is_null,
     truncate_temporal,
     typed_text,
     unwrap_enum,
 )
 
+from .authoritative_types import resolve_authoritative_profile
 from .ch.integer_timestamps import validate_integer_timestamp_range
 from .ch.value_validation import _permits_null
-from .decimal_values import required_fractional_scale, resolve_decimal_type, validate_decimal_type
+from .decimal_values import (
+    _decimal_parameter,
+    required_fractional_scale,
+    resolve_decimal_type,
+    validate_decimal_type,
+)
+from .inferred_types import declared_target as _declared_target
 from .inferred_types import resolve_column_type
 from .native_values import (
     _float_width,
     backend_domain_fits,
     canonical_native_type,
     convert_native_value,
-    requires_native_assignment,
+    native_assignment_value,
+    supports_native_assignment,
+    validate_backend_declaration,
     validate_backend_profile,
 )
+from .numeric_profiles import inferred_numeric_value
+from .observed_types import resolve_observed_type as _resolve_native
 from .temporal_context import TIMEZONE_POLICY_VERSION
 from .temporal_values import timestamp_scale, timestamp_value, validate_timestamp_range
 from .text_types import binary_profile_fits
@@ -47,8 +59,11 @@ __all__ = [
     "ColumnProfile",
     "NativeType",
     "ResolvedColumn",
+    "_decimal_parameter",
+    "_declared_target",
     "_float_width",
     "_permits_null",
+    "_resolve_native",
     "decimal_domain",
     "declared_domain_fits",
     "integer_domain",
@@ -57,6 +72,7 @@ __all__ = [
     "parse_native_type",
     "requires_adaptive_resolution",
     "resolve_column_type",
+    "resolve_decimal_type",
     "resolve_profile",
     "timestamp_scale",
     "validate_profile",
@@ -105,9 +121,9 @@ def parse_native_type(  # noqa: C901, PLR0912 - balanced native type grammar
 ) -> NativeType:
     text = (value or "").strip()
     temporal = re.fullmatch(
-        r"(timestamp|time)\s*(?:\((\d+)\))?\s+(with|without)\s+time\s+zone",
+        r"(timestamp|time)\s*(?:\(\s*([0-9]+)\s*\))?\s+(with|without)\s+time\s+zone",
         text,
-        flags=re.IGNORECASE,
+        flags=re.IGNORECASE | re.ASCII,
     )
     if temporal:
         family, precision, awareness = temporal.groups()
@@ -183,16 +199,36 @@ def decimal_domain(type_name: str | None) -> tuple[int, int] | None:
         base.name in {"decimal", "numeric", "number"}
         and len(base.arguments) == _DECIMAL_ARGUMENT_COUNT
     ):
-        return int(base.arguments[0]), int(base.arguments[1])
+        return _decimal_parameter(base.arguments[0]), _decimal_parameter(base.arguments[1])
     match = re.fullmatch(r"decimal(32|64|128|256)", base.name)
     if match and len(base.arguments) == 1:
-        return {32: 9, 64: 18, 128: 38, 256: 76}[int(match.group(1))], int(base.arguments[0])
+        return {32: 9, 64: 18, 128: 38, 256: 76}[int(match.group(1))], _decimal_parameter(
+            base.arguments[0]
+        )
     return None
 
 
 def is_timestamp_type(type_name: str | None) -> bool:
     name = parse_native_type(type_name).base.name
     return name.startswith(("timestamp", "datetime")) or name == "timestamptz"
+
+
+def _convert_exact_timestamp(value: ExactTemporal, target_type: str, backend: str) -> Any:
+    if (
+        backend != "ch"
+        and is_timestamp_type(target_type)
+        and timestamp_scale(target_type) <= _TRINO_TIMESTAMP_SCALE
+    ):
+        try:
+            return value.calendar_datetime()
+        except OverflowError:
+            return value
+    return (
+        value
+        if backend == "ch"
+        or (backend == "trino" and timestamp_scale(target_type) > _MAX_TEMPORAL_SCALE)
+        else value.timestamp()
+    )
 
 
 @dataclass(frozen=True)
@@ -206,16 +242,25 @@ class ResolvedColumn:
     target_backend: str = ""
     destination_timezone: str | None = None
     native_assignment_required: bool = False
+    native_assignment_precision_loss: bool = False
+    conversion_policy: str = ""
 
     def convert(self, value: Any) -> Any:  # noqa: C901, PLR0911 - preserve explicit destination conversions
         value = unwrap_enum(value)
         if is_null(value):
             return None
-        if self.native_assignment_required and requires_native_assignment(
+        if self.native_assignment_required and supports_native_assignment(
             self.target_type, self.target_backend
         ):
-            return value
+            return native_assignment_value(
+                value,
+                self.target_type,
+                self.target_backend,
+                destination_timezone=self.destination_timezone,
+            )
         target_type = canonical_native_type(self.target_type, self.target_backend)
+        if self.conversion_policy == "inferred_exact":
+            value = inferred_numeric_value(value, target_type)
         native, value = convert_native_value(value, self)
         if native:
             return value
@@ -254,25 +299,13 @@ class ResolvedColumn:
                 self.destination_timezone,
             )
         if isinstance(value, ExactTemporal):
-            if (
-                self.target_backend != "ch"
-                and is_timestamp_type(target_type)
-                and timestamp_scale(target_type) <= _TRINO_TIMESTAMP_SCALE
-            ):
-                return value.calendar_datetime()
-            return (
-                value
-                if self.target_backend == "ch"
-                or (
-                    self.target_backend == "trino"
-                    and timestamp_scale(target_type) > _MAX_TEMPORAL_SCALE
-                )
-                else value.timestamp()
-            )
+            return _convert_exact_timestamp(value, target_type, self.target_backend)
         if parse_native_type(target_type).base.name in _FLOAT_TYPES | {"boolean", "bool"}:
             return (
                 bool(value)
                 if parse_native_type(target_type).base.name in {"boolean", "bool"}
+                else value
+                if is_native_float_nan(value)
                 else float(value)
             )
         if integer_domain(
@@ -293,6 +326,7 @@ class ResolvedColumn:
             "destination_timezone": self.destination_timezone,
             "timezone_policy_version": TIMEZONE_POLICY_VERSION,
             **({"native_assignment_required": True} if self.native_assignment_required else {}),
+            **({"conversion_policy": self.conversion_policy} if self.conversion_policy else {}),
         }
 
 
@@ -309,28 +343,15 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
 ) -> ResolvedColumn:
     destination_timezone = destination_timezone or profile.destination_timezone
     if authoritative_type is not None:
-        native_assignment = allow_pending_native_assignment and requires_native_assignment(
-            authoritative_type, target_backend
-        )
-        if not native_assignment:
-            validate_profile(
-                profile,
-                authoritative_type,
-                target_backend,
-                allow_timestamp_precision_loss=allow_timestamp_precision_loss,
-                source_type=source_type,
-                source_backend=source_backend,
-                destination_timezone=destination_timezone,
-            )
-        return ResolvedColumn(
+        return resolve_authoritative_profile(
+            profile,
             authoritative_type,
-            source_type or "",
-            source_backend,
-            "native_assignment_pending" if native_assignment else "authoritative",
-            certified_input_count=0 if native_assignment else profile.count,
-            target_backend=target_backend,
+            target_backend,
+            source_type=source_type,
+            source_backend=source_backend,
+            allow_timestamp_precision_loss=allow_timestamp_precision_loss,
             destination_timezone=destination_timezone,
-            native_assignment_required=native_assignment,
+            allow_pending_native_assignment=allow_pending_native_assignment,
         )
     target = _declared_target(source_type, source_backend, target_backend)
     if target is None or not declared_domain_fits(
@@ -368,92 +389,8 @@ def resolve_profile(  # noqa: PLR0913 - schema authority and exact conversion me
         profile.count,
         target_backend,
         destination_timezone,
+        conversion_policy="inferred_exact",
     )
-
-
-def _declared_target(
-    source_type: str | None, source_backend: str, target_backend: str
-) -> str | None:
-    if not source_type:
-        return None
-    from .models import SourceColumn  # noqa: PLC0415 - backend registry recursion
-    from .source_schema import map_source_column  # noqa: PLC0415 - backend registry recursion
-
-    return map_source_column(SourceColumn("", source_type), target_backend, source_backend or None)
-
-
-def _resolve_native(  # noqa: C901, PLR0911, PLR0912 - explicit native precedence
-    profile: ColumnProfile, backend: str, source_type: str | None, source_backend: str | None = None
-) -> str | None:
-    families = profile.families
-    if backend == "ch" and profile.null_count and families & {"array", "tuple", "map"}:
-        return None
-    if not families:
-        from .nested_types import (  # noqa: PLC0415 - recursive native policies
-            nested_descriptor,
-            resolve_nested,
-        )
-
-        if nested_descriptor(source_type or "")[0]:
-            return resolve_nested(profile, backend, source_type)
-        # Family defaults are retained for empty/all-null selections.
-        domain = integer_domain(source_type)
-        if domain is not None:
-            return _integer_type(domain[0], domain[1], backend, source_type) or "BIGINT"
-        shape = decimal_domain(source_type)
-        if shape and shape[0] <= {"gp": 1000, "trino": 38, "ch": 76}[backend]:
-            name = {"gp": "NUMERIC", "trino": "DECIMAL", "ch": "Decimal"}[backend]
-            return f"{name}({shape[0]}, {shape[1]})"
-        if shape:
-            return {"gp": "NUMERIC", "trino": "DECIMAL(38, 10)", "ch": "Decimal(38, 10)"}[backend]
-        from .inferred_types import empty_temporal_type  # noqa: PLC0415 - native empty defaults
-
-        temporal = empty_temporal_type(source_type, backend)
-        if temporal is not None:
-            return temporal
-        return {"gp": "TEXT", "trino": "VARCHAR", "ch": "String"}[backend]
-    if backend == "gp" and families in ({"time"}, {"interval"}):
-        from .gp.temporal_values import infer_clock_interval_type  # noqa: PLC0415 -- native policy.
-
-        return infer_clock_interval_type(profile)
-    if families <= {"integer"}:
-        return _integer_type(
-            profile.minimum_integer or 0, profile.maximum_integer or 0, backend, source_type
-        )
-    if families <= {"integer", "decimal"}:
-        return resolve_decimal_type(profile, backend)
-    if families == {"boolean"}:
-        return "Bool" if backend == "ch" else "BOOLEAN"
-    if families == {"float"}:
-        return {"gp": "DOUBLE PRECISION", "trino": "DOUBLE", "ch": "Float64"}[backend]
-    if families == {"timestamp"}:
-        if profile.aware and profile.naive:
-            return None
-        if backend in {"gp", "trino"}:
-            if profile.temporal_scale > _TRINO_TIMESTAMP_SCALE:
-                return None
-            return ("TIMESTAMP(6)" if backend == "trino" else "TIMESTAMP") + (
-                " WITH TIME ZONE" if profile.aware else ""
-            )
-        timezone = ", 'UTC'" if profile.aware else ""
-        return f"DateTime64({max(6, profile.temporal_scale)}{timezone})"
-    if families == {"date"}:
-        minimum_date = cast("dt.date", profile.minimum_date)
-        maximum_date = cast("dt.date", profile.maximum_date)
-        if backend == "ch" and (
-            minimum_date < dt.date(1970, 1, 1) or maximum_date > dt.date(2149, 6, 6)
-        ):
-            return "Date32"
-        return "Date" if backend == "ch" else "DATE"
-    if families == {"uuid"}:
-        return "UUID"
-    if families <= {"string", "binary"}:
-        from .text_types import resolve_text_family  # noqa: PLC0415 - physical type context
-
-        return resolve_text_family(profile, backend, source_type, source_backend)
-    from .nested_types import resolve_nested  # noqa: PLC0415 - recursive native policies
-
-    return resolve_nested(profile, backend, source_type)
 
 
 def _integer_type(  # noqa: PLR0911 - exact backend integer candidates
@@ -493,6 +430,7 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
     destination_timezone: str | None = None,
 ) -> None:
     """Validate authoritative targets without widening or changing their family."""
+    validate_backend_declaration(target_type, backend)
     destination_timezone = destination_timezone or profile.destination_timezone
     target_type = canonical_native_type(target_type, backend)
     validate_decimal_type(target_type, backend)
@@ -538,6 +476,8 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         backend,
         allow_timestamp_precision_loss=allow_timestamp_precision_loss,
         destination_timezone=destination_timezone,
+        source_type=source_type,
+        source_backend=source_backend,
     ):
         return
     if base.name in {"enum8", "enum16", "fixedstring"}:
@@ -567,6 +507,9 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
         and ("binary" in profile.families or profile.text_has_nul or not profile.utf8_valid)
     ):
         msg = "Selected input is incompatible with authoritative Greenplum text; use BYTEA."
+        raise ValueError(msg)
+    if backend == "trino" and base.name in {"varchar", "char"} and not profile.utf8_valid:
+        msg = "Selected text cannot be encoded exactly as UTF-8 for Trino."
         raise ValueError(msg)
     domain = integer_domain(target_type, backend=backend)
     decimal_shape = decimal_domain(target_type)
@@ -635,6 +578,14 @@ def validate_profile(  # noqa: C901, PLR0912, PLR0913, PLR0915 - authoritative f
             validate_timestamp_range(profile, target_type, destination_timezone)
             if native_integer_ticks:
                 validate_integer_timestamp_range(profile, base.name, timestamp_scale(target_type))
+        elif backend == "trino":
+            from .trino.timestamp_bounds import (  # noqa: PLC0415 - registry cycle.
+                validate_timestamp_profile,
+            )
+
+            validate_timestamp_profile(
+                profile, target_type, destination_timezone=destination_timezone
+            )
     elif base.name in {"bool", "boolean"} and not profile.families <= {"boolean"}:
         msg = "Selected input is incompatible with authoritative boolean schema."
         raise ValueError(msg)

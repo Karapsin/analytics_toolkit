@@ -62,7 +62,7 @@ def create_sql_worker_stages(
             transfer_staging_username=options.transfer_staging_username,
             random_suffix=f"{options.transfer_id}__w{worker_id:05d}",
             destination_hash=options.destination_hash,
-            **stage_creation_callbacks(stage_state),
+            **stage_creation_callbacks(stage_state, options.to_db_backend),
             ddl_properties=options.staging_ddl_properties,
             ch_creation_policy=options.staging_ch_policy,
         )

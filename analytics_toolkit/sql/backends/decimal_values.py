@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from functools import lru_cache
 from numbers import Integral
@@ -28,6 +29,9 @@ _DECIMAL_NAMES = {
 
 
 def _decimal_parameter(value: str) -> int:
+    if re.fullmatch(r"[+-]?[0-9]+", value, flags=re.ASCII) is None:
+        msg = "Authoritative decimal type has invalid precision or scale."
+        raise ValueError(msg)
     try:
         return int(value)
     except ValueError:
@@ -170,7 +174,7 @@ def _align_fractional_zeros(value: Decimal, scale: int) -> Decimal:
 
 def convert_decimal_value(value: Any, target_type: str, backend: str) -> tuple[bool, Any]:
     """Align accepted decimal payloads to an authoritative native destination."""
-    from .type_resolution import (  # noqa: PLC0415 - native grammar/profile cycle
+    from .type_resolution import (  # noqa: PLC0415 - recursive authoritative native grammar.
         decimal_domain,
         parse_native_type,
     )

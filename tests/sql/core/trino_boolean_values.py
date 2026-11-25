@@ -17,6 +17,7 @@ from analytics_toolkit.sql.backends.trino.boolean_values import (
     normalize_authoritative_boolean,
     validate_boolean_type_profile,
 )
+from analytics_toolkit.sql.backends.trino.type_declarations import TrinoTypeDeclarationError
 from analytics_toolkit.sql.backends.type_resolution import (
     ColumnProfile,
     declared_domain_fits,
@@ -182,7 +183,9 @@ def test_trino_boolean_supported_value_casts_do_not_create_declared_domain_proof
 
 @pytest.mark.parametrize("native", ["BOOLEAN(1)", "BOOLEAN()", "Nullable(BOOLEAN)"])
 def test_trino_boolean_parameterized_native_declarations_reject_empty_input(native):
-    with pytest.raises(TrinoBooleanValueError, match="unparameterized BOOLEAN"):
+    with pytest.raises(
+        TrinoTypeDeclarationError, match="Invalid or unsupported Trino native type declaration"
+    ):
         validate_profile(ColumnProfile(), native, "trino")
 
 

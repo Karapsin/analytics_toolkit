@@ -6,12 +6,17 @@ import pandas as pd
 import pytest
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.ch.creation_policy import ClickHouseCreationPolicy
+from analytics_toolkit.sql.backends.ch.drop_layout import (
+    ResourceInspection,
+    inspect_resource,
+    require_drop_resource,
+)
 from analytics_toolkit.sql.backends.ch.replacement_resources import create_replacement_physical
 from analytics_toolkit.sql.backends.models import StageFinalizationRequest
-from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError
+from analytics_toolkit.sql.connection.errors import AmbiguousSqlReplaceError, InvalidSqlInputError
 from analytics_toolkit.sql.execution.backend_options import backend_operation
 
-from tests.sql._support.ch_replace import PHYSICAL, STAGE, TARGET, ReplacementClient, Table
+from tests.sql._support.ch_replace import LOCAL, PHYSICAL, STAGE, TARGET, ReplacementClient, Table
 from tests.sql._support.reconfigure import importlib
 
 module = importlib.import_module("analytics_toolkit.sql.backends.ch.replacement_resources")
@@ -119,12 +124,16 @@ def test_unacknowledged_create_never_owns_or_drops_the_candidate(after_apply):
 
 @pytest.mark.parametrize("wait_policy", ["wait_none", "wait_all"])
 def test_local_replacement_can_be_created_without_ownership_callback(monkeypatch, wait_policy):
-    client = ReplacementClient()
+    client = ReplacementClient(storage=LOCAL)
+    original = client.tables[LOCAL, PHYSICAL]
     request = request_for(client)
     request = replace(
         request,
         ch_creation_policy=replace(
-            request.ch_creation_policy, shard_on_cluster=None, ddl_wait_policy=wait_policy
+            request.ch_creation_policy,
+            shard_on_cluster=None,
+            distributed_cluster=LOCAL,
+            ddl_wait_policy=wait_policy,
         ),
     )
     waited = []
@@ -134,6 +143,7 @@ def test_local_replacement_can_be_created_without_ownership_callback(monkeypatch
     assert ("shard5", "sandbox.local_candidate") in client.tables
     assert all("ON CLUSTER" not in sql for sql, _ in client.commands)
     assert any("CREATE TABLE sandbox.local_candidate" in sql for sql, _ in client.commands)
+    assert client.tables[LOCAL, PHYSICAL] is original
 
 
 def test_unacknowledged_create_without_operation_state_keeps_candidate_and_original_error():
@@ -150,3 +160,42 @@ def test_unacknowledged_create_without_operation_state_keeps_candidate_and_origi
         )
     assert caught.value.__cause__ is failure
     assert "sandbox.candidate" not in [name for _scope, name in client.tables]
+
+
+def test_replacement_fixture_tracks_native_generation_through_exchange_rename_and_recreate():
+    client = ReplacementClient()
+    original = dict(client.tables)
+    first, second, third = "sandbox.first", "sandbox.second", "sandbox.third"
+    for table in (first, second):
+        client.command(
+            f"CREATE TABLE {table} ON CLUSTER core (id Int64) ENGINE=MergeTree ORDER BY id"
+        )
+    first_resource = client.tables["core", first]
+    second_resource = client.tables["core", second]
+    certificate = inspect_resource(
+        client, first, "core", "fixture original", ResourceInspection(sqls=("SELECT 1",))
+    )
+    assert certificate is not None
+    assert {identity for _position, identity in certificate.table_identities} == {
+        first_resource.uuid
+    }
+
+    client.command(f"EXCHANGE TABLES {first} AND {second} ON CLUSTER core")
+    assert client.tables["core", first] is second_resource
+    assert client.tables["core", second] is first_resource
+    with pytest.raises(InvalidSqlInputError, match="changed"):
+        require_drop_resource(client, certificate, sqls=("SELECT 1",))
+
+    client.command(f"RENAME TABLE {second} TO {third} ON CLUSTER core")
+    assert client.tables["core", third] is first_resource
+    renamed = inspect_resource(
+        client, third, "core", "fixture renamed", ResourceInspection(sqls=("SELECT 1",))
+    )
+    assert renamed is not None
+    assert {identity for _position, identity in renamed.table_identities} == {first_resource.uuid}
+    client.command(f"DROP TABLE {third} ON CLUSTER core")
+    client.command(f"CREATE TABLE {third} ON CLUSTER core (id Int64) ENGINE=MergeTree ORDER BY id")
+    assert client.tables["core", third].uuid != first_resource.uuid
+    with pytest.raises(InvalidSqlInputError, match="changed"):
+        require_drop_resource(client, renamed, sqls=("SELECT 1",))
+    assert all(client.tables[key] is value for key, value in original.items())

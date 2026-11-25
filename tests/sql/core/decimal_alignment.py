@@ -286,7 +286,12 @@ def test_invalid_decimal_schema_rejects_even_when_all_input_is_sql_null(backend,
 
     with pytest.raises(ValueError, match="decimal type"):
         validate_decimal_type(native, backend)
-    with pytest.raises(ValueError, match=r"decimal type|recognized Greenplum built-in"):
+    message = (
+        "Invalid or unsupported Trino native type declaration"
+        if backend == "trino"
+        else r"decimal type|recognized Greenplum built-in"
+    )
+    with pytest.raises(ValueError, match=message):
         validate_profile(profile, native, backend)
 
 
@@ -370,7 +375,12 @@ def test_dataframe_decimal_declarations_reject_invalid_nested_precision_without_
     frame = pd.DataFrame({"value": pd.Series([value], dtype=object)})
     original = frame.copy(deep=True)
 
-    with pytest.raises(ValueError, match="decimal type"):
+    message = (
+        "Invalid or unsupported Trino native type declaration"
+        if backend == "trino"
+        else "decimal type"
+    )
+    with pytest.raises(ValueError, match=message):
         validate_dataframe_schema(frame, {"value": native}, backend)
 
     pd.testing.assert_frame_equal(frame, original)

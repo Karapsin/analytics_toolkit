@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from sqlglot import exp, parse_one
+from sqlparse import parse
+
+from tests.sql._support.gp_upsert_load import native_upsert_load
 from tests.sql._support.load_table import (
     FakeDbapiConnection,
     SimpleNamespace,
@@ -9,6 +13,7 @@ from tests.sql._support.load_table import (
     pd,
     pytest,
 )
+from tests.sql._support.transfer_schema import stage_module
 
 
 def test_cleanup_load_reports_each_best_effort_failure(
@@ -75,58 +80,20 @@ def test_insert_gp_rows_rolls_back_on_error(monkeypatch) -> None:
 
 
 def test_load_df_drops_overlap_stage_table_on_error(monkeypatch) -> None:
-    connection = FakeDbapiConnection()
-    monkeypatch.setattr(
-        load_df_module,
-        "get_table_column_types",
-        lambda *_a, **_k: {"id": "BIGINT", "value": "INTEGER"},
-    )
-    config = SimpleNamespace(
-        connection_key="gp",
-        backend="gp",
-        user="target_user",
-        transfer_staging_schema="transfer_schema",
-        insert_chunk_size=None,
-    )
-    cleanups: list[tuple[str, str, str]] = []
+    database = native_upsert_load(monkeypatch, {"id": "BIGINT", "value": "INTEGER"})
+    original_rows = [dict(row) for row in database.target.rows]
+    expected_stage = "public.target__stage__err"
+    monkeypatch.setattr(stage_module, "build_stage_table_name", lambda *_a, **_k: expected_stage)
+    failure = RuntimeError("insert failed")
 
-    def fake_insert_table_batch(*args, **kwargs) -> int:
-        del args, kwargs
-        raise RuntimeError("insert failed")
+    def fail_insert(*_args, **_kwargs):
+        raise failure
 
-    monkeypatch.setattr(load_df_module, "get_connection_config", lambda key: config)
-    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
-    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
-    monkeypatch.setattr(
-        load_df_module,
-        "_create_sql_table_with_connection",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "create_stage_table",
-        lambda **kwargs: f"{kwargs['target_table']}__stage__err",
-    )
-    monkeypatch.setattr(
-        load_df_module, "validate_stage_target_key_overlap", lambda *args, **kwargs: None
-    )
-    monkeypatch.setattr(load_df_module, "insert_from_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(load_df_module, "insert_table_batch", fake_insert_table_batch)
-    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        load_df_module,
-        "cleanup_stage_table_with_retry",
-        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: (
-            cleanups.append(
-                (connection_type, connection_key, table_name),
-            )
-        ),
-    )
-
-    with pytest.raises(RuntimeError, match="insert failed"):
+    monkeypatch.setattr(load_df_module, "insert_table_batch", fail_insert)
+    with pytest.raises(RuntimeError, match="insert failed") as raised:
         load_df_module.load_df(
             "gp",
-            "sandbox.target",
+            "public.target",
             pd.DataFrame({"id": [1, 2], "value": [10, 20]}),
             append=True,
             key_columns=["id"],
@@ -135,7 +102,17 @@ def test_load_df_drops_overlap_stage_table_on_error(monkeypatch) -> None:
             timeout_increment=0,
         )
 
-    assert cleanups == [("gp", "gp", "sandbox.target__stage__err")]
+    assert raised.value is failure
+    drops = [
+        (table.db, table.name)
+        for command in database.commands
+        if parse(command)[0].get_type() == "DROP"
+        if isinstance((tree := parse_one(command, read="postgres")), exp.Drop)
+        for table in tree.find_all(exp.Table)
+    ]
+    assert drops == [("public", expected_stage.split(".", 1)[1])]
+    assert database.target.rows == original_rows
+    assert set(database.tables) == {("public", "target")}
 
 
 def test_load_df_failure_cleanup_drops_only_target_absent_at_start(
@@ -185,48 +162,22 @@ def test_load_df_failure_cleanup_drops_only_target_absent_at_start(
     assert dropped == ["sandbox.target"]
 
 
-def test_load_df_upsert_existing_target_cleans_stage_on_finalization_error(
-    monkeypatch,
-) -> None:
-    connection = FakeDbapiConnection()
-    cleanups: list[str] = []
+def test_load_df_upsert_existing_target_cleans_stage_on_finalization_error(monkeypatch) -> None:
+    database = native_upsert_load(monkeypatch, {"id": "BIGINT", "score": "INTEGER"})
+    database.target.rows = [{"id": 9, "score": 99}]
+    original_rows = [dict(row) for row in database.target.rows]
+    expected_stage = "public.target__stage__upsert"
+    monkeypatch.setattr(stage_module, "build_stage_table_name", lambda *_a, **_k: expected_stage)
+    failure = RuntimeError("merge failed")
 
-    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
-    monkeypatch.setattr(
-        load_df_module.get_backend_adapter("gp"),
-        "get_writable_table_column_types",
-        lambda *_a, **_k: {"id": "BIGINT", "score": "INTEGER"},
-    )
-    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
-    monkeypatch.setattr(
-        load_df_module,
-        "_create_sql_table_with_connection",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "create_stage_table",
-        lambda **kwargs: "sandbox.target__stage__upsert",
-    )
-    monkeypatch.setattr(load_df_module, "insert_table_batch", lambda *args, **kwargs: 2)
-    monkeypatch.setattr(load_df_module, "validate_stage_uniqueness", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        load_df_module,
-        "upsert_stage_table",
-        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("merge failed")),
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "cleanup_stage_table_with_retry",
-        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: (
-            cleanups.append(table_name)
-        ),
-    )
+    def fail_upsert(*_args, **_kwargs):
+        raise failure
 
-    with pytest.raises(RuntimeError, match="merge failed"):
+    monkeypatch.setattr(load_df_module, "upsert_stage_table", fail_upsert)
+    with pytest.raises(RuntimeError, match="merge failed") as raised:
         load_df_module.load_df(
             "gp",
-            "sandbox.target",
+            "public.target",
             pd.DataFrame({"id": [1, 2], "score": [10, 20]}),
             write_mode="upsert",
             key_columns=["id"],
@@ -234,4 +185,14 @@ def test_load_df_upsert_existing_target_cleans_stage_on_finalization_error(
             timeout_increment=0,
         )
 
-    assert cleanups == ["sandbox.target__stage__upsert"]
+    assert raised.value is failure
+    drops = [
+        (table.db, table.name)
+        for command in database.commands
+        if parse(command)[0].get_type() == "DROP"
+        if isinstance((tree := parse_one(command, read="postgres")), exp.Drop)
+        for table in tree.find_all(exp.Table)
+    ]
+    assert drops == [("public", expected_stage.split(".", 1)[1])]
+    assert database.target.rows == original_rows
+    assert set(database.tables) == {("public", "target")}

@@ -9,7 +9,7 @@ from sqlglot import exp, parse_one
 from analytics_toolkit.sql.ddl.api import _gp_partition_plan_option
 
 from ....backends import get_backend_adapter
-from ....backends.native_values import requires_native_assignment
+from ....backends.native_values import supports_native_assignment
 from ....core.identifiers import sqlglot_dialect
 from ....core.type_resolution import native_candidates
 from ....ddl.api import _build_create_table_sqls
@@ -33,6 +33,7 @@ from ..runtime.models import TransferOptions
 from .client_validation import client_validation_plan_options
 from .native_assignment import native_assignment_plan_options
 from .parquet_stage import build_create_parquet_stage_table_sql, build_stage_external_location
+from .stage_planning import planned_stage_table_name
 
 
 def dry_run_transfer_options(
@@ -166,7 +167,7 @@ def dry_run_transfer_options(
         "aggregate_stage_table": stage_tables[0],
         "table_schema": options.table_schema,
         "type_resolution_pending": options.table_schema is None,
-        **native_assignment_plan_options(options, requires_native_assignment),
+        **native_assignment_plan_options(options, supports_native_assignment),
         **client_validation_plan_options(options),
         "target_constraints_validation_pending": True,
         "target_constraint_validation": "complete_owned_stage_before_live_publication",
@@ -651,21 +652,9 @@ def dry_run_stage_table_name(
     *,
     worker_index: int | None = None,
 ) -> str:
-    runtime_id = options.transfer_id or "<runtime-transfer-id>"
-    suffix = (
-        f"{runtime_id}__w00000" if worker_index is None else f"{runtime_id}__w{worker_index:05d}"
+    return planned_stage_table_name(
+        options, worker_index=worker_index, build_stage_table_name=build_stage_table_name
     )
-    try:
-        return build_stage_table_name(
-            options.to_db_backend,
-            options.target_table,
-            transfer_staging_schema=(options.s3_transfer_staging_schema),
-            transfer_staging_username=options.transfer_staging_username,
-            random_suffix=suffix,
-            destination_hash=options.destination_hash,
-        )
-    except Exception:
-        return f"{options.target_table}__stage__{suffix}"
 
 
 def dry_run_final_upsert_stage_table_name(options: TransferOptions) -> str:

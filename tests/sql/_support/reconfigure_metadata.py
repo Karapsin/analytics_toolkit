@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from uuid import NAMESPACE_DNS, uuid5
+from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 from analytics_toolkit.sql.backends.ch.cluster_functions import cluster_arguments
 from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
@@ -31,6 +31,7 @@ class ReconfigureMetadata:
     def __init__(self, client):
         self.client = client
         self.tables = {}
+        self.distribution_queues = {}
         self.seeded = False
 
     @property
@@ -47,6 +48,49 @@ class ReconfigureMetadata:
             return (self.coordinator,)
         resolved = self.client.metadata_macros.get(cluster.strip("{}"), cluster)
         return self.clusters[resolved]
+
+    @staticmethod
+    def _creation_uuid(create):
+        identity = create.meta.get("fixture_creation_uuid")
+        if identity is None:
+            declared = create.find(exp.UuidProperty)
+            identity = UUID(declared.name) if declared is not None else uuid4()
+            create.meta["fixture_creation_uuid"] = identity
+        return identity
+
+    def _created_definition(self, create, table, host=None):
+        result = retarget_create(create, table, None)
+        declared = create.find(exp.UuidProperty)
+        result.meta["fixture_creation_uuid"] = UUID(declared.name) if declared else uuid4()
+        if host is not None:
+            self._replica_identity(result, _identity(result), host)
+        return result
+
+    def _macros(self, host):
+        return {"shard": "1", "replica": host[0], **self.client.metadata_macros}
+
+    def _replica_identity(self, create, identity, host):
+        if not engine_name(create).casefold().startswith("replicated"):
+            return None
+        existing = create.meta.get("fixture_replication_identity")
+        if existing is not None:
+            return existing
+        engine = create.find(exp.EngineProperty).this
+        args = engine.expressions
+        path, replica = (
+            (args[0].this, args[1].this)
+            if len(args) >= 2
+            else (getattr(self.client, "metadata_replica_path", "/clickhouse/{table}"), "{replica}")
+        )
+        macros = {
+            "database": identity[0],
+            "table": identity[1],
+            "uuid": str(self._creation_uuid(create)),
+            **self._macros(host),
+        }
+        resolved = str(path).format_map(macros), str(replica).format_map(macros)
+        create.meta["fixture_replication_identity"] = resolved
+        return resolved
 
     def _seed(self):
         if self.seeded:
@@ -70,8 +114,8 @@ class ReconfigureMetadata:
                 else (self.coordinator,)
             )
             for host in hosts:
-                self.tables[_endpoint(host), identity] = retarget_create(
-                    create, create.this.this.sql(dialect=ClickHouseDialect), None
+                self.tables[_endpoint(host), identity] = self._created_definition(
+                    create, create.this.this.sql(dialect=ClickHouseDialect), host
                 )
         self.seeded = True
 
@@ -82,17 +126,30 @@ class ReconfigureMetadata:
         source = tree.args.get("from_")
         hosts = (self.coordinator,)
         if source is None:
-            if any(isinstance(item, exp.Count) for item in tree.expressions):
-                return None
             record = self._server(self.coordinator)
-            return [tuple(self._project(item, record) for item in tree.expressions)]
+            return (
+                None
+                if any(isinstance(item, exp.Count) for item in tree.expressions)
+                else [tuple(self._project(item, record) for item in tree.expressions)]
+            )
         table = source.this
         if isinstance(table.this, exp.Anonymous):
             cluster, database, name, _trailing = cluster_arguments(table.this, "analytics")
             hosts = self._hosts(cluster)
+            # This fixture models all configured members as replicas of shard1.
+            if table.this.name.casefold() == "cluster":
+                hosts = hosts[:1]
         else:
             database, name = table.db, table.name
-        if database != "system" or name not in {"clusters", "one", "macros", "tables"}:
+        if database != "system" or name not in {
+            "clusters",
+            "one",
+            "macros",
+            "tables",
+            "distribution_queue",
+            "replicas",
+            "server_settings",
+        }:
             return None
         self._seed()
         records = self._records(name, hosts)
@@ -102,6 +159,13 @@ class ReconfigureMetadata:
         ]
         if any(isinstance(item, exp.Count) for item in tree.expressions):
             return [(len(records),)]
+        if all(isinstance(item, exp.Sum) for item in tree.expressions):
+            return [
+                tuple(
+                    sum(self._project(item.this, row) for row in records)
+                    for item in tree.expressions
+                )
+            ]
         return [tuple(self._project(item, row) for item in tree.expressions) for row in records]
 
     def show_create(self, statement):
@@ -125,7 +189,55 @@ class ReconfigureMetadata:
             "currentDatabase": "analytics",
         }
 
+    def _replication_records(self, name, origins):
+        if name == "replicas":
+            return [
+                {
+                    "_shard_num": position,
+                    "database": identity[0],
+                    "table": identity[1],
+                    "zookeeper_path": replica[0],
+                    "replica_name": replica[1],
+                    "zookeeper_name": "",
+                    "is_readonly": 0,
+                    "is_session_expired": 0,
+                }
+                for position, host in enumerate(origins, 1)
+                for (endpoint, identity), create in self.tables.items()
+                if endpoint == _endpoint(host)
+                and (replica := self._replica_identity(create, identity, host)) is not None
+            ]
+        if name == "server_settings":
+            return [
+                {"_shard_num": position, "name": setting, "value": value}
+                for position, _host in enumerate(origins, 1)
+                for setting, value in (
+                    (
+                        "default_replica_path",
+                        getattr(self.client, "metadata_replica_path", "/clickhouse/{table}"),
+                    ),
+                    ("default_replica_name", "{replica}"),
+                )
+            ]
+
+        return None
+
     def _records(self, name, origins):
+        if name in {"replicas", "server_settings"}:
+            return self._replication_records(name, origins)
+        if name == "distribution_queue":
+            return [
+                {
+                    "_shard_num": position,
+                    "database": database,
+                    "table": table,
+                    "data_files": counters[0],
+                    "broken_data_files": counters[1],
+                }
+                for position, host in enumerate(origins, 1)
+                for (endpoint, database, table), counters in self.distribution_queues.items()
+                if endpoint == _endpoint(host)
+            ]
         if name == "clusters":
             return [
                 {
@@ -145,8 +257,8 @@ class ReconfigureMetadata:
         if name == "macros":
             return [
                 {"_shard_num": position, "macro": macro, "substitution": value}
-                for position, _origin in enumerate(origins, 1)
-                for macro, value in self.client.metadata_macros.items()
+                for position, origin in enumerate(origins, 1)
+                for macro, value in self._macros(origin).items()
             ]
         if name == "one":
             return [
@@ -161,7 +273,7 @@ class ReconfigureMetadata:
                 "engine": engine_name(create),
                 "engine_full": engine_sql(create),
                 "create_table_query": create.sql(dialect=ClickHouseDialect),
-                "uuid": str(uuid5(NAMESPACE_DNS, repr((endpoint, identity)))),
+                "uuid": str(self._creation_uuid(create)),
             }
             for position, host in enumerate(origins, 1)
             for (endpoint, identity), create in self.tables.items()
@@ -211,8 +323,11 @@ class ReconfigureMetadata:
             name = scope.this.name if scope is not None else None
             hosts = self._hosts(name)
             for host in hosts:
-                self.tables[_endpoint(host), _identity(tree)] = retarget_create(
-                    tree, tree.this.this.sql(dialect=ClickHouseDialect), None
+                key = _endpoint(host), _identity(tree)
+                if key in self.tables and tree.args.get("exists"):
+                    continue
+                self.tables[key] = self._created_definition(
+                    tree, tree.this.this.sql(dialect=ClickHouseDialect), host
                 )
         elif isinstance(tree, exp.Drop):
             scope = tree.find(exp.OnCluster)

@@ -340,7 +340,7 @@ def test_exact_clock_model_preserves_each_scale_without_an_invented_date(scale):
         ({"ticks": 0, "scale": -1}, "between zero and twelve"),
         ({"ticks": 0, "scale": 13}, "between zero and twelve"),
         ({"ticks": -1, "scale": 12}, "within one day"),
-        ({"ticks": 86400 * 10**12, "scale": 12}, "within one day"),
+        ({"ticks": 86400 * 10**12 + 1, "scale": 12}, "within one day"),
         ({"ticks": 0, "scale": 12, "offset_minutes": -1440}, "within one day"),
         ({"ticks": 0, "scale": 12, "offset_minutes": 1440}, "within one day"),
         ({"ticks": 0, "scale": 12, "timezone_name": "unbound label"}, "fixed UTC offset"),
@@ -349,6 +349,17 @@ def test_exact_clock_model_preserves_each_scale_without_an_invented_date(scale):
 def test_exact_clock_constructor_rejects_unrepresentable_coordinates(arguments, message):
     with pytest.raises(ValueError, match=message):
         ExactClock(**arguments)
+
+
+def test_exact_clock_retains_the_native_gp_day_end_without_wrapping_to_midnight():
+    value = ExactClock(86400 * 10**6, 6)
+    assert value.isoformat() == "24:00:00.000000"
+    assert value.time() is value
+    assert decode_value(encode_value(value)) == value
+    profile = ColumnProfile()
+    profile.add(value)
+    with pytest.raises(ValueError, match="Trino TIME"):
+        validate_profile(profile, "TIME(6)", "trino")
 
 
 @pytest.mark.parametrize("scale", range(7, 13))
@@ -441,9 +452,7 @@ def test_clock_profiles_retain_precision_before_explicit_native_rounding(ticks, 
     assert ResolvedColumn("TIME(6)", target_backend="gp").convert(value) == rounded
 
 
-@pytest.mark.parametrize(
-    ("backend", "native"), [("gp", "TEXT"), ("trino", "VARCHAR"), ("ch", "String")]
-)
+@pytest.mark.parametrize(("backend", "native"), [("gp", "TEXT"), ("ch", "String")])
 def test_unrepresentable_inferred_clock_uses_exact_typed_text_without_ch_precision_expansion(
     backend, native
 ):
@@ -461,3 +470,16 @@ def test_unrepresentable_inferred_clock_uses_exact_typed_text_without_ch_precisi
     assert resolved.convert(None) is None
     assert MAX_EXACT_SCALE == 12
     assert MAX_TEMPORAL_SCALE == 9
+
+
+def test_subnanosecond_clock_uses_supported_trino_native_time_before_text():
+    value = ExactClock(1, 12)
+    profile = ColumnProfile()
+    profile.add(value)
+    resolved = resolve_profile(profile, "trino")
+    assert resolved.target_type == "TIME(12)"
+    assert not resolved.text_fallback
+    assert resolved.convert(value) == value
+    assert value.ticks == 1
+    assert value.scale == 12
+    assert resolved.convert(None) is None

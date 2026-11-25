@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 
+from analytics_toolkit.sql.backends.native_scalars import JsonDocument as _JsonDocument
 from analytics_toolkit.sql.core.exact_values import (
     ExactTemporal,
     decimal_digits,
@@ -21,6 +22,9 @@ from analytics_toolkit.sql.core.exact_values import (
 
 if TYPE_CHECKING:
     from analytics_toolkit.sql.backends.value_profiles import ColumnProfile
+
+# Preserve the historical import while sharing the backend-neutral carrier.
+JsonDocument = _JsonDocument
 
 _PRECISION_LIMIT = 38
 _INT32_LIMIT = 2**31

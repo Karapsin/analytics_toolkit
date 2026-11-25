@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from analytics_toolkit.sql.backends.native_scalars import ExactArray
 from analytics_toolkit.sql.backends.nested_values import row_items
 from analytics_toolkit.sql.core.exact_values import (
     OrderedMap,
@@ -34,6 +36,21 @@ def _array_view(
     *,
     gp_rank: bool,
 ) -> Any:
+    if isinstance(value, ExactArray):
+        from .nested_types import (  # noqa: PLC0415 - recursive native schema cycle.
+            nested_descriptor,
+        )
+
+        while nested_descriptor(child)[0] in {"array", "gp_array"}:
+            child = nested_descriptor(child)[1][0][1]
+        converted_array = tuple(
+            numeric_text_view(item, child, converter, canonicalize) for item in value.values
+        )
+        return (
+            value
+            if all(left is right for left, right in zip(value.values, converted_array))
+            else replace(value, values=converted_array)
+        )
     items = _sequence_items(value)
     if items is None:
         return value

@@ -61,7 +61,7 @@ def test_empty_timestamp_defaults_are_legal_native_backend_types(backend):
     assert (
         result.target_type
         == {
-            "gp": "TIMESTAMP WITH TIME ZONE",
+            "gp": "TIMESTAMP(6) WITH TIME ZONE",
             "trino": "TIMESTAMP(6) WITH TIME ZONE",
             "ch": "DateTime64(6, 'UTC')",
         }[backend]

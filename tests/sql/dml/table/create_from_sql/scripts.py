@@ -13,33 +13,23 @@ from analytics_toolkit.sql.dml.table import source_script
 
 from tests.sql._support.create_from_sql import (
     SOURCE_DESCRIPTION,
-    FakeClickHouseClient,
-    FakeDbapiConnection,
-    FakeDbapiCursor,
     create_module,
 )
+from tests.sql._support.create_from_sql_protocol import (
+    CatalogConnection as FakeDbapiConnection,
+)
+from tests.sql._support.create_from_sql_protocol import (
+    install_fake_type_registration,
+)
+from tests.sql._support.create_script_protocol import ScriptClickHouseClient, ScriptConnection
 
 ddl_api = importlib.import_module("analytics_toolkit.sql.ddl.api")
 SCRIPT = "CREATE TEMP TABLE prepared AS SELECT 7 AS id; SELECT id FROM prepared"
 
 
-class ScriptCursor(FakeDbapiCursor):
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        self.close()
-
-
-class ScriptConnection(FakeDbapiConnection):
-    def cursor(self):
-        cursor = ScriptCursor(self)
-        self.cursors.append(cursor)
-        return cursor
-
-
 @pytest.fixture
 def script_connections(monkeypatch):
+    install_fake_type_registration(monkeypatch)
     get_config = create_module.get_connection_config
 
     def configured(key):
@@ -61,13 +51,20 @@ def script_connections(monkeypatch):
             operation_config,
         )
     connections = []
+    states = {}
 
     def connect(key):
         connection = (
-            FakeClickHouseClient()
+            ScriptClickHouseClient(states.get(key))
             if key == "ch"
-            else ScriptConnection(description=SOURCE_DESCRIPTION, insert_rowcount=7)
+            else ScriptConnection(
+                description=SOURCE_DESCRIPTION,
+                insert_rowcount=7,
+                state=states.get(key),
+                alias=key,
+            )
         )
+        states[key] = connection.state if key == "ch" else connection.catalog_state
         connections.append((key, connection))
         return connection
 
@@ -600,7 +597,13 @@ def test_certified_script_retry_reuses_payload_without_source_setup(
         if len(calls) == 1:
             kwargs["source_connection"].close()
             options.input_resolution["prepared_query_input"] = SimpleNamespace(
-                frozen=True, options=SimpleNamespace(source_sql=options.source_sql)
+                frozen=True,
+                mutation_started=False,
+                publication_succeeded=False,
+                options=SimpleNamespace(
+                    source_sql=options.source_sql,
+                    input_resolution=options.input_resolution["transfer_input_resolution"],
+                ),
             )
             message = "safe target failure after source certification"
             raise RuntimeError(message)

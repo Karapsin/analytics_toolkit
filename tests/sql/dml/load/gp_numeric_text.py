@@ -183,19 +183,38 @@ def _reject_before_mutation(database, frame, schema, capsys):
 
     output = capsys.readouterr()
     assert "private-numeric-value" not in str(error.value) + output.out + output.err
-    assert database.target is target
+    assert database.target.native_creation_oid == target.native_creation_oid
     assert database.rows == rows
     assert database.schema == native
     assert database.live_mutations == []
+    special = str(frame.iloc[-1, 0]).lower() in {"nan", "infinity", "-infinity"}
     assert database.stage_inserts == []
-    assert database.bound_rows == database.wire_rows == database.formatter_observations == []
-    assert all(
-        not isinstance(
-            parse_one(database._ddl_schema_prefix(statement), read="postgres"),
-            (exp.Create, exp.Drop, exp.Alter, exp.Insert, exp.Delete, exp.TruncateTable),
+    if special:
+        # This fixture models a server that rejects these native special inputs.
+        # Validation is allowed in an owned typed checkpoint, never the target.
+        assert len(database.bound_rows) == len(frame)
+        assert database.bound_rows[2] == (None,)
+        assert database.bound_rows[-1][0] is not None
+        assert database.wire_rows == []
+        assert len(database.formatter_observations) == len(frame)
+        private_ddl = [
+            parse_one(database._ddl_schema_prefix(statement), read="postgres")
+            for statement in database.commands
+            if statement.lstrip().upper().startswith(("CREATE", "DROP"))
+        ]
+        assert private_ddl
+        assert all(
+            database.identity(node.find(exp.Table)) != ("sandbox", "events") for node in private_ddl
         )
-        for statement in database.commands
-    )
+    else:
+        assert database.bound_rows == database.wire_rows == database.formatter_observations == []
+        assert all(
+            not isinstance(
+                parse_one(database._ddl_schema_prefix(statement), read="postgres"),
+                (exp.Create, exp.Drop, exp.Alter, exp.Insert, exp.Delete, exp.TruncateTable),
+            )
+            for statement in database.commands
+        )
     assert set(database.tables) == {("sandbox", "events")}
     pd.testing.assert_frame_equal(frame, original)
     _closed(database)
@@ -230,10 +249,7 @@ def test_gp_numeric_text_invalid_late_value_keeps_live_rows_and_never_creates_st
         ("DOUBLE PRECISION", "-1e309", True),
         ("NUMERIC(38, 9)", "1e29", False),
         ("NUMERIC(38, 9)", "1.1234567891", True),
-        ("NUMERIC", "NaN", False),
         ("NUMERIC", "Infinity", True),
-        ("REAL", "NaN", False),
-        ("DOUBLE PRECISION", "-Infinity", True),
         ("NUMERIC", "1e-16384", True),
         ("NUMERIC", "1e131072", False),
     ],
@@ -244,10 +260,7 @@ def test_gp_numeric_text_invalid_late_value_keeps_live_rows_and_never_creates_st
         "double-negative-overflow",
         "numeric-integral-overflow",
         "numeric-scale-overflow",
-        "numeric-nan",
         "numeric-infinity",
-        "real-nan",
-        "double-infinity",
         "unbounded-scale-limit",
         "unbounded-integral-limit",
     ],
@@ -259,6 +272,64 @@ def test_gp_numeric_text_range_scale_and_nonfinite_reject_before_clear(
     frame = pd.DataFrame({"payload": pd.Series(["1.25", "-2.5", None, bad], dtype=object)})
 
     _reject_before_mutation(database, frame, native if explicit else None, capsys)
+
+
+@pytest.mark.parametrize("native", ["NUMERIC", "NUMERIC(38, 9)"])
+@pytest.mark.parametrize("explicit", [False, True], ids=["existing", "explicit"])
+def test_gp_native_numeric_nan_is_certified_without_collapsing_sql_null(
+    monkeypatch, native, explicit
+):
+    database = numeric_text_target(monkeypatch, native)
+    native_oid = database.target.native_creation_oid
+    values = ["1.25", "-2.5", None, "NaN"]
+    frame = pd.DataFrame({"payload": pd.Series(values, dtype=object)})
+    original = frame.copy(deep=True)
+
+    assert _load(frame, native if explicit else None) == len(values)
+
+    stored = [row["payload"] for row in database.rows]
+    assert stored[:3] == [Decimal("1.25"), Decimal("-2.5"), None]
+    assert isinstance(stored[3], Decimal)
+    assert stored[3].is_qnan()
+    assert database.bound_rows[2] == (None,)
+    assert database.bound_rows[3][0].is_qnan()
+    assert len(database.wire_rows) == len(values)
+    assert database.wire_rows[3][0] != "NULL"
+    assert database.schema == {"payload": native}
+    assert database.target.native_creation_oid == native_oid
+    assert [kind for kind, _ in database.submissions] == ["CLEAR", "INSERT"]
+    assert set(database.tables) == {("sandbox", "events")}
+    pd.testing.assert_frame_equal(frame, original)
+    _closed(database)
+
+
+@pytest.mark.parametrize("native", ["REAL", "DOUBLE PRECISION"])
+@pytest.mark.parametrize("explicit", [False, True], ids=["existing", "explicit"])
+def test_gp_native_float_special_text_preserves_nan_infinity_and_sql_null(
+    monkeypatch, native, explicit
+):
+    database = numeric_text_target(monkeypatch, native)
+    values = ["1.25", None, "NaN", "Infinity", "-Infinity", None]
+    frame = pd.DataFrame({"payload": pd.Series(values, dtype=object)})
+    original = frame.copy(deep=True)
+
+    assert _load(frame, native if explicit else None) == len(values)
+
+    stored = [row["payload"] for row in database.rows]
+    assert stored[0] == 1.25
+    assert stored[1] is stored[5] is None
+    assert math.isnan(stored[2])
+    assert stored[3] == math.inf
+    assert stored[4] == -math.inf
+    assert math.isnan(database.bound_rows[2][0])
+    assert database.bound_rows[1] == database.bound_rows[5] == (None,)
+    assert len(database.wire_rows) == len(values)
+    assert database.wire_rows[2][0] != "NULL"
+    assert database.schema == {"payload": native}
+    assert [kind for kind, _ in database.submissions] == ["CLEAR", "INSERT"]
+    assert set(database.tables) == {("sandbox", "events")}
+    pd.testing.assert_frame_equal(frame, original)
+    _closed(database)
 
 
 def test_gp_numeric_text_without_authority_remains_inferred_text(monkeypatch):

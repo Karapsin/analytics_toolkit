@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 from analytics_toolkit._sql_statements import terminal_parts
+from analytics_toolkit.general import time_print
 from analytics_toolkit.sql.backends import get_backend_adapter
 from analytics_toolkit.sql.backends.source_script import (
     execute_source_setup,
@@ -25,6 +26,8 @@ from analytics_toolkit.sql.execution.operation_runner import tracked_sql_operati
 from analytics_toolkit.sql.execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 
 from .create_from_sql_plan import _build_create_table_from_sql_plan
+from .create_skip import CONTINUE_CREATE
+from .query_namespace import bind_script_query_target, cached_query_target
 
 if TYPE_CHECKING:
     from .models import CreateTableFromSqlOptions
@@ -93,7 +96,10 @@ def build_script_plan(options: CreateTableFromSqlOptions) -> SqlPlan:
         query_label=options.query_label,
         ddl_properties=dict(options.ddl_properties or {}),
         ch_creation_policy=options.ch_creation_policy,
+        ch_replace_table=options.ch_replace_table,
     )
+    plan.options["if_not_exists"] = options.if_not_exists
+    plan.options["skip_population_if_target_exists"] = options.if_not_exists
     target_steps = plan.statements
     plan.statements = []
     plan.extend(
@@ -159,6 +165,7 @@ def execute_script_attempt(
 ) -> object:
     from . import create_table_from_sql as creation  # noqa: PLC0415
 
+    options = cached_query_target(options)
     prepared_input = options.input_resolution.get("prepared_query_input")
     if prepared_input is not None and prepared_input.frozen:
         return creation._execute_generic_create_table_from_sql_attempt(  # noqa: SLF001
@@ -175,6 +182,7 @@ def execute_script_attempt(
     result: object = None
     failure: BaseException | None = None
     metadata = SqlOperationMetadata(query_label=options.query_label)
+    skipped: object = CONTINUE_CREATE
     try:
         with tracked_sql_operation(
             metadata=metadata,
@@ -191,8 +199,20 @@ def execute_script_attempt(
                 for sql in options.setup_sqls
             ]
             execute_source_setup(source_adapter, connection, prepared)
+            options = bind_script_query_target(options, connection)
+            if options.if_not_exists:
+                skipped = creation.skip_existing_query_target(
+                    options,
+                    creation.get_sql_connection,
+                    creation.table_exists,
+                    creation._close_connection_quietly,  # noqa: SLF001 -- historical creation callback seam.
+                    attempt=attempt,
+                    connection=connection,
+                )
+                if isinstance(skipped, SqlOperationResult):
+                    skipped.metadata.statement_count = len(options.setup_sqls)
             source_sql = source_adapter.prepare_sql(config, options.source_sql)
-            if options.insert_data:
+            if skipped is CONTINUE_CREATE and options.insert_data:
                 stage = _allocate_stage(options, connection)
                 _materialize_source(
                     options,
@@ -202,13 +222,16 @@ def execute_script_attempt(
                     on_resource_created=owned_stages.append,
                 )
                 source_sql = f"SELECT * FROM {stage}"  # noqa: S608
-        delegated = True
-        result = creation._execute_generic_create_table_from_sql_attempt(  # noqa: SLF001
-            options=replace(options, source_sql=source_sql),
-            target_adapter=target_adapter,
-            attempt=attempt,
-            source_connection=connection,
-        )
+        if skipped is not CONTINUE_CREATE:
+            result = skipped
+        else:
+            delegated = True
+            result = creation._execute_generic_create_table_from_sql_attempt(  # noqa: SLF001
+                options=replace(options, source_sql=source_sql),
+                target_adapter=target_adapter,
+                attempt=attempt,
+                source_connection=connection,
+            )
     except BaseException as exc:  # noqa: BLE001
         failure = exc
         if not delegated:
@@ -241,6 +264,10 @@ def _finish_source_attempt(
         return result
     if stage and not owned and failure is not None:
         cast("Any", failure).analytics_toolkit_sql_unacknowledged_source_stage = stage
+        candidates = options.input_resolution.setdefault("unacknowledged_source_stages", [])
+        if stage not in candidates:
+            candidates.append(stage)
+        time_print(f"Retaining unacknowledged source stage {stage}; ownership is unproved.")
     if stage is not None and owned:
         try:
             _cleanup_stage(options, stage, attempt)

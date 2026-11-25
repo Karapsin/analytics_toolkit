@@ -60,11 +60,14 @@ the existing pair or guess its DROP scopes.
   verified scope. Same-named local companions or remote logical tables are not
   selected merely because they match the caller's cluster or a `_shard` suffix.
 - All selected resources and endpoints across the request are verified before
-  the first DROP. Each existing endpoint resource requires a verifiable,
-  non-nil table UUID and complete definition; unverifiable identities stop
-  before DDL. A non-`None` `ch_cluster` cannot widen an already known role's
-  placement. With `ch_cluster=None`, a selected remote or multi-host role rejects
-  before DDL; a verified singleton coordinator alias can execute locally.
+  the first DROP. Each existing endpoint resource requires a verified native
+  table UUID and complete definition. Ordinary databases retain zero UUIDs and
+  use their verified engine, exact table name, definition and server/endpoint
+  scope; a zero UUID cannot identify recreation with the same definition.
+  Unverifiable identities stop before DDL. A non-`None` `ch_cluster` cannot widen
+  an already known role's placement. With `ch_cluster=None`, a selected remote
+  or multi-host role rejects before DDL; a verified singleton coordinator alias
+  can execute locally.
 - Equivalent identifier spellings and cluster aliases drop the same resource
   once when its complete verified endpoint and table identities match.
   Overlapping requested scopes also remove each selected endpoint resource

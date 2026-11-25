@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from sqlglot import exp
 
@@ -21,7 +21,7 @@ from .reconfigure_ddl import (
     parse_create_table,
     retarget_create,
 )
-from .reconfigure_facade_scope import cluster_table, read_rows
+from .reconfigure_facade_scope import cluster_table, inspect_facade_scope, read_rows
 
 if TYPE_CHECKING:
     from .reconfigure_facade_scope import FacadeScope
@@ -29,7 +29,9 @@ if TYPE_CHECKING:
 _MIN_ENGINE_ARGS = 3
 _MACRO_FIELDS = 3
 _CLUSTER_FIELDS = 5
+_GROUPED_CLUSTER_FIELDS = 7
 _MAX_PORT = 65535
+_GROUPED_ROUTE_MESSAGE = "Cannot verify the source facade's grouped routing endpoints."
 
 
 @dataclass(frozen=True)
@@ -112,7 +114,7 @@ def _scope_macros(
         .from_(cluster_table(scope.cluster, "macros"))
         .where(exp.column("macro").isin(*(exp.Literal.string(name) for name in sorted(names))))
     )
-    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect))
+    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect), text_columns=(1, 2))
     message = "Cannot verify the source facade's routing macros."
     result: dict[int, dict[str, str]] = {}
     try:
@@ -164,7 +166,7 @@ def _routing_endpoints(
         .from_(cluster_table(scope.cluster, "clusters"))
         .where(exp.column("cluster").isin(*(exp.Literal.string(name) for name in sorted(names))))
     )
-    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect))
+    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect), text_columns=(1, 2, 3))
     message = "Cannot verify the source facade's routing endpoints."
     result: dict[int, dict[str, set[tuple[str, int]]]] = {}
     try:
@@ -187,6 +189,75 @@ def _routing_row(row: Any, scope: FacadeScope) -> tuple[int, str, tuple[str, int
     return position, cluster, (address, port)
 
 
+def _remote_routing_groups(
+    connection: Any, scope: FacadeScope, names: set[str]
+) -> dict[tuple[int, str], dict[int, set[tuple[str, int]]]]:
+    query = (
+        exp.select(
+            "_shard_num",
+            "cluster",
+            "shard_num",
+            "replica_num",
+            "host_name",
+            "host_address",
+            "port",
+        )
+        .from_(cluster_table(scope.cluster, "clusters"))
+        .where(exp.column("cluster").isin(*(exp.Literal.string(name) for name in sorted(names))))
+    )
+    rows = read_rows(connection, query.sql(dialect=ClickHouseDialect), text_columns=(1, 4, 5))
+    message = _GROUPED_ROUTE_MESSAGE
+    groups: dict[tuple[int, str], dict[int, set[tuple[str, int]]]] = {}
+    members: set[tuple[int, str, int, int]] = set()
+    endpoints: set[tuple[int, str, tuple[str, int]]] = set()
+    try:
+        for row in rows:
+            _add_grouped_route(row, scope, names, groups, (members, endpoints))
+    except (IndexError, TypeError, ValueError) as exc:
+        raise InvalidSqlInputError(message) from exc
+    return groups
+
+
+def _add_grouped_route(
+    row: Any,
+    scope: FacadeScope,
+    names: set[str],
+    groups: dict[tuple[int, str], dict[int, set[tuple[str, int]]]],
+    seen: tuple[set[tuple[int, str, int, int]], set[tuple[int, str, tuple[str, int]]]],
+) -> None:
+    if len(row) != _GROUPED_CLUSTER_FIELDS:
+        raise ValueError(_GROUPED_ROUTE_MESSAGE)
+    position, cluster, endpoint = _routing_row((row[0], row[1], *row[4:]), scope)
+    shard, replica = int(row[2]), int(row[3])
+    member = (position, cluster, shard, replica)
+    routed_endpoint = (position, cluster, endpoint)
+    members, endpoints = seen
+    if (
+        cluster not in names
+        or shard <= 0
+        or replica <= 0
+        or member in members
+        or routed_endpoint in endpoints
+    ):
+        raise ValueError(_GROUPED_ROUTE_MESSAGE)
+    members.add(member)
+    endpoints.add(routed_endpoint)
+    groups.setdefault((position, cluster), {}).setdefault(shard, set()).add(endpoint)
+
+
+def _verify_remote_routing(
+    connection: Any, scope: FacadeScope, names: dict[int, str], source_cluster: str
+) -> None:
+    source = inspect_facade_scope(connection, source_cluster, coordinator_required=False)
+    expected: dict[int, set[tuple[str, int]]] = {}
+    for member, endpoint in zip(source.membership, source.endpoints):
+        expected.setdefault(member[0], set()).add(endpoint.native)
+    routes = _remote_routing_groups(connection, scope, set(names.values()))
+    if any(routes.get((position, name)) != expected for position, name in names.items()):
+        message = "Facade destination routes to unowned source storage endpoints."
+        raise InvalidSqlInputError(message)
+
+
 def verify_facade_relationships(
     connection: Any,
     table: str,
@@ -205,7 +276,10 @@ def verify_facade_relationships(
         raise InvalidSqlInputError(message)
     macros = _scope_macros(connection, scope, definitions)
     names = _resolved_names(definitions, macros)
-    coordinator = cast("int", scope.coordinator)
+    if scope.coordinator is None:
+        _verify_remote_routing(connection, scope, names, source_layout.cluster)
+        return
+    coordinator = scope.coordinator
     endpoints = _routing_endpoints(connection, scope, {*names.values(), source_layout.cluster})
     expected = endpoints.get(coordinator, {}).get(source_layout.cluster)
     if not expected or any(

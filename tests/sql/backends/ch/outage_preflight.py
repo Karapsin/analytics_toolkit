@@ -88,6 +88,7 @@ def test_outage_creation_validates_facade_scope_before_physical_create(outage: A
             ch_shard_on_cluster="core",
             ch_distributed_on_cluster="edge",
             ch_distributed_cluster="core",
+            ch_ddl_wait_policy="wait_all",
         )
     assert cluster.commands == []
     assert not any(name.startswith("db.new_scope") for _, name in cluster.tables)

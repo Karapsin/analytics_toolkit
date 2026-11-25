@@ -204,7 +204,8 @@ def test_trino_reversible_cutover_handles_failure_before_first_rename() -> None:
         raise OSError("rename failed")
 
     adapter.execute_command = fail_command
-    with pytest.raises(OSError, match="rename failed"):
+    # The caller cannot prove that a submission raising OSError was rejected.
+    with pytest.raises(AmbiguousSqlReplaceError, match="acknowledgement is uncertain") as caught:
         _reversible_cutover(
             adapter,
             _request(_Connection()),
@@ -212,6 +213,7 @@ def test_trino_reversible_cutover_handles_failure_before_first_rename() -> None:
             "sandbox.backup",
             2,
         )
+    assert isinstance(caught.value.__cause__, OSError)
 
 
 def test_trino_reversible_cutover_reports_ambiguous_failed_rollback() -> None:
@@ -253,8 +255,9 @@ class _ChAdapter:
     def __init__(self) -> None:
         self.commands: list[str] = []
 
-    def execute_command(self, _connection: Any, sql: str) -> None:
+    def execute_command(self, connection: Any, sql: str) -> None:
         self.commands.append(sql)
+        connection.command(sql)
 
 
 class _ReplaceChAdapter(_ChAdapter):
@@ -286,15 +289,15 @@ class _ReplaceChAdapter(_ChAdapter):
 
 
 @pytest.mark.parametrize(
-    ("name", "blocked"),
+    "name",
     [
-        ("target__replace_abcd", True),
-        ("target__replace_guarded_abcd", True),
-        ("target__replace_guarded_abcd__discardable", False),
+        "target__replace_abcd",
+        "target__replace_guarded_abcd",
+        "target__replace_guarded_abcd__discardable",
     ],
 )
-def test_clickhouse_orphan_cleanup_distinguishes_recovery_from_disposable_leftovers(
-    name: str, blocked: bool
+def test_clickhouse_orphan_cleanup_retains_every_unowned_catalog_candidate(
+    name: str,
 ) -> None:
     connection = _ChConnection()
     adapter = _ChAdapter()
@@ -305,16 +308,9 @@ def test_clickhouse_orphan_cleanup_distinguishes_recovery_from_disposable_leftov
         if "startsWith" in query
         else original(query, **kwargs)
     )
-    if blocked:
-        with pytest.raises(AmbiguousSqlReplaceError, match="Unreconciled"):
-            _cleanup_orphan_replacements(adapter, connection, [("sandbox.target", "core")])
-        assert adapter.commands == []
-    else:
+    with pytest.raises(AmbiguousSqlReplaceError, match="Unreconciled"):
         _cleanup_orphan_replacements(adapter, connection, [("sandbox.target", "core")])
-        assert any(
-            f"sandbox.{name}" in command and command.startswith("DROP TABLE")
-            for command in adapter.commands
-        )
+    assert adapter.commands == []
 
 
 def test_clickhouse_orphan_cleanup_preserves_inactive_replacement_tables_for_recovery() -> None:
@@ -362,18 +358,20 @@ def test_clickhouse_orphan_cleanup_keeps_active_and_ignores_bad_or_failed_metada
         )
 
 
-def test_clickhouse_completed_cutover_leftovers_are_disposable_after_drop_failure(
+def test_clickhouse_completed_cutover_leftovers_need_ownership_after_drop_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FailedCleanup(_ReplaceChAdapter):
         def execute_command(self, connection: Any, sql: str) -> None:
-            super().execute_command(connection, sql)
             if sql.startswith("DROP TABLE") and "__discardable" in sql:
+                self.commands.append(sql)
                 raise OSError("cleanup unavailable")
+            super().execute_command(connection, sql)
 
     adapter = FailedCleanup([2, 2, 2])
     monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
     connection = _ChConnection(recovery_artifacts=False)
+    original_physical = connection.table_identities["sandbox.target_shard"]
     ch_safe_replace._replace_from_stage(adapter, _request(connection))
     rename = next(
         command
@@ -381,6 +379,8 @@ def test_clickhouse_completed_cutover_leftovers_are_disposable_after_drop_failur
         if command.startswith("RENAME TABLE") and "__discardable" in command
     )
     finished = rename.split(" TO ")[1].split(" ON CLUSTER", maxsplit=1)[0]
+    assert connection.table_identities[finished] == original_physical
+    assert connection.rows(finished) == [(901, "old-a"), (902, "old-b")]
 
     class CompletedConnection(_ChConnection):
         def query(self, query: str, **kwargs: Any) -> Any:
@@ -389,10 +389,12 @@ def test_clickhouse_completed_cutover_leftovers_are_disposable_after_drop_failur
             return super().query(query, **kwargs)
 
     cleanup = _ChAdapter()
-    _cleanup_orphan_replacements(cleanup, CompletedConnection(), [("sandbox.target_shard", "core")])
-    assert any(
-        finished in command and command.startswith("DROP TABLE") for command in cleanup.commands
-    )
+    with pytest.raises(AmbiguousSqlReplaceError, match="unresolved artifact") as error:
+        _cleanup_orphan_replacements(
+            cleanup, CompletedConnection(), [("sandbox.target_shard", "core")]
+        )
+    assert finished in str(error.value)
+    assert cleanup.commands == []
 
 
 def test_clickhouse_completed_cutover_reports_success_if_cleanup_marker_rename_fails(
@@ -423,6 +425,8 @@ def test_clickhouse_replace_builds_and_swaps_complete_distributed_pair(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = _ChConnection()
+    original_identities = dict(connection.table_identities)
+    original_input = list(connection.table_rows["stage.incoming"])
     adapter = _ReplaceChAdapter([2, 2, 2])
     monkeypatch.setattr(ch_safe_replace, "_cleanup_orphan_replacements", lambda *_args: None)
     monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
@@ -445,12 +449,22 @@ def test_clickhouse_replace_builds_and_swaps_complete_distributed_pair(
     assert any("__replace_" in command and "DROP TABLE" in command for command in adapter.commands)
     assert "SELECT serverUUID(), tcpPort()" in connection.queries
     assert {"skip_unavailable_shards": 0} in connection.query_settings
+    assert set(connection.definitions) == set(original_identities)
+    assert all(
+        connection.table_identities[table] != identity
+        for table, identity in original_identities.items()
+    )
+    assert connection.rows("sandbox.target") == [(1, "a"), (2, "b")]
+    assert connection.table_rows["stage.incoming"] == original_input
 
 
 def test_clickhouse_replace_rolls_back_failed_final_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = _ChConnection()
+    original_definitions = dict(connection.definitions)
+    original_identities = dict(connection.table_identities)
+    original_rows = dict(connection.table_rows)
     adapter = _ReplaceChAdapter([2, 2, 1])
     monkeypatch.setattr(ch_safe_replace, "_cleanup_orphan_replacements", lambda *_args: None)
     monkeypatch.setattr(ch_safe_replace, "_database_engine_on_scope", lambda *_args: "Atomic")
@@ -459,6 +473,9 @@ def test_clickhouse_replace_rolls_back_failed_final_count(
         ch_safe_replace._replace_from_stage(adapter, _request(connection))
 
     assert sum("EXCHANGE TABLES" in command for command in connection.commands) >= 4
+    assert connection.definitions == original_definitions
+    assert connection.table_identities == original_identities
+    assert connection.table_rows == original_rows
 
 
 def test_clickhouse_only_shard_replace_skips_distributed_facade(

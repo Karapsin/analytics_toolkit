@@ -28,7 +28,11 @@ class _PartitionCursor(FakeDbapiCursor):
         super().execute(statement, params)
         body = strip_query_label(statement)
         if "information_schema.columns" in body:
-            self._rows = [] if "is_nullable" in body else [("id", "bigint"), ("month", "varchar")]
+            self._rows = (
+                []
+                if "is_nullable" in body
+                else [("id", "bigint"), ("month", self.connection.partition_type)]
+            )
         elif body.startswith("SELECT DISTINCT"):
             self._rows = [(value,) for value in self.connection.partitions]
         else:
@@ -36,9 +40,22 @@ class _PartitionCursor(FakeDbapiCursor):
         if body.startswith(f"DELETE FROM {_TARGET} "):
             parsed = parse_one(body, read="trino")
             literal = parsed.args["where"].this.expression
-            assert isinstance(literal, exp.Literal)
-            assert literal.is_string
-            self.connection.deleted_partitions.append(literal.this)
+            if self.connection.partition_type == "varchar":
+                assert isinstance(literal, exp.Literal)
+                assert literal.is_string
+                value = literal.this
+            else:
+                assert isinstance(literal, exp.Cast), (
+                    "Partition comparison requires a typed operand."
+                )
+                native = literal.args["to"].sql(dialect="trino").lower()
+                assert native.startswith(self.connection.partition_type.split("(")[0])
+                value = (
+                    date.fromisoformat(literal.this.this)
+                    if native == "date"
+                    else Decimal(literal.this.this)
+                )
+            self.connection.deleted_partitions.append(value)
 
 
 class _PartitionConnection(FakeDbapiConnection):
@@ -47,6 +64,7 @@ class _PartitionConnection(FakeDbapiConnection):
         self.partitions: list[Any] = []
         self.deleted_partitions: list[str] = []
         self.batches: list[pd.DataFrame] = []
+        self.partition_type = "varchar"
 
     def cursor(self) -> _PartitionCursor:
         return _PartitionCursor(self)
@@ -110,6 +128,33 @@ def test_load_df_upsert_quotes_actual_partition_strings(
     assert any(s.startswith(f"INSERT INTO {_TARGET} ") for s in connection.executed)
 
 
+@pytest.mark.parametrize("template", _TEMPLATES)
+@pytest.mark.parametrize(
+    ("native", "partition"), [("date", date(2026, 1, 2)), ("decimal(10,2)", Decimal("12.30"))]
+)
+def test_load_df_upsert_preserves_native_partition_operand_types(
+    monkeypatch, write_sql_connections, template, native, partition
+):
+    connection = _load_boundaries(monkeypatch, write_sql_connections, template)
+    connection.partition_type = native
+
+    assert (
+        sql.load_df(
+            "trino",
+            _TARGET,
+            pd.DataFrame({"id": [1], "month": pd.Series([partition], dtype=object)}),
+            write_mode="upsert",
+            key_columns="id",
+            upsert_partition_column="month",
+            retry_cnt=1,
+            timeout_increment=0,
+        )
+        == 1
+    )
+
+    assert connection.deleted_partitions == [partition]
+
+
 def test_load_df_upsert_rejects_null_partition_keys_before_stage_mutation(
     monkeypatch, write_sql_connections
 ):
@@ -157,6 +202,6 @@ def test_actual_native_and_null_partition_literals_preserve_template_semantics()
         "FALSE",
         "17",
         "1.25",
-        "'2026-01-02'",
-        "'12.30'",
+        "DATE '2026-01-02'",
+        "DECIMAL '12.30'",
     ]

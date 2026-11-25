@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import inspect
+import time
 from typing import Any
 
 import pandas as pd
@@ -22,6 +23,11 @@ _AMBIGUOUS = (
     "Trino timestamp timezone is unresolved, ambiguous or nonexistent; "
     "project UTC in source SQL to identify the exact instant."
 )
+
+
+def _probe_clock(monkeypatch, protocol):
+    # Each completed HTTP request consumes one second of the overall probe.
+    monkeypatch.setattr(time, "monotonic", lambda: float(len(protocol.methods)))
 
 
 @pytest.fixture(autouse=True)
@@ -254,6 +260,7 @@ def test_exact_protocol_actual_sdk_probe_consumes_one_select_with_finite_budget(
         monkeypatch,
         [page(columns, b"[[1]]", next_page=1), page(columns, b"[]")],
     )
+    _probe_clock(monkeypatch, protocol)
 
     assert sql.validate_connections(["trino"], connect=False)[0].connected is None
     assert protocol.methods == []
@@ -262,7 +269,7 @@ def test_exact_protocol_actual_sdk_probe_consumes_one_select_with_finite_budget(
     assert result.connected is True
     assert protocol.statements == ["SELECT 1"]
     assert protocol.methods == ["POST", "GET"]
-    assert protocol.timeouts == [budget, budget]
+    assert protocol.timeouts == [budget, min(budget, 4)]
     assert len(protocol.closed_sessions) == 1
 
 
@@ -312,6 +319,7 @@ def test_exact_protocol_actual_sdk_probe_failure_has_one_attempt_and_sanitized_e
     protocol = install_protocol(
         monkeypatch, [], request_error=requests.Timeout("private-password-and-host")
     )
+    _probe_clock(monkeypatch, protocol)
 
     result = sql.validate_connections(["trino"], connect=True)[0]
 
@@ -342,6 +350,7 @@ def test_exact_protocol_error_and_empty_pages_preserve_sdk_probe_errors_and_clos
     error_class: str,
 ) -> None:
     protocol = install_protocol(monkeypatch, [body], response_status=status)
+    _probe_clock(monkeypatch, protocol)
 
     result = sql.validate_connections(["trino"], connect=True)[0]
 

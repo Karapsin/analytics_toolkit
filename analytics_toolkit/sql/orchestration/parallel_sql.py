@@ -51,9 +51,7 @@ _SYNC_TASK_RUNNERS = {
     "load_df": lambda kwargs: load_df(**kwargs),
     "transfer": lambda kwargs: transfer_table(**kwargs),
 }
-_PARALLEL_CONCURRENCY_STATE: contextvars.ContextVar["_ParallelConcurrencyState | None"] = (
-    contextvars.ContextVar("analytics_toolkit_parallel_sql_concurrency", default=None)
-)
+_PARALLEL_CONCURRENCY_STATE = _capacity.CONCURRENCY_STATE
 
 
 @dataclass(frozen=True)
@@ -191,42 +189,13 @@ def _build_parallel_concurrency_state(
     soft_concurrency_cap: int | None,
     hard_concurrency_cap: int,
 ) -> _ParallelConcurrencyState:
-    active_state = _PARALLEL_CONCURRENCY_STATE.get()
-    if active_state is None:
-        hard_cap = hard_concurrency_cap
-        soft_cap = concurrency if soft_concurrency_cap is None else soft_concurrency_cap
-        semaphores = (Semaphore(soft_cap),)
-        effective_concurrency = concurrency
-    else:
-        hard_cap = active_state.hard_cap
-        if (
-            hard_concurrency_cap != _DEFAULT_HARD_CONCURRENCY_CAP
-            and hard_concurrency_cap >= hard_cap
-        ):
-            hard_cap = hard_concurrency_cap
-
-        soft_cap = active_state.soft_cap
-        semaphores = active_state.semaphores
-        if soft_concurrency_cap is not None and soft_concurrency_cap < soft_cap:
-            soft_cap = soft_concurrency_cap
-            semaphores = (*semaphores, Semaphore(soft_cap))
-
-        effective_concurrency = active_state.effective_concurrency * concurrency
-
-    actual_worker_ceiling = min(effective_concurrency, soft_cap)
-    if actual_worker_ceiling > hard_cap:
-        raise ValueError(
-            "effective concurrency exceeds hard_concurrency_cap "
-            f"({actual_worker_ceiling} > {hard_cap}). Reduce concurrency, set "
-            "soft_concurrency_cap at or below hard_concurrency_cap, or increase "
-            "hard_concurrency_cap."
-        )
-
-    return _ParallelConcurrencyState(
-        effective_concurrency=effective_concurrency,
-        hard_cap=hard_cap,
-        soft_cap=soft_cap,
-        semaphores=semaphores,
+    return _capacity.build_concurrency_state(
+        concurrency=concurrency,
+        soft_concurrency_cap=soft_concurrency_cap,
+        hard_concurrency_cap=hard_concurrency_cap,
+        default_hard_cap=_DEFAULT_HARD_CONCURRENCY_CAP,
+        state_factory=_ParallelConcurrencyState,
+        semaphore_factory=Semaphore,
     )
 
 

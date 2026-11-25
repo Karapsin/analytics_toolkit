@@ -37,8 +37,13 @@ _GP_OID_TYPES = {
     1083: "time",
     1114: "timestamp",
     1184: "timestamp with time zone",
+    1186: "interval",
+    1266: "time with time zone",
     1700: "numeric",
+    869: "inet",
+    650: "cidr",
     2950: "uuid",
+    114: "json",
     3802: "jsonb",
     1000: "boolean[]",
     1001: "bytea[]",
@@ -54,7 +59,11 @@ _GP_OID_TYPES = {
     1182: "date[]",
     1183: "time[]",
     1185: "timestamp with time zone[]",
+    1187: "interval[]",
+    1270: "time with time zone[]",
     1231: "numeric[]",
+    1041: "inet[]",
+    651: "cidr[]",
     199: "json[]",
     2951: "uuid[]",
     3807: "jsonb[]",
@@ -627,7 +636,7 @@ class GreenplumAdapter(DbApiBackendAdapter):
                 and scale is not None
             ):
                 suffix = "[]" if base_type.endswith("[]") else ""
-                if suffix and not 0 < precision <= _GP_MAX_NUMERIC_PRECISION:
+                if not 0 < precision <= _GP_MAX_NUMERIC_PRECISION:
                     return base_type  # DB-API uses an out-of-domain sentinel for unbounded numeric.
                 return f"numeric({precision},{scale}){suffix}"
             return base_type

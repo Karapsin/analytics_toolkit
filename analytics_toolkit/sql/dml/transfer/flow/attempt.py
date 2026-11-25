@@ -58,6 +58,7 @@ from .keyed_phases import finish_keyed_transfer
 from .keyed_pipeline import run_keyed_transfer_pipeline
 from .logging import (
     ProgressTracker,
+    cleanup_failure_message,
     format_transfer_key_log_fragment,
     format_transfer_slice_log_label,
 )
@@ -243,7 +244,7 @@ def run_transfer_attempt(
 
     if transfer_error is not None:
         if cleanup_error is not None:
-            time_print(f"Cleanup failed while handling transfer error: {cleanup_error!r}")
+            time_print(cleanup_failure_message(cleanup_error))
         raise transfer_error.with_traceback(transfer_error.__traceback__)
     if cleanup_error is not None:
         raise cleanup_error.with_traceback(cleanup_error.__traceback__)
@@ -364,7 +365,7 @@ def run_keyed_transfer_attempt(
 
     if transfer_error is not None:
         if cleanup_error is not None:
-            time_print(f"Cleanup failed while handling transfer error: {cleanup_error!r}")
+            time_print(cleanup_failure_message(cleanup_error))
         raise transfer_error.with_traceback(transfer_error.__traceback__)
     if cleanup_error is not None:
         raise cleanup_error.with_traceback(cleanup_error.__traceback__)
@@ -478,7 +479,7 @@ def initialize_shared_stage_for_keyed_slices(
         transfer_staging_username=options.transfer_staging_username,
         ddl_properties=options.staging_ddl_properties,
         ch_creation_policy=options.staging_ch_policy,
-        **stage_creation_callbacks(stage_state),
+        **stage_creation_callbacks(stage_state, options.to_db_backend),
     )
     stage_state.stage_table_created = True
 

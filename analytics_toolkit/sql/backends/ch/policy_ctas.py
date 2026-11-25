@@ -8,24 +8,28 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
 from analytics_toolkit.sql.backends import get_backend_adapter
+from analytics_toolkit.sql.backends.query_source_binding import query_may_read_target
 from analytics_toolkit.sql.connection.config import get_connection_config
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError
 from analytics_toolkit.sql.core.type_resolution import native_candidates
 from analytics_toolkit.sql.ddl.drop_planning import apply_pending_creation_drop
 from analytics_toolkit.sql.ddl.ownership import (
     acknowledge_created_resource,
+    acknowledge_created_table_resource,
     execute_owned_create_sqls,
 )
 from analytics_toolkit.sql.ddl.schema import build_table_schema_column_definitions
 from analytics_toolkit.sql.dml.query_input import (
     PreparedQueryInput,
     QueryInputRequest,
+    mark_query_input_mutation,
     prepare_query_input,
     query_input_scope,
     replay_query_input,
 )
 from analytics_toolkit.sql.dml.transfer.runtime.retry import close_connection_ref
 from analytics_toolkit.sql.execution.labels import apply_query_label
+from analytics_toolkit.sql.execution.operation_runner import tracked_sql_operation
 from analytics_toolkit.sql.execution.plans import SqlOperationMetadata, SqlOperationResult, SqlPlan
 
 from .create_table_as import (
@@ -44,7 +48,9 @@ from .creation_policy import build_policy_create_sqls
 from .layout import inspect_existing_layout
 from .lifecycle import build_drop_ch_creation_policy_table_sqls
 from .policy_drop import execute_policy_target_drop
+from .query_population import populate_acknowledged_target
 from .query_source_scope import query_overlaps_layout
+from .reconfigure_ddl import parse_create_table
 
 if TYPE_CHECKING:
     from analytics_toolkit.sql.connection.config import ChConfig
@@ -110,6 +116,7 @@ def _create_table_as_with_policy(*, policy: Any, **options: Any) -> Any:
             (metadata, exists),
         )
         connection = connection_ref["connection"]
+        _validate_storage_keys(options, joined, plan)
         drop_sqls = _drop_statements(connection, policy, options, plan, exists=exists)
         create_sqls = build_policy_create_sqls(
             table_name=table,
@@ -143,8 +150,18 @@ def _create_table_as_with_policy(*, policy: Any, **options: Any) -> Any:
         if prepared is not None and prepared.frozen:
             plan.options["input_frozen"] = True
             plan.options["certified_input_count"] = metadata.input_count
-        _execute_creation(connection, policy, options, schema, (drop_sqls, create_sqls))
-        _populate_target(connection_ref, options, prepared, metadata)
+        mark_query_input_mutation(options["input_resolution"])
+        with tracked_sql_operation(
+            metadata=metadata,
+            operation_name="create_table_from_sql",
+            alias=options["target_key"],
+            backend="ch",
+            phase="create_or_insert",
+            query_label=label,
+            preview_sql=create_sqls[0] if create_sqls else None,
+        ):
+            _execute_creation(connection, policy, options, schema, (drop_sqls, create_sqls))
+            _populate_target(connection_ref, options, prepared, metadata)
     finally:
         if connection_ref["connection"] is not None:
             close_connection_ref(connection_ref, options["target_key"], "target")
@@ -221,6 +238,33 @@ def _add_population_plan(
     )
 
 
+def _validate_storage_keys(options: Any, joined: str, plan: SqlPlan) -> None:
+    selected = {
+        option: options[option]
+        for option in ("partition_by", "order_by")
+        if options[option] is not None and not isinstance(options[option], str)
+    }
+    if not selected:
+        return
+    if joined == "<query schema>":
+        plan.options["pending_storage_key_validation"] = True
+        return
+    create = parse_create_table(
+        f"CREATE TABLE __atk_query_columns__ ({joined}) ENGINE=Memory", "query result"
+    )
+    columns = [column.name for column in create.this.expressions]
+    adapter = get_backend_adapter("ch")
+    for option, value in selected.items():
+        _validate_storage_key(adapter, value, columns, option)
+
+
+def _validate_storage_key(adapter: Any, value: Any, columns: list[str], option: str) -> None:
+    try:
+        adapter.validate_ch_columns_in_columns(value, columns, option, data_name="source query")
+    except ValueError as exc:
+        raise InvalidSqlInputError(str(exc)) from exc
+
+
 def _execute_creation(
     connection: Any,
     policy: Any,
@@ -228,15 +272,19 @@ def _execute_creation(
     schema: Any,
     sqls: tuple[list[str], list[str]],
 ) -> None:
+    from .availability import bind_creation_availability  # noqa: PLC0415 -- backend cycle.
+
+    bind_creation_availability(connection, policy)
     adapter = get_backend_adapter("ch")
     table = options["target_table"]
     label = options["query_label"]
     drop_sqls, create_sqls = sqls
-    if options.get("ch_replace_table"):
+    if options.get("ch_replace_table") or options["drop_target_if_exists"]:
         adapter.preflight_create_table_replacement(
             connection,
             SimpleNamespace(
-                ch_replace_table=True,
+                ch_replace_table=bool(options.get("ch_replace_table")),
+                drop_target_if_exists=options["drop_target_if_exists"],
                 ch_creation_policy=policy,
                 table_name=table,
                 connection_key=options["target_key"],
@@ -256,6 +304,8 @@ def _execute_creation(
         connection,
         [apply_query_label(sql, label) for sql in create_sqls],
         acknowledge_created_resource,
+        on_scoped_resource_created=acknowledge_created_table_resource,
+        connection_key=options["target_key"],
     )
     adapter.after_create_table(
         connection,
@@ -282,7 +332,15 @@ def _populate_target(
             replay_query_input(prepared, connection_ref, metadata)
         else:
             sql = f"INSERT INTO {options['target_table']}\n{query}"
-            connection_ref["connection"].command(apply_query_label(sql, options["query_label"]))
+            populate_acknowledged_target(
+                connection_ref,
+                options,
+                metadata,
+                lambda: connection_ref["connection"].command(
+                    apply_query_label(sql, options["query_label"])
+                ),
+                legacy.get_sql_connection,
+            )
     except Exception as exc:
         annotate_query_exception(exc, query, backend="ch")
         raise
@@ -304,7 +362,7 @@ def _prepare_population(
             layout,
             connection_ref["connection"],
             cast("ChConfig", config).database,
-        )
+        ) or query_may_read_target(query, layout.logical_table, "ch")
     return prepare_query_input(
         QueryInputRequest(
             options["target_key"],

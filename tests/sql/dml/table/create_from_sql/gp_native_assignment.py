@@ -133,23 +133,31 @@ def test_gp_query_native_explicit_domain_projection_retains_sql_cast_semantics(m
     assert any(value == "lon" for _native, value in database.cast_values)
 
 
-def test_gp_query_native_cross_alias_projection_runs_in_target_context(monkeypatch):
+def test_gp_query_cross_alias_projection_reads_certified_source_input(monkeypatch):
     target, databases, _connect = install_query_native(
         monkeypatch, [(["192.0.2.0/24"],)], native_type="TEXT[]"
     )
     source = QueryNativeDatabase([(["198.51.100.0/24"],)], native_type="TEXT[]")
     databases["gp_sandbox"] = source
+    original_source = {
+        name: (dict(table.schema), deepcopy(table.rows)) for name, table in source.tables.items()
+    }
 
     result = create_query(source_db="gp_sandbox")
 
     assert result.rows == 1
-    assert target.target.rows == [{"payload": [ipaddress.ip_network("192.0.2.0/24")]}]
+    assert target.target.rows == [{"payload": [ipaddress.ip_network("198.51.100.0/24")]}]
     assert source.target.rows == [{"payload": ["198.51.100.0/24"]}]
-    assert target.snapshot_creates
+    assert target.private_value_attempts
+    assert target.bound_rows == [(["198.51.100.0/24"],)]
     assert not source.snapshot_creates
-    assert len(target.source_evaluations) == 1
-    assert source.source_evaluations == []
+    assert len(source.source_evaluations) == len(source.python_reads) == 1
+    assert source.python_selected_rows == [(["198.51.100.0/24"],)]
     assert not target.python_reads
+    assert {
+        name: (dict(table.schema), table.rows) for name, table in source.tables.items()
+    } == original_source
+    assert set(target.tables) == {("sandbox", "events"), ("sandbox", "source_rows")}
 
 
 def test_gp_query_native_lost_ack_reuses_certified_sql_payload(monkeypatch):
@@ -223,7 +231,8 @@ def test_gp_query_native_empty_input_still_certifies_native_schema(monkeypatch, 
     assert result.rows == 0
     assert result.metadata.input_count == 0
     assert database.target.rows == []
-    assert database.target.schema == {"payload": "CIDR[]"}
+    assert list(database.target.schema) == ["payload"]
+    assert database.target.schema["payload"].upper() == "CIDR[]"
     assert len(database.snapshot_creates) == 1
     assert database.bound_rows == []
     assert database.python_reads == []
@@ -241,7 +250,8 @@ def test_gp_query_native_fresh_creation_retains_cidr_values(monkeypatch):
     )
 
     assert result.rows == 1
-    assert database.target.schema == {"payload": "CIDR[]"}
+    assert list(database.target.schema) == ["payload"]
+    assert database.target.schema["payload"].upper() == "CIDR[]"
     assert database.target.rows == [{"payload": [ipaddress.ip_network("192.0.2.0/24")]}]
     assert len(database.snapshot_creates) == 1
 

@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from analytics_toolkit.sql.backends.ch.dialect import ClickHouseDialect
-from sqlglot import parse_one
+from sqlglot import exp, parse_one
+from sqlparse import parse
 
+from tests.sql._support.gp_upsert_load import native_upsert_load
 from tests.sql._support.load_table import (
     TEST_CH_SHARD_TABLE,
     TEST_CH_STAGE_TABLE,
     TEST_CH_TABLE,
     FakeClickHouseClient,
-    FakeDbapiConnection,
-    SimpleNamespace,
     load_df_module,
     pd,
     table_ops_module,
 )
+from tests.sql._support.transfer_schema import stage_module
 
 
 def test_finalize_stage_table_clickhouse_upsert_drops_shard_partitions() -> None:
@@ -46,57 +47,14 @@ def test_finalize_stage_table_clickhouse_upsert_drops_shard_partitions() -> None
 
 
 def test_load_df_drops_overlap_stage_table_after_success(monkeypatch) -> None:
-    connection = FakeDbapiConnection()
-    monkeypatch.setattr(
-        load_df_module,
-        "get_table_column_types",
-        lambda *_a, **_k: {"id": "BIGINT", "value": "INTEGER"},
-    )
-    config = SimpleNamespace(
-        connection_key="gp",
-        backend="gp",
-        user="target_user",
-        transfer_staging_schema="transfer_schema",
-        insert_chunk_size=None,
-    )
-    cleanups: list[tuple[str, str, str]] = []
-
-    monkeypatch.setattr(load_df_module, "get_connection_config", lambda key: config)
-    monkeypatch.setattr(load_df_module, "get_sql_connection", lambda key: connection)
-    monkeypatch.setattr(load_df_module, "table_exists", lambda *args, **kwargs: True)
-    monkeypatch.setattr(
-        load_df_module,
-        "_create_sql_table_with_connection",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        load_df_module,
-        "create_stage_table",
-        lambda **kwargs: f"{kwargs['target_table']}__stage__ok",
-    )
-    monkeypatch.setattr(
-        load_df_module, "validate_stage_target_key_overlap", lambda *args, **kwargs: None
-    )
-    monkeypatch.setattr(load_df_module, "insert_from_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        load_df_module,
-        "insert_table_batch",
-        lambda connection_type, connection_ref, table_name, batch, **kwargs: len(batch),
-    )
-    monkeypatch.setattr(load_df_module, "analyze_table", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        load_df_module,
-        "cleanup_stage_table_with_retry",
-        lambda connection_type, connection_key, connection_ref, table_name, **kwargs: (
-            cleanups.append(
-                (connection_type, connection_key, table_name),
-            )
-        ),
-    )
+    database = native_upsert_load(monkeypatch, {"id": "BIGINT", "value": "INTEGER"})
+    original_rows = [dict(row) for row in database.target.rows]
+    expected_stage = "public.target__stage__ok"
+    monkeypatch.setattr(stage_module, "build_stage_table_name", lambda *_a, **_k: expected_stage)
 
     inserted_rows = load_df_module.load_df(
         "gp",
-        "sandbox.target",
+        "public.target",
         pd.DataFrame({"id": [1, 2], "value": [10, 20]}),
         append=True,
         key_columns=["id"],
@@ -106,4 +64,13 @@ def test_load_df_drops_overlap_stage_table_after_success(monkeypatch) -> None:
     )
 
     assert inserted_rows == 2
-    assert cleanups == [("gp", "gp", "sandbox.target__stage__ok")]
+    assert database.target.rows == [*original_rows, {"id": 1, "value": 10}, {"id": 2, "value": 20}]
+    drops = [
+        (table.db, table.name)
+        for command in database.commands
+        if parse(command)[0].get_type() == "DROP"
+        if isinstance((tree := parse_one(command, read="postgres")), exp.Drop)
+        for table in tree.find_all(exp.Table)
+    ]
+    assert drops == [("public", expected_stage.split(".", 1)[1])]
+    assert set(database.tables) == {("public", "target")}

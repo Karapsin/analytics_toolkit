@@ -45,6 +45,9 @@ class MetadataFaultClient(PairScopeClient):
 
     def query(self, statement, settings=None):
         result = super().query(statement, settings=settings)
+        return self.transform_response(statement, result)
+
+    def transform_response(self, statement, result):
         if statement.startswith(("SHOW ", "EXISTS ")):
             return result
         select = parse_one(statement, read=ClickHouseDialect)

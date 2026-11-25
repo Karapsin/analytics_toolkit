@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from analytics_toolkit.general import time_print
+from analytics_toolkit.sql.backends.retry_errors import is_non_retryable_driver_error
 from analytics_toolkit.sql.connection.errors import InvalidSqlInputError, SqlConfigError
 from analytics_toolkit.sql.connection.get_sql_connection import get_sql_connection
 from analytics_toolkit.sql.execution.backend_options import (
@@ -21,6 +22,7 @@ from analytics_toolkit.sql.execution.operation_runner import _format_duration
 T = TypeVar("T")
 _MAX_SAFE_EXCEPTION_TYPE_CHARS = 80
 _SQLSTATE_CODE_LENGTH = 5
+_NATIVE_UNKNOWN_DATABASE_CODE = 81
 
 _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES = {
     "ALREADY_EXISTS",
@@ -36,6 +38,7 @@ _NON_RETRYABLE_CLICKHOUSE_ERROR_NAMES = {
     "TABLE_ALREADY_EXISTS",
     "TYPE_MISMATCH",
     "UNKNOWN_IDENTIFIER",
+    "UNKNOWN_DATABASE",
     "UNKNOWN_TABLE",
 }
 
@@ -132,7 +135,12 @@ def is_non_retryable_sql_error(exc: Exception) -> bool:
     if (
         (state is not None and state.structural_replay_blocked)
         or getattr(exc, "analytics_toolkit_sql_retry_safe", True) is False
-        or isinstance(exc, (InvalidSqlInputError, SqlConfigError))
+        or isinstance(exc, (InvalidSqlInputError, SqlConfigError, PermissionError))
+        or is_non_retryable_driver_error(exc)
+        or (
+            type(exc).__module__.startswith("clickhouse_driver.")
+            and getattr(exc, "code", None) == _NATIVE_UNKNOWN_DATABASE_CODE
+        )
     ):
         return True
     class_names = _exception_class_names(exc)
@@ -218,6 +226,7 @@ _NON_RETRYABLE_MESSAGE_PATTERNS = (
     "table_not_found",
     "relation does not exist",
     "unknown table",
+    "unknown_database",
     "unknown_identifier",
     "can't adapt type",
     "no such table",

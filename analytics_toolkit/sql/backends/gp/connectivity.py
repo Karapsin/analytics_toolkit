@@ -7,7 +7,10 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from analytics_toolkit.sql.connection.validation import close_validation_resource
+from analytics_toolkit.sql.connection.validation import (
+    close_validation_resource,
+    validation_remaining,
+)
 
 _PROBE_TIMEOUT = "Connectivity probe exceeded its validation budget."
 _UNEXPECTED_STATE = "Unexpected libpq connectivity state."
@@ -33,9 +36,12 @@ def wait_ready(connection: Any, timeout: float) -> None:
     deadline = time.monotonic() + timeout
     while True:
         state = connection.poll()
+        shared_remaining = validation_remaining()
         if state == POLL_OK:
             return
         remaining = deadline - time.monotonic()
+        if shared_remaining is not None:
+            remaining = min(remaining, shared_remaining)
         if remaining <= 0:
             raise TimeoutError(_PROBE_TIMEOUT)
         descriptor = connection.fileno()
@@ -53,12 +59,15 @@ def validate_connection(adapter: Any, connection: Any) -> None:
     del adapter
     # Real validation connections are asynchronous; injected DB-API fakes and
     # already-ready clients still exercise the same execute-and-consume probe.
+    validation_remaining()
     cursor = connection.cursor()
     try:
         cursor.execute("SELECT 1")
+        validation_remaining()
         if getattr(connection, "async_", False):
             wait_ready(connection, float(getattr(connection, "_atk_validation_timeout", 5)))
         rows = cursor.fetchall()
+        validation_remaining()
         if not rows or rows[0][0] != 1:
             raise RuntimeError(_UNEXPECTED_RESULT)
     finally:

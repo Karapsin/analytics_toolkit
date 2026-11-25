@@ -92,7 +92,7 @@ def build_show_tables_query(
     trino_catalog: str | None = None,
     ch_distributed_table_stats: bool = False,
 ) -> str:
-    del adapter, config, ch_distributed_table_stats
+    del adapter
     if trino_catalog is not None:
         from ...connection.errors import InvalidSqlInputError
 
@@ -102,34 +102,39 @@ def build_show_tables_query(
     return build_clickhouse_show_tables_query(
         schema,
         table_names,
-        conditions,
+        None if (config.cluster_routing is not None or ch_distributed_table_stats) else conditions,
         include_distributed_metadata=True,
     )
 
 
-def postprocess_show_tables(
+def postprocess_show_tables(  # noqa: PLR0913 - preserve the cross-backend adapter hook signature.
     adapter: Any,
     connection_key: str,
     tables: Any,
     *,
     ch_distributed_table_stats: bool = False,
     read_sql: Callable[[str, str], Any] | None = None,
+    conditions: str | None = None,
 ) -> Any:
     del adapter
     from analytics_toolkit.sql.connection.config import get_connection_config
 
     from .metadata import apply_clickhouse_logical_stats, apply_clickhouse_shard_stats
+    from .metadata_values import decode_metadata_frame
 
     if read_sql is None:
         from ...dml.io.read_sql import read_sql as read_sql_impl
     else:
         read_sql_impl = read_sql
+    tables = decode_metadata_frame(tables, ("db", "schema", "table_name", "engine", "engine_full"))
     tables = tables.drop_duplicates(subset=["schema", "table_name"]).copy()
     from analytics_toolkit.sql.execution.backend_options import current_backend_operation
 
     state = current_backend_operation()
     if state is not None:
-        tables.attrs["data_complete"] = not state.partial
+        tables.attrs["data_complete"] = (
+            tables.attrs.get("data_complete", True) and not state.partial
+        )
         tables.attrs["ch_cluster_status"] = list(state.statuses.values())
     routing = getattr(get_connection_config(connection_key), "cluster_routing", None)
     if routing is not None:
@@ -141,6 +146,12 @@ def postprocess_show_tables(
         )
     if ch_distributed_table_stats:
         tables = apply_clickhouse_shard_stats(connection_key, tables, read_sql=read_sql_impl)
+    if conditions is not None and (routing is not None or ch_distributed_table_stats):
+        from .statistics_filter import filter_resolved_statistics
+
+        tables = filter_resolved_statistics(
+            connection_key, tables, conditions, read_sql=read_sql_impl
+        )
     return tables
 
 
@@ -167,14 +178,14 @@ def build_drop_partitions_sqls(
     ch_cluster: str = "{cluster}",
 ) -> list[str]:
     del adapter, partition_column, gp_truncate
-    from ..utils import sql_string_literal
     from .adapter import ch_cluster_clause
     from .ddl import build_ch_shard_table_name
+    from .partition_literals import render_partition_value
 
     shard_table = build_ch_shard_table_name(table)
     cluster_clause = ch_cluster_clause(ch_cluster)
     return [
-        f"ALTER TABLE {shard_table}{cluster_clause} DROP PARTITION {sql_string_literal(key)}"
+        f"ALTER TABLE {shard_table}{cluster_clause} DROP PARTITION {render_partition_value(key)}"
         for key in partition_keys
     ]
 
@@ -374,6 +385,9 @@ def pending_drop_plan_options(adapter: Any) -> dict[str, Any]:
 
 def prepare_execute_create_target(adapter: Any, connection: Any, options: Any) -> None:
     """Authorize the resolved policy, then remove only verified existing resources."""
+    from .availability import bind_creation_availability  # noqa: PLC0415 -- backend cycle.
+
+    bind_creation_availability(connection, options.ch_creation_policy)
     if not options.drop_if_exists:
         return
     from .creation_preflight import (  # noqa: PLC0415 - adapter operations initialization cycle.

@@ -25,6 +25,7 @@ from ..runtime.models import (
     TransferStageState,
 )
 from .client_validation import validate_created_client_stage
+from .target_ownership import target_creation_callbacks
 
 
 def create_stage_state(
@@ -57,6 +58,8 @@ def ensure_transfer_target_table(
     connection_refs: TransferConnectionRefs,
     stage_state: TransferStageState,
     source_columns: list[str],
+    *,
+    allow_deferred_creation: bool = False,
 ) -> None:
     if stage_state.target_exists:
         if options.replace_target_table or options.write_mode in {"upsert", "truncate_insert"}:
@@ -72,9 +75,12 @@ def ensure_transfer_target_table(
             canonical = validate_complete_upsert_columns(source_columns, writable)
             stage_state.insert_column_types = {name: writable[name] for name in canonical}
         return
-    if not get_backend_adapter(
-        options.to_db_backend,
-    ).can_create_transfer_target_before_batches():
+    if (
+        not allow_deferred_creation
+        and not get_backend_adapter(
+            options.to_db_backend,
+        ).can_create_transfer_target_before_batches()
+    ):
         return
 
     create_columns = source_columns or list(stage_state.stage_column_types or {})
@@ -93,6 +99,8 @@ def ensure_transfer_target_table(
             "source query schema has no columns."
         )
 
+    if stage_state.target_existed_at_start is None:
+        stage_state.target_existed_at_start = False
     _ensure_stage_target_table(
         backend=options.to_db_backend,
         connection=connection_refs.target["connection"],
@@ -110,11 +118,9 @@ def ensure_transfer_target_table(
         connection_key=options.to_db_key,
         ch_only_shard=options.ch_only_shard,
         ch_creation_policy=options.regular_ch_policy,
+        **target_creation_callbacks(stage_state),
     )
-    if stage_state.target_existed_at_start is None:
-        stage_state.target_existed_at_start = False
     stage_state.target_exists = True
-    stage_state.target_created_by_operation = stage_state.target_existed_at_start is False
 
 
 def initialize_stage_for_first_batch(
@@ -195,7 +201,7 @@ def initialize_stage_for_first_batch(
         destination_hash=options.destination_hash,
         ddl_properties=options.staging_ddl_properties,
         ch_creation_policy=options.staging_ch_policy,
-        **stage_creation_callbacks(stage_state),
+        **stage_creation_callbacks(stage_state, options.to_db_backend),
     )
     stage_state.stage_table_created = True
     stage_state.stage_column_types = get_backend_adapter(
